@@ -5,9 +5,9 @@ air_density=1.225
 # === VEHICLE GEOMETRY ===
 frontal_area=1.8
 wheel_radius=0.33
-final_drive=3.15
-corner_throttle_factor=0.88
-tire_friction=2.2
+final_drive=3.05
+corner_throttle_factor=0.82
+tire_friction=2.05
 min_speed=1.0
 min_rpm=1500.0
 
@@ -32,12 +32,12 @@ shift_5_6=88.0
 brake_max_pressure=0.7
 brake_base=0.1
 brake_gain=0.05
-brake_trigger_margin=0.25
+brake_trigger_margin=0.55
 brake_target_rpm_factor=0.3
 
 # === CORNERING ===
 corner_g_force_divisor=1.5
-curvature_look_ahead_m=80.0
+curvature_look_ahead_m=88.0
 curvature_sample_step_m=8.0
 straight_curvature_threshold=0.00008
 min_corner_radius_m=28.0
@@ -66,7 +66,7 @@ engine_weight_coeff=35.0
 engine_weight_cyl_factor=5.0
 diesel_weight_mult=1.3
 base_vehicle_mass=150.0
-torque_coefficient=280.0
+torque_coefficient=110.0
 hp_conversion=7127.0
 reference_stroke=0.080
 reference_rpm=6000.0
