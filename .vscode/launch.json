@@ -1,0 +1,33 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch projectlm",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/projectlm",
+            "args": ["--laps", "1"],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "build"
+        },
+        {
+            "name": "Launch projectlm (gdb — Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/projectlm",
+            "args": ["--laps", "1"],
+            "cwd": "${workspaceFolder}",
+            "MIMode": "gdb",
+            "preLaunchTask": "build"
+        },
+        {
+            "name": "Launch tests",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/projectlm_tests",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "build"
+        }
+    ]
+}

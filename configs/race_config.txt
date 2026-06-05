@@ -1,0 +1,15 @@
+# Race configuration — paths and simulation parameters
+
+part_catalog=configs/part_catalog.txt
+physics_config=configs/physics_config.txt
+track_config=tracks/lemans_la_sarthe.json
+car_config=configs/car_config.txt
+
+target_laps=2
+sim_timestep=0.1
+
+# Leave empty to disable CSV telemetry export
+telemetry_output=
+
+# Multi-car mode: set to entries file (e.g. entries.txt); leave empty for single-car
+entries=

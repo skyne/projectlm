@@ -1,0 +1,23 @@
+# Assembly compatibility rules (slot-based + matrix)
+# rule= starts a new rule block
+
+# Ground-effect rear package needs low-drag front aero
+rule=wingless_requires_low_drag_front
+if_slot=rear_aero
+if_part=WinglessGroundEffect
+requires_slot=front_aero
+requires_part=LowDragNose
+
+# Sprint cooling package cannot fit a large fuel cell
+rule=sprint_no_large_tank
+if_slot=cooling
+if_part=SprintSlimline
+forbids_slot=fuel_system
+forbids_part=LargeTank
+
+# Carbon ceramic brakes need a carbon monocoque for heat dissipation
+rule=ceramic_requires_carbon_chassis
+if_slot=brake_system
+if_part=CarbonCeramic
+requires_slot=chassis
+requires_part=CarbonMonocoque

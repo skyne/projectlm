@@ -1,0 +1,13 @@
+# Web viewer default — multiclass grid on La Sarthe
+
+part_catalog=configs/part_catalog.txt
+physics_config=configs/physics_config.txt
+track_config=tracks/lemans_la_sarthe.json
+car_config=configs/car_config.txt
+
+target_laps=3
+sim_timestep=0.1
+
+telemetry_output=
+
+entries=configs/entries.txt

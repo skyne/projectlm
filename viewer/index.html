@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ProjectLM Viewer</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="header">
+        <h1>ProjectLM</h1>
+        <div id="header-nav"></div>
+        <span id="status" class="status">Connecting…</span>
+      </header>
+      <main class="layout">
+        <section class="main-panel track-panel" id="map-panel">
+          <div id="track-container"></div>
+        </section>
+        <section class="main-panel timetable-panel hidden" id="timetable-container"></section>
+        <aside class="sidebar">
+          <div id="leaderboard-container"></div>
+          <div id="event-log-container"></div>
+          <div id="playback-container"></div>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

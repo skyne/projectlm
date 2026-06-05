@@ -1,0 +1,415 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #0f1117;
+  color: #e8eaed;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid #2a2f3a;
+  background: #151922;
+}
+
+.view-nav {
+  display: flex;
+  gap: 0.35rem;
+  margin-left: 0.5rem;
+}
+
+.view-tab {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid #3a4254;
+  border-radius: 6px;
+  background: #252b38;
+  color: #c5cdd9;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.view-tab.active {
+  background: #3a4a62;
+  border-color: #5a6f8f;
+  color: #e8eaed;
+}
+
+.view-tab:not(.active):hover {
+  background: #323a4a;
+}
+
+.header .status {
+  margin-left: auto;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.status {
+  font-size: 0.85rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: #2a3140;
+}
+
+.status-open {
+  background: #1e3a2f;
+  color: #6ee7a0;
+}
+
+.status-closed,
+.status-error {
+  background: #3a1e1e;
+  color: #f87171;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.main-panel {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #12151c;
+  padding: 0.75rem;
+}
+
+.main-panel.hidden {
+  display: none;
+}
+
+.track-panel {
+  position: relative;
+}
+
+#track-container {
+  position: absolute;
+  inset: 0.75rem;
+}
+
+.track-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #1a1f2b;
+  border-radius: 8px;
+  border: 1px solid #2a3140;
+}
+
+.sector-label,
+.map-label {
+  fill: #b8c2d6;
+  font-size: 11px;
+  font-family: Arial, Helvetica, sans-serif;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+  paint-order: stroke fill;
+  stroke: #0f1117;
+  stroke-width: 3px;
+}
+
+.car-marker .car-number {
+  fill: #0f1117;
+  font-size: 8px;
+  font-weight: 700;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+}
+
+.leaderboard .car-num {
+  font-weight: 600;
+  color: #c5cdd9;
+  width: 2rem;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-left: 1px solid #2a2f3a;
+  background: #151922;
+  overflow-y: auto;
+}
+
+.panel {
+  background: #1a1f2b;
+  border: 1px solid #2a3140;
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.panel h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9aa3b5;
+}
+
+.track-name {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  color: #7d869a;
+}
+
+.leaderboard table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.leaderboard th,
+.leaderboard td {
+  padding: 0.35rem 0.25rem;
+  text-align: left;
+  border-bottom: 1px solid #2a3140;
+}
+
+.leaderboard th {
+  color: #7d869a;
+  font-weight: 500;
+}
+
+.leaderboard tr.retired {
+  opacity: 0.45;
+}
+
+.leaderboard .gap-cell {
+  font-variant-numeric: tabular-nums;
+  color: #9aa3b5;
+  white-space: nowrap;
+}
+
+.timetable-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.timetable-panel > .timetable {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.timetable {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.timetable.hidden {
+  display: none;
+}
+
+.timetable-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.timetable-header h2 {
+  margin: 0;
+}
+
+.lap-select-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: #9aa3b5;
+}
+
+.lap-select-label select {
+  background: #252b38;
+  color: inherit;
+  border: 1px solid #3a4254;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+}
+
+.timetable-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.timetable-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.timetable-table th,
+.timetable-table td {
+  padding: 0.35rem 0.4rem;
+  text-align: left;
+  border-bottom: 1px solid #2a3140;
+  white-space: nowrap;
+}
+
+.timetable-table th {
+  position: sticky;
+  top: 0;
+  background: #1a1f2b;
+  color: #7d869a;
+  font-weight: 500;
+  z-index: 1;
+}
+
+.timetable-table .timing-cell {
+  font-variant-numeric: tabular-nums;
+  color: #c5cdd9;
+}
+
+.timetable-table .live-sector {
+  color: #6ee7a0;
+  font-weight: 600;
+}
+
+.timetable-table tr.retired {
+  opacity: 0.45;
+}
+
+.class-badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: #2a3140;
+}
+
+.class-Hypercar {
+  color: #e74c3c;
+}
+
+.class-LMGT3 {
+  color: #3498db;
+}
+
+.class-LMP2 {
+  color: #2ecc71;
+}
+
+.event-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 0.78rem;
+}
+
+.event-list li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #252b38;
+  line-height: 1.35;
+}
+
+.event-list .time {
+  color: #7d869a;
+  margin-right: 0.35rem;
+}
+
+.event-LapComplete {
+  color: #6ee7a0;
+}
+
+.event-RaceComplete {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.playback .race-time {
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.scale-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.scale-control input {
+  width: 100%;
+}
+
+.buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.session-actions {
+  margin-top: 0.5rem;
+}
+
+.session-actions button {
+  font-size: 0.8rem;
+}
+
+.buttons button {
+  flex: 1;
+  padding: 0.45rem;
+  border: 1px solid #3a4254;
+  border-radius: 6px;
+  background: #252b38;
+  color: inherit;
+  cursor: pointer;
+}
+
+.buttons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.buttons button:not(:disabled):hover {
+  background: #323a4a;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-left: none;
+    border-top: 1px solid #2a2f3a;
+  }
+}

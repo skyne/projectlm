@@ -1,0 +1,23 @@
+# LMP2 — balanced endurance baseline
+car_name=LMP2 Baseline
+engine_layout=V8
+fuel_type=Gasoline
+cylinders=8
+bore=0.098
+stroke=0.085
+max_rpm=8200
+base_vibration=1.0
+
+chassis_type=CarbonMonocoque
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=EnduranceHeavyDuty
+tire_compound=Medium
+fuel_system=StandardTank
+brake_system=StandardCaliper
+transmission=SixSpeedSequential
+hybrid_system=None
+
+front_spring_stiffness=128000.0
+rear_spring_stiffness=142000.0
+ride_height=0.044

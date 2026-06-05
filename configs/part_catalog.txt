@@ -1,0 +1,191 @@
+# =====================
+# CHASSIS
+# =====================
+chassis.CarbonMonocoque.mass=75.0
+chassis.CarbonMonocoque.rigidity=1.2
+chassis.CarbonMonocoque.drag=0.01
+
+chassis.Spaceframe.mass=120.0
+chassis.Spaceframe.rigidity=0.6
+chassis.Spaceframe.drag=0.05
+
+# =====================
+# FRONT AERO
+# =====================
+front_aero.LowDragNose.mass=8.0
+front_aero.LowDragNose.downforce=0.5
+front_aero.LowDragNose.drag=0.04
+
+front_aero.HighDownforceSplitter.mass=15.0
+front_aero.HighDownforceSplitter.downforce=1.2
+front_aero.HighDownforceSplitter.drag=0.12
+
+# =====================
+# REAR AERO
+# =====================
+rear_aero.StandardWing.mass=18.0
+rear_aero.StandardWing.downforce=1.0
+rear_aero.StandardWing.drag=0.14
+rear_aero.StandardWing.permits_wingless=0
+
+rear_aero.HighDownforceWing.mass=25.0
+rear_aero.HighDownforceWing.downforce=1.8
+rear_aero.HighDownforceWing.drag=0.22
+rear_aero.HighDownforceWing.permits_wingless=0
+
+rear_aero.WinglessGroundEffect.mass=10.0
+rear_aero.WinglessGroundEffect.downforce=1.3
+rear_aero.WinglessGroundEffect.drag=0.08
+rear_aero.WinglessGroundEffect.permits_wingless=1
+
+# =====================
+# COOLING
+# =====================
+cooling.SprintSlimline.mass=10.0
+cooling.SprintSlimline.drag=0.03
+cooling.SprintSlimline.dissipation=0.8
+
+cooling.EnduranceHeavyDuty.mass=25.0
+cooling.EnduranceHeavyDuty.drag=0.09
+cooling.EnduranceHeavyDuty.dissipation=1.5
+
+# =====================
+# TIRES
+# =====================
+tire.Soft.mass=12.0
+tire.Soft.grip=1.15
+tire.Soft.wear_rate=0.08
+tire.Soft.optimal_temp=85.0
+
+tire.Medium.mass=12.0
+tire.Medium.grip=1.0
+tire.Medium.wear_rate=0.05
+tire.Medium.optimal_temp=80.0
+
+tire.Hard.mass=12.0
+tire.Hard.grip=0.90
+tire.Hard.wear_rate=0.03
+tire.Hard.optimal_temp=75.0
+
+# =====================
+# FUEL SYSTEM
+# =====================
+fuel_system.StandardTank.mass=35.0
+fuel_system.StandardTank.capacity=100.0
+
+fuel_system.LargeTank.mass=50.0
+fuel_system.LargeTank.capacity=140.0
+
+# =====================
+# BRAKES
+# =====================
+brake.StandardCaliper.mass=8.0
+brake.StandardCaliper.max_pressure=0.70
+brake.StandardCaliper.fade=0.15
+
+brake.CarbonCeramic.mass=12.0
+brake.CarbonCeramic.max_pressure=0.85
+brake.CarbonCeramic.fade=0.05
+
+brake.HeavyDutyEndurance.mass=18.0
+brake.HeavyDutyEndurance.max_pressure=0.75
+brake.HeavyDutyEndurance.fade=0.08
+
+# =====================
+# TRANSMISSION
+# =====================
+transmission.SixSpeedSequential.mass=45.0
+transmission.SixSpeedSequential.gear_count=6
+transmission.SixSpeedSequential.shift_delay=0.08
+transmission.SixSpeedSequential.gear_1=4.5
+transmission.SixSpeedSequential.gear_2=2.50
+transmission.SixSpeedSequential.gear_3=1.85
+transmission.SixSpeedSequential.gear_4=1.35
+transmission.SixSpeedSequential.gear_5=1.05
+transmission.SixSpeedSequential.gear_6=0.82
+transmission.SixSpeedSequential.shift_1=18.0
+transmission.SixSpeedSequential.shift_2=38.0
+transmission.SixSpeedSequential.shift_3=55.0
+transmission.SixSpeedSequential.shift_4=72.0
+transmission.SixSpeedSequential.shift_5=88.0
+
+transmission.SevenSpeedSequential.mass=48.0
+transmission.SevenSpeedSequential.gear_count=7
+transmission.SevenSpeedSequential.shift_delay=0.06
+transmission.SevenSpeedSequential.gear_1=4.2
+transmission.SevenSpeedSequential.gear_2=2.6
+transmission.SevenSpeedSequential.gear_3=1.9
+transmission.SevenSpeedSequential.gear_4=1.45
+transmission.SevenSpeedSequential.gear_5=1.15
+transmission.SevenSpeedSequential.gear_6=0.92
+transmission.SevenSpeedSequential.gear_7=0.75
+transmission.SevenSpeedSequential.shift_1=16.0
+transmission.SevenSpeedSequential.shift_2=34.0
+transmission.SevenSpeedSequential.shift_3=50.0
+transmission.SevenSpeedSequential.shift_4=66.0
+transmission.SevenSpeedSequential.shift_5=80.0
+transmission.SevenSpeedSequential.shift_6=94.0
+
+transmission.EightSpeedPaddle.mass=52.0
+transmission.EightSpeedPaddle.gear_count=8
+transmission.EightSpeedPaddle.shift_delay=0.04
+transmission.EightSpeedPaddle.gear_1=3.8
+transmission.EightSpeedPaddle.gear_2=2.4
+transmission.EightSpeedPaddle.gear_3=1.8
+transmission.EightSpeedPaddle.gear_4=1.4
+transmission.EightSpeedPaddle.gear_5=1.1
+transmission.EightSpeedPaddle.gear_6=0.9
+transmission.EightSpeedPaddle.gear_7=0.75
+transmission.EightSpeedPaddle.gear_8=0.62
+transmission.EightSpeedPaddle.shift_1=14.0
+transmission.EightSpeedPaddle.shift_2=30.0
+transmission.EightSpeedPaddle.shift_3=46.0
+transmission.EightSpeedPaddle.shift_4=60.0
+transmission.EightSpeedPaddle.shift_5=74.0
+transmission.EightSpeedPaddle.shift_6=86.0
+transmission.EightSpeedPaddle.shift_7=98.0
+
+# =====================
+# HYBRID / ERS
+# =====================
+hybrid.None.mass=0.0
+hybrid.None.deploy_kw=0.0
+hybrid.None.regen_rate=0.0
+hybrid.None.stint_budget_mj=0.0
+
+hybrid.LMDh500kW.mass=85.0
+hybrid.LMDh500kW.deploy_kw=500.0
+hybrid.LMDh500kW.regen_rate=0.30
+hybrid.LMDh500kW.stint_budget_mj=8.0
+
+hybrid.HypercarHV.mass=95.0
+hybrid.HypercarHV.deploy_kw=200.0
+hybrid.HypercarHV.regen_rate=0.50
+hybrid.HypercarHV.stint_budget_mj=3.5
+
+# =====================
+# ATTACHMENT POINTS (UE Lego sockets)
+# =====================
+attach.chassis.CarbonMonocoque=chassis.mount.base
+attach.chassis.Spaceframe=chassis.mount.base
+attach.front_aero.LowDragNose=chassis.mount.front_aero
+attach.front_aero.HighDownforceSplitter=chassis.mount.front_aero
+attach.rear_aero.StandardWing=chassis.mount.rear_aero
+attach.rear_aero.HighDownforceWing=chassis.mount.rear_aero
+attach.rear_aero.WinglessGroundEffect=chassis.mount.rear_floor
+attach.cooling.SprintSlimline=chassis.mount.cooling
+attach.cooling.EnduranceHeavyDuty=chassis.mount.cooling
+attach.tire.Soft=chassis.mount.wheel_set
+attach.tire.Medium=chassis.mount.wheel_set
+attach.tire.Hard=chassis.mount.wheel_set
+attach.fuel_system.StandardTank=chassis.mount.fuel_cell
+attach.fuel_system.LargeTank=chassis.mount.fuel_cell
+attach.brake.StandardCaliper=chassis.mount.brake_front
+attach.brake.CarbonCeramic=chassis.mount.brake_front
+attach.brake.HeavyDutyEndurance=chassis.mount.brake_front
+attach.transmission.SixSpeedSequential=chassis.mount.transmission
+attach.transmission.SevenSpeedSequential=chassis.mount.transmission
+attach.transmission.EightSpeedPaddle=chassis.mount.transmission
+attach.hybrid.None=chassis.mount.hybrid
+attach.hybrid.LMDh500kW=chassis.mount.hybrid
+attach.hybrid.HypercarHV=chassis.mount.hybrid

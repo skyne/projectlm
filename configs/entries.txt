@@ -1,0 +1,15 @@
+# Multiclass grid — entry=team_name,car_config_path,class_id,grid,car_number
+
+# Hypercar
+entry=Hypercar LMDh Hybrid,configs/cars/hypercar_lmdh.txt,Hypercar,1,7
+entry=Hypercar Ground Effect,configs/cars/hypercar_ground_effect.txt,Hypercar,2,9
+entry=Hypercar Endurance Stint,configs/cars/hypercar_endurance.txt,Hypercar,3,5
+
+# LMP2
+entry=LMP2 High Downforce,configs/cars/lmp2_high_downforce.txt,LMP2,4,23
+entry=LMP2 Baseline,configs/cars/lmp2_baseline.txt,LMP2,5,45
+
+# LMGT3
+entry=LMGT3 Sprint Setup,configs/cars/gt3_sprint.txt,LMGT3,6,91
+entry=LMGT3 Endurance Setup,configs/cars/gt3_endurance.txt,LMGT3,7,52
+entry=LMGT3 Low Drag,configs/cars/gt3_low_drag.txt,LMGT3,8,33

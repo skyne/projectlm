@@ -44,6 +44,10 @@ build/
 Build/
 build-*/
 
+# Legacy root binaries (pre-Make layout)
+/projectlm
+/projectlm_tests
+
 # CMake generated files
 CMakeFiles/
 CMakeCache.txt
@@ -67,3 +71,9 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Node / web stack (Phase 3)
+node_modules/
+viewer/dist/
+bindings/node/build/
+.dev-viewer.pid
