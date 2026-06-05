@@ -3,10 +3,10 @@
 
 class=Hypercar
 display_name=Hypercar
-power_cap_hp=720
+power_cap_hp=700
 min_weight_kg=1005
 max_weight_kg=1080
-aero_balance_modifier=1.04
+aero_balance_modifier=1.10
 legal_chassis=CarbonMonocoque
 legal_front_aero=LowDragNose,HighDownforceSplitter
 legal_rear_aero=StandardWing,HighDownforceWing,WinglessGroundEffect
@@ -17,10 +17,10 @@ legal_hybrid=None,LMDh500kW,HypercarHV
 
 class=LMGT3
 display_name=LMGT3
-power_cap_hp=460
-min_weight_kg=1310
-max_weight_kg=1330
-aero_balance_modifier=0.82
+power_cap_hp=420
+min_weight_kg=1330
+max_weight_kg=1345
+aero_balance_modifier=0.72
 legal_chassis=CarbonMonocoque
 legal_front_aero=LowDragNose,HighDownforceSplitter
 legal_rear_aero=StandardWing,HighDownforceWing
@@ -31,10 +31,10 @@ legal_hybrid=None
 
 class=LMP2
 display_name=LMP2
-power_cap_hp=510
-min_weight_kg=1020
-max_weight_kg=1040
-aero_balance_modifier=0.95
+power_cap_hp=465
+min_weight_kg=1045
+max_weight_kg=1060
+aero_balance_modifier=0.84
 legal_chassis=CarbonMonocoque
 legal_front_aero=LowDragNose,HighDownforceSplitter
 legal_rear_aero=StandardWing,HighDownforceWing,WinglessGroundEffect

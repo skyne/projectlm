@@ -126,7 +126,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
           state.currentSpeed / std::max(maxCorneringSpeed, p.minSpeed);
       const double cornerDemand = std::clamp(speedRatio, 0.0, 1.0);
       engineForce *=
-          p.cornerThrottleFactor * (1.0 - 0.55 * cornerDemand);
+          p.cornerThrottleFactor * (1.0 - 0.30 * cornerDemand);
     }
 
     if (onStraight && car.hybridDeployPowerKW > 0.0 &&

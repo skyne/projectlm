@@ -118,7 +118,7 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
       GetTransmissionStats(car.transmissionChoice, catalog);
   HybridPart hp = GetHybridStats(car.hybridSystemChoice, catalog);
 
-  car.totalDragCd = 0.25 + ch.baselineDrag + fa.dragCd + ra.dragCd + cp.dragCd;
+  car.totalDragCd = 0.19 + ch.baselineDrag + fa.dragCd + ra.dragCd + cp.dragCd;
   car.totalDownforceCl = fa.downforceCl + ra.downforceCl;
   car.structuralRigidityFactor = ch.structuralRigidity;
   car.coolingCapacity = cp.thermalDissipationRate;
