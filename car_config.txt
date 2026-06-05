@@ -1,0 +1,19 @@
+car_name=Prototype 9X8 Style
+engine_layout=V6
+fuel_type=Gasoline
+cylinders=6
+bore=0.12
+stroke=0.1
+max_rpm=8500
+base_vibration=1.4
+
+# Modular Component Choices
+chassis_type=CarbonMonocoque
+front_aero_type=HighDownforceSplitter
+rear_aero_type=WinglessGroundEffect
+cooling_pack=EnduranceHeavyDuty
+
+# Mechanical Suspension Tuning Slots
+front_spring_stiffness=120000.0
+rear_spring_stiffness=140000.0
+ride_height=0.045
