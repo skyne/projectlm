@@ -93,6 +93,7 @@ export interface SessionInitPayload {
     carNumber: number;
     classId: string;
   }>;
+  carNumberByEntryId: Record<string, number>;
 }
 
 export interface TickPayload {

@@ -100,6 +100,7 @@ class SimHost {
             targetLaps: this.parsedConfig.targetLaps,
             simTimestep: this.simTimestep,
             entries: this.entries,
+            carNumberByEntryId: Object.fromEntries(this.entries.map((entry) => [entry.entryId, entry.carNumber])),
         };
     }
     getRaceTime() {
@@ -185,12 +186,18 @@ class SimHost {
     }
     enrichSnapshots(snapshots) {
         const numbersByEntryId = new Map(this.entries.map((entry) => [entry.entryId, entry.carNumber]));
-        return snapshots.map((snap) => ({
-            ...snap,
-            carNumber: snap.carNumber > 0
-                ? snap.carNumber
-                : (numbersByEntryId.get(snap.entryId) ?? 0),
-        }));
+        const numbersByTeamName = new Map(this.entries.map((entry) => [entry.teamName, entry.carNumber]));
+        return snapshots.map((snap) => {
+            const fromEntry = numbersByEntryId.get(snap.entryId) ??
+                numbersByTeamName.get(snap.teamName) ??
+                0;
+            const carNumber = fromEntry > 0
+                ? fromEntry
+                : Number(snap.carNumber) > 0
+                    ? Number(snap.carNumber)
+                    : 0;
+            return { ...snap, carNumber };
+        });
     }
     configPathForSim() {
         const rel = path.relative(this.repoRoot, this.raceConfigPath);

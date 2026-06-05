@@ -1,4 +1,5 @@
 import type { CarSnapshot } from "../ws/protocol";
+import { formatCarNumber } from "../entryNumbers";
 import { formatGap } from "../utils/formatTime";
 
 export class Leaderboard {
@@ -46,7 +47,7 @@ export class Leaderboard {
       if (snap.retired) row.className = "retired";
       row.innerHTML = `
         <td>${snap.racePosition}</td>
-        <td class="car-num">${snap.carNumber > 0 ? snap.carNumber : "—"}</td>
+        <td class="car-num">${formatCarNumber(snap)}</td>
         <td>${escapeHtml(snap.teamName)}</td>
         <td><span class="class-badge class-${snap.classId}">${escapeHtml(snap.classId)}</span></td>
         <td>${snap.lap}</td>

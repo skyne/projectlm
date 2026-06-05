@@ -1,4 +1,5 @@
 import type { CarSnapshot, TrackGeometryPayload } from "../ws/protocol";
+import { formatCarNumber } from "../entryNumbers";
 import { formatLapTime } from "../utils/formatTime";
 
 export type TimetableLapMode = "live" | number;
@@ -105,7 +106,7 @@ export class Timetable {
         return `
           <tr class="${rowClass}">
             <td>${snap.racePosition}</td>
-            <td class="car-num">${snap.carNumber > 0 ? snap.carNumber : "—"}</td>
+            <td class="car-num">${formatCarNumber(snap)}</td>
             <td>${escapeHtml(snap.teamName)}</td>
             <td><span class="class-badge class-${snap.classId}">${escapeHtml(snap.classId)}</span></td>
             ${sectorCells}

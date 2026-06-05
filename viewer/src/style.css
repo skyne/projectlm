@@ -146,10 +146,12 @@ body {
   user-select: none;
 }
 
-.leaderboard .car-num {
+.leaderboard .car-num,
+.timetable-table .car-num {
   font-weight: 600;
-  color: #c5cdd9;
-  width: 2rem;
+  color: #e8eaed;
+  min-width: 2rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .sidebar {

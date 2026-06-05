@@ -1,4 +1,5 @@
 import type { CarSnapshot, TrackGeometryPayload } from "../ws/protocol";
+import { formatCarNumber } from "../entryNumbers";
 
 const CLASS_COLORS: Record<string, string> = {
   Hypercar: "#e74c3c",
@@ -204,8 +205,7 @@ export class SvgTrack {
     for (const snap of snapshots) {
       seen.add(snap.entryId);
       const p = this.worldToSvg(snap.position.x, snap.position.z);
-      const numberLabel =
-        snap.carNumber > 0 ? String(snap.carNumber) : "?";
+      const numberLabel = formatCarNumber(snap) || "?";
 
       let marker = this.carElements.get(snap.entryId);
       if (!marker) {
