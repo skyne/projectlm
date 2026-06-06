@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "styleGuide": "configs/asset_style_guide.txt",
+  "chassis": {},
+  "front_aero": {},
+  "rear_aero": {},
+  "wheel_package": {},
+  "hybrid_system": {},
+  "livery_masks": {},
+  "track_atmospheres": {},
+  "ui_chrome": {}
+}

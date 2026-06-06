@@ -1,0 +1,41 @@
+# part_id → prompt template. {style} is replaced with asset_style_guide.txt contents.
+
+mvp:
+  - id: chassis.LMDhDallara
+    category: chassis
+    part_id: LMDhDallara
+    width: 1024
+    height: 512
+    prompt: |
+      {style}
+      Side profile LMDh endurance hypercar prototype, full car silhouette,
+      carbon monocoque, mid-grey body, no sponsor decals, isolated on dark background.
+
+  - id: rear_aero.HighDownforceWing
+    category: rear_aero
+    part_id: HighDownforceWing
+    width: 512
+    height: 256
+    prompt: |
+      {style}
+      Isolated rear wing assembly for endurance prototype race car, side view,
+      high downforce multi-element wing, mid-grey, dark background, no car body.
+
+  - id: front_aero.LowDragNose
+    category: front_aero
+    part_id: LowDragNose
+    width: 512
+    height: 256
+    prompt: |
+      {style}
+      Isolated front nose cone and low-drag splitter for endurance prototype,
+      side view, mid-grey, dark background.
+
+  - id: track.paul_ricard_dusk
+    category: track_atmospheres
+    part_id: paul_ricard
+    width: 1920
+    height: 1080
+    prompt: |
+      Cinematic wide shot of Circuit Paul Ricard at dusk, empty track, moody purple sky,
+      no cars, no text, broadcast photography style, slight film grain.

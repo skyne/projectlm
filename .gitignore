@@ -77,3 +77,10 @@ node_modules/
 viewer/dist/
 bindings/node/build/
 .dev-viewer.pid
+
+# Secrets & generated asset scratch
+.env
+.env.local
+scripts/generate_assets/.venv/
+scripts/generate_assets/output/_scratch/
+scripts/generate_assets/__pycache__/

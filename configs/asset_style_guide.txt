@@ -1,0 +1,10 @@
+ProjectLM motorsport asset style (lock this across all prompts):
+
+- Strict side-profile view for cars and aero parts; wheels shown in side view.
+- Flat 2D game-art illustration, not photorealistic 3D render.
+- Clean vector-like edges, subtle shading, no heavy texture noise.
+- Transparent or solid dark (#080a0f) background — no scenery, no text, no logos, no watermarks.
+- Endurance prototype / LMDh / WEC hypercar proportions when class is Hypercar.
+- Palette-neutral body (mid grey) so livery tint can be applied in compositor.
+- Consistent line weight and perspective across all parts in a batch.
+- No people, no crowd, no track environment unless explicitly requested.
