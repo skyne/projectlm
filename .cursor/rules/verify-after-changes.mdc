@@ -1,0 +1,36 @@
+---
+description: Run project tests after implementing or fixing behavior — do not wait for the user to ask
+alwaysApply: true
+---
+
+# Verify after changes
+
+When you finish implementing, fixing, or refactoring sim/game/weather/server/viewer behavior:
+
+1. **Run relevant tests yourself** before saying the task is done. Do not tell the user to run tests unless you could not run them (missing deps, environment blocked).
+
+2. **Default server checks** (from repo root or `server/`):
+   ```bash
+   cd server && npm run build && npm run test
+   ```
+   This runs climate + weather model tests.
+
+3. **After C++ weather/sim changes**, also run when possible:
+   ```bash
+   build/bin/projectlm_weather_tests '[unit][weather]'
+   ```
+   Rebuild native if sim bridge or race config changed:
+   ```bash
+   cd bindings/node && npm run build
+   ```
+
+4. **After end-to-end sim/protocol changes**, run live verification when a server can be started:
+   ```bash
+   cd tools/session-player && WATCH_SEC=60 TIME_SCALE=50 npx tsx src/verify_weather.ts
+   ```
+
+5. **Report results briefly**: pass/fail counts and what failed — not "you can run tests to verify."
+
+6. **Fix failures** in the same turn when feasible; do not hand off broken tests.
+
+Skip only unrelated test suites (known pre-existing failures) and say which ones were skipped and why.

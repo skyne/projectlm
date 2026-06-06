@@ -540,6 +540,30 @@ mix of B, C and D, dbut dont fix on how many drivers are assigned for a car, cre
 
 **Goal:** Loop beyond a single race.
 
+**Status:** 🟡 **In progress** — WEC career stack, calendar, economy, sponsors, and HQ staff slice 1 are on `main`; staff market, salaries, and facilities remain.
+
+### Locked design (HQ & staff)
+
+| Topic | Choice |
+|-------|--------|
+| Staff scope | **Per car** — engineer, mechanic, strategist assigned per fleet car |
+| Progression | Staff gain **experience** (and slow skill growth) over the season |
+| Facilities | **Slice 5 only** — no facility upgrades until core staff loop is solid |
+| Unavailability | **Yes** — ill / injured / poached events with interim cover |
+| R&D | Engineer skill **multiplies** `rdPoints` earned (Slice 3) |
+
+### HQ & staff slices
+
+| Slice | Status | Notes |
+|-------|--------|-------|
+| **HQ-1** Per-car roster + UI | ✅ | `staff.ts` migration, Team HQ matrix, Race Hub staff row, entry-scoped `staff.txt` |
+| **HQ-2** Economy + market | ⬜ | Salaries, hire/fire, staff market, unavailability rolls |
+| **HQ-3** Progression + race hooks | ⬜ | Experience/skill/morale; engineer setup suggestions; R&D multiplier |
+| **HQ-4** Sim pit/strategy | ⬜ | Mechanic pit variance; strategist stint plan + alerts (needs Phase 6 pit depth) |
+| **HQ-5** Facilities | ⬜ | Workshop, engineering office, strategy room, simulator, scouting |
+
+*Branch `feature/hq-staff-slice1` merged to `main` (Jun 2026); worktree closed.*
+
 ### Proposed systems
 - **Team HQ:** budget, staff (engineers, mechanics, strategists)
 - **Calendar:** multiclass events, championship points per class
@@ -666,7 +690,7 @@ Phase 5 ◄── YOU ARE HERE — Multiclass endurance (duration races, AI entr
 Phase 6 🟡  Race management — pits ✅, setup ✅, engineer LLM ✅; stint plans + mechanic variance ⬜
     │
     ▼
-Phase 7  Meta / season (staff, R&D, calendar — light per your preference)
+Phase 7 🟡  Meta / season — career ✅, calendar ✅, HQ staff slice 1 ✅; market/salaries/facilities ⬜
     │
     ▼
 Phase 8  Quality + UE packaging (extended golden tests, save/load, static lib)
@@ -744,4 +768,4 @@ Track authorship: A / B / C
 
 ---
 
-*Last updated: Phase 4 Parts & garage complete (brakes, transmission, hybrid/ERS, compatibility matrix, UE attachment point IDs)*
+*Last updated: Jun 2026 — multiplayer foundation + weather on `main`; HQ staff slice 1 (per-car roster) merged; worktree closed.*
