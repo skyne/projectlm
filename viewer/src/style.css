@@ -5914,3 +5914,100 @@ body {
 .panel.spectator-readonly button {
   pointer-events: none;
 }
+
+.hq-staff-matrix-wrap {
+  overflow-x: auto;
+  margin-bottom: 0.5rem;
+}
+
+.hq-staff-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.hq-staff-matrix th,
+.hq-staff-matrix td {
+  padding: 0.45rem 0.55rem;
+  border-bottom: 1px solid var(--border, #2a2f3a);
+  text-align: left;
+  vertical-align: top;
+}
+
+.hq-staff-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hq-staff-name {
+  font-weight: 600;
+}
+
+.hq-staff-skill {
+  font-size: 0.75rem;
+  color: var(--text-muted, #9aa3b2);
+}
+
+.hq-staff-vacant {
+  color: var(--text-muted, #9aa3b2);
+  font-style: italic;
+}
+
+.staff-status {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.staff-status-injured {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+}
+
+.staff-status-ill {
+  background: rgba(248, 113, 113, 0.2);
+  color: #f87171;
+}
+
+.staff-status-poached {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+}
+
+.weekend-staff {
+  margin: 0.75rem 0;
+}
+
+.weekend-staff-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.weekend-staff-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.78rem;
+}
+
+.weekend-staff-role {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #9aa3b2);
+}
+
+.weekend-staff-warnings {
+  margin-top: 0.5rem;
+}
+
+.weekend-staff-warning {
+  margin: 0.2rem 0;
+  font-size: 0.75rem;
+  color: #fbbf24;
+}

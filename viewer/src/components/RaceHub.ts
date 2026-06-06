@@ -1,4 +1,10 @@
-import type { MetaStatePayload, SessionInitPayload } from "../ws/protocol";
+import type {
+  MetaStatePayload,
+  SessionInitPayload,
+  StaffMemberPayload,
+  StaffRole,
+  StaffStatus,
+} from "../ws/protocol";
 import {
   calendarRoundLabel,
   formatDurationLabel,
@@ -75,6 +81,7 @@ export class RaceHub {
               </label>
               <p class="wizard-hint">Change compound anytime before the session or at pit stops during the race.</p>
             </div>
+            <div class="race-hub-staff"></div>
             <div class="round-actions">
               <button type="button" class="secondary-btn garage-link-btn">⚙ Garage</button>
               <button type="button" class="primary-btn start-race-btn">
@@ -192,7 +199,70 @@ export class RaceHub {
     }
 
     this.renderRoundInfo();
+    this.renderStaffRow(meta);
     this.syncHostControls();
+  }
+
+  private renderStaffRow(meta: MetaStatePayload): void {
+    const STAFF_ROLES: StaffRole[] = ["engineer", "mechanic", "strategist"];
+    const ROLE_LABELS: Record<StaffRole, string> = {
+      engineer: "Engineer",
+      mechanic: "Mechanic",
+      strategist: "Strategist",
+    };
+    const STATUS_LABELS: Record<Exclude<StaffStatus, "active">, string> = {
+      injured: "Injured",
+      ill: "Ill",
+      poached: "Poached",
+    };
+
+    const container = this.root.querySelector(".race-hub-staff");
+    if (!container) return;
+
+    const carId = meta.activeCarId || meta.playerCarId || meta.fleet?.[0]?.id;
+    if (!carId || !meta.staff?.length) {
+      container.innerHTML = "";
+      return;
+    }
+
+    const items = STAFF_ROLES.map((role) => {
+      const member = this.staffForCar(meta, carId, role);
+      return `<div class="weekend-staff-item">
+        <span class="weekend-staff-role">${ROLE_LABELS[role]}</span>
+        <span class="weekend-staff-name">${escapeHtml(member?.name ?? "—")}</span>
+        <span class="weekend-staff-skill">${member?.skill ?? "—"}</span>
+      </div>`;
+    }).join("");
+
+    const warnings = STAFF_ROLES.flatMap((role) => {
+      const member = this.staffForCar(meta, carId, role);
+      if (!member || (member.status ?? "active") === "active") return [];
+      const status = member.status as Exclude<StaffStatus, "active">;
+      return [
+        `<p class="weekend-staff-warning">${ROLE_LABELS[role]} ${escapeHtml(member.name)} — ${STATUS_LABELS[status]}</p>`,
+      ];
+    }).join("");
+
+    container.innerHTML = `
+      <div class="weekend-staff">
+        <div class="weekend-staff-row">${items}</div>
+        ${warnings ? `<div class="weekend-staff-warnings">${warnings}</div>` : ""}
+      </div>`;
+  }
+
+  private staffForCar(
+    meta: MetaStatePayload,
+    carId: string,
+    role: StaffRole,
+  ): StaffMemberPayload | null {
+    const assigned = meta.staff?.find(
+      (s) => s.role === role && s.assignedCarId === carId,
+    );
+    if (assigned) return assigned;
+
+    const firstCarId = meta.fleet?.[0]?.id;
+    if (carId !== firstCarId) return null;
+    return meta.staff?.find((s) => s.role === role && !s.assignedCarId) ?? null;
   }
 
   private renderRoundInfo(): void {

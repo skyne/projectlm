@@ -3,6 +3,9 @@ import type {
   CarAffiliation,
   GameCatalogPayload,
   MetaStatePayload,
+  StaffMemberPayload,
+  StaffRole,
+  StaffStatus,
 } from "../ws/protocol";
 import {
   calendarRoundLabel,
@@ -89,7 +92,7 @@ export class TeamHQ {
 
       <fieldset class="mm-fieldset">
         <legend>Personnel</legend>
-        <ul id="team-staff" class="team-list"></ul>
+        <div id="team-staff" class="hq-staff-matrix-wrap"></div>
         <div class="team-actions">
           <button type="button" id="hire-engineer" class="secondary-btn">Hire engineer</button>
           <button type="button" id="hire-mechanic" class="secondary-btn">Hire mechanic</button>
@@ -273,12 +276,7 @@ export class TeamHQ {
 
     this.renderBuyPanel();
 
-    this.staffEl.replaceChildren();
-    for (const member of meta.staff) {
-      const li = document.createElement("li");
-      li.textContent = `${member.role}: ${member.name} (${member.skill})`;
-      this.staffEl.appendChild(li);
-    }
+    this.renderStaffMatrix(meta);
 
     this.partsEl.replaceChildren();
     for (const part of meta.unlockedParts) {
@@ -534,6 +532,80 @@ export class TeamHQ {
       this.showBuyPanel = false;
       this.renderBuyPanel();
     });
+  }
+
+  private renderStaffMatrix(meta: MetaStatePayload): void {
+    const STAFF_ROLES: StaffRole[] = ["engineer", "mechanic", "strategist"];
+    const ROLE_LABELS: Record<StaffRole, string> = {
+      engineer: "Engineer",
+      mechanic: "Mechanic",
+      strategist: "Strategist",
+    };
+    const STATUS_LABELS: Record<Exclude<StaffStatus, "active">, string> = {
+      injured: "Injured",
+      ill: "Ill",
+      poached: "Poached",
+    };
+
+    const fleet = meta.fleet ?? [];
+    if (fleet.length === 0) {
+      this.staffEl.innerHTML = `<p class="wizard-hint">No cars in fleet — staff assign per car once a programme is started.</p>`;
+      return;
+    }
+
+    const headerCells = STAFF_ROLES.map(
+      (role) => `<th scope="col">${ROLE_LABELS[role]}</th>`,
+    ).join("");
+
+    const rows = fleet
+      .map((car) => {
+        const cells = STAFF_ROLES.map((role) => {
+          const member = this.staffForCar(meta, car.id, role);
+          if (!member) {
+            return `<td><span class="hq-staff-vacant">Vacant</span></td>`;
+          }
+          const status = member.status ?? "active";
+          const badge =
+            status !== "active"
+              ? `<span class="staff-status staff-status-${status}">${STATUS_LABELS[status]}</span>`
+              : "";
+          return `<td>
+            <div class="hq-staff-cell">
+              <span class="hq-staff-name">${escapeHtml(member.name)}</span>
+              <span class="hq-staff-skill">${member.skill}</span>
+              ${badge}
+            </div>
+          </td>`;
+        }).join("");
+        return `<tr>
+          <th scope="row">#${escapeHtml(car.carNumber)} <span class="class-badge">${escapeHtml(car.classId)}</span></th>
+          ${cells}
+        </tr>`;
+      })
+      .join("");
+
+    this.staffEl.innerHTML = `
+      <table class="hq-staff-matrix">
+        <thead>
+          <tr><th scope="col">Car</th>${headerCells}</tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  private staffForCar(
+    meta: MetaStatePayload,
+    carId: string,
+    role: StaffRole,
+  ): StaffMemberPayload | null {
+    const assigned = meta.staff?.find(
+      (s) => s.role === role && s.assignedCarId === carId,
+    );
+    if (assigned) return assigned;
+
+    const firstCarId = meta.fleet?.[0]?.id;
+    if (carId !== firstCarId) return null;
+    return meta.staff?.find((s) => s.role === role && !s.assignedCarId) ?? null;
   }
 }
 

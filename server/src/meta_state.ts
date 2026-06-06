@@ -54,6 +54,11 @@ import {
   migrateWecCalendar,
   nextCalendarRound,
 } from "./game/track_catalog";
+import {
+  migrateStaffToPerCar,
+  staffForCar,
+  type StaffMember,
+} from "./game/staff";
 
 interface ParsedStaff {
   role: string;
@@ -192,6 +197,18 @@ function applyCalendarMigration(state: MetaStatePayload): void {
   state.currentRound = migrated.currentRound;
 }
 
+function applyStaffMigration(state: MetaStatePayload, store: GameStateStore): void {
+  const fleetIds = (state.fleet ?? []).map((c) => c.id);
+  const { staff, migrated } = migrateStaffToPerCar(
+    (state.staff ?? []) as StaffMember[],
+    fleetIds,
+  );
+  if (migrated) {
+    state.staff = staff;
+    store.save(state);
+  }
+}
+
 function syncLegacyFields(state: MetaStatePayload): void {
   const active = activeFleetCar(state);
   if (active) {
@@ -237,6 +254,7 @@ export class MetaStateManager {
     const defaults = parseConfigFile(repoRoot);
     this.state = migrateLegacyMeta(this.store.load(defaults));
     applyCalendarMigration(this.state);
+    applyStaffMigration(this.state, this.store);
     if (this.state.fleet?.length && alignProgrammeBuilds(this.state.fleet)) {
       writeAllFleetConfigs(
         this.repoRoot,
@@ -297,9 +315,24 @@ export class MetaStateManager {
     const clamped = Math.min(100, Math.max(1, skill));
     const cost = staffSigningCost(clamped);
     if (this.state.budget < cost) return this.getState();
-    this.state.staff.push({ role, name, skill: clamped });
+    const carId =
+      this.state.activeCarId ||
+      this.state.playerCarId ||
+      this.state.fleet?.[0]?.id ||
+      "";
+    this.state.staff.push({
+      role,
+      name,
+      skill: clamped,
+      assignedCarId: carId || undefined,
+      status: "active",
+    });
     this.state.budget -= cost;
     return this.persist();
+  }
+
+  getStaffForCar(carId: string): StaffMember[] {
+    return staffForCar((this.state.staff ?? []) as StaffMember[], carId);
   }
 
   investRd(partId: string, points: number): MetaStatePayload {

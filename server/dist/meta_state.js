@@ -44,6 +44,7 @@ const driver_catalog_1 = require("./game/driver_catalog");
 const driver_market_1 = require("./game/driver_market");
 const economy_1 = require("./game/economy");
 const track_catalog_1 = require("./game/track_catalog");
+const staff_1 = require("./game/staff");
 function trim(s) {
     return s.trim();
 }
@@ -163,6 +164,14 @@ function applyCalendarMigration(state) {
     state.calendar = migrated.calendar;
     state.currentRound = migrated.currentRound;
 }
+function applyStaffMigration(state, store) {
+    const fleetIds = (state.fleet ?? []).map((c) => c.id);
+    const { staff, migrated } = (0, staff_1.migrateStaffToPerCar)((state.staff ?? []), fleetIds);
+    if (migrated) {
+        state.staff = staff;
+        store.save(state);
+    }
+}
 function syncLegacyFields(state) {
     const active = (0, fleet_1.activeFleetCar)(state);
     if (active) {
@@ -203,6 +212,7 @@ class MetaStateManager {
         const defaults = parseConfigFile(repoRoot);
         this.state = (0, fleet_1.migrateLegacyMeta)(this.store.load(defaults));
         applyCalendarMigration(this.state);
+        applyStaffMigration(this.state, this.store);
         if (this.state.fleet?.length && (0, fleet_1.alignProgrammeBuilds)(this.state.fleet)) {
             (0, car_builder_1.writeAllFleetConfigs)(this.repoRoot, this.state, platformTemplateMap(this.repoRoot));
             this.store.save(this.state);
@@ -249,9 +259,22 @@ class MetaStateManager {
         const cost = (0, economy_1.staffSigningCost)(clamped);
         if (this.state.budget < cost)
             return this.getState();
-        this.state.staff.push({ role, name, skill: clamped });
+        const carId = this.state.activeCarId ||
+            this.state.playerCarId ||
+            this.state.fleet?.[0]?.id ||
+            "";
+        this.state.staff.push({
+            role,
+            name,
+            skill: clamped,
+            assignedCarId: carId || undefined,
+            status: "active",
+        });
         this.state.budget -= cost;
         return this.persist();
+    }
+    getStaffForCar(carId) {
+        return (0, staff_1.staffForCar)((this.state.staff ?? []), carId);
     }
     investRd(partId, points) {
         const cost = points * 10000;

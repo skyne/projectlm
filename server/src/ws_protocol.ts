@@ -229,10 +229,21 @@ export interface SignDriverContractPayload {
   listingId: string;
 }
 
+export type StaffRole = "engineer" | "mechanic" | "strategist";
+export type StaffStatus = "active" | "injured" | "ill" | "poached";
+
 export interface StaffMemberPayload {
+  id?: string;
   role: string;
   name: string;
   skill: number;
+  experience?: number;
+  salaryPerRace?: number;
+  morale?: number;
+  assignedCarId?: string;
+  status?: StaffStatus;
+  unavailableUntilRound?: number;
+  traits?: string[];
 }
 
 export type CalendarEventType = "test" | "race";
