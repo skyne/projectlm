@@ -45,6 +45,23 @@ export interface CarBuildVisual {
   hybrid_system: string;
 }
 
+/** Map sim build payload fields to compositor layer ids. */
+export function carBuildToVisual(build: {
+  chassis_type: string;
+  front_aero_type: string;
+  rear_aero_type: string;
+  wheel_package?: string;
+  hybrid_system: string;
+}): CarBuildVisual {
+  return {
+    chassis_type: build.chassis_type,
+    front_aero_type: build.front_aero_type,
+    rear_aero_type: build.rear_aero_type,
+    wheel_package: build.wheel_package,
+    hybrid_system: build.hybrid_system,
+  };
+}
+
 const BUILD_KEYS: Record<string, keyof CarBuildVisual> = {
   chassis: "chassis_type",
   front_aero: "front_aero_type",
