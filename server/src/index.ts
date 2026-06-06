@@ -101,6 +101,7 @@ function main(): void {
           const payload: TickPayload = {
             raceTime: host.getRaceTime(),
             snapshots: host.getSnapshots(),
+            raceControl: host.getRaceControl(),
           };
           broadcast(clients, serverMessage("tick", payload));
           console.log("[server] Race restarted");
@@ -124,6 +125,7 @@ function main(): void {
           const payload: TickPayload = {
             raceTime: host.getRaceTime(),
             snapshots: host.getSnapshots(),
+            raceControl: host.getRaceControl(),
           };
           broadcast(clients, serverMessage("tick", payload));
           console.log("[server] Reloaded definitions");
@@ -194,6 +196,7 @@ function main(): void {
           const payload: TickPayload = {
             raceTime: host.getRaceTime(),
             snapshots: host.getSnapshots(),
+            raceControl: host.getRaceControl(),
           };
           broadcast(clients, serverMessage("tick", payload));
           console.log("[server] Round started");
@@ -411,7 +414,11 @@ function main(): void {
 
   host.start(
     (raceTime, snapshots) => {
-      const payload: TickPayload = { raceTime, snapshots };
+      const payload: TickPayload = {
+        raceTime,
+        snapshots,
+        raceControl: host.getRaceControl(),
+      };
       broadcast(clients, serverMessage("tick", payload));
     },
     (events) => {

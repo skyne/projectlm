@@ -8,6 +8,29 @@
 #include <string>
 #include <vector>
 
+struct RaceConfig;
+
+struct RaceControlState {
+  bool fcyActive = false;
+  bool scActive = false;
+  double trackWetness = 0.0;
+  double ambientTempC = 22.0;
+  double trackGripEvolution = 1.0;
+  double rainIntensity = 0.0;
+  std::string weatherPhase = "Dry";
+  double forecastRainInSeconds = -1.0;
+  std::string weatherLabel;
+  std::string weatherBiome;
+  struct ForecastStep {
+    double offsetMinutes = 0.0;
+    std::string phase;
+    double trackWetness = 0.0;
+    double rainIntensity = 0.0;
+    double ambientTempC = 22.0;
+  };
+  std::vector<ForecastStep> forecast;
+};
+
 enum class SimEventType {
   SectorCross,
   LapComplete,
@@ -44,6 +67,7 @@ public:
   TrackGeometry getTrackGeometry() const;
   bool isRaceComplete() const;
   double getRaceTime() const { return session_.elapsedRaceTime; }
+  RaceControlState getRaceControl() const;
 
   bool submitCommand(const std::string &entryId, const std::string &command);
   const TeamConfig &teamConfig() const { return teamConfig_; }
@@ -63,6 +87,16 @@ private:
   };
   std::vector<PendingCommand> pendingCommands_;
 
+  std::string weatherProfileId_ = "changeable";
+  double initialTrackWetness_ = 0.0;
+  double initialAmbientTempC_ = 0.0;
+  unsigned int rngSeed_ = 20260306;
+  WeatherProfile weatherProfile_;
+  std::string weatherLabel_;
+  std::string weatherBiome_;
+
+  void initWeatherOnSession(RaceSession &session, const RaceConfig &config);
+  void resetWeatherState();
   void processCommands();
   void loadTeamConfig(const std::string &staffConfigPath = "");
 };

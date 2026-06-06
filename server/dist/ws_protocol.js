@@ -40,6 +40,9 @@ function parseClientMessage(raw) {
             "new_game",
             "get_track_preview",
             "set_weekend_tire_compound",
+            "ask_engineer",
+            "get_engineer_status",
+            "ask_garage_engineer",
         ];
         if (!allowed.includes(msg.type))
             return null;

@@ -5,6 +5,7 @@
 #include "part_compatibility.hpp"
 #include "sim_bridge.hpp"
 #include "traffic.hpp"
+#include "weather.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -97,6 +98,17 @@ static void EmitRaceEvent(SimEventType type, const Car &car, int lap,
   g_raceEventOut->push_back(std::move(event));
 }
 
+static void EmitWeatherEvent(double timestamp, const std::string &message) {
+  if (g_raceEventOut == nullptr)
+    return;
+
+  SimEvent event;
+  event.type = SimEventType::Blocked;
+  event.timestamp = timestamp;
+  event.message = message;
+  g_raceEventOut->push_back(std::move(event));
+}
+
 bool IsNightSession(double raceTimeSeconds) {
   const double hour = std::fmod(raceTimeSeconds / 3600.0, 24.0);
   return hour >= 22.0 || hour < 6.0;
@@ -122,9 +134,40 @@ double ComputeTrackWetness(double raceTimeSeconds,
 }
 
 void TickRace(RaceSession &session, double deltaTime) {
+  const WeatherPhase prevPhase = session.weather.phase;
+  const double prevForecast = session.weather.forecastRainInSeconds;
+
   session.elapsedRaceTime += deltaTime;
-  session.trackWetness =
-      ComputeTrackWetness(session.elapsedRaceTime, session.targetDurationSeconds);
+
+  TickWeatherState(session.weather, session.weatherProfile,
+                   session.elapsedRaceTime, deltaTime, session.rng);
+  session.trackWetness = session.weather.trackWetness;
+
+  if (prevForecast < 0.0 && session.weather.forecastRainInSeconds > 0.0) {
+    const int mins = static_cast<int>(
+        std::ceil(session.weather.forecastRainInSeconds / 60.0));
+    EmitWeatherEvent(session.elapsedRaceTime,
+                     "Weather: rain forecast in " + std::to_string(mins) +
+                         " min");
+  }
+
+  const bool wasRaining =
+      prevPhase == WeatherPhase::LightRain ||
+      prevPhase == WeatherPhase::HeavyRain;
+  const bool isRaining =
+      session.weather.phase == WeatherPhase::LightRain ||
+      session.weather.phase == WeatherPhase::HeavyRain;
+  if (!wasRaining && isRaining) {
+    EmitWeatherEvent(
+        session.elapsedRaceTime,
+        session.weather.phase == WeatherPhase::HeavyRain
+            ? "Weather: heavy rain on track"
+            : "Weather: light rain begins");
+  } else if (wasRaining && !isRaining &&
+             session.weather.phase == WeatherPhase::Drying) {
+    EmitWeatherEvent(session.elapsedRaceTime, "Weather: track drying");
+  }
+
   const bool night = IsNightSession(session.elapsedRaceTime);
 
   UpdateFullCourseYellow(session);

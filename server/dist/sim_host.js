@@ -42,6 +42,7 @@ const track_loader_1 = require("./game/track_loader");
 const catalog_1 = require("./game/catalog");
 const config_parser_1 = require("./config_parser");
 const ai_strategy_1 = require("./game/ai_strategy");
+const ai_stint_guide_1 = require("./llm/ai_stint_guide");
 const mock_session_1 = require("./mock_session");
 const DEFAULT_RACE_CONFIG = "configs/race_config_web.txt";
 function resolveRepoRoot(explicit) {
@@ -79,6 +80,7 @@ class SimHost {
         this.runtimePlayerEntryId = "entry-1";
         this.activeRoundNumber = 0;
         this.aiStrategy = new ai_strategy_1.AiStrategyManager();
+        this.aiStintGuide = new ai_stint_guide_1.AiStintGuide();
         this.repoRoot = resolveRepoRoot(options.repoRoot);
         this.meta = new meta_state_1.MetaStateManager(this.repoRoot);
         const rel = options.raceConfigPath ?? DEFAULT_RACE_CONFIG;
@@ -105,6 +107,7 @@ class SimHost {
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
         this.aiStrategy.reset();
+        this.aiStintGuide.reset();
         return true;
     }
     refreshEntriesFromConfig() {
@@ -131,6 +134,7 @@ class SimHost {
             carNumberByEntryId: Object.fromEntries(this.entries.map((entry) => [entry.entryId, entry.carNumber])),
             playerEntryId: this.runtimePlayerEntryId,
             paused: this.paused,
+            weatherContext: this.sessionExtra.weatherContext,
         };
     }
     /** Meta/season lives entirely in server TS — sim only receives staff for pit modifiers. */
@@ -149,6 +153,7 @@ class SimHost {
             targetDurationSeconds: built.targetDurationSeconds,
             raceFormat: built.raceFormat,
             roundNumber: built.roundNumber,
+            weatherContext: built.weatherContext,
         };
         this.trackName = built.trackName;
         if (!this.initSimFromCurrentConfig()) {
@@ -164,6 +169,7 @@ class SimHost {
         this.activeRoundNumber = built.roundNumber;
         this.meta.clearLastCompletedRound();
         this.aiStrategy.reset();
+        this.aiStintGuide.reset();
         this.paused = true;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -244,6 +250,7 @@ class SimHost {
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
         this.aiStrategy.reset();
+        this.aiStintGuide.reset();
         this.paused = true;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -258,6 +265,9 @@ class SimHost {
     }
     getSnapshots() {
         return this.enrichSnapshots(this.session.getSnapshots());
+    }
+    getRaceControl() {
+        return this.session.getRaceControl?.();
     }
     getTrackGeometry() {
         const raw = this.session.getTrackGeometry();
@@ -307,6 +317,7 @@ class SimHost {
             return false;
         this.raceTime = 0;
         this.aiStrategy.reset();
+        this.aiStintGuide.reset();
         this.paused = false;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -327,6 +338,7 @@ class SimHost {
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
         this.aiStrategy.reset();
+        this.aiStintGuide.reset();
         this.paused = true;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -364,10 +376,16 @@ class SimHost {
         if (!this.session.submitCommand)
             return;
         const snapshots = this.session.getSnapshots();
-        this.aiStrategy.tick(snapshots, this.runtimePlayerEntryId, {
+        const ctx = {
             raceTime: this.getRaceTime(),
             targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
-        }, (entryId, command) => this.session.submitCommand(entryId, command));
+        };
+        this.aiStintGuide.observe(snapshots, this.runtimePlayerEntryId, {
+            trackName: this.trackName,
+            targetDurationSeconds: ctx.targetDurationSeconds,
+            raceTimeSec: ctx.raceTime,
+        });
+        this.aiStrategy.tick(snapshots, this.runtimePlayerEntryId, ctx, (entryId, command) => this.session.submitCommand(entryId, command), (entryId) => this.aiStintGuide.getPlan(entryId));
     }
     step() {
         if (this.paused || this.timeScale === 0)

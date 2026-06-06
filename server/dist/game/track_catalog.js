@@ -83,6 +83,7 @@ exports.WEC_2026_CALENDAR = [
         format: "test",
         eventType: "test",
         eventName: "Official Test — Paul Ricard",
+        month: 3,
     },
     {
         round: 1,
@@ -90,6 +91,7 @@ exports.WEC_2026_CALENDAR = [
         format: "6h",
         eventType: "race",
         eventName: "6 Hours of Imola",
+        month: 4,
     },
     {
         round: 2,
@@ -97,6 +99,7 @@ exports.WEC_2026_CALENDAR = [
         format: "6h",
         eventType: "race",
         eventName: "6 Hours of Spa-Francorchamps",
+        month: 5,
     },
     {
         round: 3,
@@ -104,6 +107,7 @@ exports.WEC_2026_CALENDAR = [
         format: "24h",
         eventType: "race",
         eventName: "24 Hours of Le Mans",
+        month: 6,
     },
     {
         round: 4,
@@ -111,6 +115,7 @@ exports.WEC_2026_CALENDAR = [
         format: "6h",
         eventType: "race",
         eventName: "6 Hours of São Paulo",
+        month: 7,
     },
     {
         round: 5,
@@ -118,6 +123,7 @@ exports.WEC_2026_CALENDAR = [
         format: "6h",
         eventType: "race",
         eventName: "Lone Star Le Mans",
+        month: 9,
     },
     {
         round: 6,
@@ -125,6 +131,7 @@ exports.WEC_2026_CALENDAR = [
         format: "6h",
         eventType: "race",
         eventName: "6 Hours of Fuji",
+        month: 9,
     },
     {
         round: 7,
@@ -132,6 +139,7 @@ exports.WEC_2026_CALENDAR = [
         format: "1812km",
         eventType: "race",
         eventName: "Qatar 1812 km",
+        month: 10,
     },
     {
         round: 8,
@@ -139,6 +147,7 @@ exports.WEC_2026_CALENDAR = [
         format: "8h",
         eventType: "race",
         eventName: "8 Hours of Bahrain",
+        month: 11,
     },
 ];
 function trackJsonPath(trackId) {
@@ -180,6 +189,7 @@ function defaultWecCalendarPayload() {
         format: e.format,
         eventType: e.eventType,
         eventName: e.eventName,
+        month: e.month,
         completed: false,
         championshipPoints: 0,
     }));

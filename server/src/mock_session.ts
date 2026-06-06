@@ -7,9 +7,18 @@ import * as path from "path";
 import type {
   CarSnapshot,
   LapTimingSnapshot,
+  RaceControlPayload,
   SimEvent,
   TrackGeometryPayload,
 } from "./ws_protocol";
+import {
+  buildWeatherForecast,
+  initWeatherState,
+  tickWeatherState,
+  weatherProfileForId,
+  type WeatherProfile,
+  type WeatherState,
+} from "./weather_model";
 import { parseCarNumber } from "./config_parser";
 
 interface Vec3 {
@@ -26,6 +35,15 @@ interface RaceConfig {
   entriesPath: string;
   classRulesPath: string;
   staffConfigPath: string;
+  weatherProfile: string;
+  rngSeed: number;
+  ambientTempC: number;
+  weatherResolved: boolean;
+  weatherTrackId: string;
+  weatherMonth: number;
+  weatherLabel: string;
+  weatherBiome: string;
+  resolvedProfile: WeatherProfile;
 }
 
 interface TrackMapLabel {
@@ -416,6 +434,15 @@ function parseRaceConfig(repoRoot: string, configPath: string): RaceConfig {
     entriesPath: "",
     classRulesPath: "configs/class_rules.txt",
     staffConfigPath: "",
+    weatherProfile: "changeable",
+    rngSeed: 20260306,
+    ambientTempC: 0,
+    weatherResolved: false,
+    weatherTrackId: "",
+    weatherMonth: 6,
+    weatherLabel: "",
+    weatherBiome: "",
+    resolvedProfile: weatherProfileForId("changeable"),
   };
   for (const line of fs.readFileSync(abs, "utf8").split("\n")) {
     const trimmed = line.trim();
@@ -434,6 +461,32 @@ function parseRaceConfig(repoRoot: string, configPath: string): RaceConfig {
     else if (key === "entries") config.entriesPath = val;
     else if (key === "class_rules") config.classRulesPath = val;
     else if (key === "staff_config") config.staffConfigPath = val;
+    else if (key === "weather_profile") config.weatherProfile = val;
+    else if (key === "rng_seed") config.rngSeed = parseInt(val, 10) || 20260306;
+    else if (key === "ambient_temp_c") config.ambientTempC = parseFloat(val);
+    else if (key === "weather_resolved")
+      config.weatherResolved = val === "1" || val.toLowerCase() === "true";
+    else if (key === "weather_track_id") config.weatherTrackId = val;
+    else if (key === "weather_month") config.weatherMonth = parseInt(val, 10) || 6;
+    else if (key === "weather_biome") config.weatherBiome = val;
+    else if (key === "weather_label") config.weatherLabel = val;
+    else if (key === "weather_base_temp_c")
+      config.resolvedProfile.baseTempC = parseFloat(val);
+    else if (key === "weather_temp_drift")
+      config.resolvedProfile.tempDriftPerHour = parseFloat(val);
+    else if (key === "weather_base_wetness")
+      config.resolvedProfile.baseWetness = parseFloat(val);
+    else if (key === "weather_rain_chance")
+      config.resolvedProfile.rainChancePerHour = parseFloat(val);
+    else if (key === "weather_max_rain")
+      config.resolvedProfile.maxRainIntensity = parseFloat(val);
+    else if (key === "weather_wet_rate")
+      config.resolvedProfile.wetRatePerSecond = parseFloat(val);
+    else if (key === "weather_dry_rate")
+      config.resolvedProfile.dryRatePerSecond = parseFloat(val);
+  }
+  if (!config.weatherResolved) {
+    config.resolvedProfile = weatherProfileForId(config.weatherProfile);
   }
   return config;
 }
@@ -475,9 +528,82 @@ export class MockSimSession {
   private pendingEvents: SimEvent[] = [];
   private raceComplete = false;
   private pendingCommands: Array<{ entryId: string; command: string }> = [];
+  private weatherProfileId = "changeable";
+  private weatherProfileData: WeatherProfile = weatherProfileForId("changeable");
+  private weatherLabel = "";
+  private weatherBiome = "";
+  private weather: WeatherState = initWeatherState("changeable", 0, 0);
+  private rngSeed = 20260306;
+  private rngState = 20260306;
 
   constructor(repoRoot: string) {
     this.repoRoot = repoRoot;
+  }
+
+  private random(): number {
+    this.rngState += 0x6d2b79f5;
+    let t = this.rngState;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  private resetWeather(): void {
+    const cfg = this.raceConfig;
+    this.weatherProfileId = cfg?.weatherResolved && cfg.weatherTrackId
+      ? `${cfg.weatherTrackId}:${cfg.weatherMonth}`
+      : cfg?.weatherProfile ?? "changeable";
+    this.weatherProfileData = cfg?.resolvedProfile ?? weatherProfileForId("changeable");
+    this.weatherLabel = cfg?.weatherLabel ?? "";
+    this.weatherBiome = cfg?.weatherBiome ?? "";
+    this.rngSeed = cfg?.rngSeed ?? 20260306;
+    this.rngState = this.rngSeed;
+    const ambient = cfg?.ambientTempC ?? 0;
+    this.weather = initWeatherState(this.weatherProfileId, 0, ambient);
+    if (cfg?.weatherResolved) {
+      const p = this.weatherProfileData;
+      this.weather.profileId = this.weatherProfileId;
+      this.weather.ambientTempC = ambient > 0 ? ambient : p.baseTempC;
+      this.weather.trackWetness = p.baseWetness;
+      this.weather.rainIntensity = this.weather.trackWetness * p.maxRainIntensity;
+    }
+  }
+
+  private tickWeather(deltaTime: number): void {
+    const profile = this.weatherProfileData;
+    const result = tickWeatherState(
+      this.weather,
+      profile,
+      this.raceTime,
+      deltaTime,
+      () => this.random(),
+    );
+
+    if (result.forecastScheduled) {
+      const mins = Math.ceil(this.weather.forecastRainInSeconds / 60);
+      this.pendingEvents.push({
+        type: "Blocked",
+        timestamp: this.raceTime,
+        message: `Weather: rain forecast in ${mins} min`,
+      });
+    }
+
+    if (result.rainStarted) {
+      this.pendingEvents.push({
+        type: "Blocked",
+        timestamp: this.raceTime,
+        message:
+          this.weather.phase === "HeavyRain"
+            ? "Weather: heavy rain on track"
+            : "Weather: light rain begins",
+      });
+    } else if (result.dryingStarted) {
+      this.pendingEvents.push({
+        type: "Blocked",
+        timestamp: this.raceTime,
+        message: "Weather: track drying",
+      });
+    }
   }
 
   initFromRaceConfig(configPath: string): boolean {
@@ -501,6 +627,7 @@ export class MockSimSession {
       this.pendingEvents = [];
       this.pendingCommands = [];
       this.raceComplete = false;
+      this.resetWeather();
       return true;
     } catch {
       return false;
@@ -571,6 +698,7 @@ export class MockSimSession {
     if (this.raceComplete || !this.raceConfig || !this.trackJson) return;
     this.applyPendingCommands();
     this.raceTime += deltaTime;
+    this.tickWeather(deltaTime);
     for (const car of this.cars) {
       if (car.retired) continue;
 
@@ -881,7 +1009,26 @@ export class MockSimSession {
     this.raceTime = 0;
     this.pendingEvents = [];
     this.raceComplete = false;
+    this.resetWeather();
     return true;
+  }
+
+  getRaceControl(): RaceControlPayload {
+    const profile = this.weatherProfileData;
+    const forecast = buildWeatherForecast(this.weather, profile, this.raceTime);
+    return {
+      fcyActive: false,
+      scActive: false,
+      trackWetness: this.weather.trackWetness,
+      ambientTempC: this.weather.ambientTempC,
+      trackGripEvolution: this.weather.trackGripEvolution,
+      rainIntensity: this.weather.rainIntensity,
+      weatherPhase: this.weather.phase,
+      forecastRainInSeconds: this.weather.forecastRainInSeconds,
+      forecast,
+      weatherLabel: this.weatherLabel || undefined,
+      weatherBiome: this.weatherBiome || undefined,
+    };
   }
 
   isRaceComplete(): boolean {

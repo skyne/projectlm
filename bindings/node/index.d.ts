@@ -159,6 +159,28 @@ export interface MetaStatePayload {
   calendar: CalendarEventPayload[];
 }
 
+export interface WeatherForecastStepPayload {
+  offsetMinutes: number;
+  phase: string;
+  trackWetness: number;
+  rainIntensity: number;
+  ambientTempC: number;
+}
+
+export interface RaceControlPayload {
+  fcyActive: boolean;
+  scActive: boolean;
+  trackWetness: number;
+  ambientTempC: number;
+  trackGripEvolution: number;
+  rainIntensity: number;
+  weatherPhase: string;
+  forecastRainInSeconds: number;
+  forecast: WeatherForecastStepPayload[];
+  weatherLabel?: string;
+  weatherBiome?: string;
+}
+
 export interface SimSession {
   initFromRaceConfig(path: string): boolean;
   reloadDefinitions(): boolean;
@@ -169,6 +191,7 @@ export interface SimSession {
   getTrackGeometry(): TrackGeometry;
   isRaceComplete(): boolean;
   getRaceTime(): number;
+  getRaceControl(): RaceControlPayload;
   submitCommand(entryId: string, command: string): boolean;
 }
 

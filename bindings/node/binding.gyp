@@ -11,6 +11,7 @@
         "../../src/core/track.cpp",
         "../../src/core/track_sampler.cpp",
         "../../src/core/telemetry.cpp",
+        "../../src/core/weather.cpp",
         "../../src/sim/car_entity.cpp",
         "../../src/sim/race.cpp",
         "../../src/sim/sim_bridge.cpp",

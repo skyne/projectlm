@@ -4,6 +4,7 @@
 #include "config_loader.hpp"
 #include "part_compatibility.hpp"
 #include "race_config.hpp"
+#include "weather.hpp"
 #include <algorithm>
 #include <unordered_map>
 
@@ -80,6 +81,7 @@ bool SimBridge::initFromRaceConfig(const std::string &raceConfigPath) {
 
   loadTeamConfig(config.staffConfigPath);
   session.staff = teamConfig_.staffModifiers();
+  initWeatherOnSession(session, config);
   return initSession(session);
 }
 
@@ -109,6 +111,7 @@ bool SimBridge::restartRace() {
   session_.fcyActive = false;
   session_.fcyEndTime = 0.0;
   session_.nextFcyScheduleTime = 0.0;
+  resetWeatherState();
   for (Car &car : session_.cars)
     car.resetForRestart();
 
@@ -233,3 +236,78 @@ TrackGeometry SimBridge::getTrackGeometry() const {
 }
 
 bool SimBridge::isRaceComplete() const { return IsRaceComplete(session_); }
+
+namespace {
+
+WeatherProfile WeatherProfileFromConfig(const RaceConfig &config) {
+  if (!config.weatherResolved)
+    return WeatherProfileForId(config.weatherProfile);
+
+  WeatherProfile profile;
+  profile.baseTempC = config.wxBaseTempC;
+  profile.tempDriftPerHour = config.wxTempDriftPerHour;
+  profile.baseWetness = config.wxBaseWetness;
+  profile.rainChancePerHour = config.wxRainChancePerHour;
+  profile.maxRainIntensity = config.wxMaxRainIntensity;
+  profile.wetRatePerSecond = config.wxWetRatePerSecond;
+  profile.dryRatePerSecond = config.wxDryRatePerSecond;
+  return profile;
+}
+
+std::string WeatherProfileIdFromConfig(const RaceConfig &config) {
+  if (config.weatherResolved && !config.weatherTrackId.empty())
+    return config.weatherTrackId + ":" + std::to_string(config.weatherMonth);
+  return config.weatherProfile;
+}
+
+} // namespace
+
+void SimBridge::initWeatherOnSession(RaceSession &session,
+                                     const RaceConfig &config) {
+  weatherProfileId_ = WeatherProfileIdFromConfig(config);
+  weatherProfile_ = WeatherProfileFromConfig(config);
+  weatherLabel_ = config.weatherLabel;
+  weatherBiome_ = config.weatherBiome;
+  initialTrackWetness_ = config.trackWetness;
+  initialAmbientTempC_ = config.ambientTempC;
+  rngSeed_ = config.rngSeed;
+
+  session.weatherProfileId = weatherProfileId_;
+  session.weatherProfile = weatherProfile_;
+  session.rng = std::mt19937(rngSeed_);
+  InitWeatherStateFromProfile(session.weather, weatherProfile_, weatherProfileId_,
+                              initialTrackWetness_, initialAmbientTempC_);
+  session.trackWetness = session.weather.trackWetness;
+}
+
+void SimBridge::resetWeatherState() {
+  session_.weatherProfileId = weatherProfileId_;
+  session_.weatherProfile = weatherProfile_;
+  session_.rng = std::mt19937(rngSeed_);
+  InitWeatherStateFromProfile(session_.weather, weatherProfile_, weatherProfileId_,
+                              initialTrackWetness_, initialAmbientTempC_);
+  session_.trackWetness = session_.weather.trackWetness;
+}
+
+RaceControlState SimBridge::getRaceControl() const {
+  RaceControlState state;
+  state.fcyActive = session_.fcyActive;
+  state.trackWetness = session_.weather.trackWetness;
+  state.ambientTempC = session_.weather.ambientTempC;
+  state.trackGripEvolution = session_.weather.trackGripEvolution;
+  state.rainIntensity = session_.weather.rainIntensity;
+  state.weatherPhase = WeatherPhaseName(session_.weather.phase);
+  state.forecastRainInSeconds = session_.weather.forecastRainInSeconds;
+  state.weatherLabel = weatherLabel_;
+  state.weatherBiome = weatherBiome_;
+
+  const std::vector<WeatherForecastStep> built = BuildWeatherForecast(
+      session_.weather, session_.weatherProfile, session_.elapsedRaceTime);
+  state.forecast.reserve(built.size());
+  for (const WeatherForecastStep &step : built) {
+    state.forecast.push_back(
+        {step.offsetMinutes, WeatherPhaseName(step.phase), step.trackWetness,
+         step.rainIntensity, step.ambientTempC});
+  }
+  return state;
+}

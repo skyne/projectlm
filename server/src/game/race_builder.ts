@@ -11,7 +11,9 @@ import {
   formatToDurationSeconds,
   trackDisplayName,
   trackJsonPath,
+  WEC_2026_CALENDAR,
 } from "./track_catalog";
+import { formatWeatherConfigLines, monthName, resolveTrackWeather } from "./track_climate";
 
 export interface BuiltRace {
   raceConfigPath: string;
@@ -26,6 +28,14 @@ export interface BuiltRace {
   roundNumber: number;
   entries: GeneratedEntry[];
   playerEntryId: string;
+  weatherContext: {
+    trackId: string;
+    month: number;
+    monthName: string;
+    biome: string;
+    label: string;
+    rainWeight: number;
+  };
 }
 
 function writeStaffConfig(
@@ -119,6 +129,12 @@ export function buildRaceForRound(
     playerEntries: playerDriverEntries,
   });
 
+  const calendarEvent =
+    WEC_2026_CALENDAR.find((e) => e.round === round.round) ?? null;
+  const raceMonth = round.month ?? calendarEvent?.month ?? 6;
+  const rngSeed = meta.seasonYear * 1000 + round.round;
+  const resolvedWeather = resolveTrackWeather(round.trackId, raceMonth, rngSeed);
+
   const raceConfigPath = "configs/runtime/race.txt";
   const absRace = path.join(repoRoot, raceConfigPath);
   fs.mkdirSync(path.dirname(absRace), { recursive: true });
@@ -137,6 +153,7 @@ export function buildRaceForRound(
     `class_rules=${regulation.classRulesPath}`,
     `staff_config=${staffConfigPath}`,
     `driver_config=${driverConfigPath}`,
+    ...formatWeatherConfigLines(resolvedWeather, rngSeed),
   ].filter(Boolean);
 
   fs.writeFileSync(absRace, lines.join("\n") + "\n");
@@ -154,5 +171,13 @@ export function buildRaceForRound(
     roundNumber: round.round,
     entries,
     playerEntryId: resolvedPlayerEntryId,
+    weatherContext: {
+      trackId: round.trackId,
+      month: raceMonth,
+      monthName: monthName(raceMonth),
+      biome: resolvedWeather.biome,
+      label: resolvedWeather.label,
+      rainWeight: resolvedWeather.rainWeight,
+    },
   };
 }

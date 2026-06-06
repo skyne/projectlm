@@ -15,11 +15,13 @@ import { EngineerPanel } from "./components/EngineerPanel";
 import { TelemetryPanel } from "./components/TelemetryPanel";
 import { PitStopModal } from "./components/PitStopModal";
 import { DriverCenter } from "./components/DriverCenter";
+import { WeatherRadar } from "./components/WeatherRadar";
+import { WeatherForecastPanel } from "./components/WeatherForecastPanel";
 import { ViewerClient } from "./ws/client";
 import { enrichSnapshots, setEntryNumbersFromSession } from "./entryNumbers";
 import { resolveRetireReason } from "./utils/retireReason";
 import { setTrackLapLengthMeters } from "./utils/pitCommands";
-import type { CarSnapshot, GameCatalogPayload, MetaStatePayload, SessionInitPayload, SimEvent } from "./ws/protocol";
+import type { CarSnapshot, GameCatalogPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent } from "./ws/protocol";
 
 const statusEl = document.getElementById("status")!;
 const seasonPanel = document.getElementById("race-hub-container")!;
@@ -44,6 +46,10 @@ const compactLeaderboard = new CompactLeaderboard(
   document.getElementById("compact-leaderboard-container")!,
 );
 const eventLog = new EventLog(document.getElementById("event-log-container")!);
+const weatherRadar = new WeatherRadar(document.getElementById("weather-radar-container")!);
+const weatherForecast = new WeatherForecastPanel(
+  document.getElementById("weather-forecast-container")!,
+);
 
 let playerEntryId = "entry-1";
 let raceStarted = false;
@@ -333,7 +339,16 @@ function restartRaceSession(): void {
   setMainView("map");
 }
 
-function updateFromTick(snapshots: CarSnapshot[], raceTime: number): void {
+function updateWeather(rc: RaceControlPayload | undefined, raceTime: number): void {
+  weatherRadar.update(rc, raceTime);
+  weatherForecast.update(rc);
+}
+
+function updateFromTick(
+  snapshots: CarSnapshot[],
+  raceTime: number,
+  raceControl?: RaceControlPayload,
+): void {
   const normalized = normalizeSnapshots(snapshots);
   track.updateCars(normalized);
   telemetryTrack.updateCars(normalized);
@@ -341,6 +356,7 @@ function updateFromTick(snapshots: CarSnapshot[], raceTime: number): void {
   timetable.update(normalized);
   telemetryPanel.update(normalized);
   playback.setRaceTime(raceTime);
+  updateWeather(raceControl, raceTime);
   const playerSnap = normalized.find((s) => s.entryId === playerEntryId) ?? null;
   raceControls.updateSnapshot(playerSnap);
   updateLapCounter(playerSnap);
@@ -411,7 +427,7 @@ const client = new ViewerClient({
   },
   onTick: (payload) => {
     if (!raceStarted) return;
-    updateFromTick(payload.snapshots, payload.raceTime);
+    updateFromTick(payload.snapshots, payload.raceTime, payload.raceControl);
   },
   onEvents: (payload) => {
     if (!raceStarted) return;

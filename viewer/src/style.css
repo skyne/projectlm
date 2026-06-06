@@ -5618,3 +5618,113 @@ body {
 .buy-quantity-field {
   margin: 0.75rem 0 0.35rem;
 }
+
+.weather-radar,
+.weather-forecast {
+  margin-bottom: 0.75rem;
+}
+
+.radar-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 0.5rem 0;
+}
+
+.radar-caption {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.forecast-climate {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+  line-height: 1.35;
+}
+
+.forecast-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.forecast-row {
+  display: grid;
+  grid-template-columns: 2.5rem 5.5rem 1fr auto;
+  gap: 0.35rem;
+  align-items: center;
+  font-size: 0.72rem;
+}
+
+.forecast-time {
+  color: var(--text-muted);
+}
+
+.forecast-phase {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #0b0f14;
+}
+
+.forecast-bar-wrap {
+  position: relative;
+  height: 0.45rem;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.forecast-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 3px;
+}
+
+.forecast-bar-wet {
+  background: rgba(96, 165, 250, 0.55);
+  z-index: 1;
+}
+
+.forecast-bar-rain {
+  background: rgba(59, 130, 246, 0.85);
+  z-index: 2;
+  mix-blend-mode: screen;
+}
+
+.forecast-meta {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.forecast-legend {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.legend-wet::before,
+.legend-rain::before {
+  content: "";
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.45rem;
+  margin-right: 0.25rem;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+.legend-wet::before {
+  background: rgba(96, 165, 250, 0.55);
+}
+
+.legend-rain::before {
+  background: rgba(59, 130, 246, 0.85);
+}

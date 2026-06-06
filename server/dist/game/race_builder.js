@@ -43,6 +43,7 @@ const car_marketplace_1 = require("./car_marketplace");
 const fleet_1 = require("./fleet");
 const driver_catalog_1 = require("./driver_catalog");
 const track_catalog_1 = require("./track_catalog");
+const track_climate_1 = require("./track_climate");
 function writeStaffConfig(repoRoot, relPath, meta) {
     const abs = path.join(repoRoot, relPath);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -103,6 +104,10 @@ function buildRaceForRound(repoRoot, meta) {
     const driverConfigPath = (0, driver_catalog_1.exportRuntimeDrivers)(repoRoot, {
         playerEntries: playerDriverEntries,
     });
+    const calendarEvent = track_catalog_1.WEC_2026_CALENDAR.find((e) => e.round === round.round) ?? null;
+    const raceMonth = round.month ?? calendarEvent?.month ?? 6;
+    const rngSeed = meta.seasonYear * 1000 + round.round;
+    const resolvedWeather = (0, track_climate_1.resolveTrackWeather)(round.trackId, raceMonth, rngSeed);
     const raceConfigPath = "configs/runtime/race.txt";
     const absRace = path.join(repoRoot, raceConfigPath);
     fs.mkdirSync(path.dirname(absRace), { recursive: true });
@@ -120,6 +125,7 @@ function buildRaceForRound(repoRoot, meta) {
         `class_rules=${regulation.classRulesPath}`,
         `staff_config=${staffConfigPath}`,
         `driver_config=${driverConfigPath}`,
+        ...(0, track_climate_1.formatWeatherConfigLines)(resolvedWeather, rngSeed),
     ].filter(Boolean);
     fs.writeFileSync(absRace, lines.join("\n") + "\n");
     return {
@@ -135,5 +141,13 @@ function buildRaceForRound(repoRoot, meta) {
         roundNumber: round.round,
         entries,
         playerEntryId: resolvedPlayerEntryId,
+        weatherContext: {
+            trackId: round.trackId,
+            month: raceMonth,
+            monthName: (0, track_climate_1.monthName)(raceMonth),
+            biome: resolvedWeather.biome,
+            label: resolvedWeather.label,
+            rainWeight: resolvedWeather.rainWeight,
+        },
     };
 }

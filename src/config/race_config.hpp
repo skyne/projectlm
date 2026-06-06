@@ -16,6 +16,24 @@ struct RaceConfig {
   std::string classRulesPath = "configs/class_rules.txt";
   std::string staffConfigPath;
   std::string driverConfigPath = "configs/drivers/lemans2026_drivers.txt";
+  std::string weatherProfile = "changeable";
+  double trackWetness = 0.0;
+  double ambientTempC = 0.0;
+  unsigned int rngSeed = 20260306;
+
+  bool weatherResolved = false;
+  std::string weatherTrackId;
+  int weatherMonth = 6;
+  std::string weatherBiome;
+  std::string weatherLabel;
+  double weatherRainWeight = 0.0;
+  double wxBaseTempC = 21.0;
+  double wxTempDriftPerHour = -1.2;
+  double wxBaseWetness = 0.05;
+  double wxRainChancePerHour = 0.45;
+  double wxMaxRainIntensity = 0.85;
+  double wxWetRatePerSecond = 0.0015;
+  double wxDryRatePerSecond = 0.00008;
 };
 
 bool LoadRaceConfig(const std::string &filename, RaceConfig &config);

@@ -4,6 +4,8 @@
 #include "car_entity.hpp"
 #include "pit_stop.hpp"
 #include "track.hpp"
+#include "weather.hpp"
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -18,6 +20,10 @@ struct RaceSession {
   StaffModifiers staff;
   double trackWidthM = 12.0;
   double trackWetness = 0.0;
+  WeatherState weather;
+  WeatherProfile weatherProfile;
+  std::string weatherProfileId = "changeable";
+  std::mt19937 rng{20260306};
   std::unordered_map<std::string, double> trafficEventCooldowns;
   bool fcyActive = false;
   double fcyEndTime = 0.0;

@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const ws_1 = require("ws");
 const economy_1 = require("./game/economy");
+const engineer_service_1 = require("./llm/engineer_service");
+const garage_engineer_service_1 = require("./llm/garage_engineer_service");
 const sim_host_1 = require("./sim_host");
 const ws_protocol_1 = require("./ws_protocol");
 const PORT = Number(process.env.PORT ?? 8765);
@@ -15,6 +17,8 @@ function broadcast(clients, data) {
 }
 function main() {
     const host = new sim_host_1.SimHost();
+    const engineer = new engineer_service_1.EngineerService();
+    const garageEngineer = new garage_engineer_service_1.GarageEngineerService();
     const wss = new ws_1.WebSocketServer({ port: PORT });
     const clients = new Set();
     let trackSent = false;
@@ -26,6 +30,9 @@ function main() {
         ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("session_init", sessionInit)));
         ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("meta_state", host.getMetaState())));
         ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("game_catalog", host.getGameCatalog())));
+        void engineer.getStatus().then((status) => {
+            ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("engineer_status", status)));
+        });
         if (!trackSent) {
             const geometry = host.getTrackGeometry();
             broadcast(clients, (0, ws_protocol_1.serverMessage)("track_geometry", geometry));
@@ -35,7 +42,7 @@ function main() {
             const geometry = host.getTrackGeometry();
             ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("track_geometry", geometry)));
         }
-        ws.on("message", (data) => {
+        ws.on("message", async (data) => {
             const raw = data.toString();
             const msg = (0, ws_protocol_1.parseClientMessage)(raw);
             if (!msg) {
@@ -61,6 +68,7 @@ function main() {
                     const payload = {
                         raceTime: host.getRaceTime(),
                         snapshots: host.getSnapshots(),
+                        raceControl: host.getRaceControl(),
                     };
                     broadcast(clients, (0, ws_protocol_1.serverMessage)("tick", payload));
                     console.log("[server] Race restarted");
@@ -79,6 +87,7 @@ function main() {
                     const payload = {
                         raceTime: host.getRaceTime(),
                         snapshots: host.getSnapshots(),
+                        raceControl: host.getRaceControl(),
                     };
                     broadcast(clients, (0, ws_protocol_1.serverMessage)("tick", payload));
                     console.log("[server] Reloaded definitions");
@@ -148,6 +157,7 @@ function main() {
                             const payload = {
                                 raceTime: host.getRaceTime(),
                                 snapshots: host.getSnapshots(),
+                                raceControl: host.getRaceControl(),
                             };
                             broadcast(clients, (0, ws_protocol_1.serverMessage)("tick", payload));
                             console.log("[server] Round started");
@@ -271,6 +281,43 @@ function main() {
                     broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
                 }
             }
+            else if (msg.type === "ask_garage_engineer") {
+                const payload = msg.payload;
+                const meta = host.getMetaState();
+                const advice = await garageEngineer.advise({
+                    repoRoot: host.repoRoot,
+                    classId: String(payload.classId ?? meta.playerClassId ?? "Hypercar"),
+                    build: payload.build,
+                    unlockedParts: meta.unlockedParts ?? [],
+                    compiled: payload.compiled,
+                    trackHint: payload.trackHint,
+                    question: payload.question,
+                });
+                ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("garage_advice", advice)));
+            }
+            else if (msg.type === "get_engineer_status") {
+                const status = await engineer.getStatus();
+                ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("engineer_status", status)));
+            }
+            else if (msg.type === "ask_engineer") {
+                const payload = msg.payload;
+                const entryId = String(payload.entryId ?? "").trim();
+                const snap = host
+                    .getSnapshots()
+                    .find((row) => row.entryId === entryId);
+                if (!snap) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: "Unknown entry for engineer" })));
+                }
+                else {
+                    const advice = await engineer.advise({
+                        snap,
+                        raceTimeSec: host.getRaceTime(),
+                        trackName: host.getSessionInit().trackName,
+                        question: payload.question,
+                    });
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("engineer_advice", advice)));
+                }
+            }
             else if (msg.type === "get_track_preview") {
                 const trackId = String(msg.payload.trackId ?? "").trim();
                 const geometry = host.getTrackPreview(trackId);
@@ -307,7 +354,11 @@ function main() {
         });
     });
     host.start((raceTime, snapshots) => {
-        const payload = { raceTime, snapshots };
+        const payload = {
+            raceTime,
+            snapshots,
+            raceControl: host.getRaceControl(),
+        };
         broadcast(clients, (0, ws_protocol_1.serverMessage)("tick", payload));
     }, (events) => {
         const payload = { events };

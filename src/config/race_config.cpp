@@ -50,6 +50,40 @@ bool LoadRaceConfig(const std::string &filename, RaceConfig &config) {
       config.staffConfigPath = val;
     else if (key == "driver_config")
       config.driverConfigPath = val;
+    else if (key == "weather_profile")
+      config.weatherProfile = val;
+    else if (key == "track_wetness")
+      config.trackWetness = std::stod(val);
+    else if (key == "ambient_temp_c")
+      config.ambientTempC = std::stod(val);
+    else if (key == "rng_seed")
+      config.rngSeed = static_cast<unsigned int>(std::stoul(val));
+    else if (key == "weather_resolved")
+      config.weatherResolved = val == "1" || val == "true";
+    else if (key == "weather_track_id")
+      config.weatherTrackId = val;
+    else if (key == "weather_month")
+      config.weatherMonth = std::stoi(val);
+    else if (key == "weather_biome")
+      config.weatherBiome = val;
+    else if (key == "weather_label")
+      config.weatherLabel = val;
+    else if (key == "weather_rain_weight")
+      config.weatherRainWeight = std::stod(val);
+    else if (key == "weather_base_temp_c")
+      config.wxBaseTempC = std::stod(val);
+    else if (key == "weather_temp_drift")
+      config.wxTempDriftPerHour = std::stod(val);
+    else if (key == "weather_base_wetness")
+      config.wxBaseWetness = std::stod(val);
+    else if (key == "weather_rain_chance")
+      config.wxRainChancePerHour = std::stod(val);
+    else if (key == "weather_max_rain")
+      config.wxMaxRainIntensity = std::stod(val);
+    else if (key == "weather_wet_rate")
+      config.wxWetRatePerSecond = std::stod(val);
+    else if (key == "weather_dry_rate")
+      config.wxDryRatePerSecond = std::stod(val);
   }
   return true;
 }

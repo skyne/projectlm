@@ -309,6 +309,40 @@ Napi::Value GetRaceTime(const Napi::CallbackInfo &info) {
   return Napi::Number::New(env, g_bridge.getRaceTime());
 }
 
+Napi::Object RaceControlToObject(Napi::Env env, const RaceControlState &rc) {
+  Napi::Object obj = Napi::Object::New(env);
+  obj.Set("fcyActive", rc.fcyActive);
+  obj.Set("scActive", rc.scActive);
+  obj.Set("trackWetness", rc.trackWetness);
+  obj.Set("ambientTempC", rc.ambientTempC);
+  obj.Set("trackGripEvolution", rc.trackGripEvolution);
+  obj.Set("rainIntensity", rc.rainIntensity);
+  obj.Set("weatherPhase", rc.weatherPhase);
+  obj.Set("forecastRainInSeconds", rc.forecastRainInSeconds);
+  if (!rc.weatherLabel.empty())
+    obj.Set("weatherLabel", rc.weatherLabel);
+  if (!rc.weatherBiome.empty())
+    obj.Set("weatherBiome", rc.weatherBiome);
+
+  Napi::Array forecast = Napi::Array::New(env, rc.forecast.size());
+  for (size_t i = 0; i < rc.forecast.size(); ++i) {
+    Napi::Object step = Napi::Object::New(env);
+    step.Set("offsetMinutes", rc.forecast[i].offsetMinutes);
+    step.Set("phase", rc.forecast[i].phase);
+    step.Set("trackWetness", rc.forecast[i].trackWetness);
+    step.Set("rainIntensity", rc.forecast[i].rainIntensity);
+    step.Set("ambientTempC", rc.forecast[i].ambientTempC);
+    forecast.Set(static_cast<uint32_t>(i), step);
+  }
+  obj.Set("forecast", forecast);
+  return obj;
+}
+
+Napi::Value GetRaceControl(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  return RaceControlToObject(env, g_bridge.getRaceControl());
+}
+
 Napi::Value GetTeamConfig(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
   return TeamConfigToObject(env);
@@ -327,6 +361,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("restartRace", Napi::Function::New(env, RestartRace));
   exports.Set("submitCommand", Napi::Function::New(env, SubmitCommand));
   exports.Set("getRaceTime", Napi::Function::New(env, GetRaceTime));
+  exports.Set("getRaceControl", Napi::Function::New(env, GetRaceControl));
   exports.Set("getTeamConfig", Napi::Function::New(env, GetTeamConfig));
   return exports;
 }

@@ -15,7 +15,7 @@ import {
 import { AiStrategyManager } from "./game/ai_strategy";
 import { AiStintGuide } from "./llm/ai_stint_guide";
 import { MockSimSession } from "./mock_session";
-import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload } from "./ws_protocol";
+import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceControlPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload } from "./ws_protocol";
 
 export interface SimSessionLike {
   initFromRaceConfig(configPath: string): boolean;
@@ -27,6 +27,7 @@ export interface SimSessionLike {
   getTrackGeometry(): TrackGeometryPayload | { name: string; lapLength: number; points: Array<{ x: number; z: number }>; sectors: Array<{ name: string; startT: number; endT: number }> };
   isRaceComplete(): boolean;
   getRaceTime?(): number;
+  getRaceControl?(): RaceControlPayload;
   submitCommand?(entryId: string, command: string): boolean;
 }
 
@@ -39,6 +40,14 @@ export interface SessionInitExtra {
   targetDurationSeconds: number;
   raceFormat: string;
   roundNumber: number;
+  weatherContext?: {
+    trackId: string;
+    month: number;
+    monthName: string;
+    biome: string;
+    label: string;
+    rainWeight: number;
+  };
 }
 
 const DEFAULT_RACE_CONFIG = "configs/race_config_web.txt";
@@ -166,6 +175,7 @@ export class SimHost {
       ),
       playerEntryId: this.runtimePlayerEntryId,
       paused: this.paused,
+      weatherContext: this.sessionExtra.weatherContext,
     };
   }
 
@@ -187,6 +197,7 @@ export class SimHost {
       targetDurationSeconds: built.targetDurationSeconds,
       raceFormat: built.raceFormat,
       roundNumber: built.roundNumber,
+      weatherContext: built.weatherContext,
     };
     this.trackName = built.trackName;
 
@@ -336,6 +347,10 @@ export class SimHost {
 
   getSnapshots(): CarSnapshot[] {
     return this.enrichSnapshots(this.session.getSnapshots());
+  }
+
+  getRaceControl(): RaceControlPayload | undefined {
+    return this.session.getRaceControl?.();
   }
 
   getTrackGeometry(): TrackGeometryPayload {

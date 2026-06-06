@@ -129,6 +129,15 @@ export interface TrackGeometryPayload {
   mapLabels?: TrackMapLabel[];
 }
 
+export interface WeatherContextPayload {
+  trackId: string;
+  month: number;
+  monthName: string;
+  biome: string;
+  label: string;
+  rainWeight: number;
+}
+
 export interface SessionInitPayload {
   trackName: string;
   targetLaps: number;
@@ -145,6 +154,7 @@ export interface SessionInitPayload {
   carNumberByEntryId: Record<string, string>;
   playerEntryId?: string;
   paused?: boolean;
+  weatherContext?: WeatherContextPayload;
 }
 
 export interface DriverSnapshotPayload {
@@ -224,6 +234,8 @@ export interface CalendarEventPayload {
   format: string;
   eventType?: CalendarEventType;
   eventName?: string;
+  /** Race month 1–12 for weather/climate display */
+  month?: number;
   completed: boolean;
   championshipPoints: number;
   prizeMoney?: number;
@@ -499,9 +511,32 @@ export interface SaveTeamColorsPayload {
   secondary: string;
 }
 
+export interface WeatherForecastStepPayload {
+  offsetMinutes: number;
+  phase: string;
+  trackWetness: number;
+  rainIntensity: number;
+  ambientTempC: number;
+}
+
+export interface RaceControlPayload {
+  fcyActive: boolean;
+  scActive: boolean;
+  trackWetness: number;
+  ambientTempC: number;
+  trackGripEvolution: number;
+  rainIntensity: number;
+  weatherPhase: string;
+  forecastRainInSeconds: number;
+  forecast: WeatherForecastStepPayload[];
+  weatherLabel?: string;
+  weatherBiome?: string;
+}
+
 export interface TickPayload {
   raceTime: number;
   snapshots: CarSnapshot[];
+  raceControl?: RaceControlPayload;
 }
 
 export interface EventsPayload {
