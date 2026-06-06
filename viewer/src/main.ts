@@ -4,6 +4,7 @@ import { EventLog } from "./components/EventLog";
 import { PlaybackControls } from "./components/PlaybackControls";
 import { Timetable } from "./components/Timetable";
 import { HeaderNav, type MainView } from "./components/HeaderNav";
+import { CarPreview } from "./components/CarPreview";
 import { TeamHQ } from "./components/TeamHQ";
 import { RaceHub } from "./components/RaceHub";
 import { SeasonCalendar } from "./components/SeasonCalendar";
@@ -47,6 +48,7 @@ const sidebar = document.querySelector(".sidebar")!;
 const compactLbColumn = document.getElementById("compact-leaderboard-container")!;
 
 const headerNav = new HeaderNav(document.getElementById("header-nav")!);
+const carPreview = new CarPreview(document.getElementById("car-preview-container")!);
 const track = new SvgTrack(document.getElementById("track-container")!);
 const timetable = new Timetable(timetableContainer);
 const telemetryPanel = new TelemetryPanel(telemetryContainer, {

@@ -1,0 +1,57 @@
+# Semantic descriptions tied to sim part_catalog IDs — used in assembly prompts.
+
+chassis:
+  LMDhDallara:
+    label: LMDh Dallara monocoque
+    bare: |
+      Bare LMDh Dallara monocoque shell ONLY: cockpit bubble, sidepods, engine cover, floor,
+      diffuser shape. CRITICAL EXCLUSIONS — do NOT draw: front splitter, nose cone, dive planes,
+      rear wing, rear wing pylons, endplates, wheels, tires, brake discs. Wheel arches must be
+      empty holes. Rear deck must be flat with visible pylon mounting points but no wing installed.
+
+front_aero:
+  LowDragNose:
+    label: low-drag nose
+    part: |
+      ONLY the LowDragNose kit: slim nose cone and small front splitter.
+      Low downforce, Le Mans long-straight optimized. No cockpit, no sidepods, no rear wing.
+  HighDownforceSplitter:
+    label: high-downforce splitter
+    part: |
+      ONLY the HighDownforceSplitter kit: wide front splitter, dive planes, chunky nose.
+      High downforce front axle. No full car body, no rear wing.
+
+rear_aero:
+  StandardWing:
+    label: standard rear wing
+    part: |
+      ONLY the StandardWing: single-plane rear wing with two pylons and endplates.
+      Medium downforce. No car body, no front aero.
+  HighDownforceWing:
+    label: high-downforce rear wing
+    part: |
+      ONLY the HighDownforceWing: tall multi-element rear wing, large endplates, steep angle.
+      Maximum rear downforce. No car body.
+  WinglessGroundEffect:
+    label: wingless rear diffuser
+    part: |
+      ONLY the WinglessGroundEffect rear floor: enlarged diffuser, beam wing, NO main rear wing.
+      Ground-effect package. Mounts low on rear floor. No tall wing pylons.
+
+wheel_package:
+  Hypercar18WideRear:
+    label: hypercar 18-inch wheels
+    part: |
+      ONLY two side-view wheel and tire assemblies (front smaller, rear larger/wider).
+      Racing slicks, 18-inch rims. No car body — just the pair of wheels at correct wheelbase spacing.
+
+hybrid_system:
+  LMDh500kW:
+    label: LMDh hybrid unit
+    part: |
+      ONLY subtle LMDh500kW hybrid details on engine cover: thin orange HV cable stripe and small
+      hybrid badge (palm-sized). Must NOT dominate the image. No large cable coils. No full car body.
+  HypercarHV:
+    label: hypercar HV hybrid
+    part: |
+      ONLY the HypercarHV hybrid cover and orange HV lines on engine cover. No full car.

@@ -1,0 +1,131 @@
+# Chassis = full 21:9 canvas. Bolt-ons = isolated sprites positioned by socket in visual_assembly.json.
+
+assembly_chassis: &assembly_chassis
+  width: 1344
+  height: 576
+  aspect_ratio: "21:9"
+  remove_background: true
+  normalize: fit
+  layer_type: chassis_base
+  z: 10
+
+assembly_sprite: &assembly_sprite
+  width: 512
+  height: 256
+  aspect_ratio: "3:2"
+  remove_background: true
+  normalize: sprite
+  layer_type: sprite
+  compatible_chassis: [LMDhDallara]
+
+assembly:
+  - id: chassis.LMDhDallara.bare
+    category: chassis
+    part_id: LMDhDallara
+    <<: *assembly_chassis
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile on 21:9 canvas, centered ~85% frame width, 4:1 length-to-height, circular wheel arches empty.
+
+  - id: front_aero.LowDragNose
+    category: front_aero
+    part_id: LowDragNose
+    <<: *assembly_sprite
+    slot: front_aero
+    z: 20
+    socket: { x: 0.01, y: 0.58, w: 0.22, h: 0.38 }
+    prompt: |
+      {style}
+      Isolated game sprite of ONLY this part (nothing else in frame):
+      {part_desc}
+      Side view, white background, part fills frame.
+
+  - id: front_aero.HighDownforceSplitter
+    category: front_aero
+    part_id: HighDownforceSplitter
+    <<: *assembly_sprite
+    slot: front_aero
+    z: 20
+    socket: { x: 0.0, y: 0.55, w: 0.24, h: 0.4 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY: {part_desc}
+      Side view, white background.
+
+  - id: rear_aero.StandardWing
+    category: rear_aero
+    part_id: StandardWing
+    <<: *assembly_sprite
+    slot: rear_aero
+    z: 30
+    socket: { x: 0.72, y: 0.08, w: 0.28, h: 0.55 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY: {part_desc}
+      Side view, white background.
+
+  - id: rear_aero.HighDownforceWing
+    category: rear_aero
+    part_id: HighDownforceWing
+    <<: *assembly_sprite
+    slot: rear_aero
+    z: 30
+    socket: { x: 0.7, y: 0.02, w: 0.3, h: 0.62 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY: {part_desc}
+      Side view, white background.
+
+  - id: rear_aero.WinglessGroundEffect
+    category: rear_aero
+    part_id: WinglessGroundEffect
+    <<: *assembly_sprite
+    slot: rear_floor
+    z: 18
+    socket: { x: 0.68, y: 0.62, w: 0.3, h: 0.28 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY: {part_desc}
+      Side view, white background.
+
+  - id: wheel_package.Hypercar18WideRear
+    category: wheel_package
+    part_id: Hypercar18WideRear
+    width: 768
+    height: 256
+    aspect_ratio: "16:9"
+    remove_background: true
+    normalize: sprite
+    layer_type: sprite
+    compatible_chassis: [LMDhDallara]
+    slot: wheel_package
+    z: 12
+    socket: { x: 0.12, y: 0.68, w: 0.76, h: 0.32 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY two racing wheel+tire assemblies in side view (front smaller, rear wider),
+      spaced for LMDh wheelbase. White background. No car body.
+
+  - id: hybrid_system.LMDh500kW
+    category: hybrid_system
+    part_id: LMDh500kW
+    <<: *assembly_sprite
+    slot: hybrid_system
+    z: 15
+    socket: { x: 0.42, y: 0.38, w: 0.16, h: 0.22 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY: {part_desc}
+      Small detail piece, side view, white background.
+
+mvp:
+  - id: track.paul_ricard_dusk
+    category: track_atmospheres
+    part_id: paul_ricard
+    width: 1920
+    height: 1080
+    stretch: true
+    prompt: |
+      Cinematic wide shot of Circuit Paul Ricard at dusk, empty track, moody purple sky,
+      no cars, no text, broadcast photography style, slight film grain.

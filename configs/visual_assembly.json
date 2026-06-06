@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "canvas": {
+    "width": 1344,
+    "height": 576,
+    "aspectRatio": "21:9"
+  },
+  "chassisAliases": {
+    "CarbonMonocoque": "LMDhDallara",
+    "LMDhDallara": "LMDhDallara",
+    "Spaceframe": "LMDhDallara"
+  },
+  "layerOrder": [
+    { "slot": "chassis", "z": 10 },
+    { "slot": "hybrid_system", "z": 15, "skip": ["None"] },
+    { "slot": "wheel_package", "z": 12 },
+    { "slot": "rear_aero", "z": 18, "only": ["WinglessGroundEffect"] },
+    { "slot": "front_aero", "z": 20 },
+    { "slot": "rear_aero", "z": 30, "except": ["WinglessGroundEffect"] }
+  ],
+  "chassis": {
+    "LMDhDallara": {
+      "bareSlots": ["front_aero", "rear_aero", "wheel_package", "hybrid_system"],
+      "groundLineY": 0.86
+    }
+  },
+  "partLabels": {
+    "front_aero": {
+      "LowDragNose": "Low-drag nose",
+      "HighDownforceSplitter": "High-DF splitter"
+    },
+    "rear_aero": {
+      "StandardWing": "Standard wing",
+      "HighDownforceWing": "High-DF wing",
+      "WinglessGroundEffect": "Wingless diffuser"
+    },
+    "wheel_package": {
+      "Hypercar18WideRear": "18\" hypercar wheels"
+    },
+    "hybrid_system": {
+      "LMDh500kW": "LMDh hybrid",
+      "HypercarHV": "Hypercar HV",
+      "None": "No hybrid"
+    }
+  }
+}

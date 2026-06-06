@@ -2447,6 +2447,31 @@ body {
   background: #2a3348;
 }
 
+.car-preview-panel {
+  margin-bottom: 0.75rem;
+}
+
+.car-preview-canvas {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #12151c 0%, #0a0c10 100%);
+}
+
+.car-preview-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.car-preview-parts {
+  margin: 0.5rem 0 0;
+  font-size: 0.72rem;
+  color: #8b95a8;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 900px) {
