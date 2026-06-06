@@ -1,4 +1,5 @@
 import * as path from "path";
+import * as fs from "fs";
 import { normalizeEvent, normalizeTrackGeometry } from "./adapters";
 import {
   loadMapLabels,
@@ -8,7 +9,15 @@ import {
   type ParsedEntry,
 } from "./config_parser";
 import { MockSimSession } from "./mock_session";
-import type { CarSnapshot, SimEvent, TrackGeometryPayload } from "./ws_protocol";
+import { AiStrategyManager } from "./game/ai_strategy";
+import type {
+  CarSnapshot,
+  RaceControlPayload,
+  SessionInitPayload,
+  SimEvent,
+  TrackGeometryPayload,
+  WeekendSessionType,
+} from "./ws_protocol";
 
 export interface SimSessionLike {
   initFromRaceConfig(configPath: string): boolean;
@@ -20,6 +29,19 @@ export interface SimSessionLike {
   getTrackGeometry(): TrackGeometryPayload | { name: string; lapLength: number; points: Array<{ x: number; z: number }>; sectors: Array<{ name: string; startT: number; endT: number }> };
   isRaceComplete(): boolean;
   getRaceTime?(): number;
+  submitCommand?(entryId: string, command: string): boolean;
+  getRaceControl?(): {
+    fcyActive: boolean;
+    scActive: boolean;
+    trackWetness: number;
+    ambientTempC: number;
+    trackGripEvolution: number;
+    rainIntensity?: number;
+    weatherPhase?: string;
+    forecastRainInSeconds?: number;
+  };
+  getReplayLog?(): Array<{ timestamp: number; entryId: string; command: string }>;
+  getRngSeed?(): number;
 }
 
 export interface SimHostOptions {
@@ -51,7 +73,7 @@ function loadSession(repoRoot: string): { session: SimSessionLike; source: strin
 
 export class SimHost {
   readonly repoRoot: string;
-  readonly raceConfigPath: string;
+  raceConfigPath: string;
   readonly session: SimSessionLike;
   readonly bindingSource: string;
 
@@ -59,11 +81,18 @@ export class SimHost {
   private entries: ParsedEntry[];
   private trackName: string;
   private simTimestep: number;
+  private sessionType: WeekendSessionType | "demo" = "demo";
+  private eventName = "";
+  private targetDurationMinutes = 0;
   private raceTime = 0;
   private timeScale = 1;
   private paused = false;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
-  private onTick?: (raceTime: number, snapshots: CarSnapshot[]) => void;
+  private onTick?: (
+    raceTime: number,
+    snapshots: CarSnapshot[],
+    raceControl?: RaceControlPayload,
+  ) => void;
   private onEvents?: (events: SimEvent[]) => void;
   private onRaceComplete?: (
     raceTime: number,
@@ -75,6 +104,8 @@ export class SimHost {
       position: number;
     }>,
   ) => void;
+  private ai = new AiStrategyManager();
+  private playerEntryId = "";
 
   constructor(options: SimHostOptions = {}) {
     this.repoRoot = resolveRepoRoot(options.repoRoot);
@@ -120,12 +151,61 @@ export class SimHost {
     return {
       trackName: this.trackName,
       targetLaps: this.parsedConfig.targetLaps,
+      targetDurationMinutes: this.targetDurationMinutes,
+      sessionType: this.sessionType as SessionInitPayload["sessionType"],
+      eventName: this.eventName,
       simTimestep: this.simTimestep,
       entries: this.entries,
       carNumberByEntryId: Object.fromEntries(
         this.entries.map((entry) => [entry.entryId, entry.carNumber]),
       ),
     };
+  }
+
+  setPlayerEntryId(entryId: string): void {
+    this.playerEntryId = entryId;
+  }
+
+  startRound(
+    raceConfigRelPath: string,
+    options: {
+      sessionType: WeekendSessionType | "demo";
+      eventName: string;
+      targetDurationMinutes: number;
+      startPaused?: boolean;
+    },
+  ): boolean {
+    const abs = path.isAbsolute(raceConfigRelPath)
+      ? raceConfigRelPath
+      : path.join(this.repoRoot, raceConfigRelPath);
+    this.raceConfigPath = abs;
+
+    const prevCwd = process.cwd();
+    process.chdir(this.repoRoot);
+    const configForSim = path.isAbsolute(raceConfigRelPath)
+      ? path.relative(this.repoRoot, abs)
+      : raceConfigRelPath;
+    const ok = this.session.initFromRaceConfig(configForSim);
+    process.chdir(prevCwd);
+
+    if (!ok) return false;
+
+    this.parsedConfig = parseRaceConfig(this.repoRoot, this.raceConfigPath);
+    this.simTimestep = this.parsedConfig.simTimestep;
+    this.trackName = loadTrackName(this.repoRoot, this.parsedConfig.trackConfigPath);
+    this.sessionType = options.sessionType;
+    this.eventName = options.eventName;
+    this.targetDurationMinutes = options.targetDurationMinutes;
+
+    if (this.parsedConfig.entriesPath) {
+      this.entries = parseEntries(this.repoRoot, this.parsedConfig.entriesPath);
+    }
+
+    this.raceTime = 0;
+    this.paused = options.startPaused ?? true;
+    if (this.timeScale === 0) this.timeScale = 1;
+    this.restartTickLoop();
+    return true;
   }
 
   getRaceTime(): number {
@@ -163,7 +243,7 @@ export class SimHost {
   }
 
   start(
-    onTick: (raceTime: number, snapshots: CarSnapshot[]) => void,
+    onTick: (raceTime: number, snapshots: CarSnapshot[], raceControl?: RaceControlPayload) => void,
     onEvents: (events: SimEvent[]) => void,
     onRaceComplete: SimHost["onRaceComplete"],
   ): void {
@@ -252,6 +332,23 @@ export class SimHost {
     });
   }
 
+  getRaceControl(): RaceControlPayload | undefined {
+    return this.session.getRaceControl?.();
+  }
+
+  saveReplayLog(): void {
+    const replay = this.session.getReplayLog?.();
+    if (!replay || replay.length === 0) return;
+    const outPath = path.join(this.repoRoot, "data", "last_replay.json");
+    const payload = {
+      rngSeed: this.session.getRngSeed?.() ?? 0,
+      raceConfigPath: this.configPathForSim(),
+      commands: replay,
+    };
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify(payload, null, 2), "utf8");
+  }
+
   private configPathForSim(): string {
     const rel = path.relative(this.repoRoot, this.raceConfigPath);
     return rel.startsWith("..") ? this.raceConfigPath : rel;
@@ -272,13 +369,36 @@ export class SimHost {
     if (this.paused || this.timeScale === 0) return;
     if (this.session.isRaceComplete()) return;
 
-    const delta = this.simTimestep * this.timeScale;
-    this.session.tick(delta);
-    this.raceTime += delta;
+    const frameDelta = this.simTimestep * this.timeScale;
+    let remaining = frameDelta;
+    while (remaining > 1e-9) {
+      const dt = Math.min(this.simTimestep, remaining);
+      this.session.tick(dt);
+      remaining -= dt;
+    }
+    this.raceTime += frameDelta;
 
     const snapshots = this.enrichSnapshots(this.session.getSnapshots());
     const raceTime = this.session.getRaceTime?.() ?? this.raceTime;
-    this.onTick?.(raceTime, snapshots);
+    const raceControl = this.session.getRaceControl?.();
+
+    if (this.session.submitCommand) {
+      const submit = this.session.submitCommand.bind(this.session);
+      this.ai.setContext({
+        raceTime,
+        targetDurationSeconds: this.targetDurationMinutes * 60,
+        fcyActive: raceControl?.fcyActive,
+        scActive: raceControl?.scActive,
+        trackWetness: raceControl?.trackWetness,
+        weatherPhase: raceControl?.weatherPhase,
+        rainIntensity: raceControl?.rainIntensity,
+      });
+      this.ai.tick(snapshots, this.playerEntryId, (entryId, command) =>
+        submit(entryId, command),
+      );
+    }
+
+    this.onTick?.(raceTime, snapshots, raceControl);
 
     const rawEvents = this.session.drainEvents();
     const events: SimEvent[] = rawEvents.map((e) =>
@@ -290,6 +410,7 @@ export class SimHost {
     if (events.length > 0) {
       this.onEvents?.(events);
       if (events.some((e) => e.type === "RaceComplete")) {
+        this.saveReplayLog();
         this.onRaceComplete?.(
           raceTime,
           snapshots.map((s) => ({

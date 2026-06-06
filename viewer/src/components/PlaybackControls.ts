@@ -1,3 +1,5 @@
+import type { RaceControlPayload } from "../ws/protocol";
+
 export interface PlaybackHandlers {
   onTimeScale: (scale: number) => void;
   onPause: () => void;
@@ -13,6 +15,7 @@ export class PlaybackControls {
   private pauseBtn: HTMLButtonElement;
   private resumeBtn: HTMLButtonElement;
   private raceTimeLabel: HTMLElement;
+  private weatherLine: HTMLElement;
   private paused = false;
 
   constructor(container: HTMLElement, handlers: PlaybackHandlers) {
@@ -21,6 +24,7 @@ export class PlaybackControls {
     this.root.innerHTML = `
       <h2>Playback</h2>
       <div class="race-time">Race time: <span id="race-time">0:00</span></div>
+      <div class="weather-line" id="weather-line">Weather: Dry · 22°C · Track 0%</div>
       <label class="scale-control">
         Time scale
         <input type="range" min="0" max="20" step="0.5" value="1" />
@@ -42,6 +46,7 @@ export class PlaybackControls {
     this.pauseBtn = this.root.querySelector(".btn-pause")!;
     this.resumeBtn = this.root.querySelector(".btn-resume")!;
     this.raceTimeLabel = this.root.querySelector("#race-time")!;
+    this.weatherLine = this.root.querySelector("#weather-line")!;
 
     this.slider.addEventListener("input", () => {
       const scale = parseFloat(this.slider.value);
@@ -78,6 +83,23 @@ export class PlaybackControls {
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
     this.raceTimeLabel.textContent = `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
+  setWeather(rc: RaceControlPayload | undefined): void {
+    if (!rc) {
+      this.weatherLine.textContent = "Weather: —";
+      return;
+    }
+    const phase = rc.weatherPhase ?? (rc.trackWetness > 0.35 ? "Wet" : "Dry");
+    const wetPct = Math.round(rc.trackWetness * 100);
+    const rain = rc.rainIntensity != null ? ` · Rain ${Math.round(rc.rainIntensity * 100)}%` : "";
+    const forecast =
+      rc.forecastRainInSeconds != null && rc.forecastRainInSeconds > 0
+        ? ` · Rain in ${Math.ceil(rc.forecastRainInSeconds / 60)}m`
+        : "";
+    const grip = rc.trackGripEvolution != null ? ` · Grip ${Math.round(rc.trackGripEvolution * 100)}%` : "";
+    this.weatherLine.textContent =
+      `Weather: ${phase} · ${Math.round(rc.ambientTempC)}°C · Track ${wetPct}%${rain}${forecast}${grip}`;
   }
 
   setPaused(paused: boolean): void {

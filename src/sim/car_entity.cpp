@@ -1,7 +1,32 @@
 #include "car_entity.hpp"
 #include "track.hpp"
+#include "traffic.hpp"
+#include "weather.hpp"
 #include <algorithm>
 #include <cmath>
+#include <random>
+
+namespace {
+
+std::string TireCompoundToString(ETireCompound compound) {
+  switch (compound) {
+  case ETireCompound::Soft:
+    return "Soft";
+  case ETireCompound::Hard:
+    return "Hard";
+  default:
+    return "Medium";
+  }
+}
+
+bool IsCorneringHard(const TrackDefinition &track, const SimulationState &state,
+                     const PhysicsConfig &physics) {
+  const double kappa =
+      track.maxCurvatureAhead(state.currentDistance, physics.curvatureLookAheadM);
+  return kappa >= physics.straightCurvatureThreshold && state.currentSpeed > 48.0;
+}
+
+} // namespace
 
 Car::Car(std::string entryId, std::string teamName, RaceClass raceClass,
          CarConfig car, int gridPosition, int carNumber)
@@ -9,6 +34,8 @@ Car::Car(std::string entryId, std::string teamName, RaceClass raceClass,
       carNumber_(carNumber > 0 ? carNumber : gridPosition),
       raceClass_(std::move(raceClass)), config_(std::move(car)),
       gridPosition_(gridPosition) {
+  state_.activeTireCompound = config_.tireChoice;
+  state_.usingWetTyres = false;
   placeOnGrid(gridPosition);
 }
 
@@ -23,7 +50,18 @@ void Car::resetForRestart() {
   retireReason_.clear();
   telemetry_.reset();
   bestLapTime_ = 0.0;
+  driverModeScale_ = 1.0;
+  blueFlagActive_ = false;
+  trackLimitsWarnings_ = 0;
+  state_.activeTireCompound = config_.tireChoice;
+  state_.usingWetTyres = false;
   placeOnGrid(gridPosition_);
+}
+
+void Car::setTireCompound(ETireCompound compound, bool wetTyres) {
+  state_.activeTireCompound = compound;
+  state_.usingWetTyres = wetTyres;
+  state_.tireWear = std::min(state_.tireWear, 0.08);
 }
 
 CarTickResult Car::tick(const TrackDefinition &track,
@@ -31,7 +69,6 @@ CarTickResult Car::tick(const TrackDefinition &track,
                       TelemetryLog *telemetry,
                       const CarInteractionContext *interaction) {
   (void)telemetry;
-  (void)interaction;
 
   CarTickResult result;
   if (retired_ || track.sectors.empty())
@@ -40,7 +77,75 @@ CarTickResult Car::tick(const TrackDefinition &track,
   const int prevLap = state_.currentLap;
   const size_t prevSectorIdx = state_.currentTrackNodeIndex;
 
-  TickSimulation(config_, track, state_, deltaTime, physics, &telemetry_);
+  SimulationModifiers simMods;
+  if (interaction != nullptr && interaction->weather != nullptr) {
+    simMods.tireGripScale = WeatherTireGripScale(
+        *interaction->weather, state_.activeTireCompound, state_.usingWetTyres);
+
+    const TrafficModifiers traffic = ComputeTrafficModifiers(*this, *interaction);
+    simMods.engineForceScale *= traffic.speedScale;
+    if (traffic.passDifficulty > 1.0)
+      simMods.tireGripScale /= traffic.passDifficulty;
+    blueFlagActive_ = traffic.blueFlag;
+  } else if (interaction != nullptr) {
+    const double wetPenalty = 1.0 - interaction->trackWetness * 0.35;
+    const double tempPenalty =
+        interaction->ambientTempC > 32.0
+            ? 1.0 - std::min(0.08, (interaction->ambientTempC - 32.0) * 0.004)
+            : 1.0;
+    simMods.tireGripScale =
+        wetPenalty * interaction->trackGripEvolution * tempPenalty;
+
+    const TrafficModifiers traffic = ComputeTrafficModifiers(*this, *interaction);
+    simMods.engineForceScale *= traffic.speedScale;
+    if (traffic.passDifficulty > 1.0)
+      simMods.tireGripScale /= traffic.passDifficulty;
+    blueFlagActive_ = traffic.blueFlag;
+  }
+
+  if (state_.engineHealth <= 35.0)
+    simMods.limpModeScale = 0.72;
+  else if (state_.engineHealth <= 55.0)
+    simMods.limpModeScale = 0.86;
+
+  simMods.engineForceScale *= driverModeScale_;
+
+  TickSimulation(config_, track, state_, deltaTime, physics, &telemetry_,
+                 &simMods);
+
+  if (interaction != nullptr && interaction->fcySpeedLimitMps > 0.0)
+    state_.currentSpeed =
+        std::min(state_.currentSpeed, interaction->fcySpeedLimitMps);
+  if (interaction != nullptr && interaction->scSpeedLimitMps > 0.0)
+    state_.currentSpeed =
+        std::min(state_.currentSpeed, interaction->scSpeedLimitMps);
+
+  if (interaction != nullptr && interaction->field != nullptr &&
+      interaction->lapLength > 0.0) {
+    const TrafficModifiers traffic = ComputeTrafficModifiers(*this, *interaction);
+    if (traffic.blueFlag) {
+      blueFlagActive_ = true;
+      state_.currentSpeed = std::min(state_.currentSpeed, 55.0);
+    }
+  }
+
+  if (IsCorneringHard(track, state_, physics) && state_.currentSectorPeakSpeed > 52.0) {
+    trackLimitsWarnings_ = std::min(3, trackLimitsWarnings_ + 1);
+  }
+
+  if (interaction != nullptr && interaction->rng != nullptr &&
+      state_.engineHealth > 0.0 && state_.engineHealth < 92.0) {
+    const double healthFactor = std::clamp(state_.engineHealth / 100.0, 0.2, 1.0);
+    const double thermalStress =
+        std::max(0.0, state_.currentThermalLoad - 100.0) * 0.002;
+    const double failChance =
+        (0.000002 + (1.0 - healthFactor) * 0.000015 + thermalStress) *
+        deltaTime;
+    std::uniform_real_distribution<double> roll(0.0, 1.0);
+    if (roll(*interaction->rng) < failChance) {
+      state_.engineHealth = std::max(0.0, state_.engineHealth - 8.0);
+    }
+  }
 
   result.sectorCrossed =
       state_.currentTrackNodeIndex != prevSectorIdx ||
@@ -68,6 +173,10 @@ CarTickResult Car::tick(const TrackDefinition &track,
     result.retired = true;
   }
 
+  if (state_.fuelRemaining <= 0.0 && state_.fuelRemaining > -1.0 && !retired_) {
+    state_.currentSpeed = std::max(physics.minSpeed, state_.currentSpeed * 0.92);
+  }
+
   return result;
 }
 
@@ -89,6 +198,13 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition,
   snap.tireWear = state_.tireWear;
   snap.hybridDeployMJ = state_.hybridDeployRemainingMJ;
   snap.engineHealth = state_.engineHealth;
+  snap.fuelTankCapacity = config_.fuelTankCapacity;
+  snap.coolantTempC = state_.currentThermalLoad;
+  snap.blueFlag = blueFlagActive_;
+  snap.limpMode = state_.engineHealth <= 55.0;
+  snap.trackLimitsWarnings = trackLimitsWarnings_;
+  snap.tireCompound = TireCompoundToString(state_.activeTireCompound);
+  snap.wetTyres = state_.usingWetTyres;
   snap.sectorIndex = static_cast<int>(state_.currentTrackNodeIndex);
   snap.racePosition = racePosition;
   snap.inPit = inPit;

@@ -40,6 +40,28 @@ export interface CarSnapshot {
   lapHistory: LapTimingSnapshot[];
   position: Vec3;
   tangent: Vec3;
+  fuelTankCapacity?: number;
+  pitCount?: number;
+  pitQueued?: boolean;
+  driverStintSeconds?: number;
+  maxDriverStintSeconds?: number;
+  coolantTempC?: number;
+  blueFlag?: boolean;
+  limpMode?: boolean;
+  trackLimitsWarnings?: number;
+  tireCompound?: string;
+  wetTyres?: boolean;
+}
+
+export interface RaceControlPayload {
+  fcyActive: boolean;
+  scActive: boolean;
+  trackWetness: number;
+  ambientTempC: number;
+  trackGripEvolution: number;
+  rainIntensity?: number;
+  weatherPhase?: string;
+  forecastRainInSeconds?: number;
 }
 
 export type SimEventType =
@@ -83,9 +105,77 @@ export interface TrackGeometryPayload {
   mapLabels?: TrackMapLabel[];
 }
 
+export type WeekendSessionType = "practice" | "qualifying" | "race";
+
+export interface CarSessionSetupPayload {
+  frontWingAngle: number;
+  rearWingAngle: number;
+  rideHeightMm: number;
+  frontSpringStiffness: number;
+  rearSpringStiffness: number;
+  frontDamper: number;
+  rearDamper: number;
+  engineRadiatorOpening: number;
+  oilCoolerOpening: number;
+  chargeAirCoolerOpening: number;
+  gearboxCoolerOpening: number;
+}
+
+export interface FleetCarPayload {
+  id: string;
+  carNumber: string;
+  classId: string;
+  setup: CarSessionSetupPayload;
+}
+
+export interface CalendarEventPayload {
+  round: number;
+  trackId: string;
+  format: string;
+  eventType: string;
+  eventName: string;
+  completed: boolean;
+}
+
+export type StaffRole = "engineer" | "mechanic" | "strategist";
+
+export type StaffStatus = "active" | "injured" | "ill" | "poached";
+
+export interface StaffMemberPayload {
+  id?: string;
+  role: StaffRole;
+  name: string;
+  skill: number;
+  assignedCarId?: string;
+  status?: StaffStatus;
+  experience?: number;
+  salaryPerRace?: number;
+  morale?: number;
+  unavailableUntilRound?: number;
+}
+
+export interface MetaStatePayload {
+  teamName: string;
+  currentRound: number;
+  weekendSession: WeekendSessionType;
+  weekendTireCompound: string;
+  playerCarId: string;
+  activeCarId: string;
+  calendar: CalendarEventPayload[];
+  fleet: FleetCarPayload[];
+  staff?: StaffMemberPayload[];
+  budget?: number;
+  rdPoints?: number;
+  lastRacePayout?: number;
+  unlockedParts?: string[];
+}
+
 export interface SessionInitPayload {
   trackName: string;
   targetLaps: number;
+  targetDurationMinutes?: number;
+  sessionType?: WeekendSessionType | "demo";
+  eventName?: string;
   simTimestep: number;
   entries: Array<{
     entryId: string;
@@ -99,6 +189,7 @@ export interface SessionInitPayload {
 export interface TickPayload {
   raceTime: number;
   snapshots: CarSnapshot[];
+  raceControl?: RaceControlPayload;
 }
 
 export interface EventsPayload {
@@ -122,6 +213,7 @@ export type ServerMessageType =
   | "tick"
   | "events"
   | "race_complete"
+  | "meta_state"
   | "error";
 
 export interface ServerMessage<T = unknown> {
@@ -135,7 +227,13 @@ export type ClientMessageType =
   | "pause"
   | "resume"
   | "restart_race"
-  | "reload_definitions";
+  | "reload_definitions"
+  | "get_meta"
+  | "start_session"
+  | "save_car_setup"
+  | "set_active_car"
+  | "advance_weekend"
+  | "complete_round";
 
 export interface ClientMessage<T = unknown> {
   protocol: typeof PROTOCOL_VERSION;

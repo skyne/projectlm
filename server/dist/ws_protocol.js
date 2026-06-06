@@ -13,13 +13,21 @@ function parseClientMessage(raw) {
         const msg = JSON.parse(raw);
         if (msg.protocol !== exports.PROTOCOL_VERSION)
             return null;
-        if (msg.type !== "set_time_scale" &&
-            msg.type !== "pause" &&
-            msg.type !== "resume" &&
-            msg.type !== "restart_race" &&
-            msg.type !== "reload_definitions") {
+        const allowed = [
+            "set_time_scale",
+            "pause",
+            "resume",
+            "restart_race",
+            "reload_definitions",
+            "get_meta",
+            "start_session",
+            "save_car_setup",
+            "set_active_car",
+            "advance_weekend",
+            "complete_round",
+        ];
+        if (!allowed.includes(msg.type))
             return null;
-        }
         return msg;
     }
     catch {

@@ -118,11 +118,64 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
       GetTransmissionStats(car.transmissionChoice, catalog);
   HybridPart hp = GetHybridStats(car.hybridSystemChoice, catalog);
 
-  car.totalDragCd = 0.20 + ch.baselineDrag + fa.dragCd + ra.dragCd + cp.dragCd;
-  car.totalDownforceCl = fa.downforceCl + ra.downforceCl;
+  auto wingAngleScale = [](double angle, double baseDf, double baseDrag) {
+    const double t = (angle - 0.5) * 2.0;
+    const double dfMult = 1.0 + t * 0.4;
+    const double dragMult = 1.0 + t * 0.5;
+    return std::make_pair(baseDf * dfMult, baseDrag * dragMult);
+  };
+
+  double frontDf = fa.downforceCl;
+  double frontDrag = fa.dragCd;
+  double rearDf = ra.downforceCl;
+  double rearDrag = ra.dragCd;
+
+  if (!ra.permitsWinglessPitch) {
+    const auto frontScaled = wingAngleScale(car.frontWingAngle, frontDf, frontDrag);
+    const auto rearScaled = wingAngleScale(car.rearWingAngle, rearDf, rearDrag);
+    frontDf = frontScaled.first;
+    frontDrag = frontScaled.second;
+    rearDf = rearScaled.first;
+    rearDrag = rearScaled.second;
+  } else {
+    const double pitchT = (car.rearWingAngle - 0.5) * 2.0;
+    rearDf *= (1.0 + pitchT * 0.15);
+    rearDrag *= (1.0 - pitchT * 0.08);
+  }
+
+  double coolingDissipation = cp.thermalDissipationRate;
+  double coolingDrag = cp.dragCd;
+  const double installedDuctMass =
+      car.engineRadiatorSize + car.oilCoolerSize + car.chargeAirCoolerSize +
+      car.gearboxCoolerSize;
+  if (installedDuctMass > 0.01) {
+    const double engineContrib =
+        car.engineRadiatorSize * car.engineRadiatorOpening * 0.45;
+    const double oilContrib = car.oilCoolerSize * car.oilCoolerOpening * 0.20;
+    const double chargeContrib =
+        car.chargeAirCoolerSize * car.chargeAirCoolerOpening * 0.25;
+    const double gearboxContrib =
+        car.gearboxCoolerSize * car.gearboxCoolerOpening * 0.10;
+    const double ductLoad =
+        engineContrib + oilContrib + chargeContrib + gearboxContrib;
+    coolingDissipation =
+        cp.thermalDissipationRate * std::clamp(ductLoad, 0.15, 1.35);
+    coolingDrag =
+        0.01 +
+        (car.engineRadiatorOpening * car.engineRadiatorSize * 0.018) +
+        (car.oilCoolerOpening * car.oilCoolerSize * 0.008) +
+        (car.chargeAirCoolerOpening * car.chargeAirCoolerSize * 0.012) +
+        (car.gearboxCoolerOpening * car.gearboxCoolerSize * 0.005);
+  }
+
+  const double avgDamper = (car.frontDamper + car.rearDamper) * 0.5;
+  const double damperGrip = 0.94 + avgDamper * 0.12;
+
+  car.totalDragCd = 0.20 + ch.baselineDrag + frontDrag + rearDrag + coolingDrag;
+  car.totalDownforceCl = frontDf + rearDf;
   car.structuralRigidityFactor = ch.structuralRigidity;
-  car.coolingCapacity = cp.thermalDissipationRate;
-  car.tireGripMultiplier = tp.gripMultiplier;
+  car.coolingCapacity = coolingDissipation;
+  car.tireGripMultiplier = tp.gripMultiplier * damperGrip;
   car.tireWearRate = tp.wearRate;
   car.fuelTankCapacity = fs.capacityLiters;
   car.brakeMaxPressure = bp.maxPressure;
@@ -188,4 +241,6 @@ void ApplyClassBoP(CarConfig &car, const ClassRule &rule) {
 
   if (rule.aeroBalanceModifier != 1.0)
     car.totalDownforceCl *= rule.aeroBalanceModifier;
+  if (rule.dragModifier > 0.0 && rule.dragModifier != 1.0)
+    car.totalDragCd *= rule.dragModifier;
 }

@@ -3,9 +3,11 @@
 #include "config_loader.hpp"
 #include "part_compatibility.hpp"
 #include "sim_bridge.hpp"
+#include "weather.hpp"
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <sstream>
 
 static std::string Trim(const std::string &s) {
@@ -45,15 +47,48 @@ static void EmitRaceEvent(SimEventType type, const Car &car, int lap,
   g_raceEventOut->push_back(std::move(event));
 }
 
-void TickRace(RaceSession &session, double deltaTime) {
+void TickRace(RaceSession &session, double deltaTime,
+              const std::vector<bool> *skipCars) {
   session.elapsedRaceTime += deltaTime;
+
+  if (session.fcyRemainingSeconds > 0.0) {
+    session.fcyRemainingSeconds =
+        std::max(0.0, session.fcyRemainingSeconds - deltaTime);
+  }
+  if (session.scRemainingSeconds > 0.0) {
+    session.scRemainingSeconds =
+        std::max(0.0, session.scRemainingSeconds - deltaTime);
+  }
+  if (session.retirementWindowSeconds > 0.0) {
+    session.retirementWindowSeconds =
+        std::max(0.0, session.retirementWindowSeconds - deltaTime);
+    if (session.retirementWindowSeconds <= 0.0)
+      session.recentRetirements = 0;
+  }
+
+  TickWeatherState(session.weather, session.weatherProfile,
+                   session.elapsedRaceTime, deltaTime, session.rng);
 
   CarInteractionContext interaction;
   interaction.field = &session.cars;
   interaction.raceTime = session.elapsedRaceTime;
+  interaction.lapLength = session.track.lapLength();
+  interaction.trackWetness = session.weather.trackWetness;
+  interaction.ambientTempC = session.weather.ambientTempC;
+  interaction.trackGripEvolution = session.weather.trackGripEvolution;
+  interaction.weather = &session.weather;
+  interaction.rng = &session.rng;
+  if (session.fcyRemainingSeconds > 0.0)
+    interaction.fcySpeedLimitMps = 60.0;
+  if (session.scRemainingSeconds > 0.0)
+    interaction.scSpeedLimitMps = 45.0;
 
-  for (Car &car : session.cars) {
+  for (size_t carIndex = 0; carIndex < session.cars.size(); ++carIndex) {
+    Car &car = session.cars[carIndex];
     if (car.isRetired())
+      continue;
+    if (skipCars != nullptr && carIndex < skipCars->size() &&
+        (*skipCars)[carIndex])
       continue;
 
     interaction.self = &car;
@@ -65,6 +100,12 @@ void TickRace(RaceSession &session, double deltaTime) {
                     result.completedSectorIndex, session.elapsedRaceTime,
                     car.teamName() + " crossed sector " +
                         std::to_string(result.completedSectorIndex));
+      if (car.trackLimitsWarnings() >= 3) {
+        EmitRaceEvent(SimEventType::Retirement, car, car.state().currentLap,
+                      result.completedSectorIndex, session.elapsedRaceTime,
+                      car.teamName() + " track limits — drive-through required");
+        car.clearTrackLimitsWarnings();
+      }
     }
 
     if (result.lapCompleted) {
@@ -75,10 +116,49 @@ void TickRace(RaceSession &session, double deltaTime) {
     }
 
     if (result.retired) {
+      session.fcyRemainingSeconds =
+          std::max(session.fcyRemainingSeconds, 60.0);
+      if (session.retirementWindowSeconds <= 0.0)
+        session.recentRetirements = 0;
+      session.retirementWindowSeconds = 120.0;
+      session.recentRetirements += 1;
+      if (session.recentRetirements >= 2)
+        session.scRemainingSeconds =
+            std::max(session.scRemainingSeconds, 180.0);
+
       EmitRaceEvent(SimEventType::Retirement, car, car.state().currentLap,
                     static_cast<int>(car.state().currentTrackNodeIndex),
                     session.elapsedRaceTime,
                     car.teamName() + " retired: " + car.retireReason());
+    }
+  }
+
+  if (session.scRemainingSeconds <= 0.0 && session.fcyRemainingSeconds <= 0.0 &&
+      session.elapsedRaceTime > 600.0) {
+    std::uniform_real_distribution<double> roll(0.0, 1.0);
+    if (roll(session.rng) < 0.00002 * deltaTime) {
+      session.fcyRemainingSeconds = 90.0;
+      if (g_raceEventOut != nullptr) {
+        SimEvent event;
+        event.type = SimEventType::SectorCross;
+        event.timestamp = session.elapsedRaceTime;
+        event.message = "Race control: full course yellow";
+        g_raceEventOut->push_back(std::move(event));
+      }
+    }
+  }
+
+  if (session.weather.phase == WeatherPhase::HeavyRain &&
+      session.scRemainingSeconds <= 0.0) {
+    const bool fcyWasInactive = session.fcyRemainingSeconds <= 0.0;
+    session.fcyRemainingSeconds =
+        std::max(session.fcyRemainingSeconds, 120.0);
+    if (fcyWasInactive && g_raceEventOut != nullptr) {
+      SimEvent event;
+      event.type = SimEventType::SectorCross;
+      event.timestamp = session.elapsedRaceTime;
+      event.message = "Race control: full course yellow — heavy rain";
+      g_raceEventOut->push_back(std::move(event));
     }
   }
 }
@@ -102,13 +182,16 @@ bool IsRaceComplete(const RaceSession &session) {
   if (session.targetLaps <= 0)
     return false;
 
+  bool anyActive = false;
   for (const Car &car : session.cars) {
     if (car.isRetired())
       continue;
+    anyActive = true;
     if (car.state().currentLap > session.targetLaps)
       return true;
   }
-  return false;
+
+  return !anyActive && !session.cars.empty();
 }
 
 static bool ParseEntryLine(const std::string &line, std::string &teamName,
@@ -192,9 +275,15 @@ bool LoadEntriesFromConfig(RaceSession &session, const std::string &filename,
     if (ruleIt != classRules.end()) {
       raceClass.displayName = ruleIt->second.displayName;
       ApplyClassBoP(car, ruleIt->second);
+      if (SanitizeCarForClassRules(car, ruleIt->second)) {
+        CompileCarArchitecture(car, catalog, assembly);
+        ApplyClassBoP(car, ruleIt->second);
+        std::cerr << "Info: auto-fixed illegal parts for entry \"" << teamName
+                  << "\" [" << classId << "]" << std::endl;
+      }
       if (!IsCarLegal(car, ruleIt->second)) {
         std::cerr << "Warning: entry \"" << teamName << "\" [" << classId
-                  << "] has illegal part choices for class rules (added anyway)"
+                  << "] still has illegal part choices after sanitize"
                   << std::endl;
       }
     } else {

@@ -44,6 +44,43 @@ TEST_CASE("CompileCarArchitecture applies hybrid and transmission stats",
   REQUIRE(car.brakeMaxPressure == Catch::Approx(0.85));
 }
 
+TEST_CASE("Session setup adjusts aero and cooling", "[unit][car][setup]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  REQUIRE(LoadPartCatalog(ConfigPath("part_catalog.txt"), catalog));
+  REQUIRE(LoadAssemblyConfig(ConfigPath("physics_config.txt"), assembly));
+
+  CarConfig baseline;
+  baseline.rearAeroChoice = ERearAero::HighDownforceWing;
+  baseline.frontWingAngle = 0.5;
+  baseline.rearWingAngle = 0.5;
+  CompileCarArchitecture(baseline, catalog, assembly);
+  const double baseDf = baseline.totalDownforceCl;
+  const double baseDrag = baseline.totalDragCd;
+
+  CarConfig maxWing = baseline;
+  maxWing.frontWingAngle = 1.0;
+  maxWing.rearWingAngle = 1.0;
+  CompileCarArchitecture(maxWing, catalog, assembly);
+  REQUIRE(maxWing.totalDownforceCl > baseDf);
+  REQUIRE(maxWing.totalDragCd > baseDrag);
+
+  CarConfig minWing = baseline;
+  minWing.frontWingAngle = 0.0;
+  minWing.rearWingAngle = 0.0;
+  CompileCarArchitecture(minWing, catalog, assembly);
+  REQUIRE(minWing.totalDownforceCl < baseDf);
+  REQUIRE(minWing.totalDragCd < baseDrag);
+
+  CarConfig ducts = baseline;
+  ducts.engineRadiatorSize = 0.8;
+  ducts.engineRadiatorOpening = 0.5;
+  ducts.oilCoolerSize = 0.6;
+  ducts.oilCoolerOpening = 0.5;
+  CompileCarArchitecture(ducts, catalog, assembly);
+  REQUIRE(ducts.coolingCapacity < baseline.coolingCapacity);
+}
+
 TEST_CASE("ApplyClassBoP clamps LMGT3 power", "[unit][car][bop]") {
   PartCatalog catalog;
   AssemblyConfig assembly;

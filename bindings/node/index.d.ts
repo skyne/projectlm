@@ -37,6 +37,17 @@ export interface CarSnapshot {
   lapHistory: LapTimingSnapshot[];
   position: Vec3;
   tangent: Vec3;
+  fuelTankCapacity?: number;
+  pitCount?: number;
+  pitQueued?: boolean;
+  driverStintSeconds?: number;
+  maxDriverStintSeconds?: number;
+  coolantTempC?: number;
+  blueFlag?: boolean;
+  limpMode?: boolean;
+  trackLimitsWarnings?: number;
+  tireCompound?: string;
+  wetTyres?: boolean;
 }
 
 export type SimEventType =
@@ -84,6 +95,20 @@ export interface SimSession {
   drainEvents(): SimEvent[];
   getTrackGeometry(): TrackGeometry;
   isRaceComplete(): boolean;
+  submitCommand(entryId: string, command: string): boolean;
+  getRaceTime(): number;
+  getRaceControl(): {
+    fcyActive: boolean;
+    scActive: boolean;
+    trackWetness: number;
+    ambientTempC: number;
+    trackGripEvolution: number;
+    rainIntensity?: number;
+    weatherPhase?: string;
+    forecastRainInSeconds?: number;
+  };
+  getReplayLog(): Array<{ timestamp: number; entryId: string; command: string }>;
+  getRngSeed(): number;
 }
 
 declare const sim: SimSession;

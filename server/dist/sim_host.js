@@ -35,9 +35,11 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SimHost = void 0;
 const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
 const adapters_1 = require("./adapters");
 const config_parser_1 = require("./config_parser");
 const mock_session_1 = require("./mock_session");
+const ai_strategy_1 = require("./game/ai_strategy");
 const DEFAULT_RACE_CONFIG = "configs/race_config_web.txt";
 function resolveRepoRoot(explicit) {
     if (explicit)
@@ -59,10 +61,15 @@ function loadSession(repoRoot) {
 }
 class SimHost {
     constructor(options = {}) {
+        this.sessionType = "demo";
+        this.eventName = "";
+        this.targetDurationMinutes = 0;
         this.raceTime = 0;
         this.timeScale = 1;
         this.paused = false;
         this.tickTimer = null;
+        this.ai = new ai_strategy_1.AiStrategyManager();
+        this.playerEntryId = "";
         this.repoRoot = resolveRepoRoot(options.repoRoot);
         const rel = options.raceConfigPath ?? DEFAULT_RACE_CONFIG;
         this.raceConfigPath = path.isAbsolute(rel)
@@ -98,10 +105,46 @@ class SimHost {
         return {
             trackName: this.trackName,
             targetLaps: this.parsedConfig.targetLaps,
+            targetDurationMinutes: this.targetDurationMinutes,
+            sessionType: this.sessionType,
+            eventName: this.eventName,
             simTimestep: this.simTimestep,
             entries: this.entries,
             carNumberByEntryId: Object.fromEntries(this.entries.map((entry) => [entry.entryId, entry.carNumber])),
         };
+    }
+    setPlayerEntryId(entryId) {
+        this.playerEntryId = entryId;
+    }
+    startRound(raceConfigRelPath, options) {
+        const abs = path.isAbsolute(raceConfigRelPath)
+            ? raceConfigRelPath
+            : path.join(this.repoRoot, raceConfigRelPath);
+        this.raceConfigPath = abs;
+        const prevCwd = process.cwd();
+        process.chdir(this.repoRoot);
+        const configForSim = path.isAbsolute(raceConfigRelPath)
+            ? path.relative(this.repoRoot, abs)
+            : raceConfigRelPath;
+        const ok = this.session.initFromRaceConfig(configForSim);
+        process.chdir(prevCwd);
+        if (!ok)
+            return false;
+        this.parsedConfig = (0, config_parser_1.parseRaceConfig)(this.repoRoot, this.raceConfigPath);
+        this.simTimestep = this.parsedConfig.simTimestep;
+        this.trackName = (0, config_parser_1.loadTrackName)(this.repoRoot, this.parsedConfig.trackConfigPath);
+        this.sessionType = options.sessionType;
+        this.eventName = options.eventName;
+        this.targetDurationMinutes = options.targetDurationMinutes;
+        if (this.parsedConfig.entriesPath) {
+            this.entries = (0, config_parser_1.parseEntries)(this.repoRoot, this.parsedConfig.entriesPath);
+        }
+        this.raceTime = 0;
+        this.paused = options.startPaused ?? true;
+        if (this.timeScale === 0)
+            this.timeScale = 1;
+        this.restartTickLoop();
+        return true;
     }
     getRaceTime() {
         return this.session.getRaceTime?.() ?? this.raceTime;
@@ -199,6 +242,22 @@ class SimHost {
             return { ...snap, carNumber };
         });
     }
+    getRaceControl() {
+        return this.session.getRaceControl?.();
+    }
+    saveReplayLog() {
+        const replay = this.session.getReplayLog?.();
+        if (!replay || replay.length === 0)
+            return;
+        const outPath = path.join(this.repoRoot, "data", "last_replay.json");
+        const payload = {
+            rngSeed: this.session.getRngSeed?.() ?? 0,
+            raceConfigPath: this.configPathForSim(),
+            commands: replay,
+        };
+        fs.mkdirSync(path.dirname(outPath), { recursive: true });
+        fs.writeFileSync(outPath, JSON.stringify(payload, null, 2), "utf8");
+    }
     configPathForSim() {
         const rel = path.relative(this.repoRoot, this.raceConfigPath);
         return rel.startsWith("..") ? this.raceConfigPath : rel;
@@ -218,12 +277,31 @@ class SimHost {
             return;
         if (this.session.isRaceComplete())
             return;
-        const delta = this.simTimestep * this.timeScale;
-        this.session.tick(delta);
-        this.raceTime += delta;
+        const frameDelta = this.simTimestep * this.timeScale;
+        let remaining = frameDelta;
+        while (remaining > 1e-9) {
+            const dt = Math.min(this.simTimestep, remaining);
+            this.session.tick(dt);
+            remaining -= dt;
+        }
+        this.raceTime += frameDelta;
         const snapshots = this.enrichSnapshots(this.session.getSnapshots());
         const raceTime = this.session.getRaceTime?.() ?? this.raceTime;
-        this.onTick?.(raceTime, snapshots);
+        const raceControl = this.session.getRaceControl?.();
+        if (this.session.submitCommand) {
+            const submit = this.session.submitCommand.bind(this.session);
+            this.ai.setContext({
+                raceTime,
+                targetDurationSeconds: this.targetDurationMinutes * 60,
+                fcyActive: raceControl?.fcyActive,
+                scActive: raceControl?.scActive,
+                trackWetness: raceControl?.trackWetness,
+                weatherPhase: raceControl?.weatherPhase,
+                rainIntensity: raceControl?.rainIntensity,
+            });
+            this.ai.tick(snapshots, this.playerEntryId, (entryId, command) => submit(entryId, command));
+        }
+        this.onTick?.(raceTime, snapshots, raceControl);
         const rawEvents = this.session.drainEvents();
         const events = rawEvents.map((e) => typeof e.type === "string" && e.type.includes("_")
             ? (0, adapters_1.normalizeEvent)(e)
@@ -231,6 +309,7 @@ class SimHost {
         if (events.length > 0) {
             this.onEvents?.(events);
             if (events.some((e) => e.type === "RaceComplete")) {
+                this.saveReplayLog();
                 this.onRaceComplete?.(raceTime, snapshots.map((s) => ({
                     entryId: s.entryId,
                     teamName: s.teamName,

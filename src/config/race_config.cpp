@@ -1,4 +1,5 @@
 #include "race_config.hpp"
+#include <cstdint>
 #include <fstream>
 
 static std::string Trim(const std::string &s) {
@@ -34,8 +35,22 @@ bool LoadRaceConfig(const std::string &filename, RaceConfig &config) {
       config.carConfigPath = val;
     else if (key == "target_laps")
       config.targetLaps = std::stoi(val);
+    else if (key == "target_duration_minutes")
+      config.targetDurationMinutes = std::stod(val);
+    else if (key == "target_duration_hours")
+      config.targetDurationHours = std::stod(val);
+    else if (key == "session_type")
+      config.sessionType = val;
     else if (key == "sim_timestep")
       config.simTimestep = std::stod(val);
+    else if (key == "track_wetness")
+      config.trackWetness = std::stod(val);
+    else if (key == "ambient_temp_c")
+      config.ambientTempC = std::stod(val);
+    else if (key == "weather_profile")
+      config.weatherProfile = val;
+    else if (key == "rng_seed")
+      config.rngSeed = static_cast<uint32_t>(std::stoul(val));
     else if (key == "telemetry_output")
       config.telemetryOutputPath = val;
     else if (key == "entries")

@@ -1,7 +1,9 @@
 import {
   clientMessage,
   PROTOCOL_VERSION,
+  type CarSessionSetupPayload,
   type EventsPayload,
+  type MetaStatePayload,
   type RaceCompletePayload,
   type ServerMessage,
   type SessionInitPayload,
@@ -13,6 +15,7 @@ export type ConnectionState = "connecting" | "open" | "closed";
 
 export interface ViewerHandlers {
   onStateChange?: (state: ConnectionState) => void;
+  onMetaState?: (payload: MetaStatePayload) => void;
   onSessionInit?: (payload: SessionInitPayload) => void;
   onTrackGeometry?: (payload: TrackGeometryPayload) => void;
   onTick?: (payload: TickPayload) => void;
@@ -41,6 +44,7 @@ export class ViewerClient {
 
     this.ws.onopen = () => {
       this.setState("open");
+      this.getMeta();
     };
 
     this.ws.onclose = () => {
@@ -58,6 +62,9 @@ export class ViewerClient {
         if (msg.protocol !== PROTOCOL_VERSION) return;
 
         switch (msg.type) {
+          case "meta_state":
+            this.handlers.onMetaState?.(msg.payload as MetaStatePayload);
+            break;
           case "session_init":
             this.handlers.onSessionInit?.(msg.payload as SessionInitPayload);
             break;
@@ -81,6 +88,26 @@ export class ViewerClient {
         this.handlers.onError?.("Failed to parse server message");
       }
     };
+  }
+
+  getMeta(): void {
+    this.send(clientMessage("get_meta", {}));
+  }
+
+  startSession(): void {
+    this.send(clientMessage("start_session", {}));
+  }
+
+  saveCarSetup(carId: string, setup: CarSessionSetupPayload): void {
+    this.send(clientMessage("save_car_setup", { carId, setup }));
+  }
+
+  setActiveCar(carId: string): void {
+    this.send(clientMessage("set_active_car", { carId }));
+  }
+
+  advanceWeekend(): void {
+    this.send(clientMessage("advance_weekend", {}));
   }
 
   setTimeScale(timeScale: number): void {

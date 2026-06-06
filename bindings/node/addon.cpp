@@ -77,6 +77,17 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
 
   obj.Set("position", Vec3ToObject(env, snapshot.position));
   obj.Set("tangent", Vec3ToObject(env, snapshot.tangent));
+  obj.Set("fuelTankCapacity", snapshot.fuelTankCapacity);
+  obj.Set("pitCount", snapshot.pitCount);
+  obj.Set("pitQueued", snapshot.pitQueued);
+  obj.Set("driverStintSeconds", snapshot.driverStintSeconds);
+  obj.Set("maxDriverStintSeconds", snapshot.maxDriverStintSeconds);
+  obj.Set("coolantTempC", snapshot.coolantTempC);
+  obj.Set("blueFlag", snapshot.blueFlag);
+  obj.Set("limpMode", snapshot.limpMode);
+  obj.Set("trackLimitsWarnings", snapshot.trackLimitsWarnings);
+  obj.Set("tireCompound", snapshot.tireCompound);
+  obj.Set("wetTyres", snapshot.wetTyres);
   return obj;
 }
 
@@ -178,6 +189,58 @@ Napi::Value RestartRace(const Napi::CallbackInfo &info) {
   return Napi::Boolean::New(env, g_bridge.restartRace());
 }
 
+Napi::Value SubmitCommand(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString()) {
+    Napi::TypeError::New(env, "Expected entryId and command strings")
+        .ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  g_bridge.submitCommand(info[0].As<Napi::String>().Utf8Value(),
+                       info[1].As<Napi::String>().Utf8Value());
+  return Napi::Boolean::New(env, true);
+}
+
+Napi::Value GetRaceTime(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  return Napi::Number::New(env, g_bridge.getRaceTime());
+}
+
+Napi::Value GetRaceControl(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  const RaceControlState rc = g_bridge.getRaceControl();
+  Napi::Object obj = Napi::Object::New(env);
+  obj.Set("fcyActive", rc.fcyActive);
+  obj.Set("scActive", rc.scActive);
+  obj.Set("trackWetness", rc.trackWetness);
+  obj.Set("ambientTempC", rc.ambientTempC);
+  obj.Set("trackGripEvolution", rc.trackGripEvolution);
+  obj.Set("rainIntensity", rc.rainIntensity);
+  obj.Set("weatherPhase", rc.weatherPhase);
+  obj.Set("forecastRainInSeconds", rc.forecastRainInSeconds);
+  return obj;
+}
+
+Napi::Value GetReplayLog(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  const std::vector<ReplayCommand> replay = g_bridge.getReplayLog();
+  Napi::Array array = Napi::Array::New(env, replay.size());
+  for (size_t i = 0; i < replay.size(); ++i) {
+    Napi::Object row = Napi::Object::New(env);
+    row.Set("timestamp", replay[i].timestamp);
+    row.Set("entryId", replay[i].entryId);
+    row.Set("command", replay[i].command);
+    array.Set(static_cast<uint32_t>(i), row);
+  }
+  return array;
+}
+
+Napi::Value GetRngSeed(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  return Napi::Number::New(env, g_bridge.getRngSeed());
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("initFromRaceConfig",
               Napi::Function::New(env, InitFromRaceConfig));
@@ -189,6 +252,11 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("reloadDefinitions",
               Napi::Function::New(env, ReloadDefinitions));
   exports.Set("restartRace", Napi::Function::New(env, RestartRace));
+  exports.Set("submitCommand", Napi::Function::New(env, SubmitCommand));
+  exports.Set("getRaceTime", Napi::Function::New(env, GetRaceTime));
+  exports.Set("getRaceControl", Napi::Function::New(env, GetRaceControl));
+  exports.Set("getReplayLog", Napi::Function::New(env, GetReplayLog));
+  exports.Set("getRngSeed", Napi::Function::New(env, GetRngSeed));
   return exports;
 }
 

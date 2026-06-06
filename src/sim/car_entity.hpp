@@ -5,6 +5,7 @@
 #include "simulation.hpp"
 #include "telemetry.hpp"
 #include "track.hpp"
+#include <random>
 #include <string>
 #include <vector>
 
@@ -15,6 +16,7 @@ struct RaceClass {
 
 struct CarInteractionContext;
 struct CarTickResult;
+struct WeatherState;
 
 struct LapTimingSnapshot {
   int lapNumber = 0;
@@ -39,7 +41,18 @@ struct CarSnapshot {
   int sectorIndex = 0;
   int racePosition = 0;
   bool inPit = false;
+  bool pitQueued = false;
   bool retired = false;
+  double fuelTankCapacity = 0.0;
+  int pitCount = 0;
+  double driverStintSeconds = 0.0;
+  double maxDriverStintSeconds = 0.0;
+  double coolantTempC = 0.0;
+  bool blueFlag = false;
+  bool limpMode = false;
+  int trackLimitsWarnings = 0;
+  std::string tireCompound = "Medium";
+  bool wetTyres = false;
   double currentLapTime = 0.0;
   double currentSectorTime = 0.0;
   double lastLapTime = 0.0;
@@ -71,6 +84,9 @@ public:
   void placeOnGrid(int gridPosition);
   void resetForRestart();
 
+  int trackLimitsWarnings() const { return trackLimitsWarnings_; }
+  void clearTrackLimitsWarnings() { trackLimitsWarnings_ = 0; }
+
   CarTickResult tick(const TrackDefinition &track, const PhysicsConfig &physics,
                      double deltaTime, TelemetryLog *telemetry = nullptr,
                      const CarInteractionContext *interaction = nullptr);
@@ -81,6 +97,8 @@ public:
   bool isAheadOf(const Car &other) const;
 
   void markRetired(const std::string &reason);
+  void setDriverModeScale(double scale) { driverModeScale_ = scale; }
+  void setTireCompound(ETireCompound compound, bool wetTyres);
 
 private:
   std::string entryId_;
@@ -94,15 +112,25 @@ private:
   std::string retireReason_;
   TelemetryLog telemetry_;
   double bestLapTime_ = 0.0;
+  double driverModeScale_ = 1.0;
+  bool blueFlagActive_ = false;
+  int trackLimitsWarnings_ = 0;
 };
 
 double ComputeGapToLeader(const Car &car, const Car &leader, double lapLength);
 
-// Reserved for future traffic, drafting, and collision modelling.
 struct CarInteractionContext {
   const Car *self = nullptr;
   const std::vector<Car> *field = nullptr;
   double raceTime = 0.0;
+  double lapLength = 0.0;
+  double fcySpeedLimitMps = 0.0;
+  double scSpeedLimitMps = 0.0;
+  double trackWetness = 0.0;
+  double ambientTempC = 22.0;
+  double trackGripEvolution = 1.0;
+  const WeatherState *weather = nullptr;
+  std::mt19937 *rng = nullptr;
 };
 
 struct CarTickResult {

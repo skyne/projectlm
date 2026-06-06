@@ -151,6 +151,10 @@ std::map<std::string, ClassRule> LoadClassRules(const std::string &filename) {
       current.maxWeightKg = std::stod(value);
     else if (key == "aero_balance_modifier")
       current.aeroBalanceModifier = std::stod(value);
+    else if (key == "drag_modifier")
+      current.dragModifier = std::stod(value);
+    else if (key == "max_driver_stint_hours")
+      current.maxDriverStintHours = std::stod(value);
     else if (key == "legal_chassis")
       SplitCommaList(value, current.legalChassis);
     else if (key == "legal_front_aero")
@@ -189,4 +193,65 @@ bool IsCarLegal(const CarConfig &car, const ClassRule &rule) {
                    HybridSystemToString(car.hybridSystemChoice)))
     return false;
   return true;
+}
+
+static ECoolingPack FirstLegalCooling(const ClassRule &rule) {
+  if (rule.legalCooling.empty())
+    return ECoolingPack::EnduranceHeavyDuty;
+  if (rule.legalCooling[0] == "SprintSlimline")
+    return ECoolingPack::SprintSlimline;
+  return ECoolingPack::EnduranceHeavyDuty;
+}
+
+static EFrontAero FirstLegalFrontAero(const ClassRule &rule) {
+  if (rule.legalFrontAero.empty())
+    return EFrontAero::LowDragNose;
+  if (rule.legalFrontAero[0] == "HighDownforceSplitter")
+    return EFrontAero::HighDownforceSplitter;
+  return EFrontAero::LowDragNose;
+}
+
+static ERearAero FirstLegalRearAero(const ClassRule &rule) {
+  if (rule.legalRearAero.empty())
+    return ERearAero::StandardWing;
+  if (rule.legalRearAero[0] == "HighDownforceWing")
+    return ERearAero::HighDownforceWing;
+  if (rule.legalRearAero[0] == "WinglessGroundEffect")
+    return ERearAero::WinglessGroundEffect;
+  return ERearAero::StandardWing;
+}
+
+bool SanitizeCarForClassRules(CarConfig &car, const ClassRule &rule) {
+  bool changed = false;
+  if (!ListPermits(rule.legalCooling, CoolingToString(car.coolingChoice))) {
+    car.coolingChoice = FirstLegalCooling(rule);
+    changed = true;
+  }
+  if (!ListPermits(rule.legalFrontAero, FrontAeroToString(car.frontAeroChoice))) {
+    car.frontAeroChoice = FirstLegalFrontAero(rule);
+    changed = true;
+  }
+  if (!ListPermits(rule.legalRearAero, RearAeroToString(car.rearAeroChoice))) {
+    car.rearAeroChoice = FirstLegalRearAero(rule);
+    changed = true;
+  }
+  if (!ListPermits(rule.legalChassis, ChassisToString(car.chassisChoice))) {
+    car.chassisChoice = EChassis::CarbonMonocoque;
+    changed = true;
+  }
+  if (!ListPermits(rule.legalBrakes, BrakeSystemToString(car.brakeSystemChoice))) {
+    car.brakeSystemChoice = EBrakeSystem::StandardCaliper;
+    changed = true;
+  }
+  if (!ListPermits(rule.legalTransmission,
+                   TransmissionToString(car.transmissionChoice))) {
+    car.transmissionChoice = ETransmission::SixSpeedSequential;
+    changed = true;
+  }
+  if (!ListPermits(rule.legalHybrid,
+                   HybridSystemToString(car.hybridSystemChoice))) {
+    car.hybridSystemChoice = EHybridSystem::None;
+    changed = true;
+  }
+  return changed;
 }

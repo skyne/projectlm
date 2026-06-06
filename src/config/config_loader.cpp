@@ -61,9 +61,35 @@ bool LoadCarConfig(const std::string &filename, CarConfig &car) {
       } else if (key == "cooling_pack") {
         if (value == "SprintSlimline")
           car.coolingChoice = ECoolingPack::SprintSlimline;
+        else if (value == "EnduranceHeavyDuty")
+          car.coolingChoice = ECoolingPack::EnduranceHeavyDuty;
         else
           car.coolingChoice = ECoolingPack::EnduranceHeavyDuty;
-      } else if (key == "tire_compound") {
+      } else if (key == "engine_radiator_size")
+        car.engineRadiatorSize = std::stod(value);
+      else if (key == "oil_cooler_size")
+        car.oilCoolerSize = std::stod(value);
+      else if (key == "charge_air_cooler_size")
+        car.chargeAirCoolerSize = std::stod(value);
+      else if (key == "gearbox_cooler_size")
+        car.gearboxCoolerSize = std::stod(value);
+      else if (key == "engine_radiator_opening")
+        car.engineRadiatorOpening = std::stod(value);
+      else if (key == "oil_cooler_opening")
+        car.oilCoolerOpening = std::stod(value);
+      else if (key == "charge_air_cooler_opening")
+        car.chargeAirCoolerOpening = std::stod(value);
+      else if (key == "gearbox_cooler_opening")
+        car.gearboxCoolerOpening = std::stod(value);
+      else if (key == "front_wing_angle")
+        car.frontWingAngle = std::stod(value);
+      else if (key == "rear_wing_angle")
+        car.rearWingAngle = std::stod(value);
+      else if (key == "front_damper")
+        car.frontDamper = std::stod(value);
+      else if (key == "rear_damper")
+        car.rearDamper = std::stod(value);
+      else if (key == "tire_compound") {
         if (value == "Soft")
           car.tireChoice = ETireCompound::Soft;
         else if (value == "Hard")

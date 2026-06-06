@@ -47,6 +47,8 @@ function parseRaceConfig(repoRoot, configPath) {
     const config = {
         trackConfigPath: "tracks/sample_circuit.json",
         targetLaps: 1,
+        targetDurationMinutes: 0,
+        sessionType: "race",
         simTimestep: 0.1,
         entriesPath: "",
     };
@@ -63,6 +65,10 @@ function parseRaceConfig(repoRoot, configPath) {
             config.trackConfigPath = val;
         else if (key === "target_laps")
             config.targetLaps = parseInt(val, 10);
+        else if (key === "target_duration_minutes")
+            config.targetDurationMinutes = parseFloat(val);
+        else if (key === "session_type")
+            config.sessionType = val;
         else if (key === "sim_timestep")
             config.simTimestep = parseFloat(val);
         else if (key === "entries")

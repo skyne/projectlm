@@ -153,6 +153,20 @@ struct CarConfig {
   double frontSpringStiffness = 100000.0;
   double rearSpringStiffness = 100000.0;
   double rideHeight = 0.050;
+  /** Session setup — normalized 0 (min) to 1 (max). 0.5 = baseline part geometry. */
+  double frontWingAngle = 0.5;
+  double rearWingAngle = 0.5;
+  double frontDamper = 0.5;
+  double rearDamper = 0.5;
+  /** Installed radiator sizes (0–1) from build; openings are session-adjustable. */
+  double engineRadiatorSize = 0.0;
+  double oilCoolerSize = 0.0;
+  double chargeAirCoolerSize = 0.0;
+  double gearboxCoolerSize = 0.0;
+  double engineRadiatorOpening = 1.0;
+  double oilCoolerOpening = 1.0;
+  double chargeAirCoolerOpening = 1.0;
+  double gearboxCoolerOpening = 1.0;
   double calculatedTotalMass = 0.0;
   double totalDragCd = 0.0;
   double totalDownforceCl = 0.0;

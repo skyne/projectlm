@@ -15,7 +15,10 @@ static int SelectGearIndex(const CarConfig &car, double speed) {
 
 void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                     SimulationState &state, double deltaTime,
-                    const PhysicsConfig &p, TelemetryLog *telemetry) {
+                    const PhysicsConfig &p, TelemetryLog *telemetry,
+                    const SimulationModifiers *modifiers) {
+  const SimulationModifiers defaultMods;
+  const SimulationModifiers &mods = modifiers != nullptr ? *modifiers : defaultMods;
   if (track.sectors.empty())
     return;
 
@@ -48,7 +51,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       (car.calculatedTotalMass * p.gravity) + dynamicDownforce;
   double effectiveTireFriction =
       p.tireFriction * car.tireGripMultiplier *
-      (1.0 - state.tireWear * p.tireWearEffect);
+      (1.0 - state.tireWear * p.tireWearEffect) * mods.tireGripScale;
   double tireGripForce = netVerticalForce * effectiveTireFriction;
 
   const double kappa =
@@ -145,6 +148,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     }
 
     forceApplied = engineForce - (dynamicDrag * frictionDragModifier);
+    forceApplied *= mods.engineForceScale * mods.limpModeScale;
 
     state.fuelRemaining -= (car.fuelBurnRate * rpmPercent) * deltaTime;
     if (state.fuelRemaining < 0.0)
@@ -178,15 +182,19 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
 
   double currentVibrationStrain =
       car.vibrationIndex * (state.currentRPM / car.engine.maxRPM);
+  const double healthFactor =
+      std::clamp(state.engineHealth / 100.0, 0.35, 1.0);
   state.engineHealth -=
       ((currentVibrationStrain / car.structuralRigidityFactor) *
-       p.vibrationDamageRate) *
+       p.vibrationDamageRate * healthFactor) *
       deltaTime;
 
   if (state.currentThermalLoad > p.thermalOverheat) {
+    const double overheat = state.currentThermalLoad - p.thermalOverheat;
+    const double thermalScale = 1.0 / (1.0 + overheat * 0.08);
     state.engineHealth -=
-        (p.thermalDamageRate * (state.currentThermalLoad - p.thermalOverheat) *
-         deltaTime);
+        (p.thermalDamageRate * overheat * thermalScale * healthFactor) *
+        deltaTime;
   }
 
   state.currentDistance += state.currentSpeed * deltaTime;

@@ -24,6 +24,8 @@ struct SimulationState {
   double currentLapTime = 0.0;
   double currentSectorTime = 0.0;
   double currentSectorPeakSpeed = 0.0;
+  ETireCompound activeTireCompound = ETireCompound::Medium;
+  bool usingWetTyres = false;
 };
 
 struct PhysicsConfig {
@@ -65,9 +67,16 @@ struct PhysicsConfig {
   double tireWearSpeedThreshold = 15.0;
 };
 
+struct SimulationModifiers {
+  double tireGripScale = 1.0;
+  double engineForceScale = 1.0;
+  double limpModeScale = 1.0;
+};
+
 void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                     SimulationState &state, double deltaTime,
                     const PhysicsConfig &physics,
-                    TelemetryLog *telemetry = nullptr);
+                    TelemetryLog *telemetry = nullptr,
+                    const SimulationModifiers *modifiers = nullptr);
 
 #endif

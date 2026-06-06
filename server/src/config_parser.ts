@@ -4,6 +4,8 @@ import * as path from "path";
 export interface ParsedRaceConfig {
   trackConfigPath: string;
   targetLaps: number;
+  targetDurationMinutes: number;
+  sessionType: string;
   simTimestep: number;
   entriesPath: string;
 }
@@ -26,6 +28,8 @@ export function parseRaceConfig(
   const config: ParsedRaceConfig = {
     trackConfigPath: "tracks/sample_circuit.json",
     targetLaps: 1,
+    targetDurationMinutes: 0,
+    sessionType: "race",
     simTimestep: 0.1,
     entriesPath: "",
   };
@@ -39,6 +43,9 @@ export function parseRaceConfig(
     const val = trimmed.slice(eq + 1).trim();
     if (key === "track_config") config.trackConfigPath = val;
     else if (key === "target_laps") config.targetLaps = parseInt(val, 10);
+    else if (key === "target_duration_minutes")
+      config.targetDurationMinutes = parseFloat(val);
+    else if (key === "session_type") config.sessionType = val;
     else if (key === "sim_timestep") config.simTimestep = parseFloat(val);
     else if (key === "entries") config.entriesPath = val;
   }

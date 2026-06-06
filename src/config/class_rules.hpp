@@ -13,6 +13,8 @@ struct ClassRule {
   double minWeightKg = 0.0;
   double maxWeightKg = 0.0;
   double aeroBalanceModifier = 1.0;
+  double dragModifier = 1.0;
+  double maxDriverStintHours = 4.5;
   std::vector<std::string> legalChassis;
   std::vector<std::string> legalFrontAero;
   std::vector<std::string> legalRearAero;
@@ -24,5 +26,6 @@ struct ClassRule {
 
 std::map<std::string, ClassRule> LoadClassRules(const std::string &filename);
 bool IsCarLegal(const CarConfig &car, const ClassRule &rule);
+bool SanitizeCarForClassRules(CarConfig &car, const ClassRule &rule);
 
 #endif
