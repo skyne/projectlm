@@ -4,7 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ProjectLM · FIA WEC Endurance</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@500;700&family=Rajdhani:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/game-theme.css" />
   </head>
   <body>
     <div id="app">
@@ -24,6 +31,7 @@
           <span id="status" class="status">Connecting…</span>
           <button type="button" id="change-identity-btn" class="change-identity-btn hidden" title="Change display name or role">Identity</button>
         </div>
+        <div class="header-racing-stripe" aria-hidden="true"></div>
       </header>
       <main class="layout">
         <div id="compact-leaderboard-container" class="compact-lb-column hidden"></div>

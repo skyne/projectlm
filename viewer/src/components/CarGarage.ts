@@ -51,6 +51,8 @@ import {
   type SuspensionSetup,
   type WheelSetup,
 } from "../utils/chassisSetup";
+import { CarCompositor, loadCarGraphics } from "../graphics/CarCompositor";
+import { carBuildToVisual } from "../graphics/visualCatalog";
 import { EngineDesigner } from "./EngineDesigner";
 import { CoolingDesigner } from "./CoolingDesigner";
 import { GarageEngineerPanel } from "./GarageEngineerPanel";
@@ -134,7 +136,6 @@ const BUILD_GUIDE_STEPS: BuildGuideStep[] = [
   { kind: "slot", slot: "cooling" },
   { kind: "slot", slot: "wheel_package" },
   { kind: "slot", slot: "suspension" },
-  { kind: "slot", slot: "fuel_system" },
   { kind: "slot", slot: "brake" },
   { kind: "slot", slot: "transmission" },
   { kind: "slot", slot: "hybrid" },
@@ -244,6 +245,10 @@ export class CarGarage {
   private compareBars: Record<SimBarId, number> | null = null;
   private compareCompiled: ReturnType<typeof compileCarStats> | null = null;
   private previewBuild: CarBuildPayload | null = null;
+  private visualHost!: HTMLElement;
+  private visualLabelEl!: HTMLElement;
+  private compositor: CarCompositor | null = null;
+  private visualRenderToken = 0;
 
   constructor(container: HTMLElement, handlers: CarGarageHandlers) {
     this.handlers = handlers;
@@ -267,23 +272,9 @@ export class CarGarage {
       </div>
       <div class="garage-layout">
         <div class="garage-diagram-col">
-          <div class="car-diagram-card">
-            <svg class="car-diagram" viewBox="0 0 320 120" aria-hidden="true">
-              <defs>
-                <linearGradient id="carBodyGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" class="car-grad-start"/>
-                  <stop offset="100%" class="car-grad-end"/>
-                </linearGradient>
-              </defs>
-              <ellipse cx="160" cy="95" rx="120" ry="12" fill="rgba(0,0,0,0.35)"/>
-              <path d="M40 70 Q50 45 90 40 L230 38 Q270 42 285 65 L275 78 Q260 88 160 90 Q60 88 45 78 Z" fill="url(#carBodyGrad)" stroke="#4a5870" stroke-width="1.5"/>
-              <path d="M95 42 L115 55 L105 70 L85 58 Z" fill="rgba(255,255,255,0.08)"/>
-              <rect x="130" y="48" width="55" height="22" rx="4" fill="rgba(0,0,0,0.35)" stroke="#3d4a62"/>
-              <circle cx="75" cy="82" r="14" fill="#1a2030" stroke="#555"/>
-              <circle cx="245" cy="82" r="14" fill="#1a2030" stroke="#555"/>
-              <path d="M255 55 L290 50 L295 62 L260 68 Z" fill="#6b7385" opacity="0.9"/>
-            </svg>
-            <div class="car-diagram-labels"></div>
+          <div class="car-diagram-card garage-car-visual-card">
+            <div class="garage-car-visual car-preview-canvas"></div>
+            <p class="garage-car-visual-parts car-preview-parts"></p>
           </div>
           <div class="garage-car-name-wrap">
             <label>Car Name<input type="text" class="garage-car-name wizard-input" maxlength="48" /></label>
@@ -314,6 +305,9 @@ export class CarGarage {
     this.guideBackBtn = this.root.querySelector(".car-build-guide-back")!;
     this.guideNextBtn = this.root.querySelector(".car-build-guide-next")!;
     this.saveBtn = this.root.querySelector(".garage-save")!;
+    this.visualHost = this.root.querySelector(".garage-car-visual")!;
+    this.visualLabelEl = this.root.querySelector(".garage-car-visual-parts")!;
+    void this.initCarVisual();
     this.coolingDesigner = new CoolingDesigner(
       this.root.querySelector(".garage-cooling-host")!,
       {
@@ -324,7 +318,7 @@ export class CarGarage {
           this.previewBuild = null;
           this.statusEl.textContent = "";
           this.renderStats();
-          this.renderDiagramLabels();
+          void this.renderCarVisual();
         },
       },
     );
@@ -357,7 +351,7 @@ export class CarGarage {
           this.statusEl.textContent = "";
           this.previewBuild = null;
           this.renderStats();
-          this.renderDiagramLabels();
+          void this.renderCarVisual();
           if (this.activeSlot === "suspension") {
             this.renderActivePanel();
           }
@@ -421,6 +415,48 @@ export class CarGarage {
 
   private currentGuideStep(): BuildGuideStep {
     return BUILD_GUIDE_STEPS[this.buildGuideStepIndex] ?? BUILD_GUIDE_STEPS[0];
+  }
+
+  /** Panel routing during guided build — decoupled from free-garage activeSlot. */
+  private guidePanelMode():
+    | "hidden"
+    | "name"
+    | "engine"
+    | "cooling"
+    | "parts"
+    | "confirm" {
+    if (!this.buildGuideActive) return "parts";
+    const step = this.currentGuideStep();
+    if (step.kind === "intro") return "hidden";
+    if (step.kind === "name") return "name";
+    if (step.kind === "confirm") return "confirm";
+    if (step.kind === "slot") {
+      if (step.slot === "engine") return "engine";
+      if (step.slot === "cooling") return "cooling";
+      return "parts";
+    }
+    return "parts";
+  }
+
+  private hideGaragePanels(): void {
+    this.partGridEl.classList.add("hidden");
+    this.engineDesigner.setVisible(false);
+    this.coolingDesigner.setVisible(false);
+  }
+
+  private applyGuideLayout(mode: ReturnType<CarGarage["guidePanelMode"]>): void {
+    const layout = this.root.querySelector(".garage-layout") as HTMLElement | null;
+    const diagramCol = this.root.querySelector(".garage-diagram-col") as HTMLElement | null;
+    const partsCol = this.root.querySelector(".garage-parts-col") as HTMLElement | null;
+    const statsCol = this.root.querySelector(".garage-stats-col") as HTMLElement | null;
+    const nameWrap = this.root.querySelector(".garage-car-name-wrap") as HTMLElement | null;
+
+    layout?.classList.toggle("hidden", mode === "hidden");
+    layout?.classList.toggle("garage-guide-name-focus", mode === "name");
+    diagramCol?.classList.toggle("hidden", mode === "name");
+    statsCol?.classList.toggle("hidden", mode === "name" || mode === "hidden");
+    partsCol?.classList.toggle("hidden", mode === "name");
+    nameWrap?.classList.toggle("garage-name-step-only", mode === "name");
   }
 
   private guideBack(): void {
@@ -571,18 +607,25 @@ export class CarGarage {
     this.renderBuildGuide();
 
     const guideStep = this.buildGuideActive ? this.currentGuideStep() : null;
-    const layout = this.root.querySelector(".garage-layout") as HTMLElement | null;
-    if (layout) {
-      layout.classList.toggle("hidden", guideStep?.kind === "intro");
-    }
+    const panelMode = this.guidePanelMode();
+    this.applyGuideLayout(panelMode);
 
-    if (guideStep?.kind === "intro") return;
+    if (panelMode === "hidden") {
+      this.hideGaragePanels();
+      return;
+    }
 
     if (guideStep?.kind === "slot") {
       this.activeSlot = guideStep.slot;
     }
 
-    this.ensureEngine(this.activeClassId());
+    const needsEngine =
+      !this.buildGuideActive ||
+      (guideStep?.kind === "slot" && guideStep.slot === "engine") ||
+      guideStep?.kind === "confirm";
+    if (needsEngine) {
+      this.ensureEngine(this.activeClassId());
+    }
 
     const nameInput = this.root.querySelector<HTMLInputElement>(".garage-car-name")!;
     nameInput.value = this.build.carName;
@@ -592,9 +635,54 @@ export class CarGarage {
 
     this.renderTabs();
     this.renderActivePanel();
-    this.renderStats();
-    this.renderDiagramLabels();
+    if (panelMode !== "name") {
+      this.renderStats();
+      void this.renderCarVisual();
+    } else {
+      this.root.querySelector(".garage-perf-stats")!.replaceChildren();
+      this.visualHost.replaceChildren();
+      this.visualLabelEl.textContent = "";
+      this.root.querySelector(".garage-mass-note")!.textContent = "";
+    }
     this.renderCompatibilityWarning();
+  }
+
+  private async initCarVisual(): Promise<void> {
+    try {
+      const { catalog, assembly } = await loadCarGraphics();
+      this.compositor = new CarCompositor({ catalog, assembly });
+      await this.renderCarVisual();
+    } catch (err) {
+      this.visualLabelEl.textContent = `Assembly preview unavailable: ${err}`;
+    }
+  }
+
+  private async renderCarVisual(): Promise<void> {
+    if (!this.compositor || !this.build) return;
+    const panelMode = this.guidePanelMode();
+    if (panelMode === "hidden" || panelMode === "name") return;
+
+    const source = this.previewBuild ?? this.build;
+    const visual = carBuildToVisual(source);
+    const token = ++this.visualRenderToken;
+
+    try {
+      const canvas = await this.compositor.render(visual);
+      if (token !== this.visualRenderToken) return;
+      this.visualHost.replaceChildren();
+      canvas.className = "car-preview-img garage-car-preview-img";
+      this.visualHost.appendChild(canvas);
+      this.visualLabelEl.textContent = [
+        visual.chassis_type,
+        visual.front_aero_type,
+        visual.rear_aero_type,
+        visual.wheel_package ?? "no wheels",
+        visual.hybrid_system,
+      ].join(" · ");
+    } catch (err) {
+      if (token !== this.visualRenderToken) return;
+      this.visualLabelEl.textContent = `Assembly preview failed: ${err}`;
+    }
   }
 
   private renderCompatibilityWarning(): void {
@@ -664,18 +752,43 @@ export class CarGarage {
   }
 
   private renderActivePanel(): void {
+    const panelMode = this.guidePanelMode();
+
     if (this.buildGuideActive) {
-      const step = this.currentGuideStep();
-      if (step.kind === "name") {
-        this.partGridEl.classList.add("hidden");
-        this.engineDesigner.setVisible(false);
-        this.coolingDesigner.setVisible(false);
+      if (panelMode === "name" || panelMode === "hidden") {
+        this.hideGaragePanels();
         return;
       }
-      if (step.kind === "confirm") {
+      if (panelMode === "confirm") {
         this.renderGuideConfirm();
         return;
       }
+      if (panelMode === "engine") {
+        this.partGridEl.classList.add("hidden");
+        this.coolingDesigner.setVisible(false);
+        this.engineDesigner.setVisible(true);
+        this.ensureEngine(this.activeClassId());
+        if (this.build?.engine) {
+          this.engineDesigner.setClassInfo(this.activeClassInfo());
+          this.engineDesigner.setEngine(this.build.engine);
+        }
+        return;
+      }
+      if (panelMode === "cooling") {
+        this.partGridEl.classList.add("hidden");
+        this.engineDesigner.setVisible(false);
+        this.coolingDesigner.setVisible(true);
+        if (this.build) {
+          this.coolingDesigner.setContext(
+            this.activeClassId(),
+            this.build.engine,
+            this.build.duct_airflow ?? 1,
+          );
+          this.coolingDesigner.setBuild(this.build);
+        }
+        return;
+      }
+      // parts mode — fall through with activeSlot set from guide step
     }
 
     const isEngine = this.activeSlot === "engine";
@@ -770,12 +883,14 @@ export class CarGarage {
         const preview = { ...this.build, [field]: part.partType };
         this.previewBuild = preview;
         this.renderStats();
+        void this.renderCarVisual();
       });
 
       card.addEventListener("mouseleave", () => {
         if (this.previewBuild) {
           this.previewBuild = null;
           this.renderStats();
+          void this.renderCarVisual();
         }
       });
 
@@ -1409,20 +1524,6 @@ export class CarGarage {
     if (subtitle) {
       subtitle.textContent = `${carNum} ${cls} · Configure components within class regulations.`;
     }
-  }
-
-  private renderDiagramLabels(): void {
-    if (!this.build) return;
-    const labels = this.root.querySelector(".car-diagram-labels")!;
-    const engineLabel = this.build.engine
-      ? `${this.build.engine.engine_layout} · ${this.build.engine.fuel_type}${this.build.engine.drivetrain && this.build.engine.drivetrain !== "Mechanical" ? ` · ${this.build.engine.drivetrain}` : ""}`
-      : "Engine TBD";
-    labels.innerHTML = `
-      <span>${escapeHtml(engineLabel)}</span>
-      <span>${escapeHtml(this.build.front_aero_type)}</span>
-      <span>${escapeHtml(this.build.rear_aero_type)}</span>
-      <span>${escapeHtml(this.build.hybrid_system)}</span>
-    `;
   }
 
   setStatus(message: string, isError = false): void {

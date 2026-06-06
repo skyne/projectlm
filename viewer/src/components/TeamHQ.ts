@@ -11,6 +11,7 @@ import {
   calendarRoundLabel,
   formatDurationLabel,
   trackDisplayName,
+  trackIconSvg,
 } from "../utils/trackIcons";
 import {
   affiliationHintForClass,
@@ -39,9 +40,27 @@ export interface TeamHQHandlers {
   onNewGame?: () => void;
 }
 
+type HqTab = "fleet" | "livery" | "commercial" | "crew" | "rd" | "season";
+
+const HQ_TABS: { id: HqTab; label: string; icon: string }[] = [
+  { id: "fleet", label: "Fleet", icon: "🏎" },
+  { id: "livery", label: "Livery", icon: "🎨" },
+  { id: "commercial", label: "Commercial", icon: "💼" },
+  { id: "crew", label: "Crew", icon: "👥" },
+  { id: "rd", label: "R&D", icon: "🔬" },
+  { id: "season", label: "Season", icon: "📅" },
+];
+
+const RD_UNLOCKS = [
+  { partId: "tire.Soft", label: "Soft Tyres", cost: 15, desc: "Peak grip compound for qualifying and sprint stints" },
+  { partId: "brake.CarbonCeramic", label: "Carbon Brakes", cost: 25, desc: "Higher thermal capacity for endurance traffic" },
+] as const;
+
 export class TeamHQ {
   readonly root: HTMLElement;
-  private summaryEl!: HTMLElement;
+  private heroEl!: HTMLElement;
+  private tabsEl!: HTMLElement;
+  private panelsEl!: HTMLElement;
   private fleetEl!: HTMLElement;
   private staffEl!: HTMLElement;
   private sponsorsEl!: HTMLElement;
@@ -52,6 +71,7 @@ export class TeamHQ {
   private handlers: TeamHQHandlers;
   private catalog: GameCatalogPayload | null = null;
   private meta: MetaStatePayload | null = null;
+  private activeTab: HqTab = "fleet";
 
   private buyClassId = "Hypercar";
   private buyAffiliation: CarAffiliation = "privateer";
@@ -65,63 +85,75 @@ export class TeamHQ {
     this.root = document.createElement("section");
     this.root.className = "panel team-hq panel-wec";
     this.root.innerHTML = `
-      ${mmPanelHeader("Headquarters", { subtitle: "Fleet · Staff · R&D · WEC calendar", badge: "TEAM" })}
-      <div id="team-summary" class="team-summary"></div>
-
-      <fieldset class="mm-fieldset">
-        <legend>Team livery</legend>
-        <div id="team-livery-editor"></div>
-      </fieldset>
-
-      <fieldset class="mm-fieldset">
-        <legend>Fleet</legend>
-        <ul id="team-fleet" class="team-list fleet-list"></ul>
-        <div class="team-actions fleet-actions">
-          <button type="button" id="buy-car-btn" class="primary-btn">+ Class Programme</button>
-          <button type="button" id="open-garage" class="secondary-btn">⚙ Garage</button>
-        </div>
-        <div id="buy-car-panel" class="buy-car-panel hidden"></div>
-      </fieldset>
-
-      <fieldset class="mm-fieldset">
-        <legend>Sponsors</legend>
-        <p class="sponsor-hint">Sign up to ${3} partners for per-race income and performance bonuses.</p>
-        <ul id="team-sponsors" class="team-list sponsor-list"></ul>
-        <div id="sponsor-offers" class="sponsor-offers-grid"></div>
-      </fieldset>
-
-      <fieldset class="mm-fieldset">
-        <legend>Personnel</legend>
-        <div id="team-staff" class="hq-staff-matrix-wrap"></div>
-        <div class="team-actions">
-          <button type="button" id="hire-engineer" class="secondary-btn">Hire engineer</button>
-          <button type="button" id="hire-mechanic" class="secondary-btn">Hire mechanic</button>
-        </div>
-      </fieldset>
-
-      <fieldset class="mm-fieldset">
-        <legend>R&amp;D programme</legend>
-        <ul id="team-parts" class="team-list"></ul>
-        <div class="team-actions">
-          <button type="button" id="rd-soft" class="secondary-btn">Unlock Soft tires (15 pts)</button>
-          <button type="button" id="rd-carbon" class="secondary-btn">Carbon brakes (25 pts)</button>
-        </div>
-      </fieldset>
-
-      <fieldset class="mm-fieldset">
-        <legend>WEC season calendar</legend>
-        <ul id="team-calendar" class="team-list"></ul>
-      </fieldset>
-
-      <fieldset class="mm-fieldset team-danger-zone">
-        <legend>Career</legend>
-        <p class="wizard-hint">Start over from scratch — your save file is deleted and you'll walk through team setup again.</p>
-        <button type="button" id="new-game-btn" class="danger-btn">Start New Game</button>
-      </fieldset>
+      ${mmPanelHeader("Headquarters", { subtitle: "Team operations centre", badge: "HQ" })}
+      <div class="hq-hero"></div>
+      <nav class="hq-tabs" aria-label="Headquarters sections"></nav>
+      <div class="hq-panels">
+        <section class="hq-panel" data-tab="fleet">
+          <div class="hq-panel-head">
+            <h3 class="hq-panel-title">Race Fleet</h3>
+            <div class="hq-panel-actions">
+              <button type="button" id="buy-car-btn" class="primary-btn">+ Class Programme</button>
+              <button type="button" id="open-garage" class="secondary-btn">Garage</button>
+            </div>
+          </div>
+          <ul id="team-fleet" class="fleet-grid"></ul>
+          <div id="buy-car-panel" class="buy-car-panel hidden"></div>
+        </section>
+        <section class="hq-panel hidden" data-tab="livery">
+          <div class="hq-panel-head">
+            <h3 class="hq-panel-title">Team Livery</h3>
+          </div>
+          <div id="team-livery-editor"></div>
+        </section>
+        <section class="hq-panel hidden" data-tab="commercial">
+          <div class="hq-panel-head">
+            <h3 class="hq-panel-title">Sponsor Partners</h3>
+            <span class="hq-panel-meta" id="sponsor-slots-meta"></span>
+          </div>
+          <p class="sponsor-hint">Sign up to three partners for per-race income and performance bonuses.</p>
+          <h4 class="hq-subsection-title">Active contracts</h4>
+          <ul id="team-sponsors" class="sponsor-list"></ul>
+          <h4 class="hq-subsection-title">Available offers</h4>
+          <div id="sponsor-offers" class="sponsor-offers-grid"></div>
+        </section>
+        <section class="hq-panel hidden" data-tab="crew">
+          <div class="hq-panel-head">
+            <h3 class="hq-panel-title">Pit Crew &amp; Engineers</h3>
+            <div class="hq-panel-actions">
+              <button type="button" id="hire-engineer" class="secondary-btn">Hire engineer</button>
+              <button type="button" id="hire-mechanic" class="secondary-btn">Hire mechanic</button>
+            </div>
+          </div>
+          <div id="team-staff" class="hq-crew-grid"></div>
+        </section>
+        <section class="hq-panel hidden" data-tab="rd">
+          <div class="hq-panel-head">
+            <h3 class="hq-panel-title">Development Programme</h3>
+            <span class="hq-panel-meta" id="rd-points-meta"></span>
+          </div>
+          <div class="hq-rd-unlocks"></div>
+          <h4 class="hq-subsection-title">Unlocked technology</h4>
+          <ul id="team-parts" class="hq-unlocked-list"></ul>
+        </section>
+        <section class="hq-panel hidden" data-tab="season">
+          <div class="hq-panel-head">
+            <h3 class="hq-panel-title">WEC Season Calendar</h3>
+          </div>
+          <ul id="team-calendar" class="calendar-grid hq-calendar-grid"></ul>
+          <div class="hq-career-block">
+            <h4 class="hq-subsection-title">Career</h4>
+            <p class="wizard-hint">Start over from scratch — your save file is deleted and you'll walk through team setup again.</p>
+            <button type="button" id="new-game-btn" class="danger-btn">Start New Game</button>
+          </div>
+        </section>
+      </div>
     `;
     container.appendChild(this.root);
 
-    this.summaryEl = this.root.querySelector("#team-summary")!;
+    this.heroEl = this.root.querySelector(".hq-hero")!;
+    this.tabsEl = this.root.querySelector(".hq-tabs")!;
+    this.panelsEl = this.root.querySelector(".hq-panels")!;
     this.fleetEl = this.root.querySelector("#team-fleet")!;
     this.buyPanelEl = this.root.querySelector("#buy-car-panel")!;
     this.staffEl = this.root.querySelector("#team-staff")!;
@@ -130,17 +162,13 @@ export class TeamHQ {
     this.calendarEl = this.root.querySelector("#team-calendar")!;
     this.partsEl = this.root.querySelector("#team-parts")!;
 
+    this.renderTabs();
+
     this.root.querySelector("#hire-engineer")!.addEventListener("click", () => {
       this.handlers.onHireStaff("engineer", "New Engineer", 70);
     });
     this.root.querySelector("#hire-mechanic")!.addEventListener("click", () => {
       this.handlers.onHireStaff("mechanic", "New Mechanic", 68);
-    });
-    this.root.querySelector("#rd-soft")!.addEventListener("click", () => {
-      this.handlers.onRdInvest("tire.Soft", 15);
-    });
-    this.root.querySelector("#rd-carbon")!.addEventListener("click", () => {
-      this.handlers.onRdInvest("brake.CarbonCeramic", 25);
     });
     this.root.querySelector("#open-garage")!.addEventListener("click", () => {
       this.handlers.onOpenGarage?.();
@@ -153,12 +181,60 @@ export class TeamHQ {
       this.handlers.onNewGame?.();
     });
 
+    this.renderRdUnlocks();
+
     this.liveryEditor = new LiveryEditor(
       this.root.querySelector("#team-livery-editor")!,
       {
         onSave: (colors) => this.handlers.onSaveTeamColors?.(colors),
       },
     );
+  }
+
+  private renderTabs(): void {
+    this.tabsEl.replaceChildren();
+    for (const tab of HQ_TABS) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `hq-tab${tab.id === this.activeTab ? " active" : ""}`;
+      btn.dataset.tab = tab.id;
+      btn.innerHTML = `
+        <span class="hq-tab-icon" aria-hidden="true">${tab.icon}</span>
+        <span class="hq-tab-label">${tab.label}</span>
+      `;
+      btn.addEventListener("click", () => this.setActiveTab(tab.id));
+      this.tabsEl.appendChild(btn);
+    }
+  }
+
+  private setActiveTab(tab: HqTab): void {
+    this.activeTab = tab;
+    for (const btn of this.tabsEl.querySelectorAll<HTMLButtonElement>(".hq-tab")) {
+      btn.classList.toggle("active", btn.dataset.tab === tab);
+    }
+    for (const panel of this.panelsEl.querySelectorAll<HTMLElement>(".hq-panel")) {
+      panel.classList.toggle("hidden", panel.dataset.tab !== tab);
+    }
+  }
+
+  private renderRdUnlocks(): void {
+    const wrap = this.root.querySelector(".hq-rd-unlocks")!;
+    wrap.replaceChildren();
+    for (const unlock of RD_UNLOCKS) {
+      const card = document.createElement("div");
+      card.className = "hq-rd-card";
+      card.innerHTML = `
+        <div class="hq-rd-card-body">
+          <span class="hq-rd-card-title">${escapeHtml(unlock.label)}</span>
+          <span class="hq-rd-card-desc">${escapeHtml(unlock.desc)}</span>
+        </div>
+        <button type="button" class="secondary-btn hq-rd-unlock-btn" data-part="${escapeHtml(unlock.partId)}">${unlock.cost} pts</button>
+      `;
+      card.querySelector(".hq-rd-unlock-btn")!.addEventListener("click", () => {
+        this.handlers.onRdInvest(unlock.partId, unlock.cost);
+      });
+      wrap.appendChild(card);
+    }
   }
 
   setLiveryStatus(message: string, isError = false): void {
@@ -184,59 +260,83 @@ export class TeamHQ {
       (sum, e) => sum + (e.prizeMoney ?? 0),
       0,
     );
+    const totalPoints = meta.calendar.reduce(
+      (sum, e) => sum + (e.completed ? e.championshipPoints : 0),
+      0,
+    );
     const programmeSummary = teamProgrammeSummary(fleet, this.catalog);
     const hypercarMfg = isHypercarManufacturer(fleet);
-    const liveryStyle = meta.teamColors
-      ? `--livery-primary: ${meta.teamColors.primary}; --livery-secondary: ${meta.teamColors.secondary}`
-      : "";
+    const primary = meta.teamColors?.primary ?? "#d4a843";
+    const secondary = meta.teamColors?.secondary ?? "#1a2a44";
 
-    this.summaryEl.innerHTML = `
-      <div class="team-stat-cards">
-        <div class="team-stat-card team-livery-card" style="${liveryStyle}">
-          <span class="team-stat-label">Team</span>
-          <span class="team-stat-value">${escapeHtml(meta.teamName)}</span>
-          <span class="team-programme-summary">${escapeHtml(programmeSummary)}</span>
-          ${hypercarMfg ? '<span class="fleet-badge-mfg">Hypercar Manufacturer</span>' : ""}
+    this.heroEl.style.setProperty("--hq-primary", primary);
+    this.heroEl.style.setProperty("--hq-secondary", secondary);
+    this.heroEl.innerHTML = `
+      <div class="hq-hero-strip" aria-hidden="true"></div>
+      <div class="hq-hero-body">
+        <div class="hq-hero-identity">
+          <span class="hq-hero-badge mm-badge mm-badge-wec">${escapeHtml(meta.teamName)}</span>
+          <h2 class="hq-hero-title">Season ${meta.seasonYear}</h2>
+          <p class="hq-hero-sub">${escapeHtml(programmeSummary)}${hypercarMfg ? ' · <span class="fleet-badge-mfg">Hypercar Manufacturer</span>' : ""}</p>
         </div>
-        <div class="team-stat-card">
-          <span class="team-stat-label">Fleet</span>
-          <span class="team-stat-value">${fleet.length} car${fleet.length === 1 ? "" : "s"}</span>
-        </div>
-        <div class="team-stat-card">
-          <span class="team-stat-label">Season</span>
-          <span class="team-stat-value">${meta.seasonYear} · R${meta.currentRound}</span>
-        </div>
-        <div class="team-stat-card">
-          <span class="team-stat-label">Budget</span>
-          <span class="team-stat-value">$${meta.budget.toLocaleString()}</span>
-        </div>
-        <div class="team-stat-card">
-          <span class="team-stat-label">Season earnings</span>
-          <span class="team-stat-value">$${seasonEarnings.toLocaleString()}</span>
-        </div>
-        <div class="team-stat-card">
-          <span class="team-stat-label">Sponsors</span>
-          <span class="team-stat-value">${sponsors.length}/3</span>
-        </div>
-        <div class="team-stat-card">
-          <span class="team-stat-label">R&amp;D</span>
-          <span class="team-stat-value">${meta.rdPoints} pts</span>
+        <div class="hq-hero-stats">
+          <div class="hq-hero-stat">
+            <span class="hq-hero-stat-value">${totalPoints}</span>
+            <span class="hq-hero-stat-label">Championship pts</span>
+          </div>
+          <div class="hq-hero-stat">
+            <span class="hq-hero-stat-value">$${meta.budget.toLocaleString()}</span>
+            <span class="hq-hero-stat-label">Budget</span>
+          </div>
+          <div class="hq-hero-stat">
+            <span class="hq-hero-stat-value">${fleet.length}</span>
+            <span class="hq-hero-stat-label">Cars</span>
+          </div>
+          <div class="hq-hero-stat">
+            <span class="hq-hero-stat-value">$${seasonEarnings.toLocaleString()}</span>
+            <span class="hq-hero-stat-label">Season earnings</span>
+          </div>
+          <div class="hq-hero-stat">
+            <span class="hq-hero-stat-value">${meta.rdPoints}</span>
+            <span class="hq-hero-stat-label">R&amp;D pts</span>
+          </div>
         </div>
       </div>
     `;
 
+    const rdMeta = this.root.querySelector("#rd-points-meta");
+    if (rdMeta) rdMeta.textContent = `${meta.rdPoints} points available`;
+
+    const sponsorMeta = this.root.querySelector("#sponsor-slots-meta");
+    if (sponsorMeta) sponsorMeta.textContent = `${sponsors.length}/3 slots filled`;
+
+    this.renderFleet(meta, fleet);
+    this.renderBuyPanel();
+    this.renderCrew(meta, fleet);
+    this.renderSponsors(meta);
+    this.renderRd(meta);
+    this.renderCalendar(meta);
+    this.updateRdUnlockStates(meta);
+  }
+
+  private renderFleet(meta: MetaStatePayload, fleet: typeof meta.fleet): void {
     this.fleetEl.replaceChildren();
-    if (fleet.length === 0) {
+    if (!fleet || fleet.length === 0) {
       const li = document.createElement("li");
-      li.className = "fleet-empty";
-      li.textContent = "No cars yet — start a class programme below.";
+      li.className = "fleet-empty-card";
+      li.innerHTML = `
+        <span class="fleet-empty-icon" aria-hidden="true">🏁</span>
+        <p>No cars in the fleet yet.</p>
+        <p class="wizard-hint">Start a class programme to enter the WEC.</p>
+      `;
       this.fleetEl.appendChild(li);
+      return;
     }
 
     for (const [classId, cars] of groupFleetByClass(fleet)) {
       const program = getClassProgram(fleet, classId, this.catalog);
       const header = document.createElement("li");
-      header.className = "fleet-class-header";
+      header.className = "fleet-class-banner";
       header.innerHTML = `
         <span class="class-badge class-${escapeHtml(classId)}">${escapeHtml(classId)}</span>
         <span class="fleet-program-label">${escapeHtml(program?.label ?? "")}</span>
@@ -246,17 +346,20 @@ export class TeamHQ {
 
       for (const car of cars) {
         const li = document.createElement("li");
-        li.className = "fleet-car-row";
+        li.className = "fleet-car-card";
         const isActive = car.id === meta.activeCarId;
+        const isPlayer = car.id === meta.playerCarId;
 
         li.innerHTML = `
-          <div class="fleet-car-info">
+          <div class="fleet-car-card-top">
             <span class="fleet-car-number">#${car.carNumber}</span>
-            <span class="fleet-car-name">${escapeHtml(car.build.carName)}</span>
-            ${isActive ? '<span class="fleet-badge-active">Editing</span>' : ""}
+            <span class="class-badge class-${escapeHtml(car.classId)}">${escapeHtml(car.classId)}</span>
+            ${isActive ? '<span class="fleet-badge-active">Active</span>' : ""}
+            ${isPlayer ? '<span class="fleet-badge-player">Player</span>' : ""}
           </div>
+          <span class="fleet-car-name">${escapeHtml(car.build.carName)}</span>
           <div class="fleet-car-actions">
-            <button type="button" class="secondary-btn fleet-edit-btn">Edit</button>
+            <button type="button" class="secondary-btn fleet-edit-btn">Configure</button>
             <button type="button" class="secondary-btn fleet-remove-btn">Sell</button>
           </div>
         `;
@@ -273,30 +376,122 @@ export class TeamHQ {
         this.fleetEl.appendChild(li);
       }
     }
+  }
 
-    this.renderBuyPanel();
+  private renderCrew(meta: MetaStatePayload, fleet: NonNullable<MetaStatePayload["fleet"]>): void {
+    const STAFF_ROLES: StaffRole[] = ["engineer", "mechanic", "strategist"];
+    const ROLE_LABELS: Record<StaffRole, string> = {
+      engineer: "Race Engineer",
+      mechanic: "Chief Mechanic",
+      strategist: "Strategist",
+    };
+    const ROLE_ICONS: Record<StaffRole, string> = {
+      engineer: "📊",
+      mechanic: "🔧",
+      strategist: "📋",
+    };
+    const STATUS_LABELS: Record<Exclude<StaffStatus, "active">, string> = {
+      injured: "Injured",
+      ill: "Ill",
+      poached: "Poached",
+    };
 
-    this.renderStaffMatrix(meta);
-
-    this.partsEl.replaceChildren();
-    for (const part of meta.unlockedParts) {
-      const li = document.createElement("li");
-      li.textContent = part;
-      this.partsEl.appendChild(li);
+    this.staffEl.replaceChildren();
+    if (fleet.length === 0) {
+      this.staffEl.innerHTML = `<p class="wizard-hint">No cars in fleet — crew assign per car once a programme is started.</p>`;
+      return;
     }
 
+    for (const car of fleet) {
+      const card = document.createElement("article");
+      card.className = "hq-crew-car-card";
+      card.innerHTML = `
+        <header class="hq-crew-car-head">
+          <span class="fleet-car-number">#${car.carNumber}</span>
+          <span class="class-badge class-${escapeHtml(car.classId)}">${escapeHtml(car.classId)}</span>
+          <span class="hq-crew-car-name">${escapeHtml(car.build.carName)}</span>
+        </header>
+        <div class="hq-crew-roles"></div>
+      `;
+      const rolesEl = card.querySelector(".hq-crew-roles")!;
+
+      for (const role of STAFF_ROLES) {
+        const member = this.staffForCar(meta, car.id, role);
+        const status = member?.status ?? "active";
+        const roleCard = document.createElement("div");
+        roleCard.className = `hq-crew-role-card${member ? "" : " vacant"}`;
+        roleCard.innerHTML = `
+          <span class="hq-crew-role-icon" aria-hidden="true">${ROLE_ICONS[role]}</span>
+          <div class="hq-crew-role-body">
+            <span class="hq-crew-role-label">${ROLE_LABELS[role]}</span>
+            <span class="hq-crew-role-name">${escapeHtml(member?.name ?? "Vacant")}</span>
+            ${member ? `<span class="hq-crew-skill-bar"><span class="hq-crew-skill-fill" style="width:${member.skill}%"></span></span>` : ""}
+            ${member && status !== "active" ? `<span class="staff-status staff-status-${status}">${STATUS_LABELS[status as Exclude<StaffStatus, "active">]}</span>` : ""}
+          </div>
+        `;
+        rolesEl.appendChild(roleCard);
+      }
+
+      this.staffEl.appendChild(card);
+    }
+  }
+
+  private renderRd(meta: MetaStatePayload): void {
+    this.partsEl.replaceChildren();
+    if (meta.unlockedParts.length === 0) {
+      const li = document.createElement("li");
+      li.className = "hq-unlocked-empty";
+      li.textContent = "No parts unlocked yet — invest R&D points above.";
+      this.partsEl.appendChild(li);
+      return;
+    }
+    for (const part of meta.unlockedParts) {
+      const li = document.createElement("li");
+      li.className = "hq-unlocked-item";
+      li.textContent = part.replace(".", " · ");
+      this.partsEl.appendChild(li);
+    }
+  }
+
+  private updateRdUnlockStates(meta: MetaStatePayload): void {
+    for (const btn of this.root.querySelectorAll<HTMLButtonElement>(".hq-rd-unlock-btn")) {
+      const partId = btn.dataset.part ?? "";
+      const unlock = RD_UNLOCKS.find((u) => u.partId === partId);
+      if (!unlock) continue;
+      const owned = meta.unlockedParts.includes(partId);
+      const canAfford = meta.rdPoints >= unlock.cost;
+      btn.disabled = owned || !canAfford;
+      btn.textContent = owned ? "Unlocked" : `${unlock.cost} pts`;
+    }
+  }
+
+  private renderCalendar(meta: MetaStatePayload): void {
     this.calendarEl.replaceChildren();
     for (const event of meta.calendar) {
       const li = document.createElement("li");
+      li.className = "calendar-card";
+      if (event.completed) li.classList.add("completed");
+      if (event.round === meta.currentRound) li.classList.add("current");
+
       const status = event.completed
-        ? `done · ${event.championshipPoints} pts`
+        ? `${event.championshipPoints} pts · $${(event.prizeMoney ?? 0).toLocaleString()}`
         : event.round === meta.currentRound
-          ? "current"
-          : "upcoming";
+          ? "Next up"
+          : "Upcoming";
+      const statusClass = event.completed
+        ? "status-done"
+        : event.round === meta.currentRound
+          ? "status-next"
+          : "status-upcoming";
+
       const label = event.eventName ?? trackDisplayName(event.trackId);
-      const fmt = formatDurationLabel(event.format, event.eventType);
-      li.textContent = `${calendarRoundLabel(event.round, event.eventType)} ${label} (${fmt}) — ${status}`;
-      if (event.round === meta.currentRound) li.className = "current-round";
+      li.innerHTML = `
+        <span class="calendar-round">${calendarRoundLabel(event.round, event.eventType)}</span>
+        <span class="calendar-icon">${trackIconSvg(event.trackId)}</span>
+        <span class="calendar-track">${escapeHtml(label)}</span>
+        <span class="calendar-format">${escapeHtml(formatDurationLabel(event.format, event.eventType))}</span>
+        <span class="calendar-status ${statusClass}">${status}</span>
+      `;
       this.calendarEl.appendChild(li);
     }
   }
@@ -532,65 +727,6 @@ export class TeamHQ {
       this.showBuyPanel = false;
       this.renderBuyPanel();
     });
-  }
-
-  private renderStaffMatrix(meta: MetaStatePayload): void {
-    const STAFF_ROLES: StaffRole[] = ["engineer", "mechanic", "strategist"];
-    const ROLE_LABELS: Record<StaffRole, string> = {
-      engineer: "Engineer",
-      mechanic: "Mechanic",
-      strategist: "Strategist",
-    };
-    const STATUS_LABELS: Record<Exclude<StaffStatus, "active">, string> = {
-      injured: "Injured",
-      ill: "Ill",
-      poached: "Poached",
-    };
-
-    const fleet = meta.fleet ?? [];
-    if (fleet.length === 0) {
-      this.staffEl.innerHTML = `<p class="wizard-hint">No cars in fleet — staff assign per car once a programme is started.</p>`;
-      return;
-    }
-
-    const headerCells = STAFF_ROLES.map(
-      (role) => `<th scope="col">${ROLE_LABELS[role]}</th>`,
-    ).join("");
-
-    const rows = fleet
-      .map((car) => {
-        const cells = STAFF_ROLES.map((role) => {
-          const member = this.staffForCar(meta, car.id, role);
-          if (!member) {
-            return `<td><span class="hq-staff-vacant">Vacant</span></td>`;
-          }
-          const status = member.status ?? "active";
-          const badge =
-            status !== "active"
-              ? `<span class="staff-status staff-status-${status}">${STATUS_LABELS[status]}</span>`
-              : "";
-          return `<td>
-            <div class="hq-staff-cell">
-              <span class="hq-staff-name">${escapeHtml(member.name)}</span>
-              <span class="hq-staff-skill">${member.skill}</span>
-              ${badge}
-            </div>
-          </td>`;
-        }).join("");
-        return `<tr>
-          <th scope="row">#${escapeHtml(car.carNumber)} <span class="class-badge">${escapeHtml(car.classId)}</span></th>
-          ${cells}
-        </tr>`;
-      })
-      .join("");
-
-    this.staffEl.innerHTML = `
-      <table class="hq-staff-matrix">
-        <thead>
-          <tr><th scope="col">Car</th>${headerCells}</tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>`;
   }
 
   private staffForCar(

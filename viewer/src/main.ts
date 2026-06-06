@@ -1,3 +1,5 @@
+import { TrackMapPanel } from "./components/TrackMapPanel";
+import { RaceSidebar } from "./components/RaceSidebar";
 import { SvgTrack } from "./components/SvgTrack";
 import { CompactLeaderboard } from "./components/CompactLeaderboard";
 import { EventLog } from "./components/EventLog";
@@ -31,6 +33,7 @@ import type { ClientRole, RosterUpdatePayload } from "./ws/protocol";
 import { enrichSnapshots, setEntryNumbersFromSession } from "./entryNumbers";
 import { resolveRetireReason } from "./utils/retireReason";
 import { setTrackLapLengthMeters } from "./utils/pitCommands";
+import { carBuildToVisual } from "./graphics/visualCatalog";
 import type { CarSnapshot, GameCatalogPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent } from "./ws/protocol";
 
 const RACE_MAIN_VIEW_KEY = "projectlm-race-main-view";
@@ -48,8 +51,10 @@ const sidebar = document.querySelector(".sidebar")!;
 const compactLbColumn = document.getElementById("compact-leaderboard-container")!;
 
 const headerNav = new HeaderNav(document.getElementById("header-nav")!);
+const trackMapPanel = new TrackMapPanel(mapPanel);
+const track = new SvgTrack(trackMapPanel.trackContainer, { zoomable: true });
+trackMapPanel.bindTrack(track);
 const carPreview = new CarPreview(document.getElementById("car-preview-container")!);
-const track = new SvgTrack(document.getElementById("track-container")!);
 const timetable = new Timetable(timetableContainer);
 const telemetryPanel = new TelemetryPanel(telemetryContainer, {
   onDriverMode: (entryId, mode) => client.submitCommand(entryId, `driver_mode=${mode}`),
@@ -301,13 +306,23 @@ function applySessionInit(payload: SessionInitPayload): void {
     (payload.entries ?? []).filter((e) => managedEntryIds.includes(e.entryId)),
   );
   raceHub.setSessionInfo(payload);
+  trackMapPanel.setWeatherContext(payload.weatherContext);
   playback.setTargetDuration(payload.targetDurationSeconds ?? null);
   telemetryPanel.setEntries(payload.entries ?? []);
+}
+
+function syncCarPreview(meta: MetaStatePayload): void {
+  const activeCar =
+    meta.fleet?.find((c) => c.id === meta.activeCarId) ?? meta.fleet?.[0];
+  const build = activeCar?.build ?? meta.carBuild;
+  if (!build) return;
+  carPreview.setBuild(carBuildToVisual(build));
 }
 
 function applyMetaState(meta: MetaStatePayload): void {
   const wasIncomplete = latestMeta != null && !latestMeta.setupComplete;
   latestMeta = meta;
+  syncCarPreview(meta);
   const engineerSkill =
     meta.staff?.find((s) => s.role === "engineer")?.skill ?? 75;
   pitModal.setEngineerSkill(engineerSkill);
@@ -460,6 +475,7 @@ function updateFromTick(
   compactLeaderboard.update(normalized);
   timetable.update(normalized);
   telemetryPanel.update(normalized);
+  trackMapPanel.updateLiveStats(normalized, raceControl);
   playback.setRaceTime(raceTime);
   updateWeather(raceControl, raceTime);
   const playerSnap = normalized.find((s) => s.entryId === playerEntryId) ?? null;
@@ -540,7 +556,7 @@ const client = new ViewerClient({
     }
   },
   onTrackGeometry: (geometry) => {
-    track.setGeometry(geometry);
+    trackMapPanel.setGeometry(geometry, latestSession?.weatherContext?.trackId);
     telemetryTrack.setGeometry(geometry);
     timetable.setGeometry(geometry);
     compactLeaderboard.setLapLength(geometry.lapLength);
@@ -642,6 +658,8 @@ const playback = new PlaybackControls(document.getElementById("playback-containe
     setMainView("season");
   },
 });
+
+new RaceSidebar(sidebar as HTMLElement);
 
 setMainView("season");
 
