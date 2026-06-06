@@ -219,8 +219,8 @@ projectlm/
 
 | Item | Phase | Reason |
 |------|-------|--------|
-| `submitCommand()` — pit, setup, driver mode | **6** | Race management not built yet |
-| Pit enter/exit affecting track progress | **6** | Pit lane logic |
+| `submitCommand()` — pit, setup, driver mode | **6** | ✅ Partial — pit, driver mode, setup deltas in dev viewer |
+| Pit enter/exit affecting track progress | **6** | ✅ Pit lane + stop time model |
 | Save/load `RaceSession` | **8** | Quality / persistence |
 | `libprojectlm` static lib packaging | **8 / 9** | UE ThirdParty build |
 | JSON schemas for cars / save games | **7 / 9** | Meta + UE DataTables |
@@ -418,6 +418,23 @@ C but let the rules be changed later, well figure out a mechanism for that
 
 probably C but dont close out multiplayer options 
 
+### Multiplayer foundation (landed on `main`, Jun 2026)
+
+Parallel track to Phase 5/6 — see [Multiplayer Options Plan](.cursor/plans/multiplayer_options_plan_fd21dc09.plan.md) for full detail.
+
+| Slice | Status | Notes |
+|-------|--------|-------|
+| **RC-1** Refresh/reconnect | ✅ | `raceActive` in `session_init`, catch-up tick, viewer restores live race |
+| **TM-1** Multi-car team manager | ✅ | All fleet cars managed; PitWall; no Drive button |
+| **MP-0** Client sessions + identity | ✅ | `join_session`, roles, permissions, viewer join overlay |
+| **MP-1** Spectator + roster UI | ✅ | Read-only gating, header roster panel |
+| **MP-2** Co-op pit wall | ✅ | Shared `entryIds`, command attribution, `coop-e2e` |
+| **MP-3** SQLite + competitive lobby | ⏳ | Not started — required for internet-hosted rooms |
+
+**Agent testing:** `./scripts/session-player.sh` + `.cursor/skills/multiplayer-agent-player/` for human-vs-LLM co-op.
+
+**Next:** MP-3 persistence, then competitive grid/lobby.
+
 ### Race format
 
 | Parameter | Proposed default | 🔶 YOUR INPUT |
@@ -439,7 +456,22 @@ probably C but dont close out multiplayer options
 
 **Goal:** Player makes decisions during the race; sim responds.
 
+**Status:** 🟡 **In progress** — pit checklist, driver mode, deep suspension/setup, and engineer LLM are in `main`; stint plans and full mechanic skill variance remain.
+
 **Extends Phase 3 stack:** `submitCommand()` added to SimBridge + Node binding; viewer gains pit checklist UI (your choice: granular option B). Phase 3 viewer stays read-only until this phase.
+
+| ID | Deliverable | Status |
+|----|-------------|--------|
+| **6-1** | `submitCommand()` — pit, driver mode, setup | ✅ |
+| **6-2** | Granular pit checklist UI (fuel, tires, repairs, driver swap) | ✅ |
+| **6-3** | Deep garage suspension (RH, springs, ARB, dampers, camber/toe, final drive) | ✅ |
+| **6-4** | Per-track weekend setup sheet (Race Hub → merged at session start) | ✅ |
+| **6-5** | Mid-race setup deltas + live suspension telemetry on pit wall | ✅ |
+| **6-6** | Engineer LLM suggestions (skill-gated commands, driver feedback) | ✅ |
+| **6-7** | AI grid track setup presets | ✅ |
+| **6-8** | Pre-race stint plan UI + strategist integration | ⬜ |
+| **6-9** | Mechanic skill → pit duration variance | ⬜ |
+| **6-10** | Dynamic weather ↔ setup/strategy coupling in engineer prompts | ⬜ |
 
 ### Manager actions (proposed MVP set)
 
@@ -479,7 +511,7 @@ What can player tune mid-race?
 
 option B with a mix of D, staff should give suggetsions, how good these should depend on the staff quality and experience, also drivers should give feedback on the car
 
-**Dev viewer status (2026):** Implemented in `feature/suspension-setup` worktree:
+**✅ Merged to `main` (Jun 2026):**
 
 - **Garage:** per-axle ride height, springs, ARB, dampers; alignment (camber/toe) and final drive
 - **Race weekend:** per-track setup sheet in Race Hub (merged onto garage build at session start, not saved to garage)
@@ -631,7 +663,7 @@ Phase 4 ✅  Parts & garage (brakes, transmission, hybrid, compatibility matrix)
 Phase 5 ◄── YOU ARE HERE — Multiclass endurance (duration races, AI entries, BoP tooling)
     │
     ▼
-Phase 6  Race management (pits, submitCommand, drivers, setup — viewer pit UI)
+Phase 6 🟡  Race management — pits ✅, setup ✅, engineer LLM ✅; stint plans + mechanic variance ⬜
     │
     ▼
 Phase 7  Meta / season (staff, R&D, calendar — light per your preference)
