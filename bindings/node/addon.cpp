@@ -70,10 +70,13 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
   obj.Set("tireTempRR", snapshot.tireTempRR);
   obj.Set("coolantTempC", snapshot.coolantTempC);
   obj.Set("hybridDeployMJ", snapshot.hybridDeployMJ);
+  obj.Set("hybridBudgetMJ", snapshot.hybridBudgetMJ);
+  obj.Set("hybridStrategy", snapshot.hybridStrategy);
   obj.Set("engineHealth", snapshot.engineHealth);
   obj.Set("sectorIndex", snapshot.sectorIndex);
   obj.Set("racePosition", snapshot.racePosition);
   obj.Set("classPosition", snapshot.classPosition);
+  obj.Set("inGarage", snapshot.inGarage);
   obj.Set("inPit", snapshot.inPit);
   obj.Set("pitQueued", snapshot.pitQueued);
   obj.Set("retired", snapshot.retired);

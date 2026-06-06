@@ -11,13 +11,17 @@ import {
   trackDisplayName,
   trackIconSvg,
 } from "../utils/trackIcons";
-import { WeekendSetupPanel } from "./WeekendSetupPanel";
+import {
+  resolveNextSession,
+  sessionDurationLabel,
+  startSessionButtonLabel,
+  weekendScheduleActive,
+  WEEKEND_STEPS,
+} from "../utils/weekendSessions";
 
 export interface RaceHubHandlers {
   onStartRace: () => void;
   onOpenGarage?: () => void;
-  onSetWeekendCompound?: (compound: string) => void;
-  onSaveTrackSetup?: (trackId: string, preset: import("../ws/protocol").TrackSetupPresetPayload) => void;
 }
 
 function escapeHtml(text: string): string {
@@ -35,7 +39,6 @@ export class RaceHub {
   private pointsEl: HTMLElement;
   private startBtn: HTMLButtonElement;
   private garageBtn: HTMLButtonElement;
-  private weekendSetup: WeekendSetupPanel;
   private handlers: RaceHubHandlers;
   private latestMeta: MetaStatePayload | null = null;
   private sessionInfo: SessionInitPayload | null = null;
@@ -73,24 +76,13 @@ export class RaceHub {
           <div class="current-round-body">
             <h3>Next Endurance Event</h3>
             <div class="round-info"></div>
-            <div class="weekend-setup">
-              <label class="weekend-compound-field">
-                <span>Race tyre compound</span>
-                <select class="weekend-compound-select">
-                  <option value="Soft">Soft — peak grip, high wear</option>
-                  <option value="Medium" selected>Medium — balanced</option>
-                  <option value="Hard">Hard — durable, lower grip</option>
-                </select>
-              </label>
-              <p class="wizard-hint">Change compound anytime before the session or at pit stops during the race.</p>
-              <div class="weekend-setup-host"></div>
-            </div>
+            <div class="weekend-schedule hidden" aria-label="Weekend schedule"></div>
             <div class="race-hub-staff"></div>
             <div class="round-actions">
               <button type="button" class="secondary-btn garage-link-btn">⚙ Garage</button>
               <button type="button" class="primary-btn start-race-btn">
                 <span class="btn-icon" aria-hidden="true">🏁</span>
-                Start Session
+                Prepare &amp; Start
               </button>
             </div>
           </div>
@@ -110,24 +102,12 @@ export class RaceHub {
     this.startBtn = this.root.querySelector(".start-race-btn")!;
     this.garageBtn = this.root.querySelector(".garage-link-btn")!;
 
-    this.weekendSetup = new WeekendSetupPanel(
-      this.root.querySelector(".weekend-setup-host")!,
-      {
-        onSave: (trackId, preset) => this.handlers.onSaveTrackSetup?.(trackId, preset),
-      },
-    );
-
     this.startBtn.addEventListener("click", () => {
       this.handlers.onStartRace();
     });
 
     this.root.querySelector(".garage-link-btn")!.addEventListener("click", () => {
       this.handlers.onOpenGarage?.();
-    });
-
-    const compoundSelect = this.root.querySelector<HTMLSelectElement>(".weekend-compound-select")!;
-    compoundSelect.addEventListener("change", () => {
-      this.handlers.onSetWeekendCompound?.(compoundSelect.value);
     });
   }
 
@@ -148,6 +128,16 @@ export class RaceHub {
       !meta?.setupComplete || !current || current.completed || !this.hostControlsEnabled;
     this.startBtn.disabled = blocked;
     this.garageBtn.disabled = !this.hostControlsEnabled;
+
+    if (!blocked && current) {
+      const isTest = current.eventType === "test" || current.format === "test";
+      const next = resolveNextSession(meta!);
+      const label = startSessionButtonLabel(next, isTest);
+      this.startBtn.innerHTML = `
+        <span class="btn-icon" aria-hidden="true">🏁</span>
+        ${label}
+      `;
+    }
   }
 
   update(meta: MetaStatePayload): void {
@@ -174,13 +164,6 @@ export class RaceHub {
     if (progressBar instanceof HTMLElement) {
       progressBar.style.width = `${progressPct}%`;
     }
-
-    const compoundSelect = this.root.querySelector<HTMLSelectElement>(".weekend-compound-select");
-    if (compoundSelect) {
-      compoundSelect.value = meta.weekendTireCompound ?? "Medium";
-    }
-
-    this.weekendSetup.bindTrack(meta);
 
     this.calendarEl.replaceChildren();
     for (const event of meta.calendar) {
@@ -212,6 +195,7 @@ export class RaceHub {
     }
 
     this.renderRoundInfo();
+    this.renderWeekendSchedule(meta);
     this.renderStaffRow(meta);
     this.syncHostControls();
   }
@@ -278,6 +262,46 @@ export class RaceHub {
     return meta.staff?.find((s) => s.role === role && !s.assignedCarId) ?? null;
   }
 
+  private renderWeekendSchedule(meta: MetaStatePayload): void {
+    const container = this.root.querySelector(".weekend-schedule");
+    if (!container) return;
+
+    const current = meta.calendar.find((e) => e.round === meta.currentRound);
+    if (!current || !weekendScheduleActive(current)) {
+      container.classList.add("hidden");
+      container.replaceChildren();
+      return;
+    }
+
+    const completed =
+      meta.weekendProgress?.round === meta.currentRound
+        ? meta.weekendProgress.completedSessions
+        : [];
+
+    const steps = WEEKEND_STEPS.map((step) => {
+      const done = completed.includes(step.type);
+      const active = !done && resolveNextSession(meta) === step.type;
+      const classes = [
+        "weekend-step",
+        done ? "weekend-step-done" : "",
+        active ? "weekend-step-active" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const duration = sessionDurationLabel(step.type, current.format);
+      return `
+        <div class="${classes}">
+          <span class="weekend-step-short">${step.short}</span>
+          <span class="weekend-step-label">${step.label}</span>
+          <span class="weekend-step-duration">${escapeHtml(duration)}</span>
+        </div>
+      `;
+    }).join('<span class="weekend-step-arrow" aria-hidden="true">→</span>');
+
+    container.innerHTML = `<div class="weekend-schedule-track">${steps}</div>`;
+    container.classList.remove("hidden");
+  }
+
   private renderRoundInfo(): void {
     if (!this.latestMeta) {
       this.roundInfoEl.textContent = "Waiting for season data…";
@@ -306,10 +330,19 @@ export class RaceHub {
       heroTitle.textContent = isTest ? "Pre-Season Test" : "Next Endurance Event";
     }
 
+    const nextSession = resolveNextSession(this.latestMeta!);
     let raceDesc = isTest
       ? "Official test session"
-      : `${formatDurationLabel(formatLabel, current.eventType)} race`;
-    if (this.sessionInfo?.targetDurationSeconds && this.sessionInfo.targetDurationSeconds > 0) {
+      : nextSession
+        ? `${sessionDurationLabel(nextSession, formatLabel)} — ${WEEKEND_STEPS.find((s) => s.type === nextSession)?.label ?? "Session"}`
+        : `${formatDurationLabel(formatLabel, current.eventType)} race`;
+    if (this.sessionInfo?.weekendSessionType && this.sessionInfo.targetDurationSeconds) {
+      const hours = this.sessionInfo.targetDurationSeconds / 3600;
+      raceDesc =
+        hours >= 1
+          ? `${hours}h duration`
+          : `${Math.round(this.sessionInfo.targetDurationSeconds / 60)} min session`;
+    } else if (this.sessionInfo?.targetDurationSeconds && this.sessionInfo.targetDurationSeconds > 0) {
       const hours = this.sessionInfo.targetDurationSeconds / 3600;
       raceDesc = hours >= 1 ? `${hours}h duration` : `${Math.round(this.sessionInfo.targetDurationSeconds / 60)}min duration`;
     } else if (this.sessionInfo?.targetLaps) {

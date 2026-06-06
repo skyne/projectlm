@@ -4,6 +4,7 @@
 #include "car_entity.hpp"
 #include "race.hpp"
 #include "team_config.hpp"
+#include "weather.hpp"
 #include "track_sampler.hpp"
 #include <string>
 #include <vector>

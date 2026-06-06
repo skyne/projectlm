@@ -41,6 +41,7 @@ const car_marketplace_1 = require("./game/car_marketplace");
 const fleet_1 = require("./game/fleet");
 const car_builder_1 = require("./game/car_builder");
 const weekend_setup_1 = require("./game/weekend_setup");
+const weekend_sessions_1 = require("./game/weekend_sessions");
 const driver_catalog_1 = require("./game/driver_catalog");
 const driver_market_1 = require("./game/driver_market");
 const economy_1 = require("./game/economy");
@@ -293,6 +294,62 @@ class MetaStateManager {
     clearLastCompletedRound() {
         this.lastCompletedRound = null;
     }
+    clearWeekendProgress() {
+        this.state.weekendProgress = undefined;
+        this.persist();
+    }
+    resolveWeekendSession(prep, event) {
+        if (!(0, weekend_sessions_1.appliesWeekendSchedule)(event.eventType, event.format)) {
+            return "race";
+        }
+        const requested = prep.sessionType;
+        if (requested)
+            return requested;
+        const progress = this.state.weekendProgress;
+        if (progress?.round === this.state.currentRound) {
+            return (0, weekend_sessions_1.nextWeekendSession)(progress.completedSessions) ?? "race";
+        }
+        return "practice";
+    }
+    validateWeekendSessionStart(sessionType) {
+        const event = this.state.calendar.find((e) => e.round === this.state.currentRound);
+        if (!event)
+            return "No calendar event for the current round";
+        if (!(0, weekend_sessions_1.appliesWeekendSchedule)(event.eventType, event.format)) {
+            return null;
+        }
+        const completed = this.state.weekendProgress?.round === this.state.currentRound
+            ? this.state.weekendProgress.completedSessions
+            : [];
+        return (0, weekend_sessions_1.canStartWeekendSession)(sessionType, completed);
+    }
+    completeWeekendSession(sessionType, qualiResults) {
+        const round = this.state.currentRound;
+        const progress = this.state.weekendProgress?.round === round
+            ? this.state.weekendProgress
+            : { round, completedSessions: [], qualiResults: [] };
+        if (!progress.completedSessions.includes(sessionType)) {
+            progress.completedSessions = [...progress.completedSessions, sessionType];
+        }
+        if (sessionType === "qualifying" && qualiResults?.length) {
+            progress.qualiResults = qualiResults;
+        }
+        this.state.weekendProgress = progress;
+        return this.persist();
+    }
+    getNextWeekendSessionAfter(sessionType) {
+        const event = this.state.calendar.find((e) => e.round === this.state.currentRound);
+        if (!event || !(0, weekend_sessions_1.appliesWeekendSchedule)(event.eventType, event.format)) {
+            return null;
+        }
+        const completed = this.state.weekendProgress?.round === this.state.currentRound
+            ? [...this.state.weekendProgress.completedSessions]
+            : [];
+        if (!completed.includes(sessionType)) {
+            completed.push(sessionType);
+        }
+        return (0, weekend_sessions_1.nextWeekendSession)(completed);
+    }
     reopenRound(round) {
         if (this.lastCompletedRound !== round)
             return this.getState();
@@ -308,6 +365,7 @@ class MetaStateManager {
         event.prizeMoney = undefined;
         event.rdPointsEarned = undefined;
         this.state.currentRound = round;
+        this.state.weekendProgress = undefined;
         this.lastCompletedRound = null;
         this.regenerateDriverMarket();
         return this.persist();
@@ -325,6 +383,7 @@ class MetaStateManager {
         event.rdPointsEarned = finances.rdPointsEarned;
         this.state.budget += finances.netEarnings;
         this.state.rdPoints += finances.rdPointsEarned;
+        this.state.weekendProgress = undefined;
         const nextRound = (0, track_catalog_1.nextCalendarRound)(this.state.calendar, completingRound);
         if (nextRound !== null) {
             this.state.currentRound = nextRound;
@@ -656,6 +715,33 @@ class MetaStateManager {
         this.state.weekendTireCompound = normalized;
         (0, car_builder_1.writePlayerCarConfig)(this.repoRoot, this.state);
         return this.persist();
+    }
+    applySessionPrep(prep) {
+        const round = this.state.calendar.find((e) => e.round === this.state.currentRound);
+        if (!round)
+            return "No calendar event for the current round";
+        const trackId = String(prep.trackId ?? "").trim();
+        if (!trackId || trackId !== round.trackId) {
+            return "Session prep track does not match the current round";
+        }
+        for (const entry of prep.carSetups ?? []) {
+            const carId = String(entry.carId ?? "").trim();
+            const preset = entry.preset;
+            if (!carId || !preset)
+                return "Each car setup requires carId and preset";
+            const car = this.state.fleet?.find((c) => c.id === carId);
+            if (!car)
+                return `Unknown car: ${carId}`;
+            const err = (0, weekend_setup_1.validateTrackPreset)({ ...preset, trackId });
+            if (err)
+                return `${car.carNumber}: ${err}`;
+            if (!car.trackSetupPresets)
+                car.trackSetupPresets = {};
+            car.trackSetupPresets[trackId] = { ...preset, trackId };
+        }
+        (0, car_builder_1.writePlayerCarConfig)(this.repoRoot, this.state);
+        this.persist();
+        return null;
     }
     saveTrackSetupPreset(trackId, preset) {
         const err = (0, weekend_setup_1.validateTrackPreset)({ ...preset, trackId });

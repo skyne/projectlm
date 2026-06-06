@@ -11,6 +11,7 @@ import { TeamHQ } from "./components/TeamHQ";
 import { RaceHub } from "./components/RaceHub";
 import { SeasonCalendar } from "./components/SeasonCalendar";
 import { PostRaceOverlay } from "./components/PostRaceOverlay";
+import { PreSessionBriefing } from "./components/PreSessionBriefing";
 import { TeamCreationWizard } from "./components/TeamCreationWizard";
 import { CarGarage } from "./components/CarGarage";
 import { RaceControls } from "./components/RaceControls";
@@ -20,6 +21,7 @@ import { PitStopModal } from "./components/PitStopModal";
 import { PitWall } from "./components/PitWall";
 import { SessionRoster } from "./components/SessionRoster";
 import { JoinSessionModal } from "./components/JoinSessionModal";
+import { ConfirmModal } from "./components/ConfirmModal";
 import { DriverCenter } from "./components/DriverCenter";
 import { WeatherRadar } from "./components/WeatherRadar";
 import { WeatherForecastPanel } from "./components/WeatherForecastPanel";
@@ -34,7 +36,8 @@ import { enrichSnapshots, setEntryNumbersFromSession } from "./entryNumbers";
 import { resolveRetireReason } from "./utils/retireReason";
 import { setTrackLapLengthMeters } from "./utils/pitCommands";
 import { carBuildToVisual } from "./graphics/visualCatalog";
-import type { CarSnapshot, GameCatalogPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent } from "./ws/protocol";
+import type { CarSnapshot, GameCatalogPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent, WeekendSessionType } from "./ws/protocol";
+import { isTimingSession, resolveNextSession } from "./utils/weekendSessions";
 
 const RACE_MAIN_VIEW_KEY = "projectlm-race-main-view";
 
@@ -58,8 +61,13 @@ const carPreview = new CarPreview(document.getElementById("car-preview-container
 const timetable = new Timetable(timetableContainer);
 const telemetryPanel = new TelemetryPanel(telemetryContainer, {
   onDriverMode: (entryId, mode) => client.submitCommand(entryId, `driver_mode=${mode}`),
+  onHybridStrategy: (entryId, strategy) =>
+    client.submitCommand(entryId, `hybrid_strategy=${strategy}`),
+  onFitTeamMap: () => telemetryTrack.focusOnEntries(managedEntryIds),
+  onResetMap: () => telemetryTrack.resetView(),
 });
 const telemetryTrack = new SvgTrack(telemetryPanel.mapContainer, { zoomable: true });
+telemetryTrack.setLayerVisibility({ sectors: false, labels: false, pit: true });
 const compactLeaderboard = new CompactLeaderboard(
   document.getElementById("compact-leaderboard-container")!,
 );
@@ -73,6 +81,9 @@ const sessionRoster = new SessionRoster(
 );
 const joinModal = new JoinSessionModal(
   document.getElementById("join-session-overlay")!,
+);
+const confirmModal = new ConfirmModal(
+  document.getElementById("confirm-modal-overlay")!,
 );
 
 function beginJoin(opts: JoinSessionOptions): void {
@@ -102,7 +113,9 @@ function applyClientRole(role: ClientRole): void {
 }
 
 let playerEntryId = "entry-1";
+let commandEntryId = "entry-1";
 let managedEntryIds: string[] = [];
+let latestSnapshots: CarSnapshot[] = [];
 let raceStarted = false;
 let pendingRaceStart = false;
 let latestSession: SessionInitPayload | null = null;
@@ -128,18 +141,30 @@ const pitWall = new PitWall(document.getElementById("pitwall-container")!, {
     raceControls.setStatus("Pit queued — enter at start/finish");
   },
   onDriverMode: (entryId, mode) => client.submitCommand(entryId, `driver_mode=${mode}`),
+  onHybridStrategy: (entryId, strategy) =>
+    client.submitCommand(entryId, `hybrid_strategy=${strategy}`),
   onSetupChange: (entryId, wingDelta) =>
     client.submitCommand(entryId, `wing_delta=${wingDelta}`),
+  onEntryChange: (entryId) => selectCommandEntry(entryId),
 });
 
 const raceControls = new RaceControls(document.getElementById("race-controls-container")!, {
   onDriverMode: (entryId, mode) => client.submitCommand(entryId, `driver_mode=${mode}`),
-  onPitNow: () => pitModal.open(raceControls.getPlayerSnapshot()),
+  onStartingCompound: (entryId, compound) =>
+    client.submitCommand(entryId, `starting_compound=${compound}`),
+  onPitNow: (entryId) => {
+    const snap =
+      latestSnapshots.find((s) => s.entryId === entryId) ??
+      raceControls.getPlayerSnapshot();
+    pitModal.open(snap);
+  },
   onCancelPit: (entryId) => client.submitCommand(entryId, "cancel_pit"),
+  onReleaseToTrack: (entryId) => client.submitCommand(entryId, "release"),
   onSetupChange: (entryId, command) => {
     client.submitCommand(entryId, command);
     raceControls.setStatus(`Setup: ${command}`);
   },
+  onEntryChange: (entryId) => selectCommandEntry(entryId),
 });
 
 const engineerPanel = new EngineerPanel(document.getElementById("engineer-container")!, {
@@ -168,19 +193,31 @@ const carGarage = new CarGarage(garageContainer, {
     client.saveCarBuild(build);
     carGarage.setStatus("Saving build…");
   },
+  onVisualBuildChange: (build) => carPreview.setBuild(build),
   onAskGarageEngineer: (payload) => client.askGarageEngineer(payload),
 });
 
+const preSessionBriefing = new PreSessionBriefing(
+  document.getElementById("pre-session-overlay")!,
+  {
+    onConfirm: (prep) => {
+      preSessionBriefing.hide();
+      postRace.hide();
+      pendingRaceStart = true;
+      client.startRound({ ...prep, sessionType: "race" });
+    },
+    onCancel: () => preSessionBriefing.hide(),
+  },
+);
+
 const raceHub = new RaceHub(seasonPanel, {
-  onStartRace: () => startRound(),
+  onStartRace: () => startNextWeekendSession(),
   onOpenGarage: () => setMainView("garage"),
-  onSetWeekendCompound: (compound) => client.setWeekendTireCompound(compound),
-  onSaveTrackSetup: (trackId, preset) => client.saveTrackSetup(trackId, preset),
 });
 
 const seasonCalendar = new SeasonCalendar(calendarPanel, {
   onSelectTrack: (trackId) => client.getTrackPreview(trackId),
-  onStartRace: () => startRound(),
+  onStartRace: () => startNextWeekendSession(),
 });
 
 const postRace = new PostRaceOverlay(document.getElementById("post-race-overlay")!, {
@@ -188,9 +225,12 @@ const postRace = new PostRaceOverlay(document.getElementById("post-race-overlay"
     endRaceSession();
     setMainView("season");
   },
+  onContinueWeekend: (nextSession) => {
+    endRaceSession();
+    startWeekendSession(nextSession);
+  },
   onRestart: () => {
-    postRace.hide();
-    restartRaceSession();
+    void requestRestartSession(true);
   },
 });
 
@@ -283,32 +323,73 @@ function detectRetirements(snapshots: CarSnapshot[], raceTime: number): SimEvent
   return events;
 }
 
+function syncTelemetryTrackEntries(): void {
+  telemetryTrack.setHighlightedEntries(managedEntryIds);
+  telemetryTrack.setPlayerEntry(commandEntryId);
+}
+
+function managedEntryOptions(): Array<{
+  entryId: string;
+  teamName: string;
+  carNumber: string;
+  classId: string;
+}> {
+  const entries = latestSession?.entries ?? [];
+  return managedEntryIds
+    .map((id) => entries.find((e) => e.entryId === id))
+    .filter((e): e is NonNullable<typeof e> => e != null);
+}
+
+function selectCommandEntry(entryId: string): void {
+  if (!managedEntryIds.includes(entryId)) return;
+  commandEntryId = entryId;
+  raceControls.setSelectedEntry(entryId);
+  pitWall.setSelectedEntry(entryId);
+  engineerPanel.setPlayerEntry(entryId);
+  pitModal.setPlayerEntry(entryId);
+  track.setPlayerEntry(entryId);
+  telemetryTrack.setPlayerEntry(entryId);
+  telemetryPanel.setPlayerEntry(entryId);
+  compactLeaderboard.setPlayerEntry(entryId);
+  eventLog.setPlayerEntry(entryId);
+  const snap = latestSnapshots.find((s) => s.entryId === entryId) ?? null;
+  raceControls.updateSnapshot(snap);
+  updateLapCounter(snap);
+}
+
+function syncManagedEntryPickers(): void {
+  const options = managedEntryOptions();
+  raceControls.setManagedEntries(options, commandEntryId);
+  pitWall.setEntries(options, commandEntryId);
+  pitWall.setSelectedEntry(commandEntryId);
+  telemetryPanel.setEntries(options);
+  syncTelemetryTrackEntries();
+}
+
+function syncTimingSessionUi(sessionType?: WeekendSessionType): void {
+  const timing = isTimingSession(sessionType);
+  compactLeaderboard.setTimingMode(timing);
+  timetable.setTimingMode(timing);
+  raceControls.setOpenSessionMode(timing);
+}
+
 function applySessionInit(payload: SessionInitPayload): void {
   clearRetirementTracking();
   latestSession = payload;
+  syncTimingSessionUi(payload.weekendSessionType);
   setEntryNumbersFromSession(payload);
   playerEntryId = payload.playerEntryId ?? "entry-1";
+  commandEntryId = playerEntryId;
   managedEntryIds =
     payload.managedEntryIds?.length
       ? payload.managedEntryIds
       : [playerEntryId];
-  track.setPlayerEntry(playerEntryId);
-  telemetryTrack.setPlayerEntry(playerEntryId);
-  telemetryPanel.setPlayerEntry(playerEntryId);
-  raceControls.setPlayerEntry(playerEntryId);
-  engineerPanel.setPlayerEntry(playerEntryId);
-  pitModal.setPlayerEntry(playerEntryId);
-  compactLeaderboard.setPlayerEntry(playerEntryId);
-  eventLog.setPlayerEntry(playerEntryId);
+  syncManagedEntryPickers();
+  selectCommandEntry(commandEntryId);
   eventLog.setEntryNames(payload.entries ?? []);
-  pitWall.setPlayerEntry(playerEntryId);
-  pitWall.setEntries(
-    (payload.entries ?? []).filter((e) => managedEntryIds.includes(e.entryId)),
-  );
   raceHub.setSessionInfo(payload);
   trackMapPanel.setWeatherContext(payload.weatherContext);
   playback.setTargetDuration(payload.targetDurationSeconds ?? null);
-  telemetryPanel.setEntries(payload.entries ?? []);
 }
 
 function syncCarPreview(meta: MetaStatePayload): void {
@@ -378,12 +459,15 @@ function setMainView(view: MainView): void {
 
   document.getElementById("live-badge")?.classList.toggle("hidden", !raceStarted || !isRaceView(view));
 
-  const showSidebar = raceStarted && isRaceView(view);
+  const showRaceSidebar = raceStarted && isRaceView(view);
+  const showGaragePreview = view === "garage";
+  const showSidebar = showRaceSidebar || showGaragePreview;
   sidebar.classList.toggle("hidden", !showSidebar);
-  compactLbColumn.classList.toggle("hidden", !showSidebar);
-  compactLeaderboard.setVisible(showSidebar);
-  raceControls.setRaceActive(showSidebar);
-  engineerPanel.setRaceActive(showSidebar);
+  sidebar.classList.toggle("garage-preview-only", showGaragePreview && !showRaceSidebar);
+  compactLbColumn.classList.toggle("hidden", !showRaceSidebar || view === "telemetry");
+  compactLeaderboard.setVisible(showRaceSidebar && view !== "telemetry");
+  raceControls.setRaceActive(showRaceSidebar);
+  engineerPanel.setRaceActive(showRaceSidebar);
 }
 
 function syncPlaybackPaused(paused: boolean): void {
@@ -434,16 +518,39 @@ function beginRaceSession(startPaused = true, reconnect?: BeginRaceReconnectOpti
 function endRaceSession(): void {
   raceStarted = false;
   headerNav.setRaceActive(false);
+  syncTimingSessionUi(undefined);
   raceControls.setRaceActive(false);
   engineerPanel.setRaceActive(false);
   pitModal.hide();
   document.getElementById("race-lap-counter")?.classList.add("hidden");
 }
 
-function startRound(): void {
+function openPreSessionBriefing(): void {
+  if (!latestMeta?.setupComplete || !latestMeta.fleet?.length) return;
+  preSessionBriefing.open(latestMeta, gameCatalog);
+}
+
+function startWeekendSession(sessionType: WeekendSessionType): void {
+  if (!latestMeta?.setupComplete) return;
+  if (sessionType === "race") {
+    openPreSessionBriefing();
+    return;
+  }
   postRace.hide();
   pendingRaceStart = true;
-  client.startRound();
+  client.startRound({ sessionType });
+}
+
+function startNextWeekendSession(): void {
+  if (!latestMeta?.setupComplete) return;
+  const current = latestMeta.calendar.find((e) => e.round === latestMeta!.currentRound);
+  const isTest = current?.eventType === "test" || current?.format === "test";
+  const next = resolveNextSession(latestMeta);
+  if (!isTest && next === "race") {
+    openPreSessionBriefing();
+    return;
+  }
+  startWeekendSession(next ?? "race");
 }
 
 function restartRaceSession(): void {
@@ -459,6 +566,35 @@ function restartRaceSession(): void {
   setMainView("map");
 }
 
+async function requestRestartSession(fromPostRace = false): Promise<void> {
+  const confirmed = await confirmModal.show({
+    title: "Restart session?",
+    message:
+      "Race progress will reset to the start. Any results from a finished race will be undone.",
+    confirmLabel: "Restart",
+    destructive: true,
+  });
+  if (!confirmed) return;
+  if (fromPostRace) postRace.hide();
+  restartRaceSession();
+}
+
+function endSessionAndReturn(): void {
+  postRace.hide();
+  clearRetirementTracking();
+  endRaceSession();
+  playback.resetSession();
+  syncPlaybackPaused(true);
+  eventLog.clear();
+  track.clearCars();
+  telemetryTrack.clearCars();
+  timetable.reset();
+  telemetryPanel.reset();
+  client.setTimeScale(1);
+  client.endSession();
+  setMainView("season");
+}
+
 function updateWeather(rc: RaceControlPayload | undefined, raceTime: number): void {
   weatherRadar.update(rc, raceTime);
   weatherForecast.update(rc);
@@ -470,18 +606,23 @@ function updateFromTick(
   raceControl?: RaceControlPayload,
 ): void {
   const normalized = normalizeSnapshots(snapshots);
+  latestSnapshots = normalized;
   track.updateCars(normalized);
-  telemetryTrack.updateCars(normalized);
   compactLeaderboard.update(normalized);
   timetable.update(normalized);
   telemetryPanel.update(normalized);
   trackMapPanel.updateLiveStats(normalized, raceControl);
   playback.setRaceTime(raceTime);
+  raceControls.setPreGreenFlag(raceTime < 0.5);
   updateWeather(raceControl, raceTime);
-  const playerSnap = normalized.find((s) => s.entryId === playerEntryId) ?? null;
-  raceControls.updateSnapshot(playerSnap);
   pitWall.updateSnapshots(normalized);
-  updateLapCounter(playerSnap);
+  const teamSnapshots = normalized.filter((s) => managedEntryIds.includes(s.entryId));
+  raceControls.updateManagedSnapshots(teamSnapshots);
+  telemetryTrack.updateCars(teamSnapshots);
+  const selectedSnap =
+    normalized.find((s) => s.entryId === commandEntryId) ?? null;
+  raceControls.updateSnapshot(selectedSnap);
+  updateLapCounter(selectedSnap);
   eventLog.append(detectRetirements(normalized, raceTime));
 }
 
@@ -501,6 +642,11 @@ function updateLapCounter(playerSnap: CarSnapshot | null): void {
     return;
   }
   el.classList.remove("race-lap-counter-retired");
+
+  if (isTimingSession(latestSession?.weekendSessionType) && playerSnap.inGarage) {
+    el.textContent = "In garage";
+    return;
+  }
 
   const targetLaps = latestSession?.targetLaps ?? 0;
   const targetDuration = latestSession?.targetDurationSeconds ?? 0;
@@ -541,6 +687,7 @@ const client = new ViewerClient({
       timetable.reset();
       telemetryPanel.reset();
       syncPlaybackPaused(payload.paused ?? true);
+      raceControls.setPreGreenFlag(true);
       setMainView("map");
     } else if (payload.raceActive && !payload.raceComplete) {
       beginRaceSession(payload.paused ?? true, {
@@ -558,6 +705,7 @@ const client = new ViewerClient({
   onTrackGeometry: (geometry) => {
     trackMapPanel.setGeometry(geometry, latestSession?.weatherContext?.trackId);
     telemetryTrack.setGeometry(geometry);
+    if (managedEntryIds.length) telemetryTrack.focusOnEntries(managedEntryIds);
     timetable.setGeometry(geometry);
     compactLeaderboard.setLapLength(geometry.lapLength);
     setTrackLapLengthMeters(geometry.lapLength);
@@ -616,7 +764,12 @@ const client = new ViewerClient({
         message: "Race complete — check final standings",
       },
     ]);
-    postRace.show(payload, playerEntryId);
+    postRace.show(
+      payload,
+      playerEntryId,
+      latestMeta,
+      latestSession?.weekendSessionType,
+    );
   },
   onJoinRejected: (message) => {
     joinModal.show(loadJoinPreferences());
@@ -643,7 +796,10 @@ const playback = new PlaybackControls(document.getElementById("playback-containe
   onTimeScale: (scale) => client.setTimeScale(scale),
   onPause: () => client.pause(),
   onResume: () => client.resume(),
-  onRestartRace: () => restartRaceSession(),
+  onRestartRace: () => {
+    void requestRestartSession();
+  },
+  onEndSession: () => endSessionAndReturn(),
   onReloadDefinitions: () => {
     endRaceSession();
     playback.resetSession();

@@ -1,6 +1,7 @@
 /** Validate and skill-gate engineer-suggested race commands. */
 
 const DRIVER_MODE = /^driver_mode=(push|normal|conserve)$/i;
+const HYBRID_STRATEGY = /^hybrid_strategy=(balanced|deploy|harvest|hold)$/i;
 const CANCEL_PIT = /^cancel_pit$/i;
 const PIT_OR_SETUP = /^(pit|setup)\|/i;
 
@@ -29,6 +30,7 @@ const SETUP_KEYS = new Set([
 
 export const ENGINEER_COMMAND_HELP = `Valid commands (setup changes apply in pit only):
 - driver_mode=push | driver_mode=normal | driver_mode=conserve
+- hybrid_strategy=balanced | hybrid_strategy=deploy | hybrid_strategy=harvest | hybrid_strategy=hold
 - cancel_pit
 - pit|fuel=<liters>|compound=soft|medium|hard|tires=FL,FR,RL,RR|wing=<delta>|brake_bias=<delta>|front_ride_height=<m>|rear_ride_height=<m>|front_spring=<N/m>|rear_spring=<N/m>|front_arb=<mult>|rear_arb=<mult>|front_damper_bump=<clicks>|front_damper_rebound=<clicks>|rear_damper_bump=<clicks>|rear_damper_rebound=<clicks>
 - setup|wing=<delta>|brake_bias=<delta>|front_ride_height=<m>|rear_ride_height=<m>|... (same setup keys, pit lane only)
@@ -153,6 +155,7 @@ export function validateEngineerCommand(
   const c = command.trim();
   if (!c) return undefined;
   if (DRIVER_MODE.test(c)) return c.toLowerCase();
+  if (HYBRID_STRATEGY.test(c)) return c.toLowerCase();
   if (CANCEL_PIT.test(c)) return "cancel_pit";
 
   const parsed = parseSegments(c);

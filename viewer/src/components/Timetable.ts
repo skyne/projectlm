@@ -1,4 +1,5 @@
 import type { CarSnapshot, TrackGeometryPayload } from "../ws/protocol";
+import { sortByTiming } from "../utils/weekendSessions";
 import { formatCarNumber } from "../entryNumbers";
 import { formatLapTime } from "../utils/formatTime";
 import { mmPanelHeader } from "../utils/mmUi";
@@ -13,6 +14,7 @@ export class Timetable {
   private sectorCount = 0;
   private selectedLap: TimetableLapMode = "live";
   private lapOptionCount = 0;
+  private timingMode = false;
 
   constructor(container: HTMLElement) {
     this.root = document.createElement("section");
@@ -46,6 +48,11 @@ export class Timetable {
 
   setVisible(visible: boolean): void {
     this.root.classList.toggle("hidden", !visible);
+  }
+
+  setTimingMode(enabled: boolean): void {
+    this.timingMode = enabled;
+    this.renderTable(this.lastSnapshots);
   }
 
   update(snapshots: CarSnapshot[]): void {
@@ -102,21 +109,25 @@ export class Timetable {
   }
 
   private renderTable(snapshots: CarSnapshot[]): void {
-    const sorted = [...snapshots].sort((a, b) => a.racePosition - b.racePosition);
+    const sorted = this.timingMode
+      ? sortByTiming(snapshots)
+      : [...snapshots].sort((a, b) => a.racePosition - b.racePosition);
     const sectorHeaders = Array.from({ length: this.sectorCount }, (_, i) => {
       return `<th>S${i + 1}</th>`;
     }).join("");
 
     const rows = sorted
-      .map((snap) => {
+      .map((snap, index) => {
         const sectorCells = this.sectorCells(snap);
         const rowClass = snap.retired ? "retired" : "";
         const statusCell = snap.retired
           ? `<td><span class="status-tag status-retired" title="${escapeHtml(resolveRetireReason(snap))}">OUT</span></td>`
-          : `<td></td>`;
+          : snap.inGarage
+            ? `<td><span class="status-tag">GAR</span></td>`
+            : `<td></td>`;
         return `
           <tr class="${rowClass}">
-            <td>${snap.racePosition}</td>
+            <td>${this.timingMode ? index + 1 : snap.racePosition}</td>
             <td class="car-num">${formatCarNumber(snap)}</td>
             <td>${escapeHtml(snap.teamName)}</td>
             <td><span class="class-badge class-${snap.classId}">${escapeHtml(snap.classId)}</span></td>

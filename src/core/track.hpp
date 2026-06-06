@@ -41,6 +41,8 @@ public:
   const std::vector<Vec3> &controlPoints() const { return controlPoints_; }
 
   TrackPose poseAtDistance(double distance) const;
+  /** On-track pose; pre-start grid distances stay on the start straight. */
+  TrackPose poseAtRaceDistance(double distance) const;
   TrackPose poseAtNormalizedT(double t) const;
 
 private:
@@ -82,6 +84,7 @@ struct TrackDefinition {
   size_t sectorIndexAtDistance(double distance) const;
   const TrackSector &sectorAt(size_t index) const;
   TrackPose poseAtDistance(double distance) const;
+  TrackPose poseAtRaceDistance(double distance) const;
   double curvatureAtDistance(double distance) const;
   double signedCurvatureAtDistance(double distance) const;
   double maxCurvatureAhead(double distance, double lookAheadMeters) const;

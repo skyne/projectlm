@@ -273,8 +273,12 @@ export class ViewerClient {
     this.send(clientMessage("restart_race", {}));
   }
 
-  startRound(): void {
-    this.send(clientMessage("start_round", {}));
+  endSession(): void {
+    this.send(clientMessage("end_session", {}));
+  }
+
+  startRound(prep?: import("./protocol").StartRoundPayload): void {
+    this.send(clientMessage("start_round", prep ?? {}));
   }
 
   reloadDefinitions(): void {

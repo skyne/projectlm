@@ -33,10 +33,13 @@ export interface CarSnapshot {
   tireTempRR?: number;
   coolantTempC?: number;
   hybridDeployMJ: number;
+  hybridBudgetMJ?: number;
+  hybridStrategy?: string;
   engineHealth: number;
   sectorIndex: number;
   racePosition: number;
   classPosition?: number;
+  inGarage?: boolean;
   inPit: boolean;
   pitQueued?: boolean;
   retired: boolean;

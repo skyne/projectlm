@@ -48,6 +48,25 @@ const baseBuild = () => ({
         strict_1.default.equal(resolved.wingBaseline, -0.04);
         strict_1.default.ok(resolved.notes?.includes("drag"));
     });
+    (0, node_test_1.it)("resolveCarTrackPreset prefers per-car preset over legacy meta preset", () => {
+        const car = {
+            id: "car-1",
+            carNumber: "7",
+            classId: "Hypercar",
+            affiliation: "manufacturer",
+            acquisition: "build",
+            build: baseBuild(),
+            carConfigPath: "configs/runtime/fleet/car_7.txt",
+            trackSetupPresets: {
+                spa: { trackId: "spa", wingBaseline: -0.02 },
+            },
+        };
+        const meta = {
+            trackSetupPresets: { spa: { trackId: "spa", wingBaseline: 0.08 } },
+        };
+        const resolved = (0, weekend_setup_1.resolveCarTrackPreset)(car, "spa", meta);
+        strict_1.default.equal(resolved.wingBaseline, -0.02);
+    });
     (0, node_test_1.it)("validateTrackPreset rejects out-of-range values", () => {
         strict_1.default.equal((0, weekend_setup_1.validateTrackPreset)({ trackId: "x", wingBaseline: 0.2 }), "Wing baseline must be within ±0.12");
         strict_1.default.equal((0, weekend_setup_1.validateTrackPreset)({ trackId: "x", finalDriveRatio: 5 }), "Final drive must be 3.0–4.2");

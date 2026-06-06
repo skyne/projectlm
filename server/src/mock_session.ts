@@ -35,6 +35,7 @@ interface RaceConfig {
   entriesPath: string;
   classRulesPath: string;
   staffConfigPath: string;
+  sessionMode: string;
   weatherProfile: string;
   rngSeed: number;
   ambientTempC: number;
@@ -103,9 +104,14 @@ interface CarState {
   driverRoster: Array<{ name: string; active: boolean }>;
   stintTimeSec: number;
   driverMode: "push" | "normal" | "conserve";
+  hybridStrategy: "balanced" | "deploy" | "harvest" | "hold";
+  hybridDeployMJ: number;
+  hybridBudgetMJ: number;
   pitCount: number;
   fuelTankCapacity: number;
   maxDriverStintSeconds: number;
+  startingCompound?: "soft" | "medium" | "hard";
+  inGarage: boolean;
 }
 
 const PIT_LANE_FRACTION = 0.06;
@@ -163,6 +169,7 @@ function sectorAtDistance(
   lapLength: number,
 ): number {
   if (sectors.length === 0) return 0;
+  if (distance < 0) return 0;
   const t = (((distance % lapLength) + lapLength) % lapLength) / lapLength;
   for (let i = 0; i < sectors.length; i++) {
     const sector = sectors[i];
@@ -171,14 +178,58 @@ function sectorAtDistance(
   return sectors.length - 1;
 }
 
+function gridNumberFromEntryId(entryId: string): number {
+  const match = entryId.match(/^entry-(\d+)$/);
+  return match ? parseInt(match[1], 10) : 1;
+}
+
+function gridSpacingM(classId: string): number {
+  const lengthM =
+    classId === "Hypercar"
+      ? 5.3
+      : classId === "LMGT3"
+        ? 4.85
+        : classId === "LMP2"
+          ? 4.75
+          : 5.0;
+  return lengthM + 2.0;
+}
+
+function gridDistanceForEntry(entry: {
+  entryId: string;
+  classId: string;
+}): number {
+  const grid = gridNumberFromEntryId(entry.entryId);
+  return -(grid - 1) * gridSpacingM(entry.classId);
+}
+
+function poseAtRaceDistance(
+  distance: number,
+  samples: SamplePoint[],
+): SamplePoint {
+  const start = samples[0];
+  if (!start || distance >= 0) {
+    const lapLength = samples[samples.length - 1]?.distance ?? 1;
+    const d = ((distance % lapLength) + lapLength) % lapLength;
+    return samples.find((s) => s.distance >= d) ?? start;
+  }
+  return {
+    distance,
+    normalizedT: 0,
+    x: start.x + start.tangentX * distance,
+    z: start.z + start.tangentZ * distance,
+    tangentX: start.tangentX,
+    tangentZ: start.tangentZ,
+  };
+}
+
 function makeCarState(
   entry: { entryId: string; teamName: string; carNumber: string; classId: string },
-  gridIndex: number,
 ): CarState {
   const tank = tankForClass(entry.classId);
   return {
     ...entry,
-    distance: gridIndex * 120,
+    distance: gridDistanceForEntry(entry),
     lap: 1,
     speed: CLASS_SPEED[entry.classId] ?? 85,
     fuel: tank,
@@ -210,6 +261,9 @@ function makeCarState(
     driverStamina: 100,
     activeDriverIndex: 0,
     driverMode: "normal",
+    hybridStrategy: "balanced",
+    hybridDeployMJ: entry.classId === "Hypercar" ? 4.5 : 0,
+    hybridBudgetMJ: entry.classId === "Hypercar" ? 4.5 : 0,
     pitCount: 0,
     fuelTankCapacity: tank,
     maxDriverStintSeconds: MAX_STINT_SECONDS[entry.classId] ?? 3 * 3600,
@@ -219,7 +273,56 @@ function makeCarState(
       { name: `${entry.teamName} #3`, active: false },
     ],
     stintTimeSec: 0,
+    inGarage: false,
   };
+}
+
+function isOpenSessionMode(mode: string): boolean {
+  const lower = mode.trim().toLowerCase();
+  return lower === "practice" || lower === "qualifying";
+}
+
+function placeCarInGarage(car: CarState, lapLength: number): void {
+  const boxDist = pitBoxDistanceM(lapLength);
+  car.inGarage = true;
+  car.inPit = true;
+  car.pitPhase = "at_box";
+  car.pitLaneDistance = boxDist;
+  car.pitServiceElapsed = 0;
+  car.pitServiceDuration = 0;
+  car.speed = 0;
+  car.distance = 0;
+  car.pitQueued = false;
+  car.pendingPitPlan = null;
+}
+
+function releaseCarFromGarage(car: CarState): boolean {
+  if (!car.inGarage || car.retired) return false;
+  car.inGarage = false;
+  car.pitPhase = "driving_out";
+  car.speed = PIT_LANE_SPEED_MS;
+  return true;
+}
+
+function sortCarsForBoard(cars: CarState[], timingMode: boolean): CarState[] {
+  if (!timingMode) {
+    return [...cars].sort((a, b) => b.lap - a.lap || b.distance - a.distance);
+  }
+  return [...cars].sort((a, b) => {
+    const aHas = a.bestLapTime > 0;
+    const bHas = b.bestLapTime > 0;
+    if (aHas !== bHas) return aHas ? -1 : 1;
+    if (aHas && bHas && a.bestLapTime !== b.bestLapTime) {
+      return a.bestLapTime - b.bestLapTime;
+    }
+    if (a.lastLapTime !== b.lastLapTime) return a.lastLapTime - b.lastLapTime;
+    return a.entryId.localeCompare(b.entryId);
+  });
+}
+
+function computeTimingGap(car: CarState, leader: CarState): number {
+  if (car.bestLapTime <= 0 || leader.bestLapTime <= 0) return 0;
+  return Math.max(0, car.bestLapTime - leader.bestLapTime);
 }
 
 function estimateMockPitServiceSeconds(plan: ReturnType<typeof parsePitCommand>): number {
@@ -294,6 +397,7 @@ function tickPitLane(car: CarState, deltaTime: number, lapLength: number): boole
       break;
     case "at_box":
       car.speed = 0;
+      if (car.inGarage) break;
       car.pitServiceElapsed += deltaTime;
       if (car.pitServiceElapsed >= car.pitServiceDuration) {
         car.pitPhase = "driving_out";
@@ -434,6 +538,7 @@ function parseRaceConfig(repoRoot: string, configPath: string): RaceConfig {
     entriesPath: "",
     classRulesPath: "configs/class_rules.txt",
     staffConfigPath: "",
+    sessionMode: "race",
     weatherProfile: "changeable",
     rngSeed: 20260306,
     ambientTempC: 0,
@@ -461,6 +566,7 @@ function parseRaceConfig(repoRoot: string, configPath: string): RaceConfig {
     else if (key === "entries") config.entriesPath = val;
     else if (key === "class_rules") config.classRulesPath = val;
     else if (key === "staff_config") config.staffConfigPath = val;
+    else if (key === "session_mode") config.sessionMode = val;
     else if (key === "weather_profile") config.weatherProfile = val;
     else if (key === "rng_seed") config.rngSeed = parseInt(val, 10) || 20260306;
     else if (key === "ambient_temp_c") config.ambientTempC = parseFloat(val);
@@ -619,7 +725,12 @@ export class MockSimSession {
         ? parseEntries(this.repoRoot, this.raceConfig.entriesPath)
         : [{ entryId: "solo-1", teamName: "Solo Entry", carNumber: "1", classId: "solo" }];
 
-      this.cars = entries.map((e, i) => makeCarState(e, i));
+      this.cars = entries.map((e) => makeCarState(e));
+      if (isOpenSessionMode(this.raceConfig.sessionMode)) {
+        for (const car of this.cars) {
+          placeCarInGarage(car, this.lapLength);
+        }
+      }
       for (const car of this.cars) {
         car.sectorIndex = sectorAtDistance(this.trackJson!.sectors, car.distance, this.lapLength);
       }
@@ -648,6 +759,10 @@ export class MockSimSession {
         car.pitQueued = false;
         continue;
       }
+      if (lower === "release" || lower === "garage|exit" || lower === "garage|release") {
+        releaseCarFromGarage(car);
+        continue;
+      }
       if (lower === "pit" || lower.startsWith("pit|") || lower === "request_pit") {
         car.pitQueued = true;
         car.pendingPitPlan = parsePitCommand(pending.command);
@@ -657,6 +772,24 @@ export class MockSimSession {
         const mode = lower.slice("driver_mode=".length).trim();
         if (mode === "push" || mode === "normal" || mode === "conserve") {
           car.driverMode = mode;
+        }
+      }
+      if (lower.startsWith("hybrid_strategy=")) {
+        const strategy = lower.slice("hybrid_strategy=".length).trim();
+        if (
+          strategy === "balanced" ||
+          strategy === "deploy" ||
+          strategy === "harvest" ||
+          strategy === "hold"
+        ) {
+          car.hybridStrategy = strategy;
+        }
+      }
+      if (lower.startsWith("starting_compound=")) {
+        if (this.raceTime > 0.5 || car.distance > 5) continue;
+        const compound = lower.slice("starting_compound=".length).trim();
+        if (compound === "soft" || compound === "medium" || compound === "hard") {
+          car.startingCompound = compound;
         }
       }
     }
@@ -825,6 +958,38 @@ export class MockSimSession {
 
       const throttleLoad =
         car.driverMode === "push" ? 1.05 : car.driverMode === "conserve" ? 0.9 : 1.0;
+
+      if (car.hybridBudgetMJ > 0) {
+        const deployScale =
+          car.hybridStrategy === "deploy"
+            ? 1.0
+            : car.hybridStrategy === "harvest"
+              ? 0.22
+              : car.hybridStrategy === "hold"
+                ? 0.0
+                : 0.78;
+        const regenScale =
+          car.hybridStrategy === "deploy"
+            ? 0.92
+            : car.hybridStrategy === "harvest"
+              ? 1.4
+              : car.hybridStrategy === "hold"
+                ? 1.12
+                : 1.0;
+        const speedKmh = car.speed * 3.6;
+        if (speedKmh >= 120 && deployScale > 0) {
+          car.hybridDeployMJ = Math.max(
+            0,
+            car.hybridDeployMJ - 0.00018 * deployScale * throttleLoad * deltaTime,
+          );
+        } else if (speedKmh > 80) {
+          car.hybridDeployMJ = Math.min(
+            car.hybridBudgetMJ,
+            car.hybridDeployMJ + 0.00012 * regenScale * deltaTime,
+          );
+        }
+      }
+
       const heatIn = (0.22 + car.speed / 320) * throttleLoad;
       const coolOut = 0.14 + car.speed / 110;
       car.coolantTempC += (heatIn - coolOut) * deltaTime;
@@ -876,14 +1041,21 @@ export class MockSimSession {
   }
 
   getSnapshots(): CarSnapshot[] {
-    const board = [...this.cars].sort((a, b) => b.lap - a.lap || b.distance - a.distance);
-    const leader = board[0];
+    const timingMode = isOpenSessionMode(this.raceConfig?.sessionMode ?? "race");
+    const board = sortCarsForBoard(this.cars, timingMode);
+    const classLeaders: Record<string, CarState> = {};
     const classRank: Record<string, number> = {};
     return board.map((car, rank) => {
+      if (timingMode && !classLeaders[car.classId]) {
+        classLeaders[car.classId] = car;
+      }
+      const classLeader = classLeaders[car.classId];
       const d = car.inPit
         ? car.pitLaneDistance
-        : ((car.distance % this.lapLength) + this.lapLength) % this.lapLength;
-      const sample = this.samples.find((s) => s.distance >= d) ?? this.samples[0];
+        : car.distance;
+      const sample = car.inPit
+        ? (this.samples.find((s) => s.distance >= d) ?? this.samples[0])
+        : poseAtRaceDistance(d, this.samples);
       const lateralOffset = car.inPit ? PIT_LATERAL_OFFSET_M : 0;
       const perpX = -sample.tangentZ;
       const perpZ = sample.tangentX;
@@ -906,10 +1078,14 @@ export class MockSimSession {
         tireWearRR: car.tireWearRR,
         tireTempC: car.tireTempC,
         coolantTempC: car.coolantTempC,
+        hybridDeployMJ: car.hybridBudgetMJ > 0 ? car.hybridDeployMJ : undefined,
+        hybridBudgetMJ: car.hybridBudgetMJ > 0 ? car.hybridBudgetMJ : undefined,
+        hybridStrategy: car.hybridBudgetMJ > 0 ? car.hybridStrategy : undefined,
         engineHealth: car.engineHealth,
         sectorIndex: car.sectorIndex,
         racePosition: rank + 1,
         classPosition: classRank[car.classId],
+        inGarage: car.inGarage,
         inPit: car.inPit,
         pitQueued: car.pitQueued,
         pitRemainingSec: car.inPit ? car.pitRemainingSec : 0,
@@ -936,7 +1112,13 @@ export class MockSimSession {
         currentSectorTime: car.currentSectorTime,
         lastLapTime: car.lastLapTime,
         bestLapTime: car.bestLapTime,
-        gapToLeader: leader ? computeGapToLeader(car, leader, this.lapLength) : 0,
+        gapToLeader: timingMode
+          ? classLeader
+            ? computeTimingGap(car, classLeader)
+            : 0
+          : board[0]
+            ? computeGapToLeader(car, board[0], this.lapLength)
+            : 0,
         currentLapSectorTimes: [...car.currentLapSectorTimes],
         lapHistory: car.lapHistory.map((lap) => ({
           lapNumber: lap.lapNumber,
@@ -953,6 +1135,7 @@ export class MockSimSession {
         fuelTankCapacity: car.fuelTankCapacity,
         driverStintSeconds: car.stintTimeSec,
         maxDriverStintSeconds: car.maxDriverStintSeconds,
+        driverMode: car.driverMode,
       };
     });
   }
@@ -1002,7 +1185,12 @@ export class MockSimSession {
       ? parseEntries(this.repoRoot, this.raceConfig.entriesPath)
       : [{ entryId: "solo-1", teamName: "Solo Entry", carNumber: "1", classId: "solo" }];
 
-    this.cars = entries.map((e, i) => makeCarState(e, i));
+    this.cars = entries.map((e) => makeCarState(e));
+    if (isOpenSessionMode(this.raceConfig.sessionMode)) {
+      for (const car of this.cars) {
+        placeCarInGarage(car, this.lapLength);
+      }
+    }
     for (const car of this.cars) {
       car.sectorIndex = sectorAtDistance(this.trackJson.sectors, car.distance, this.lapLength);
     }

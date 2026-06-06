@@ -6,16 +6,20 @@ import {
   PIT_LANE_SPEED_KMH,
 } from "../utils/pitCommands";
 import { mmPanelHeader } from "../utils/mmUi";
+import { buildHybridChargeBarHtml, hybridStrategyHint, hybridStrategyLabel, type HybridStrategy } from "../utils/hybridStrategy";
+import { TeamCarPicker, type ManagedEntryOption } from "./TeamCarPicker";
 
 export interface PitWallHandlers {
   onSubmitPit: (entryId: string, command: string) => void;
   onDriverMode: (entryId: string, mode: string) => void;
+  onHybridStrategy: (entryId: string, strategy: HybridStrategy) => void;
   onSetupChange: (entryId: string, wingDelta: number) => void;
+  onEntryChange?: (entryId: string) => void;
 }
 
 export class PitWall {
   readonly root: HTMLElement;
-  private entrySelect!: HTMLSelectElement;
+  private teamCarPicker: TeamCarPicker;
   private fuelInput!: HTMLInputElement;
   private compoundSelect!: HTMLSelectElement;
   private tireChecks!: NodeListOf<HTMLInputElement>;
@@ -23,6 +27,8 @@ export class PitWall {
   private repairBody!: HTMLInputElement;
   private driverChange!: HTMLInputElement;
   private modeSelect!: HTMLSelectElement;
+  private hybridStrategySelect!: HTMLSelectElement;
+  private hybridHintEl!: HTMLElement;
   private statusEl!: HTMLElement;
   private estimateEl!: HTMLElement;
   private carInfoEl!: HTMLElement;
@@ -40,7 +46,7 @@ export class PitWall {
       ${mmPanelHeader("Pit Wall", { subtitle: "Strategy · fuel · driver stints", badge: "WEC" })}
       <div class="pitwall-grid">
         <div class="pitwall-section">
-          <label class="mm-field">Entry <select id="pit-entry"></select></label>
+          <div class="pit-entry-picker-host"></div>
           <div id="pit-car-info" class="pit-car-info pit-telemetry-card"></div>
         </div>
 
@@ -77,6 +83,15 @@ export class PitWall {
               <option value="conserve">Conserve</option>
             </select>
           </label>
+          <label class="mm-field pit-hybrid-field hidden">Hybrid strategy
+            <select id="pit-hybrid-strategy">
+              <option value="balanced" selected>Balanced</option>
+              <option value="deploy">Deploy</option>
+              <option value="harvest">Harvest</option>
+              <option value="hold">Hold</option>
+            </select>
+          </label>
+          <p id="pit-hybrid-hint" class="pit-hybrid-hint hidden"></p>
           <div class="setup-row">
             <button type="button" id="setup-more-df" class="secondary-btn" disabled>More DF (pit only)</button>
             <button type="button" id="setup-less-drag" class="secondary-btn" disabled>Less drag (pit only)</button>
@@ -88,7 +103,19 @@ export class PitWall {
     `;
     container.appendChild(this.root);
 
-    this.entrySelect = this.root.querySelector("#pit-entry")!;
+    this.teamCarPicker = new TeamCarPicker(
+      {
+        onSelect: (entryId) => {
+          this.playerEntryId = entryId;
+          this.handlers.onEntryChange?.(entryId);
+          this.syncFromSnapshot();
+          this.updateEstimate();
+        },
+      },
+      { label: "Entry" },
+    );
+    this.teamCarPicker.mount(this.root.querySelector(".pit-entry-picker-host")!);
+
     this.fuelInput = this.root.querySelector("#pit-fuel")!;
     this.compoundSelect = this.root.querySelector("#pit-compound")!;
     this.tireChecks = this.root.querySelectorAll("[data-tire]");
@@ -96,6 +123,8 @@ export class PitWall {
     this.repairBody = this.root.querySelector("#pit-repair-body")!;
     this.driverChange = this.root.querySelector("#pit-driver-change")!;
     this.modeSelect = this.root.querySelector("#pit-mode")!;
+    this.hybridStrategySelect = this.root.querySelector("#pit-hybrid-strategy")!;
+    this.hybridHintEl = this.root.querySelector("#pit-hybrid-hint")!;
     this.statusEl = this.root.querySelector("#pit-status")!;
     this.estimateEl = this.root.querySelector("#pit-estimate")!;
     this.carInfoEl = this.root.querySelector("#pit-car-info")!;
@@ -110,10 +139,6 @@ export class PitWall {
     for (const cb of this.tireChecks) {
       cb.addEventListener("change", refreshEstimate);
     }
-    this.entrySelect.addEventListener("change", () => {
-      this.syncFromSnapshot();
-      refreshEstimate();
-    });
 
     this.root.querySelector("#pit-request")!.addEventListener("click", () => {
       this.handlers.onSubmitPit(this.selectedEntryId(), this.buildPitCommand());
@@ -126,6 +151,11 @@ export class PitWall {
     });
     this.modeSelect.addEventListener("change", () => {
       this.handlers.onDriverMode(this.selectedEntryId(), this.modeSelect.value);
+    });
+    this.hybridStrategySelect.addEventListener("change", () => {
+      const strategy = this.hybridStrategySelect.value as HybridStrategy;
+      this.hybridHintEl.textContent = hybridStrategyHint(strategy);
+      this.handlers.onHybridStrategy(this.selectedEntryId(), strategy);
     });
     this.root.querySelector("#setup-more-df")!.addEventListener("click", () => {
       if (this.setupMoreDfBtn.disabled) return;
@@ -141,19 +171,21 @@ export class PitWall {
     this.playerEntryId = entryId;
   }
 
-  setEntries(entries: Array<{ entryId: string; teamName: string; carNumber: string }>): void {
-    this.entrySelect.replaceChildren();
-    for (const entry of entries) {
-      const opt = document.createElement("option");
-      opt.value = entry.entryId;
-      opt.textContent = `#${entry.carNumber} ${entry.teamName}`;
-      if (entry.entryId === this.playerEntryId) opt.selected = true;
-      this.entrySelect.appendChild(opt);
-    }
+  setEntries(entries: ManagedEntryOption[], selectedId?: string): void {
+    this.teamCarPicker.setEntries(entries, selectedId ?? this.playerEntryId);
+  }
+
+  setSelectedEntry(entryId: string): void {
+    if (!entryId) return;
+    this.playerEntryId = entryId;
+    this.teamCarPicker.setSelectedEntry(entryId);
+    this.syncFromSnapshot();
+    this.updateEstimate();
   }
 
   updateSnapshots(snapshots: CarSnapshot[]): void {
     this.latestSnapshots = snapshots;
+    this.teamCarPicker.setSnapshots(snapshots);
     this.syncFromSnapshot();
     this.updateEstimate();
   }
@@ -172,6 +204,19 @@ export class PitWall {
 
     if (snap.driverMode) {
       this.modeSelect.value = snap.driverMode;
+    }
+
+    const hasHybrid =
+      snap.hybridDeployMJ != null &&
+      snap.hybridDeployMJ >= 0 &&
+      (snap.hybridBudgetMJ ?? 0) > 0;
+    const hybridField = this.root.querySelector(".pit-hybrid-field")!;
+    hybridField.classList.toggle("hidden", !hasHybrid);
+    this.hybridHintEl.classList.toggle("hidden", !hasHybrid);
+    if (hasHybrid) {
+      const strategy = (snap.hybridStrategy ?? "balanced") as HybridStrategy;
+      this.hybridStrategySelect.value = strategy;
+      this.hybridHintEl.textContent = hybridStrategyHint(strategy);
     }
 
     const pitLabel = snap.inPit
@@ -195,6 +240,11 @@ export class PitWall {
       · Fuel ${snap.fuel.toFixed(0)}L
       · Engine ${snap.engineHealth.toFixed(0)}%
       · Wing ${(snap.wingAngle ?? 0).toFixed(2)} · Bias ${(snap.brakeBias ?? 0.5).toFixed(2)}
+      ${
+        hasHybrid
+          ? `<br/><span class="pit-hybrid-charge">Hybrid ${buildHybridChargeBarHtml(snap.hybridDeployMJ, snap.hybridBudgetMJ, true)} · ${hybridStrategyLabel((snap.hybridStrategy ?? "balanced") as HybridStrategy)}</span>`
+          : ""
+      }
       <br/><span class="pit-state">${pitLabel}</span>
       <div class="pit-telemetry-tyres">${buildTyreTelemetryPanelHtml(snap, { compact: true })}</div>
       ${snap.setupFeedback ? `<br/><em>${escapeHtml(snap.setupFeedback)}</em>` : ""}
@@ -229,11 +279,11 @@ export class PitWall {
   }
 
   private selectedEntryId(): string {
-    return this.entrySelect.value || this.playerEntryId;
+    return this.teamCarPicker.getSelectedEntryId() || this.playerEntryId;
   }
 
   setInteractionEnabled(enabled: boolean): void {
-    this.entrySelect.disabled = !enabled;
+    this.teamCarPicker.setEnabled(enabled);
     this.fuelInput.disabled = !enabled;
     this.compoundSelect.disabled = !enabled;
     this.modeSelect.disabled = !enabled;

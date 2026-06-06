@@ -1,7 +1,18 @@
-import type { RaceCompletePayload } from "../ws/protocol";
+import type {
+  MetaStatePayload,
+  RaceCompletePayload,
+  WeekendSessionType,
+} from "../ws/protocol";
+import {
+  continueSessionButtonLabel,
+  nextSessionAfter,
+  resolveNextSession,
+  sessionCompleteTitle,
+} from "../utils/weekendSessions";
 
 export interface PostRaceHandlers {
   onContinue: () => void;
+  onContinueWeekend?: (nextSession: WeekendSessionType) => void;
   onRestart?: () => void;
 }
 
@@ -11,6 +22,13 @@ function escapeHtml(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function formatLapTime(seconds: number): string {
+  if (seconds <= 0) return "—";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toFixed(3).padStart(6, "0")}`;
 }
 
 function formatRaceTime(seconds: number): string {
@@ -45,10 +63,15 @@ export class PostRaceOverlay {
   readonly root: HTMLElement;
   private resultsBody: HTMLTableSectionElement;
   private timeEl: HTMLElement;
+  private titleEl: HTMLElement;
+  private badgeEl: HTMLElement;
   private playerSummaryEl: HTMLElement;
   private financesEl: HTMLElement;
   private podiumEl: HTMLElement;
+  private continueBtn: HTMLButtonElement;
+  private weekendBtn: HTMLButtonElement;
   private handlers: PostRaceHandlers;
+  private pendingNextSession: WeekendSessionType | null = null;
 
   constructor(container: HTMLElement, handlers: PostRaceHandlers) {
     this.handlers = handlers;
@@ -60,7 +83,7 @@ export class PostRaceOverlay {
         <div class="post-race-header">
           <div>
             <span class="post-race-badge mm-badge-wec">Session Complete</span>
-            <h2>Endurance Classification</h2>
+            <h2 class="post-race-title">Endurance Classification</h2>
           </div>
           <div class="post-race-time-block">
             <span class="clock-block-label">Race time</span>
@@ -84,6 +107,7 @@ export class PostRaceOverlay {
           </table>
         </div>
         <div class="post-race-actions">
+          <button type="button" class="primary-btn btn-weekend-next hidden">Continue to Qualifying</button>
           <button type="button" class="primary-btn btn-continue">Continue Championship</button>
           <button type="button" class="secondary-btn btn-restart">↺ Restart Session</button>
         </div>
@@ -92,40 +116,89 @@ export class PostRaceOverlay {
 
     this.resultsBody = this.root.querySelector("tbody")!;
     this.timeEl = this.root.querySelector(".post-race-time")!;
+    this.titleEl = this.root.querySelector(".post-race-title")!;
+    this.badgeEl = this.root.querySelector(".post-race-badge")!;
     this.playerSummaryEl = this.root.querySelector(".post-race-player-summary")!;
     this.financesEl = this.root.querySelector(".post-race-finances")!;
     this.podiumEl = this.root.querySelector(".post-race-podium")!;
+    this.continueBtn = this.root.querySelector(".btn-continue")!;
+    this.weekendBtn = this.root.querySelector(".btn-weekend-next")!;
 
-    this.root.querySelector(".btn-continue")!.addEventListener("click", () => {
+    this.weekendBtn.addEventListener("click", () => {
+      const next = this.pendingNextSession;
+      if (!next) return;
+      this.hide();
+      if (this.handlers.onContinueWeekend) {
+        this.handlers.onContinueWeekend(next);
+      } else {
+        this.handlers.onContinue();
+      }
+    });
+
+    this.continueBtn.addEventListener("click", () => {
       this.hide();
       this.handlers.onContinue();
     });
 
     this.root.querySelector(".btn-restart")!.addEventListener("click", () => {
-      this.hide();
       this.handlers.onRestart?.();
     });
   }
 
-  show(payload: RaceCompletePayload, playerEntryId: string): void {
+  show(
+    payload: RaceCompletePayload,
+    playerEntryId: string,
+    meta?: MetaStatePayload | null,
+    activeSessionType?: WeekendSessionType,
+  ): void {
+    const sessionType =
+      payload.weekendSessionType ?? activeSessionType ?? "race";
+    const isQuali = sessionType === "qualifying";
+    const isPractice = sessionType === "practice";
+    const isRace = sessionType === "race";
+    const isTiming = isQuali || isPractice;
+    this.pendingNextSession =
+      payload.nextWeekendSession ??
+      nextSessionAfter(sessionType) ??
+      (meta ? resolveNextSession(meta) : null);
+
+    this.badgeEl.textContent = isRace ? "Race Complete" : "Session Complete";
+    this.titleEl.textContent = sessionCompleteTitle(sessionType);
+
+    const weekendLabel = continueSessionButtonLabel(this.pendingNextSession);
+    if (this.pendingNextSession) {
+      this.weekendBtn.textContent = weekendLabel;
+      this.weekendBtn.classList.remove("hidden");
+      this.continueBtn.classList.add("hidden");
+    } else {
+      this.weekendBtn.classList.add("hidden");
+      this.continueBtn.classList.remove("hidden");
+      this.continueBtn.textContent = "Continue Championship";
+    }
+
     this.timeEl.textContent = formatRaceTime(payload.raceTime);
     this.resultsBody.replaceChildren();
     this.podiumEl.replaceChildren();
     this.financesEl.replaceChildren();
 
-    const sorted = [...payload.results].sort((a, b) => a.position - b.position);
+    const sorted = isTiming
+      ? [...payload.results].sort(
+          (a, b) => (a.bestLapTime ?? Infinity) - (b.bestLapTime ?? Infinity),
+        )
+      : [...payload.results].sort((a, b) => a.position - b.position);
     const playerResult = sorted.find((r) => r.entryId === playerEntryId);
 
-    for (const result of sorted.slice(0, 3)) {
+    for (const [index, result] of sorted.slice(0, 3).entries()) {
+      const displayPos = isTiming ? index + 1 : result.position;
       const card = document.createElement("div");
-      card.className = `podium-slot podium-p${result.position}`;
+      card.className = `podium-slot podium-p${displayPos}`;
       const carNum = formatCarNumber(result.carNumber);
       const carNumHtml = carNum
         ? `<span class="podium-car-num">${escapeHtml(carNum)}</span>`
         : "";
       card.innerHTML = `
         <span class="podium-medal">${podiumMedal(result.position)}</span>
-        <span class="podium-pos">P${result.position}</span>
+        <span class="podium-pos">P${displayPos}</span>
         ${carNumHtml}
         <span class="podium-team" title="${escapeHtml(result.teamName)}">${escapeHtml(result.teamName)}</span>
         <span class="class-badge class-${escapeHtml(result.classId)}">${escapeHtml(result.classId)}</span>
@@ -133,33 +206,64 @@ export class PostRaceOverlay {
       this.podiumEl.appendChild(card);
     }
 
-    for (const result of sorted) {
+    const tableHead = this.root.querySelector(".post-race-table thead tr");
+    if (tableHead) {
+      tableHead.innerHTML = isTiming
+        ? `<th>Pos</th><th>#</th><th>Team</th><th>Class</th><th>Best lap</th>`
+        : `<th>Pos</th><th>#</th><th>Team</th><th>Class</th>`;
+    }
+
+    for (const [index, result] of sorted.entries()) {
+      const displayPos = isTiming ? index + 1 : result.position;
       const row = document.createElement("tr");
       if (result.entryId === playerEntryId) row.className = "player-row";
-      if (result.position <= 3) row.classList.add("podium-row");
-      const medal = podiumMedal(result.position);
+      if (displayPos <= 3) row.classList.add("podium-row");
+      const medal = podiumMedal(displayPos);
+      const lapCell = isTiming
+        ? `<td class="lap-time">${formatLapTime(result.bestLapTime ?? 0)}</td>`
+        : "";
       row.innerHTML = `
-        <td>${medal ? `${medal} ` : ""}${result.position}</td>
+        <td>${medal ? `${medal} ` : ""}${displayPos}</td>
         <td class="car-num">${result.carNumber ? result.carNumber : "—"}</td>
         <td>${escapeHtml(result.teamName)}</td>
         <td><span class="class-badge class-${escapeHtml(result.classId)}">${escapeHtml(result.classId)}</span></td>
+        ${lapCell}
       `;
       this.resultsBody.appendChild(row);
     }
 
     if (playerResult) {
-      const medal = podiumMedal(playerResult.position);
-      const pts = payload.finances?.championshipPoints ?? payload.championshipPoints ?? 0;
-      this.playerSummaryEl.innerHTML = `
-        Your finish: <strong>P${playerResult.position}</strong>${medal ? ` ${medal}` : ""}
-        · Class <span class="class-badge class-${escapeHtml(playerResult.classId)}">${escapeHtml(playerResult.classId)}</span>
-        · <strong>+${pts}</strong> championship pts
-      `;
+      const displayPos = isTiming
+        ? sorted.findIndex((r) => r.entryId === playerResult.entryId) + 1
+        : playerResult.position;
+      const medal = podiumMedal(displayPos);
+      if (isRace) {
+        const pts = payload.finances?.championshipPoints ?? payload.championshipPoints ?? 0;
+        this.playerSummaryEl.innerHTML = `
+          Your finish: <strong>P${displayPos}</strong>${medal ? ` ${medal}` : ""}
+          · Class <span class="class-badge class-${escapeHtml(playerResult.classId)}">${escapeHtml(playerResult.classId)}</span>
+          · <strong>+${pts}</strong> championship pts
+        `;
+      } else if (isQuali) {
+        this.playerSummaryEl.innerHTML = `
+          Your grid slot: <strong>P${displayPos}</strong>
+          · Best lap <strong>${formatLapTime(playerResult.bestLapTime ?? 0)}</strong>
+          · Class <span class="class-badge class-${escapeHtml(playerResult.classId)}">${escapeHtml(playerResult.classId)}</span>
+        `;
+      } else if (isPractice) {
+        this.playerSummaryEl.innerHTML = `
+          Session time: <strong>${formatRaceTime(payload.raceTime)}</strong>
+          · Best lap <strong>${formatLapTime(playerResult.bestLapTime ?? 0)}</strong>
+          · Class <span class="class-badge class-${escapeHtml(playerResult.classId)}">${escapeHtml(playerResult.classId)}</span>
+        `;
+      } else {
+        this.playerSummaryEl.textContent = "";
+      }
     } else {
       this.playerSummaryEl.textContent = "";
     }
 
-    const finances = payload.finances;
+    const finances = isRace ? payload.finances : undefined;
     if (finances) {
       const panel = document.createElement("div");
       panel.className = "post-race-finances-panel";

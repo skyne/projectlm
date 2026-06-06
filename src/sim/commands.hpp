@@ -10,9 +10,12 @@ enum class SimCommandType {
   Unknown,
   PitRequest,
   DriverMode,
+  HybridStrategy,
   SetupChange,
   DriverSwap,
-  CancelPit
+  CancelPit,
+  StartingCompound,
+  ReleaseGarage
 };
 
 struct PitStopPlan {
@@ -33,6 +36,8 @@ struct SimCommand {
   SimCommandType type = SimCommandType::Unknown;
   PitStopPlan pit;
   DriverMode driverMode = DriverMode::Normal;
+  HybridStrategy hybridStrategy = HybridStrategy::Balanced;
+  ETireCompound tireCompound = ETireCompound::Medium;
   double wingAngleDelta = 0.0;
   double brakeBiasDelta = 0.0;
   /** Legacy: equal delta applied to both axles. */

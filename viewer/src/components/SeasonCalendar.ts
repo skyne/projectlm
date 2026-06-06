@@ -186,7 +186,7 @@ export class SeasonCalendar {
         </div>
         ${
           isNext
-            ? `<button type="button" class="primary-btn season-cal-start-btn">Start session</button>`
+            ? `<button type="button" class="primary-btn season-cal-start-btn">Prepare &amp; start</button>`
             : ""
         }
       </div>

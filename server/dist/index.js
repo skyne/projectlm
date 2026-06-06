@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const ws_1 = require("ws");
 const client_sessions_1 = require("./client_sessions");
 const economy_1 = require("./game/economy");
+const weekend_sessions_1 = require("./game/weekend_sessions");
 const engineer_service_1 = require("./llm/engineer_service");
 const garage_engineer_service_1 = require("./llm/garage_engineer_service");
 const sim_host_1 = require("./sim_host");
@@ -138,6 +139,16 @@ function main() {
                     console.log("[server] Race restarted");
                 }
             }
+            else if (msg.type === "end_session") {
+                if (!host.endSession()) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: "Failed to end session" })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("session_init", host.getSessionInit()));
+                    afterSessionChange();
+                    console.log("[server] Session ended");
+                }
+            }
             else if (msg.type === "reload_definitions") {
                 if (!host.reloadDefinitions()) {
                     ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", {
@@ -226,7 +237,7 @@ function main() {
                         ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: fleetErr })));
                     }
                     else {
-                        const startErr = host.startRound();
+                        const startErr = host.startRound(msg.payload);
                         if (startErr) {
                             ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: startErr })));
                         }
@@ -479,7 +490,7 @@ function main() {
     }, (events) => {
         const payload = { events };
         broadcast(clients, (0, ws_protocol_1.serverMessage)("events", payload));
-    }, (raceTime, results) => {
+    }, (raceTime, results, weekendSessionType) => {
         const meta = host.getMetaState();
         const session = host.getSessionInit();
         const managedIds = session.managedEntryIds?.length
@@ -491,24 +502,39 @@ function main() {
             : undefined;
         const event = meta.calendar.find((e) => e.round === meta.currentRound);
         const scoring = event?.eventType !== "test" && event?.format !== "test";
-        const finances = playerResult && event
+        const isRaceSession = weekendSessionType === "race";
+        const finances = isRaceSession && playerResult && event
             ? (0, economy_1.computeRaceFinances)(playerResult.position, playerResult.classId, event.format, meta.sponsors ?? [], meta.staff, { scoring })
             : undefined;
         let updatedMeta = meta;
-        if (playerResult && event && !event.completed) {
+        if (isRaceSession && playerResult && event && !event.completed) {
             updatedMeta = host.completeRound(playerResult.position, playerResult.classId);
         }
+        else if (!isRaceSession) {
+            updatedMeta = host.completeWeekendSession(weekendSessionType, results);
+        }
+        const completedSessions = updatedMeta.weekendProgress?.round === updatedMeta.currentRound
+            ? updatedMeta.weekendProgress.completedSessions
+            : isRaceSession
+                ? []
+                : [weekendSessionType];
+        const nextSession = isRaceSession
+            ? null
+            : (0, weekend_sessions_1.nextWeekendSession)(completedSessions);
+        const finalResults = isRaceSession ? results : (0, weekend_sessions_1.sortTimingResults)(results);
         const payload = {
             raceTime,
-            results,
+            results: finalResults,
             championshipPoints: finances?.championshipPoints ?? 0,
-            finances,
+            finances: isRaceSession ? finances : undefined,
+            weekendSessionType,
+            nextWeekendSession: nextSession,
         };
         broadcast(clients, (0, ws_protocol_1.serverMessage)("race_complete", payload));
         if (updatedMeta !== meta) {
             broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", updatedMeta));
         }
-        console.log("[server] Race complete");
+        console.log(`[server] ${weekendSessionType} session complete`);
     });
     process.on("SIGINT", () => {
         host.stop();

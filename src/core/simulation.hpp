@@ -93,6 +93,8 @@ struct SimulationModifiers {
   double fuelMultiplier = 1.0;
   double skillFactor = 1.0;
   double mistakePenalty = 0.0;
+  double hybridDeployScale = 1.0;
+  double hybridRegenScale = 1.0;
 };
 
 void AddTireWear(SimulationState &state, const double weights[4],
@@ -147,6 +149,10 @@ struct PhysicsConfig {
   double tireAmbientTempC = 55.0;
   double fuelOverrunFraction = 0.28;
   double thermalOverrunFraction = 0.22;
+  /** WEC Hypercar deploy threshold (~120 km/h). */
+  double hybridMinDeploySpeedMs = 33.33;
+  /** Scales regenMJ = regenRate * brake * dt * hybridRegenBaseScale. */
+  double hybridRegenBaseScale = 0.38;
 };
 
 void TickSimulation(const CarConfig &car, const TrackDefinition &track,

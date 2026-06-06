@@ -9,6 +9,9 @@
 
 enum class DriverMode { Push, Normal, Conserve };
 
+/** Pit-wall hybrid energy instruction (WEC-style deploy / harvest). */
+enum class HybridStrategy { Balanced, Deploy, Harvest, Hold };
+
 enum class DriverMistakeKind { Lockup, Overdrive, RanWide };
 
 enum class DriverTier { Platinum, Gold, Silver, Bronze };
@@ -46,6 +49,7 @@ struct DriverState {
   std::vector<DriverProfile> roster;
   int activeIndex = 0;
   DriverMode mode = DriverMode::Normal;
+  HybridStrategy hybridStrategy = HybridStrategy::Balanced;
   double stintTimeSeconds = 0.0;
   double fatigue = 0.0;
   double pressure = 0.0;
@@ -74,6 +78,9 @@ struct DriverState {
 };
 
 const char *DriverMistakeKindLabel(DriverMistakeKind kind);
+const char *HybridStrategyLabel(HybridStrategy strategy);
+void HybridStrategyModifiers(HybridStrategy strategy, double &deployScale,
+                             double &regenScale);
 
 DriverState MakeDefaultDrivers(const std::string &teamName, int count = 2,
                                uint32_t seed = 42);

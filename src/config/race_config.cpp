@@ -84,6 +84,8 @@ bool LoadRaceConfig(const std::string &filename, RaceConfig &config) {
       config.wxWetRatePerSecond = std::stod(val);
     else if (key == "weather_dry_rate")
       config.wxDryRatePerSecond = std::stod(val);
+    else if (key == "session_mode")
+      config.sessionMode = val;
   }
   return true;
 }

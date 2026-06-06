@@ -77,7 +77,14 @@ bool LoadTeamConfig(const std::string &path, TeamConfig &out) {
       out.unlockedParts = SplitCsv(value);
     else if (key == "staff") {
       const auto fields = SplitCsv(value);
-      if (fields.size() >= 3) {
+      // Legacy: role,name,skill — runtime grid: entryId,role,name,skill
+      if (fields.size() >= 4) {
+        StaffMember member;
+        member.role = fields[1];
+        member.name = fields[2];
+        member.skill = std::stod(fields[3]);
+        out.staff.push_back(std::move(member));
+      } else if (fields.size() >= 3) {
         StaffMember member;
         member.role = fields[0];
         member.name = fields[1];

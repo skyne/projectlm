@@ -63,10 +63,13 @@ struct CarSnapshot {
   double tireTempRR = 85.0;
   double coolantTempC = 70.0;
   double hybridDeployMJ = 0.0;
+  double hybridBudgetMJ = 0.0;
+  std::string hybridStrategy = "balanced";
   double engineHealth = 100.0;
   int sectorIndex = 0;
   int racePosition = 0;
   int classPosition = 0;
+  bool inGarage = false;
   bool inPit = false;
   bool pitQueued = false;
   bool retired = false;
@@ -146,6 +149,11 @@ public:
   double brakeBias() const { return brakeBias_; }
 
   void placeOnGrid(int gridPosition);
+  void placeInGarageHold(const TrackDefinition &track);
+  bool releaseFromGarage(const TrackDefinition &track);
+  bool inGarageHold() const { return garageHold_; }
+  double bestLapTime() const { return bestLapTime_; }
+  double lastLapTime() const;
   void applyClassStintLimit(double maxStintSeconds);
   double maxDriverStintSeconds() const { return maxDriverStintSeconds_; }
   int pitCount() const { return pitCount_; }
@@ -205,9 +213,11 @@ private:
   double mistakePenaltyPeak_ = 0.0;
   int pitCount_ = 0;
   double maxDriverStintSeconds_ = 0.0;
+  bool garageHold_ = false;
 };
 
 double ComputeGapToLeader(const Car &car, const Car &leader, double lapLength);
+double ComputeTimingGap(const Car &car, const Car &leader);
 
 struct CarTickResult {
   bool sectorCrossed = false;

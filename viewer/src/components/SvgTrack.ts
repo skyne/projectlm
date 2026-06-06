@@ -101,6 +101,8 @@ export class SvgTrack {
   private hitLayer: SVGRectElement | null = null;
   private fit: FitTransform | null = null;
   private playerEntryId = "entry-1";
+  private highlightedEntryIds = new Set<string>();
+  private carPositions = new Map<string, { x: number; y: number }>();
   private zoomable: boolean;
   private zoom = 1;
   private panX = 0;
@@ -267,6 +269,48 @@ export class SvgTrack {
     this.playerEntryId = entryId;
   }
 
+  setHighlightedEntries(entryIds: string[]): void {
+    this.highlightedEntryIds = new Set(entryIds);
+  }
+
+  focusOnEntries(entryIds: string[]): void {
+    if (!this.fit) return;
+    const points = entryIds
+      .map((id) => this.carPositions.get(id))
+      .filter((p): p is { x: number; y: number } => p != null);
+    if (points.length === 0) {
+      this.resetView();
+      return;
+    }
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const p of points) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    }
+
+    const pad = 70;
+    const spanX = Math.max(maxX - minX + pad * 2, this.fit.viewWidth * 0.24);
+    const spanY = Math.max(maxY - minY + pad * 2, this.fit.viewHeight * 0.24);
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    const zoomX = this.fit.viewWidth / spanX;
+    const zoomY = this.fit.viewHeight / spanY;
+    this.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(zoomX, zoomY)));
+
+    const { viewWidth, viewHeight } = this.currentViewSize();
+    this.panX = cx - viewWidth / 2;
+    this.panY = cy - viewHeight / 2;
+    this.clampPan();
+    this.applyViewBox();
+  }
+
   setTheme(theme: TrackTheme): void {
     this.theme = theme;
   }
@@ -281,6 +325,7 @@ export class SvgTrack {
   clearCars(): void {
     this.carsGroup.replaceChildren();
     this.carElements.clear();
+    this.carPositions.clear();
   }
 
   setGeometry(geometry: TrackGeometryPayload): void {
@@ -447,7 +492,10 @@ export class SvgTrack {
       const lengthPx = Math.max(12, (snap.carLengthM ?? 5) * 1.8);
       const widthPx = Math.max(7, (snap.carWidthM ?? 2) * 1.8);
       const isPlayer = snap.entryId === this.playerEntryId;
+      const isTeam = this.highlightedEntryIds.has(snap.entryId);
       const color = classColor(snap.classId);
+
+      this.carPositions.set(snap.entryId, { x: p.x, y: p.y });
 
       let marker = this.carElements.get(snap.entryId);
       if (!marker) {
@@ -491,6 +539,7 @@ export class SvgTrack {
         `translate(${p.x}, ${p.y}) rotate(${angle})`,
       );
       marker.group.classList.toggle("player-car", isPlayer);
+      marker.group.classList.toggle("team-car", isTeam && !isPlayer);
 
       const bodyPath = this.carBodyPath(lengthPx, widthPx);
       marker.body.setAttribute("d", bodyPath);
@@ -526,17 +575,23 @@ export class SvgTrack {
       }
 
       marker.glow.setAttribute("stroke", color);
-      marker.glow.setAttribute("stroke-width", isPlayer ? "3" : "0");
-      marker.glow.setAttribute("opacity", isPlayer ? "0.7" : "0");
       if (isPlayer) {
+        marker.glow.setAttribute("stroke-width", "3");
+        marker.glow.setAttribute("opacity", "0.7");
         marker.glow.setAttribute("filter", "url(#player-glow)");
+      } else if (isTeam) {
+        marker.glow.setAttribute("stroke-width", "2");
+        marker.glow.setAttribute("opacity", "0.55");
+        marker.glow.removeAttribute("filter");
       } else {
+        marker.glow.setAttribute("stroke-width", "0");
+        marker.glow.setAttribute("opacity", "0");
         marker.glow.removeAttribute("filter");
       }
 
-      if (marker.label.textContent !== numberLabel) {
-        marker.label.textContent = numberLabel;
-      }
+      marker.label.textContent = numberLabel;
+      marker.label.setAttribute("font-size", isPlayer || isTeam ? "5.5" : "0");
+      marker.label.setAttribute("fill", isPlayer ? "#fff" : isTeam ? color : "transparent");
       marker.title.textContent = `#${numberLabel} ${snap.teamName}${snap.inPit ? " (PIT)" : ""}${snap.overtaking ? " overtaking" : ""}`;
       marker.group.style.opacity = snap.retired ? "0.35" : "1";
     }
@@ -545,6 +600,7 @@ export class SvgTrack {
       if (!seen.has(id)) {
         el.group.remove();
         this.carElements.delete(id);
+        this.carPositions.delete(id);
       }
     }
   }

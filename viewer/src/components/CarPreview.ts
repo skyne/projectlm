@@ -6,7 +6,7 @@ const DEMO_BUILD: CarBuildVisual = {
   front_aero_type: "LowDragNose",
   rear_aero_type: "HighDownforceWing",
   wheel_package: "Hypercar18WideRear",
-  hybrid_system: "LMDh500kW",
+  hybrid_system: "LMDh50kW",
 };
 
 export class CarPreview {

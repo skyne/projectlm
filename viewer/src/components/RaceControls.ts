@@ -2,14 +2,23 @@ import type { CarSnapshot } from "../ws/protocol";
 import { mmPanelHeader } from "../utils/mmUi";
 import { buildRaceControlsSummaryHtml } from "../utils/telemetryCard";
 import { buildSetupCommand, type PitSetupDelta } from "../utils/setupCommands";
+import {
+  TeamCarPicker,
+  type ManagedEntryOption,
+} from "./TeamCarPicker";
 
 export type DriverMode = "conserve" | "normal" | "push";
 
+export type StartingCompound = "soft" | "medium" | "hard";
+
 export interface RaceControlsHandlers {
   onDriverMode: (entryId: string, mode: DriverMode) => void;
-  onPitNow: () => void;
+  onPitNow: (entryId: string) => void;
   onCancelPit: (entryId: string) => void;
+  onReleaseToTrack?: (entryId: string) => void;
   onSetupChange: (entryId: string, command: string) => void;
+  onStartingCompound?: (entryId: string, compound: StartingCompound) => void;
+  onEntryChange?: (entryId: string) => void;
 }
 
 export class RaceControls {
@@ -17,6 +26,7 @@ export class RaceControls {
   private summaryEl!: HTMLElement;
   private statusEl!: HTMLElement;
   private pitBtn!: HTMLButtonElement;
+  private releaseBtn!: HTMLButtonElement;
   private cancelPitBtn!: HTMLButtonElement;
   private modeButtons!: NodeListOf<HTMLButtonElement>;
   private setupQuickEl!: HTMLElement;
@@ -25,10 +35,17 @@ export class RaceControls {
   private setupLessDragBtn!: HTMLButtonElement;
   private setupBrakeRearBtn!: HTMLButtonElement;
   private setupBrakeFrontBtn!: HTMLButtonElement;
+  private sessionSetupEl!: HTMLElement;
+  private startingCompoundSelect!: HTMLSelectElement;
+  private teamCarPicker: TeamCarPicker;
   private handlers: RaceControlsHandlers;
   private playerEntryId = "entry-1";
+  private selectedEntryId = "entry-1";
   private activeMode: DriverMode = "normal";
   private latestSnap: CarSnapshot | null = null;
+  private preGreenFlag = false;
+  private openSessionMode = false;
+  private startingCompoundByEntry = new Map<string, StartingCompound>();
 
   constructor(container: HTMLElement, handlers: RaceControlsHandlers) {
     this.handlers = handlers;
@@ -36,7 +53,20 @@ export class RaceControls {
     this.root.className = "panel race-controls panel-wec hidden";
     this.root.innerHTML = `
       ${mmPanelHeader("Your Car", { subtitle: "Pit commands", badge: "LIVE" })}
+      <div class="team-car-picker-host"></div>
       <div class="race-controls-summary-card race-telemetry-card"></div>
+      <div class="race-session-setup hidden">
+        <span class="control-label">Session setup</span>
+        <label class="race-session-compound-field">
+          <span>Starting tyre compound</span>
+          <select class="race-starting-compound-select">
+            <option value="soft">Soft — peak grip, high wear</option>
+            <option value="medium" selected>Medium — balanced</option>
+            <option value="hard">Hard — durable, lower grip</option>
+          </select>
+        </label>
+        <p class="race-session-setup-hint">Set per car on the grid before green flag. Change again at pit stops.</p>
+      </div>
       <div class="driver-mode-group">
         <span class="control-label">Driver mode</span>
         <div class="driver-mode-buttons">
@@ -46,6 +76,7 @@ export class RaceControls {
         </div>
       </div>
       <div class="race-control-actions">
+        <button type="button" class="primary-btn release-track-btn hidden">Release to track</button>
         <button type="button" class="primary-btn pit-now-btn">⛽ Pit Now</button>
         <button type="button" class="secondary-btn cancel-pit-btn hidden">Cancel pit</button>
       </div>
@@ -66,6 +97,7 @@ export class RaceControls {
     this.summaryEl = this.root.querySelector(".race-controls-summary-card")!;
     this.statusEl = this.root.querySelector(".race-control-status")!;
     this.pitBtn = this.root.querySelector(".pit-now-btn")!;
+    this.releaseBtn = this.root.querySelector(".release-track-btn")!;
     this.cancelPitBtn = this.root.querySelector(".cancel-pit-btn")!;
     this.modeButtons = this.root.querySelectorAll(".driver-mode-btn");
     this.setupQuickEl = this.root.querySelector(".race-setup-quick")!;
@@ -74,6 +106,21 @@ export class RaceControls {
     this.setupLessDragBtn = this.root.querySelector(".setup-less-drag-btn")!;
     this.setupBrakeRearBtn = this.root.querySelector(".setup-brake-rear-btn")!;
     this.setupBrakeFrontBtn = this.root.querySelector(".setup-brake-front-btn")!;
+    this.sessionSetupEl = this.root.querySelector(".race-session-setup")!;
+    this.startingCompoundSelect = this.root.querySelector(
+      ".race-starting-compound-select",
+    )!;
+    this.teamCarPicker = new TeamCarPicker(
+      {
+        onSelect: (entryId) => {
+          this.selectedEntryId = entryId;
+          this.syncStartingCompoundSelect();
+          this.handlers.onEntryChange?.(entryId);
+        },
+      },
+      { label: "Team car" },
+    );
+    this.teamCarPicker.mount(this.root.querySelector(".team-car-picker-host")!);
 
     for (const btn of this.modeButtons) {
       btn.addEventListener("click", () => {
@@ -82,9 +129,15 @@ export class RaceControls {
       });
     }
 
-    this.pitBtn.addEventListener("click", () => this.handlers.onPitNow());
+    this.releaseBtn.addEventListener("click", () => {
+      this.handlers.onReleaseToTrack?.(this.selectedEntryId);
+      this.setStatus("Released to track");
+    });
+    this.pitBtn.addEventListener("click", () =>
+      this.handlers.onPitNow(this.selectedEntryId),
+    );
     this.cancelPitBtn.addEventListener("click", () => {
-      this.handlers.onCancelPit(this.playerEntryId);
+      this.handlers.onCancelPit(this.selectedEntryId);
       this.setStatus("Pit request cancelled");
     });
 
@@ -100,26 +153,81 @@ export class RaceControls {
     this.setupBrakeFrontBtn.addEventListener("click", () =>
       this.sendSetup({ brakeBias: -0.02 }),
     );
+
+    this.startingCompoundSelect.addEventListener("change", () => {
+      const compound = this.startingCompoundSelect.value as StartingCompound;
+      this.startingCompoundByEntry.set(this.selectedEntryId, compound);
+      this.handlers.onStartingCompound?.(this.selectedEntryId, compound);
+      this.setStatus(`Starting compound → ${compound}`);
+    });
+  }
+
+  private syncStartingCompoundSelect(): void {
+    const compound =
+      this.startingCompoundByEntry.get(this.selectedEntryId) ?? "medium";
+    this.startingCompoundSelect.value = compound;
   }
 
   private sendSetup(delta: PitSetupDelta): void {
     if (this.setupMoreDfBtn.disabled) return;
     const cmd = buildSetupCommand(delta);
     if (!cmd) return;
-    this.handlers.onSetupChange(this.playerEntryId, cmd);
+    this.handlers.onSetupChange(this.selectedEntryId, cmd);
     this.setStatus(`Setup sent: ${cmd}`);
   }
 
   setPlayerEntry(entryId: string): void {
     this.playerEntryId = entryId;
+    this.selectedEntryId = entryId;
+  }
+
+  setManagedEntries(entries: ManagedEntryOption[], selectedId: string): void {
+    this.teamCarPicker.setEntries(entries, selectedId);
+    if (entries.some((e) => e.entryId === selectedId)) {
+      this.selectedEntryId = selectedId;
+    } else if (entries[0]) {
+      this.selectedEntryId = entries[0].entryId;
+    }
+  }
+
+  updateManagedSnapshots(snapshots: CarSnapshot[]): void {
+    this.teamCarPicker.setSnapshots(snapshots);
+  }
+
+  setSelectedEntry(entryId: string): void {
+    if (!entryId || entryId === this.selectedEntryId) return;
+    this.selectedEntryId = entryId;
+    this.teamCarPicker.setSelectedEntry(entryId);
+  }
+
+  getSelectedEntryId(): string {
+    return this.selectedEntryId || this.playerEntryId;
   }
 
   setRaceActive(active: boolean): void {
     this.root.classList.toggle("hidden", !active);
+    if (!active) {
+      this.preGreenFlag = false;
+      this.openSessionMode = false;
+    }
+  }
+
+  setOpenSessionMode(enabled: boolean): void {
+    this.openSessionMode = enabled;
+    this.applySessionSetupVisibility();
+    this.applyGarageControls();
+  }
+
+  /** True while session is loaded on the grid before meaningful race time elapses. */
+  setPreGreenFlag(active: boolean): void {
+    this.preGreenFlag = active;
+    this.applySessionSetupVisibility();
   }
 
   setInteractionEnabled(enabled: boolean): void {
+    this.teamCarPicker.setEnabled(enabled);
     this.pitBtn.disabled = !enabled;
+    this.releaseBtn.disabled = !enabled;
     this.cancelPitBtn.disabled = !enabled;
     for (const btn of this.modeButtons) {
       btn.disabled = !enabled;
@@ -139,9 +247,12 @@ export class RaceControls {
       this.setDriverMode(mode, false);
     }
 
-    this.summaryEl.innerHTML = buildRaceControlsSummaryHtml(snap);
+    this.summaryEl.innerHTML = buildRaceControlsSummaryHtml(snap, {
+      hideIdentity: this.teamCarPicker.isMultiEntry(),
+    });
 
-    this.pitBtn.disabled = snap.inPit;
+    this.applyGarageControls();
+    this.pitBtn.disabled = snap.inPit || snap.inGarage === true;
     this.cancelPitBtn.classList.toggle("hidden", !snap.pitQueued);
 
     const setupAllowed = snap.inPit || snap.pitQueued;
@@ -155,6 +266,28 @@ export class RaceControls {
       btn.disabled = !setupAllowed;
     }
     this.setupReadoutEl.textContent = formatLiveSetupReadout(snap);
+
+    this.applySessionSetupVisibility();
+  }
+
+  private applyGarageControls(): void {
+    const inGarage = this.openSessionMode && this.latestSnap?.inGarage === true;
+    this.releaseBtn.classList.toggle("hidden", !inGarage);
+    this.pitBtn.classList.toggle("hidden", inGarage);
+  }
+
+  private applySessionSetupVisibility(): void {
+    const onGrid =
+      !this.openSessionMode &&
+      this.preGreenFlag &&
+      this.latestSnap != null &&
+      !this.latestSnap.retired;
+    this.sessionSetupEl.classList.toggle("hidden", !onGrid);
+    const canEdit = onGrid && !this.root.classList.contains("spectator-readonly");
+    this.startingCompoundSelect.disabled = !canEdit;
+    if (onGrid) {
+      this.syncStartingCompoundSelect();
+    }
   }
 
   setDriverMode(mode: DriverMode, notify: boolean): void {
@@ -163,7 +296,7 @@ export class RaceControls {
       btn.classList.toggle("active", btn.dataset.mode === mode);
     }
     if (notify) {
-      this.handlers.onDriverMode(this.playerEntryId, mode);
+      this.handlers.onDriverMode(this.selectedEntryId, mode);
       this.setStatus(`Driver mode → ${mode}`);
     }
   }

@@ -24,6 +24,29 @@ TEST_CASE("TrackSpline pose along lap", "[unit][track]") {
   REQUIRE(std::isfinite(mid.position.z));
 }
 
+TEST_CASE("poseAtRaceDistance keeps pre-start grid on start straight", "[unit][track]") {
+  TrackDefinition track;
+  REQUIRE(LoadTrack(TrackPath("lemans_la_sarthe.json"), track));
+
+  const TrackPose pole = track.poseAtRaceDistance(0.0);
+  const TrackPose p2 = track.poseAtRaceDistance(-7.3);
+  const TrackPose back = track.poseAtRaceDistance(-489.0);
+
+  REQUIRE(pole.normalizedT == Catch::Approx(0.0).margin(0.01));
+  REQUIRE(p2.normalizedT == Catch::Approx(0.0).margin(0.01));
+  REQUIRE(back.normalizedT == Catch::Approx(0.0).margin(0.01));
+
+  const double poleToP2 =
+      std::hypot(p2.position.x - pole.position.x, p2.position.z - pole.position.z);
+  const double poleToBack =
+      std::hypot(back.position.x - pole.position.x,
+                 back.position.z - pole.position.z);
+
+  REQUIRE(poleToP2 == Catch::Approx(7.3).margin(0.5));
+  REQUIRE(poleToBack == Catch::Approx(489.0).margin(2.0));
+  REQUIRE(track.sectorIndexAtDistance(-489.0) == 0);
+}
+
 TEST_CASE("sectorIndexAtDistance wraps sectors", "[unit][track]") {
   TrackDefinition track;
   REQUIRE(LoadTrack(TrackPath("lemans_la_sarthe.json"), track));

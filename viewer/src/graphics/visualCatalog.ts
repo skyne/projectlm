@@ -70,6 +70,11 @@ const BUILD_KEYS: Record<string, keyof CarBuildVisual> = {
   hybrid_system: "hybrid_system",
 };
 
+/** Legacy sim/catalog IDs → current visual_catalog.json keys. */
+const VISUAL_PART_ALIASES: Record<string, string> = {
+  LMDh500kW: "LMDh50kW",
+};
+
 export function resolveChassisId(
   build: CarBuildVisual,
   assembly: VisualAssembly,
@@ -102,7 +107,8 @@ export function resolveLayers(
 
     const bucket = catalog[slot as keyof VisualCatalog];
     if (!bucket || typeof bucket !== "object") continue;
-    const entry = (bucket as Record<string, CatalogLayer>)[partId];
+    const resolvedPartId = VISUAL_PART_ALIASES[partId] ?? partId;
+    const entry = (bucket as Record<string, CatalogLayer>)[resolvedPartId];
     if (entry) out.push({ z: entry.z ?? rule.z, src: `/${entry.layer}`, layer: entry });
   }
 

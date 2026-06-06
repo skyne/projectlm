@@ -1,0 +1,3 @@
+# Minimal grid for open-session unit tests
+entry=Test Car A,configs/car_config.txt,Hypercar,1,1
+entry=Test Car B,configs/car_config.txt,Hypercar,2,2

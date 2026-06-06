@@ -52,7 +52,10 @@ def resolve_part_desc(job: dict, part_defs: dict) -> str:
 
 def load_jobs(set_name: str) -> list[dict]:
     data = yaml.safe_load(PROMPTS_PATH.read_text(encoding="utf-8"))
-    jobs = data.get(set_name, [])
+    if set_name == "assembly":
+        jobs = data.get("assembly", []) + data.get("assembly_expansion", [])
+    else:
+        jobs = data.get(set_name, [])
     if not jobs:
         raise SystemExit(f"No jobs in prompts.yaml set '{set_name}'")
     part_defs = load_part_defs()
@@ -64,8 +67,35 @@ def load_jobs(set_name: str) -> list[dict]:
     return resolved
 
 
+def filter_missing_jobs(jobs: list[dict]) -> list[dict]:
+    import json
+
+    catalog_path = ROOT / "configs" / "visual_catalog.json"
+    if not catalog_path.exists():
+        return jobs
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    missing: list[dict] = []
+    for job in jobs:
+        category = job["category"]
+        part_id = job["part_id"]
+        bucket = catalog.get(category, {})
+        entry = bucket.get(part_id) if isinstance(bucket, dict) else None
+        if not entry:
+            missing.append(job)
+            continue
+        layer = entry.get("layer")
+        if not layer or not (ROOT / "viewer" / "public" / layer).exists():
+            missing.append(job)
+    return missing
+
+
 def extract_image_bytes_gemini(response) -> bytes:
-    for part in response.candidates[0].content.parts:
+    if not response.candidates:
+        raise RuntimeError("No candidates in Gemini response")
+    content = response.candidates[0].content
+    if not content or not content.parts:
+        raise RuntimeError("No image in Gemini response")
+    for part in content.parts:
         if part.inline_data and part.inline_data.data:
             return part.inline_data.data
     raise RuntimeError("No image in Gemini response")
@@ -228,10 +258,16 @@ def run_job(
 
     reference_bytes = None
     ref_chassis = job.get("reference_chassis")
-    if ref_chassis and job.get("layer_type") != "chassis_base":
+    if ref_chassis:
         reference_bytes = load_reference_image(ref_chassis)
         if reference_bytes:
             print(f"  ref: chassis/{ref_chassis}")
+        if reference_bytes and job.get("layer_type") == "chassis_base":
+            prompt = (
+                f"{prompt}\n"
+                "Match the reference image: identical canvas scale, ground line height, "
+                "and wheel arch centers. Only change body shape details as described."
+            )
 
     scratch = SCRATCH_DIR / f"{job_id}.raw.png"
     generate_one(
@@ -272,7 +308,7 @@ def run_job(
         if job.get("compatible_chassis"):
             extra["compatibleChassis"] = job["compatible_chassis"]
         if category == "chassis":
-            extra.setdefault("classId", "Hypercar")
+            extra.setdefault("classId", job.get("class_id", "Hypercar"))
             extra.setdefault("anchor", {"x": width // 2, "y": int(height * 0.55)})
             extra.setdefault("layerType", "chassis_base")
             extra.setdefault("z", 10)
@@ -300,6 +336,11 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Print prompts only")
     parser.add_argument("--no-register", action="store_true", help="Skip visual_catalog.json update")
     parser.add_argument("--job", help="Run single job id from the set")
+    parser.add_argument(
+        "--missing",
+        action="store_true",
+        help="Only run assembly jobs with no registered asset file yet",
+    )
     args = parser.parse_args()
 
     api_key = os.getenv("GEMINI_API_KEY")
@@ -316,6 +357,14 @@ def main() -> None:
         jobs = [j for j in jobs if j["id"] == args.job]
         if not jobs:
             raise SystemExit(f"Job '{args.job}' not found in set '{args.set}'")
+    elif args.missing:
+        jobs = filter_missing_jobs(jobs)
+        if not jobs:
+            print("No missing assets for this set.")
+            return
+        print(f"Missing assets ({len(jobs)}):")
+        for job in jobs:
+            print(f"  - {job['id']}")
 
     gemini_client = None
     if api_key and backend == "gemini":

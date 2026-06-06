@@ -5,6 +5,7 @@ import { validateEngineerCommand } from "./engineer_commands.js";
 describe("validateEngineerCommand", () => {
   it("accepts driver mode and cancel_pit", () => {
     assert.equal(validateEngineerCommand("driver_mode=push"), "driver_mode=push");
+    assert.equal(validateEngineerCommand("hybrid_strategy=harvest"), "hybrid_strategy=harvest");
     assert.equal(validateEngineerCommand("cancel_pit"), "cancel_pit");
   });
 

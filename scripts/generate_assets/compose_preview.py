@@ -171,7 +171,7 @@ def main() -> None:
         "front_aero_type": "LowDragNose",
         "rear_aero_type": "HighDownforceWing",
         "wheel_package": "Hypercar18WideRear",
-        "hybrid_system": "LMDh500kW",
+        "hybrid_system": "LMDh50kW",
     }
     build = json.loads(args.build) if args.build else default_build
     compose(build, args.out)

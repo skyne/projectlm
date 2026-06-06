@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.defaultTrackPreset = defaultTrackPreset;
 exports.resolveTrackPreset = resolveTrackPreset;
+exports.resolveCarTrackPreset = resolveCarTrackPreset;
 exports.mergeBuildWithTrackPreset = mergeBuildWithTrackPreset;
 exports.validateTrackPreset = validateTrackPreset;
 const track_catalog_1 = require("./track_catalog");
@@ -50,6 +51,11 @@ function resolveTrackPreset(trackId, saved) {
         return { ...defaultTrackPreset(trackId), ...saved, trackId };
     }
     return defaultTrackPreset(trackId);
+}
+/** Per-car preset with legacy meta-level fallback. */
+function resolveCarTrackPreset(car, trackId, meta) {
+    const saved = car.trackSetupPresets?.[trackId] ?? meta.trackSetupPresets?.[trackId] ?? null;
+    return resolveTrackPreset(trackId, saved);
 }
 /** Merge weekend sheet onto garage platform build (does not mutate garage save). */
 function mergeBuildWithTrackPreset(build, preset) {

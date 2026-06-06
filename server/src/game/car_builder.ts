@@ -7,7 +7,7 @@ import type {
   MetaStatePayload,
   TrackSetupPresetPayload,
 } from "../ws_protocol";
-import { mergeBuildWithTrackPreset } from "./weekend_setup";
+import { mergeBuildWithTrackPreset, resolveCarTrackPreset } from "./weekend_setup";
 import { defaultBuildForClass, loadGameCatalog, parseEngineFromTemplate, defaultWheelPackageForClass, defaultSuspensionForClass } from "./catalog";
 import { validateEngineBuild } from "./engine_model";
 import { loadCarPlatforms } from "./car_marketplace";
@@ -311,13 +311,16 @@ export function writeAllFleetConfigs(
   repoRoot: string,
   meta: MetaStatePayload,
   platforms?: Map<string, string>,
-  trackPreset?: TrackSetupPresetPayload | null,
+  trackId?: string,
 ): void {
   const compound = meta.weekendTireCompound ?? "Medium";
   for (const car of meta.fleet ?? []) {
     const platformPath = car.platformId
       ? platforms?.get(car.platformId)
       : undefined;
+    const trackPreset = trackId
+      ? resolveCarTrackPreset(car, trackId, meta)
+      : null;
     const build = mergeBuildWithTrackPreset(car.build, trackPreset);
     writeFleetCarConfig(
       repoRoot,

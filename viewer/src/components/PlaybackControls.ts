@@ -5,6 +5,7 @@ export interface PlaybackHandlers {
   onPause: () => void;
   onResume: () => void;
   onRestartRace: () => void;
+  onEndSession: () => void;
   onReloadDefinitions: () => void;
 }
 
@@ -58,6 +59,7 @@ export class PlaybackControls {
         <button type="button" class="btn-restart secondary-btn">↺ Restart</button>
         <button type="button" class="btn-reload secondary-btn">Reload</button>
       </div>
+      <button type="button" class="btn-end-session secondary-btn danger-btn">End Session</button>
     `;
 
     container.appendChild(this.root);
@@ -93,6 +95,10 @@ export class PlaybackControls {
 
     this.root.querySelector(".btn-restart")!.addEventListener("click", () => {
       handlers.onRestartRace();
+    });
+
+    this.root.querySelector(".btn-end-session")!.addEventListener("click", () => {
+      handlers.onEndSession();
     });
 
     this.root.querySelector(".btn-reload")!.addEventListener("click", () => {
@@ -147,6 +153,7 @@ export class PlaybackControls {
     this.pauseBtn.disabled = !enabled || this.paused;
     this.resumeBtn.disabled = !enabled || !this.paused;
     this.root.querySelector<HTMLButtonElement>(".btn-restart")!.disabled = !enabled;
+    this.root.querySelector<HTMLButtonElement>(".btn-end-session")!.disabled = !enabled;
     this.root.querySelector<HTMLButtonElement>(".btn-reload")!.disabled = !enabled;
     this.root.classList.toggle("spectator-readonly", !enabled);
   }

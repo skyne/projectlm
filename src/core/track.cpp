@@ -213,12 +213,26 @@ TrackPose TrackSpline::poseAtDistance(double distance) const {
   return pose;
 }
 
+TrackPose TrackSpline::poseAtRaceDistance(double distance) const {
+  if (distance >= 0.0)
+    return poseAtDistance(distance);
+
+  TrackPose start = poseAtDistance(0.0);
+  TrackPose pose = start;
+  pose.position = VecAdd(pose.position, VecScale(start.tangent, distance));
+  pose.distance = distance;
+  pose.normalizedT = 0.0;
+  return pose;
+}
+
 TrackPose TrackSpline::poseAtNormalizedT(double t) const {
   return poseAtDistance(t * totalLength_);
 }
 
 size_t TrackDefinition::sectorIndexAtDistance(double distance) const {
   if (sectors.empty())
+    return 0;
+  if (distance < 0.0)
     return 0;
   double d = distance;
   if (lapLength() > 1e-6) {
@@ -239,6 +253,12 @@ const TrackSector &TrackDefinition::sectorAt(size_t index) const {
 
 TrackPose TrackDefinition::poseAtDistance(double distance) const {
   TrackPose pose = spline.poseAtDistance(distance);
+  pose.sectorIndex = static_cast<int>(sectorIndexAtDistance(distance));
+  return pose;
+}
+
+TrackPose TrackDefinition::poseAtRaceDistance(double distance) const {
+  TrackPose pose = spline.poseAtRaceDistance(distance);
   pose.sectorIndex = static_cast<int>(sectorIndexAtDistance(distance));
   return pose;
 }
@@ -265,8 +285,9 @@ double TrackDefinition::curvatureAtDistance(double distance) const {
 
 double TrackDefinition::signedCurvatureAtDistance(double distance) const {
   const double ds = 6.0;
-  const TrackPose behind = poseAtDistance(distance - ds);
-  const TrackPose ahead = poseAtDistance(distance + ds);
+  const double sampleDistance = distance < 0.0 ? 0.0 : distance;
+  const TrackPose behind = poseAtDistance(sampleDistance - ds);
+  const TrackPose ahead = poseAtDistance(sampleDistance + ds);
   const double delta =
       WrapAngle(TangentHeading(ahead.tangent) - TangentHeading(behind.tangent));
   return delta / (2.0 * ds);
@@ -274,13 +295,15 @@ double TrackDefinition::signedCurvatureAtDistance(double distance) const {
 
 double TrackDefinition::maxCurvatureAhead(double distance,
                                          double lookAheadMeters) const {
+  const double sampleDistance = distance < 0.0 ? 0.0 : distance;
   if (lookAheadMeters <= 0.0)
-    return curvatureAtDistance(distance);
+    return curvatureAtDistance(sampleDistance);
 
   const double step = 8.0;
   double maxKappa = 0.0;
   for (double offset = 0.0; offset <= lookAheadMeters; offset += step)
-    maxKappa = std::max(maxKappa, curvatureAtDistance(distance + offset));
+    maxKappa =
+        std::max(maxKappa, curvatureAtDistance(sampleDistance + offset));
   return maxKappa;
 }
 

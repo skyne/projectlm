@@ -34,6 +34,8 @@ struct RaceConfig {
   double wxMaxRainIntensity = 0.85;
   double wxWetRatePerSecond = 0.0015;
   double wxDryRatePerSecond = 0.00008;
+  /** race | practice | qualifying */
+  std::string sessionMode = "race";
 };
 
 bool LoadRaceConfig(const std::string &filename, RaceConfig &config);

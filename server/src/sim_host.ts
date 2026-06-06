@@ -12,10 +12,12 @@ import {
   parseRaceConfig,
   type ParsedEntry,
 } from "./config_parser";
+import { tickAiGarageRelease } from "./game/ai_open_session";
 import { AiStrategyManager } from "./game/ai_strategy";
 import { AiStintGuide } from "./llm/ai_stint_guide";
 import { MockSimSession } from "./mock_session";
-import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload } from "./ws_protocol";
+import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload, WeekendSessionType } from "./ws_protocol";
+import { collectQualifyingResults } from "./game/weekend_sessions";
 
 export interface SimSessionLike {
   initFromRaceConfig(configPath: string): boolean;
@@ -40,6 +42,7 @@ export interface SessionInitExtra {
   targetDurationSeconds: number;
   raceFormat: string;
   roundNumber: number;
+  weekendSessionType?: WeekendSessionType;
   weatherContext?: {
     trackId: string;
     month: number;
@@ -108,7 +111,9 @@ export class SimHost {
       carNumber: string;
       classId: string;
       position: number;
+      bestLapTime: number;
     }>,
+    weekendSessionType: WeekendSessionType,
   ) => void;
 
   readonly meta: MetaStateManager;
@@ -170,6 +175,7 @@ export class SimHost {
       targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
       raceFormat: this.sessionExtra.raceFormat || round?.format || "",
       roundNumber: this.sessionExtra.roundNumber || meta.currentRound,
+      weekendSessionType: this.sessionExtra.weekendSessionType,
       simTimestep: this.simTimestep,
       entries: this.entries,
       carNumberByEntryId: Object.fromEntries(
@@ -194,8 +200,32 @@ export class SimHost {
     return this.meta.getState();
   }
 
-  startRound(): string | null {
-    const built = buildRaceForRound(this.repoRoot, this.meta.getState());
+  startRound(prep?: import("./ws_protocol").StartRoundPayload): string | null {
+    const prepPayload = prep ?? {};
+    const metaState = this.meta.getState();
+    const round = metaState.calendar.find((e) => e.round === metaState.currentRound);
+    if (!round) {
+      return "No calendar event for the current round";
+    }
+
+    const sessionType = this.meta.resolveWeekendSession(prepPayload, round);
+    const weekendErr = this.meta.validateWeekendSessionStart(sessionType);
+    if (weekendErr) return weekendErr;
+
+    if (prepPayload.trackId || prepPayload.carSetups?.length) {
+      const prepErr = this.meta.applySessionPrep(prepPayload);
+      if (prepErr) return prepErr;
+    }
+
+    const qualiResults =
+      sessionType === "race"
+        ? metaState.weekendProgress?.qualiResults
+        : undefined;
+
+    const built = buildRaceForRound(this.repoRoot, this.meta.getState(), {
+      sessionType,
+      qualiResults,
+    });
     if (!built) {
       console.warn("[sim_host] No calendar event for current round");
       return "No calendar event for the current round";
@@ -207,6 +237,7 @@ export class SimHost {
       targetDurationSeconds: built.targetDurationSeconds,
       raceFormat: built.raceFormat,
       roundNumber: built.roundNumber,
+      weekendSessionType: built.sessionType,
       weatherContext: built.weatherContext,
     };
     this.trackName = built.trackName;
@@ -234,9 +265,34 @@ export class SimHost {
     if (this.timeScale === 0) this.timeScale = 1;
     this.ensureTickLoop();
     console.log(
-      `[sim_host] Round ${built.roundNumber} — ${built.trackName} ${built.raceFormat} (${this.entries.length} cars, paused until resume)`,
+      `[sim_host] Round ${built.roundNumber} — ${built.sessionLabel} @ ${built.trackName} (${this.entries.length} cars, paused until resume)`,
     );
     return null;
+  }
+
+  getWeekendSessionType(): WeekendSessionType {
+    return this.sessionExtra.weekendSessionType ?? "race";
+  }
+
+  completeWeekendSession(
+    sessionType: WeekendSessionType,
+    results: Array<{
+      entryId: string;
+      classId: string;
+      bestLapTime: number;
+    }>,
+  ): MetaStatePayload {
+    const qualiResults =
+      sessionType === "qualifying"
+        ? collectQualifyingResults(results)
+        : undefined;
+    return this.meta.completeWeekendSession(sessionType, qualiResults);
+  }
+
+  getNextWeekendSessionAfter(
+    sessionType: WeekendSessionType,
+  ): WeekendSessionType | null {
+    return this.meta.getNextWeekendSessionAfter(sessionType);
   }
 
   private commandAttribution = new Map<
@@ -453,6 +509,29 @@ export class SimHost {
     }
   }
 
+  endSession(): boolean {
+    if (!this.inRaceSession) return true;
+
+    this.inRaceSession = false;
+    this.raceTime = 0;
+    this.sessionExtra = {
+      targetDurationSeconds: 0,
+      raceFormat: "",
+      roundNumber: 0,
+      weekendSessionType: undefined,
+    };
+    this.aiStrategy.reset();
+    this.aiStintGuide.reset();
+    this.paused = true;
+    if (this.timeScale === 0) this.timeScale = 1;
+
+    const prevCwd = process.cwd();
+    process.chdir(this.repoRoot);
+    const ok = this.session.initFromRaceConfig(this.configPathForSim());
+    process.chdir(prevCwd);
+    return ok;
+  }
+
   restartRace(): boolean {
     this.meta.reopenRound(this.activeRoundNumber);
 
@@ -544,7 +623,20 @@ export class SimHost {
     const ctx = {
       raceTime: this.getRaceTime(),
       targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
+      weekendSessionType: this.sessionExtra.weekendSessionType,
     };
+    const managedSet = new Set(this.runtimeManagedEntryIds);
+    if (ctx.weekendSessionType && ctx.weekendSessionType !== "race") {
+      tickAiGarageRelease(
+        snapshots,
+        managedSet,
+        {
+          raceTime: ctx.raceTime,
+          weekendSessionType: ctx.weekendSessionType,
+        },
+        (entryId, command) => this.session.submitCommand!(entryId, command),
+      );
+    }
     this.aiStintGuide.observe(snapshots, this.runtimeManagedEntryIds, {
       trackName: this.trackName,
       targetDurationSeconds: ctx.targetDurationSeconds,
@@ -599,7 +691,9 @@ export class SimHost {
             carNumber: s.carNumber,
             classId: s.classId,
             position: s.racePosition,
+            bestLapTime: s.bestLapTime ?? 0,
           })),
+          this.getWeekendSessionType(),
         );
         this.paused = true;
       }

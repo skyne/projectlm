@@ -276,3 +276,40 @@ DriverState MakeDefaultDrivers(const std::string &teamName, int count,
   state.activeIndex = 0;
   return state;
 }
+
+const char *HybridStrategyLabel(HybridStrategy strategy) {
+  switch (strategy) {
+  case HybridStrategy::Deploy:
+    return "deploy";
+  case HybridStrategy::Harvest:
+    return "harvest";
+  case HybridStrategy::Hold:
+    return "hold";
+  case HybridStrategy::Balanced:
+  default:
+    return "balanced";
+  }
+}
+
+void HybridStrategyModifiers(HybridStrategy strategy, double &deployScale,
+                             double &regenScale) {
+  switch (strategy) {
+  case HybridStrategy::Deploy:
+    deployScale = 1.0;
+    regenScale = 0.92;
+    break;
+  case HybridStrategy::Harvest:
+    deployScale = 0.22;
+    regenScale = 1.4;
+    break;
+  case HybridStrategy::Hold:
+    deployScale = 0.0;
+    regenScale = 1.12;
+    break;
+  case HybridStrategy::Balanced:
+  default:
+    deployScale = 0.78;
+    regenScale = 1.0;
+    break;
+  }
+}

@@ -272,12 +272,15 @@ function writeCarConfigFile(repoRoot, relPath, teamName, classId, build, platfor
 function writeFleetCarConfig(repoRoot, teamName, car, platformTemplatePath, startingTireCompound = "Medium") {
     return writeCarConfigFile(repoRoot, car.carConfigPath, teamName, car.classId, car.build, platformTemplatePath, startingTireCompound);
 }
-function writeAllFleetConfigs(repoRoot, meta, platforms, trackPreset) {
+function writeAllFleetConfigs(repoRoot, meta, platforms, trackId) {
     const compound = meta.weekendTireCompound ?? "Medium";
     for (const car of meta.fleet ?? []) {
         const platformPath = car.platformId
             ? platforms?.get(car.platformId)
             : undefined;
+        const trackPreset = trackId
+            ? (0, weekend_setup_1.resolveCarTrackPreset)(car, trackId, meta)
+            : null;
         const build = (0, weekend_setup_1.mergeBuildWithTrackPreset)(car.build, trackPreset);
         writeFleetCarConfig(repoRoot, meta.teamName, { ...car, build }, platformPath, compound);
     }

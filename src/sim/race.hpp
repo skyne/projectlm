@@ -10,9 +10,14 @@
 #include <unordered_map>
 #include <vector>
 
+enum class SessionMode { Race, Practice, Qualifying };
+
+SessionMode ParseSessionMode(const std::string &value);
+
 struct RaceSession {
   TrackDefinition track;
   PhysicsConfig physics;
+  SessionMode sessionMode = SessionMode::Race;
   std::vector<Car> cars;
   double elapsedRaceTime = 0.0;
   int targetLaps = 0;
@@ -40,6 +45,10 @@ void AddCar(RaceSession &session, CarConfig car, RaceClass raceClass,
 void TickRace(RaceSession &session, double deltaTime);
 
 std::vector<Car *> GetLeaderboard(RaceSession &session);
+
+std::vector<Car *> GetTimingLeaderboard(RaceSession &session);
+
+void ApplyOpenSessionPlacement(RaceSession &session);
 
 bool IsRaceComplete(const RaceSession &session);
 

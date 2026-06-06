@@ -1,6 +1,7 @@
 import type { CarSnapshot } from "../ws/protocol";
+import { sortByTiming } from "../utils/weekendSessions";
 import { formatCarNumber } from "../entryNumbers";
-import { formatGap } from "../utils/formatTime";
+import { formatGap, formatLapTime } from "../utils/formatTime";
 import { formatTyreTemp, formatTyreWear, tyreTempBand } from "../utils/formatTyre";
 import { escapeHtml } from "../utils/mmUi";
 import { resolveRetireReason } from "../utils/retireReason";
@@ -18,6 +19,7 @@ export class CompactLeaderboard {
   private showTyre = true;
   private playerEntryId = "entry-1";
   private lapLength = 13000;
+  private timingMode = false;
   private snapshots: CarSnapshot[] = [];
 
   constructor(container: HTMLElement) {
@@ -91,6 +93,15 @@ export class CompactLeaderboard {
     if (meters > 0) this.lapLength = meters;
   }
 
+  setTimingMode(enabled: boolean): void {
+    this.timingMode = enabled;
+    const title = this.root.querySelector(".compact-lb-title");
+    if (title) title.textContent = enabled ? "Timing" : "Standings";
+    const toggles = this.root.querySelector(".compact-lb-toggles");
+    toggles?.classList.toggle("hidden", enabled);
+    this.render();
+  }
+
   update(snapshots: CarSnapshot[]): void {
     this.snapshots = snapshots;
     this.render();
@@ -105,6 +116,15 @@ export class CompactLeaderboard {
   }
 
   private orderedBoard(): CarSnapshot[] {
+    if (this.timingMode) {
+      const sorted = sortByTiming(this.snapshots);
+      if (this.gapScope === "class") {
+        const player = sorted.find((s) => s.entryId === this.playerEntryId);
+        const classId = player?.classId;
+        return classId ? sorted.filter((s) => s.classId === classId) : sorted;
+      }
+      return sorted;
+    }
     if (this.gapScope === "class") {
       const player = this.snapshots.find((s) => s.entryId === this.playerEntryId);
       const classId = player?.classId;
@@ -126,6 +146,9 @@ export class CompactLeaderboard {
 
     const leader = board[0];
     if (car.entryId === leader.entryId) return "—";
+    if (this.timingMode && car.gapToLeader > 0) {
+      return `+${car.gapToLeader.toFixed(3)}`;
+    }
     if (this.gapScope === "overall" && car.gapToLeader > 0) {
       return formatGap(car.gapToLeader);
     }
@@ -140,20 +163,30 @@ export class CompactLeaderboard {
       return;
     }
 
-    for (const snap of board) {
+    for (let i = 0; i < board.length; i++) {
+      const snap = board[i];
       const row = document.createElement("div");
       row.className = "compact-lb-row";
       if (snap.entryId === this.playerEntryId) row.classList.add("is-player");
       if (snap.retired) row.classList.add("is-retired");
-      if (snap.inPit) row.classList.add("in-pit");
+      if (snap.inGarage) row.classList.add("in-garage");
+      else if (snap.inPit) row.classList.add("in-pit");
 
-      const pos = this.gapScope === "class" ? (snap.classPosition ?? snap.racePosition) : snap.racePosition;
+      const pos = this.timingMode
+        ? i + 1
+        : this.gapScope === "class"
+          ? (snap.classPosition ?? snap.racePosition)
+          : snap.racePosition;
       const num = formatCarNumber(snap);
       const gap = this.gapForCar(snap, board);
       const energy =
-        snap.hybridDeployMJ != null && snap.hybridDeployMJ >= 0
-          ? `${snap.hybridDeployMJ.toFixed(0)} MJ`
-          : "—";
+        snap.hybridDeployMJ != null &&
+        snap.hybridDeployMJ >= 0 &&
+        (snap.hybridBudgetMJ ?? 0) > 0
+          ? `${Math.round((snap.hybridDeployMJ / snap.hybridBudgetMJ!) * 100)}%`
+          : snap.hybridDeployMJ != null && snap.hybridDeployMJ >= 0
+            ? `${snap.hybridDeployMJ.toFixed(0)} MJ`
+            : "—";
 
       const extras: string[] = [];
       if (this.showFuel) extras.push(`<span class="compact-lb-meta" title="Fuel">${snap.fuel.toFixed(0)}L</span>`);
@@ -167,9 +200,11 @@ export class CompactLeaderboard {
 
       const statusCol = snap.retired
         ? `<span class="compact-lb-status-col"><span class="compact-lb-status status-retired" title="${escapeHtml(resolveRetireReason(snap))}">OUT</span></span>`
-        : snap.inPit
-          ? `<span class="compact-lb-status-col"><span class="compact-lb-status">PIT</span></span>`
-          : `<span class="compact-lb-status-col"></span>`;
+        : snap.inGarage
+          ? `<span class="compact-lb-status-col"><span class="compact-lb-status">GAR</span></span>`
+          : snap.inPit
+            ? `<span class="compact-lb-status-col"><span class="compact-lb-status">PIT</span></span>`
+            : `<span class="compact-lb-status-col"></span>`;
 
       row.innerHTML = `
         <span class="compact-lb-pos">${pos}</span>
@@ -179,11 +214,16 @@ export class CompactLeaderboard {
           ${escapeHtml(snap.teamName)}
         </span>
         ${statusCol}
-        <span class="compact-lb-lap">L${snap.lap}</span>
+        <span class="compact-lb-lap">${this.timingMode ? formatBestLap(snap.bestLapTime) : `L${snap.lap}`}</span>
         <span class="compact-lb-gap">${gap}</span>
         ${extras.length ? `<span class="compact-lb-extras">${extras.join("")}</span>` : ""}
       `;
       this.listEl.appendChild(row);
     }
   }
+}
+
+function formatBestLap(seconds: number | undefined): string {
+  if (seconds == null || seconds <= 0) return "—";
+  return formatLapTime(seconds);
 }

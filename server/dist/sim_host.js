@@ -41,9 +41,11 @@ const race_builder_1 = require("./game/race_builder");
 const track_loader_1 = require("./game/track_loader");
 const catalog_1 = require("./game/catalog");
 const config_parser_1 = require("./config_parser");
+const ai_open_session_1 = require("./game/ai_open_session");
 const ai_strategy_1 = require("./game/ai_strategy");
 const ai_stint_guide_1 = require("./llm/ai_stint_guide");
 const mock_session_1 = require("./mock_session");
+const weekend_sessions_1 = require("./game/weekend_sessions");
 const DEFAULT_RACE_CONFIG = "configs/race_config_web.txt";
 function resolveRepoRoot(explicit) {
     if (explicit)
@@ -132,6 +134,7 @@ class SimHost {
             targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
             raceFormat: this.sessionExtra.raceFormat || round?.format || "",
             roundNumber: this.sessionExtra.roundNumber || meta.currentRound,
+            weekendSessionType: this.sessionExtra.weekendSessionType,
             simTimestep: this.simTimestep,
             entries: this.entries,
             carNumberByEntryId: Object.fromEntries(this.entries.map((entry) => [entry.entryId, entry.carNumber])),
@@ -152,8 +155,29 @@ class SimHost {
     getMetaState() {
         return this.meta.getState();
     }
-    startRound() {
-        const built = (0, race_builder_1.buildRaceForRound)(this.repoRoot, this.meta.getState());
+    startRound(prep) {
+        const prepPayload = prep ?? {};
+        const metaState = this.meta.getState();
+        const round = metaState.calendar.find((e) => e.round === metaState.currentRound);
+        if (!round) {
+            return "No calendar event for the current round";
+        }
+        const sessionType = this.meta.resolveWeekendSession(prepPayload, round);
+        const weekendErr = this.meta.validateWeekendSessionStart(sessionType);
+        if (weekendErr)
+            return weekendErr;
+        if (prepPayload.trackId || prepPayload.carSetups?.length) {
+            const prepErr = this.meta.applySessionPrep(prepPayload);
+            if (prepErr)
+                return prepErr;
+        }
+        const qualiResults = sessionType === "race"
+            ? metaState.weekendProgress?.qualiResults
+            : undefined;
+        const built = (0, race_builder_1.buildRaceForRound)(this.repoRoot, this.meta.getState(), {
+            sessionType,
+            qualiResults,
+        });
         if (!built) {
             console.warn("[sim_host] No calendar event for current round");
             return "No calendar event for the current round";
@@ -164,6 +188,7 @@ class SimHost {
             targetDurationSeconds: built.targetDurationSeconds,
             raceFormat: built.raceFormat,
             roundNumber: built.roundNumber,
+            weekendSessionType: built.sessionType,
             weatherContext: built.weatherContext,
         };
         this.trackName = built.trackName;
@@ -187,8 +212,20 @@ class SimHost {
         if (this.timeScale === 0)
             this.timeScale = 1;
         this.ensureTickLoop();
-        console.log(`[sim_host] Round ${built.roundNumber} — ${built.trackName} ${built.raceFormat} (${this.entries.length} cars, paused until resume)`);
+        console.log(`[sim_host] Round ${built.roundNumber} — ${built.sessionLabel} @ ${built.trackName} (${this.entries.length} cars, paused until resume)`);
         return null;
+    }
+    getWeekendSessionType() {
+        return this.sessionExtra.weekendSessionType ?? "race";
+    }
+    completeWeekendSession(sessionType, results) {
+        const qualiResults = sessionType === "qualifying"
+            ? (0, weekend_sessions_1.collectQualifyingResults)(results)
+            : undefined;
+        return this.meta.completeWeekendSession(sessionType, qualiResults);
+    }
+    getNextWeekendSessionAfter(sessionType) {
+        return this.meta.getNextWeekendSessionAfter(sessionType);
     }
     submitCommand(entryId, command, attribution) {
         if (!this.session.submitCommand)
@@ -344,6 +381,28 @@ class SimHost {
             this.tickTimer = null;
         }
     }
+    endSession() {
+        if (!this.inRaceSession)
+            return true;
+        this.inRaceSession = false;
+        this.raceTime = 0;
+        this.sessionExtra = {
+            targetDurationSeconds: 0,
+            raceFormat: "",
+            roundNumber: 0,
+            weekendSessionType: undefined,
+        };
+        this.aiStrategy.reset();
+        this.aiStintGuide.reset();
+        this.paused = true;
+        if (this.timeScale === 0)
+            this.timeScale = 1;
+        const prevCwd = process.cwd();
+        process.chdir(this.repoRoot);
+        const ok = this.session.initFromRaceConfig(this.configPathForSim());
+        process.chdir(prevCwd);
+        return ok;
+    }
     restartRace() {
         this.meta.reopenRound(this.activeRoundNumber);
         const prevCwd = process.cwd();
@@ -418,7 +477,15 @@ class SimHost {
         const ctx = {
             raceTime: this.getRaceTime(),
             targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
+            weekendSessionType: this.sessionExtra.weekendSessionType,
         };
+        const managedSet = new Set(this.runtimeManagedEntryIds);
+        if (ctx.weekendSessionType && ctx.weekendSessionType !== "race") {
+            (0, ai_open_session_1.tickAiGarageRelease)(snapshots, managedSet, {
+                raceTime: ctx.raceTime,
+                weekendSessionType: ctx.weekendSessionType,
+            }, (entryId, command) => this.session.submitCommand(entryId, command));
+        }
         this.aiStintGuide.observe(snapshots, this.runtimeManagedEntryIds, {
             trackName: this.trackName,
             targetDurationSeconds: ctx.targetDurationSeconds,
@@ -457,7 +524,8 @@ class SimHost {
                     carNumber: s.carNumber,
                     classId: s.classId,
                     position: s.racePosition,
-                })));
+                    bestLapTime: s.bestLapTime ?? 0,
+                })), this.getWeekendSessionType());
                 this.paused = true;
             }
         }

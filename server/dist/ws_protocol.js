@@ -19,6 +19,7 @@ function parseClientMessage(raw) {
             "pause",
             "resume",
             "restart_race",
+            "end_session",
             "reload_definitions",
             "submit_command",
             "hire_staff",

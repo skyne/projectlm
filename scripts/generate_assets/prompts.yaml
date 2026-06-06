@@ -89,6 +89,25 @@ assembly:
       Isolated sprite of ONLY: {part_desc}
       Side view, white background.
 
+  - id: wheel_package.Hypercar18Standard
+    category: wheel_package
+    part_id: Hypercar18Standard
+    width: 768
+    height: 256
+    aspect_ratio: "16:9"
+    remove_background: true
+    normalize: sprite
+    layer_type: sprite
+    compatible_chassis: [LMDhDallara]
+    slot: wheel_package
+    z: 12
+    socket: { x: 0.12, y: 0.68, w: 0.76, h: 0.32 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY two racing wheel+tire assemblies in side view (balanced standard width),
+      spaced for LMDh wheelbase. White background. No car body.
+      {part_desc}
+
   - id: wheel_package.Hypercar18WideRear
     category: wheel_package
     part_id: Hypercar18WideRear
@@ -107,9 +126,28 @@ assembly:
       Isolated sprite of ONLY two racing wheel+tire assemblies in side view (front smaller, rear wider),
       spaced for LMDh wheelbase. White background. No car body.
 
-  - id: hybrid_system.LMDh500kW
+  - id: wheel_package.Hypercar18LowDrag
+    category: wheel_package
+    part_id: Hypercar18LowDrag
+    width: 768
+    height: 256
+    aspect_ratio: "16:9"
+    remove_background: true
+    normalize: sprite
+    layer_type: sprite
+    compatible_chassis: [LMDhDallara]
+    slot: wheel_package
+    z: 12
+    socket: { x: 0.12, y: 0.68, w: 0.76, h: 0.32 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY two racing wheel+tire assemblies in side view (narrow low-drag tires),
+      spaced for LMDh wheelbase. White background. No car body.
+      {part_desc}
+
+  - id: hybrid_system.LMDh50kW
     category: hybrid_system
-    part_id: LMDh500kW
+    part_id: LMDh50kW
     <<: *assembly_sprite
     slot: hybrid_system
     z: 15
@@ -118,6 +156,217 @@ assembly:
       {style}
       Isolated sprite of ONLY: {part_desc}
       Small detail piece, side view, white background.
+
+  - id: hybrid_system.HypercarHV
+    category: hybrid_system
+    part_id: HypercarHV
+    <<: *assembly_sprite
+    slot: hybrid_system
+    z: 15
+    socket: { x: 0.42, y: 0.38, w: 0.16, h: 0.22 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY: {part_desc}
+      Small detail piece on engine cover, side view, white background.
+
+# Additional chassis / class-specific wheels (merged into --set assembly)
+assembly_expansion:
+  # --- base shells (no reference) ---
+  - id: chassis.GT3Spaceframe.bare
+    category: chassis
+    part_id: GT3Spaceframe
+    <<: *assembly_chassis
+    class_id: LMGT3
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile on 21:9 canvas, GT3 proportions (~3.5:1 length-to-height), empty wheel arches.
+
+  - id: chassis.Oreca07.bare
+    category: chassis
+    part_id: Oreca07
+    <<: *assembly_chassis
+    class_id: LMP2
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile on 21:9 canvas, LMP2 prototype proportions, empty wheel arches.
+
+  - id: chassis.LMHMonocoque.bare
+    category: chassis
+    part_id: LMHMonocoque
+    <<: *assembly_chassis
+    class_id: Hypercar
+    reference_chassis: LMDhDallara
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile on 21:9 canvas, LMH cab-forward hypercar, empty wheel arches.
+
+  # --- LMDh variants ---
+  - id: chassis.LMDhOreca.bare
+    category: chassis
+    part_id: LMDhOreca
+    <<: *assembly_chassis
+    class_id: Hypercar
+    reference_chassis: LMDhDallara
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile, LMDh prototype shell, empty wheel arches.
+
+  - id: chassis.LMDhMultimatic.bare
+    category: chassis
+    part_id: LMDhMultimatic
+    <<: *assembly_chassis
+    class_id: Hypercar
+    reference_chassis: LMDhDallara
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile, Multimatic LMDh shell, empty wheel arches.
+
+  - id: chassis.LMDhLigier.bare
+    category: chassis
+    part_id: LMDhLigier
+    <<: *assembly_chassis
+    class_id: Hypercar
+    reference_chassis: LMDhDallara
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile, Ligier LMDh shell, empty wheel arches.
+
+  # --- LMH variants ---
+  - id: chassis.LMHInHouse.bare
+    category: chassis
+    part_id: LMHInHouse
+    <<: *assembly_chassis
+    class_id: Hypercar
+    reference_chassis: LMHMonocoque
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile, manufacturer LMH hypercar shell, empty wheel arches.
+
+  - id: chassis.LMHDallaraBuilt.bare
+    category: chassis
+    part_id: LMHDallaraBuilt
+    <<: *assembly_chassis
+    class_id: Hypercar
+    reference_chassis: LMHMonocoque
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile, Dallara-built LMH shell, empty wheel arches.
+
+  - id: chassis.LMHMultimaticBuilt.bare
+    category: chassis
+    part_id: LMHMultimaticBuilt
+    <<: *assembly_chassis
+    class_id: Hypercar
+    reference_chassis: LMHMonocoque
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile, Multimatic-built LMH shell, empty wheel arches.
+
+  # --- GT3 variants ---
+  - id: chassis.GT3Oreca.bare
+    category: chassis
+    part_id: GT3Oreca
+    <<: *assembly_chassis
+    class_id: LMGT3
+    reference_chassis: GT3Spaceframe
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile, Oreca GT3 body shell, empty wheel arches.
+
+  - id: chassis.GT3PrattMiller.bare
+    category: chassis
+    part_id: GT3PrattMiller
+    <<: *assembly_chassis
+    class_id: LMGT3
+    reference_chassis: GT3Spaceframe
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile, Pratt Miller GT3 body, empty wheel arches.
+
+  - id: chassis.GT3McLaren.bare
+    category: chassis
+    part_id: GT3McLaren
+    <<: *assembly_chassis
+    class_id: LMGT3
+    reference_chassis: GT3Spaceframe
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile, McLaren GT3 body, empty wheel arches.
+
+  - id: chassis.GT3Multimatic.bare
+    category: chassis
+    part_id: GT3Multimatic
+    <<: *assembly_chassis
+    class_id: LMGT3
+    reference_chassis: GT3Spaceframe
+    prompt: |
+      {style}
+      {part_desc}
+      Side profile, Multimatic GT3 body, empty wheel arches.
+
+  # --- class wheel packages ---
+  - id: wheel_package.GT3Front20Rear21
+    category: wheel_package
+    part_id: GT3Front20Rear21
+    width: 768
+    height: 256
+    aspect_ratio: "16:9"
+    remove_background: true
+    normalize: sprite
+    layer_type: sprite
+    slot: wheel_package
+    z: 12
+    socket: { x: 0.12, y: 0.68, w: 0.76, h: 0.32 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY two GT3 racing wheel+tire assemblies in side view.
+      White background. No car body. {part_desc}
+
+  - id: wheel_package.GT3WideRear21
+    category: wheel_package
+    part_id: GT3WideRear21
+    width: 768
+    height: 256
+    aspect_ratio: "16:9"
+    remove_background: true
+    normalize: sprite
+    layer_type: sprite
+    slot: wheel_package
+    z: 12
+    socket: { x: 0.12, y: 0.68, w: 0.76, h: 0.32 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY two GT3 racing wheel+tire assemblies, wider rear tire.
+      White background. No car body. {part_desc}
+
+  - id: wheel_package.LMP2Oreca18
+    category: wheel_package
+    part_id: LMP2Oreca18
+    width: 768
+    height: 256
+    aspect_ratio: "16:9"
+    remove_background: true
+    normalize: sprite
+    layer_type: sprite
+    slot: wheel_package
+    z: 12
+    socket: { x: 0.12, y: 0.68, w: 0.76, h: 0.32 }
+    prompt: |
+      {style}
+      Isolated sprite of ONLY two LMP2 prototype wheel+tire assemblies in side view.
+      White background. No car body. {part_desc}
 
 mvp:
   - id: track.paul_ricard_dusk

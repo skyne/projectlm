@@ -8,6 +8,71 @@ chassis:
       diffuser shape. CRITICAL EXCLUSIONS — do NOT draw: front splitter, nose cone, dive planes,
       rear wing, rear wing pylons, endplates, wheels, tires, brake discs. Wheel arches must be
       empty holes. Rear deck must be flat with visible pylon mounting points but no wing installed.
+  LMDhOreca:
+    label: Oreca LMDh monocoque
+    bare: |
+      Bare Oreca LMDh monocoque shell ONLY: Oreca-house LMDh sidepods and engine cover, cockpit bubble,
+      floor and diffuser. NO front aero, NO rear wing, NO wheels — empty circular wheel arches.
+  LMDhMultimatic:
+    label: Multimatic LMDh monocoque
+    bare: |
+      Bare Multimatic LMDh monocoque ONLY: crisp Cadillac/Porsche-style LMDh proportions, sidepods,
+      engine cover, cockpit, floor. NO bolt-on aero, NO wing, NO wheels — empty wheel arches.
+  LMDhLigier:
+    label: Ligier LMDh monocoque
+    bare: |
+      Bare Ligier LMDh monocoque ONLY: Ligier LMDh shell with angular sidepods and engine cover.
+      NO front splitter, NO rear wing, NO wheels — empty circular wheel arches.
+  LMHMonocoque:
+    label: LMH carbon monocoque
+    bare: |
+      Bare LMH hypercar monocoque ONLY: cab-forward LMH silhouette (Peugeot 9X8 / Toyota GR010 style),
+      low nose without LMDh spec clip-ons, cockpit bubble, sidepods, flat rear deck. NO wing, NO wheels.
+  LMHInHouse:
+    label: manufacturer LMH monocoque
+    bare: |
+      Bare in-house LMH hypercar shell ONLY: manufacturer LMH body with cab-forward cockpit and
+      sculpted sidepods. NO front aero kit, NO rear wing, NO wheels — empty wheel arches.
+  LMHDallaraBuilt:
+    label: Dallara-built LMH monocoque
+    bare: |
+      Bare Dallara-built LMH monocoque ONLY: Ferrari 499P-style LMH proportions, cab-forward cockpit,
+      sidepods, engine cover. NO bolt-on aero, NO wing, NO wheels.
+  LMHMultimaticBuilt:
+    label: Multimatic-built LMH monocoque
+    bare: |
+      Bare Multimatic-built LMH monocoque ONLY: Aston Martin Valkyrie-style LMH cab-forward body,
+      sidepods, rear deck. NO front aero, NO rear wing, NO wheels.
+  GT3Spaceframe:
+    label: GT3 spaceframe
+    bare: |
+      Bare GT3 spaceframe body shell ONLY: shorter and taller than prototype, GT3 coupe silhouette,
+      wide fenders, roofline and rear quarter. NO wing, NO splitter, NO wheels — empty wheel arches.
+  GT3Oreca:
+    label: Oreca GT3 body
+    bare: |
+      Bare Oreca GT3 customer racing body ONLY: GT3 coupe proportions, side exhaust bulge optional,
+      roof and fenders. NO aero kit, NO wing, NO wheels.
+  GT3PrattMiller:
+    label: Pratt Miller GT3 body
+    bare: |
+      Bare Pratt Miller GT3 body shell ONLY: Corvette GT3-style long hood GT3 silhouette.
+      NO bolt-on aero, NO wing, NO wheels.
+  GT3McLaren:
+    label: McLaren GT3 body
+    bare: |
+      Bare McLaren GT3 body shell ONLY: 720S GT3-style cab and dihedral doors hint in side profile.
+      NO aero kit, NO wing, NO wheels.
+  GT3Multimatic:
+    label: Multimatic GT3 body
+    bare: |
+      Bare Multimatic GT3 body shell ONLY: Mustang GT3-style muscular GT3 coupe profile.
+      NO splitter, NO wing, NO wheels.
+  Oreca07:
+    label: Oreca 07 LMP2 monocoque
+    bare: |
+      Bare Oreca 07 LMP2 monocoque ONLY: classic LMP2 prototype side profile, cockpit, fin/engine cover,
+      sidepods. NO front aero, NO rear wing, NO wheels — empty wheel arches.
 
 front_aero:
   LowDragNose:
@@ -39,19 +104,45 @@ rear_aero:
       Ground-effect package. Mounts low on rear floor. No tall wing pylons.
 
 wheel_package:
+  Hypercar18Standard:
+    label: hypercar 18-inch standard wheels
+    part: |
+      ONLY two side-view wheel and tire assemblies (front and rear similar width, balanced endurance spec).
+      Racing slicks, 18-inch rims, moderate tire width. No car body — pair at LMDh wheelbase spacing.
   Hypercar18WideRear:
     label: hypercar 18-inch wheels
     part: |
       ONLY two side-view wheel and tire assemblies (front smaller, rear larger/wider).
       Racing slicks, 18-inch rims. No car body — just the pair of wheels at correct wheelbase spacing.
+  Hypercar18LowDrag:
+    label: hypercar 18-inch low-drag wheels
+    part: |
+      ONLY two side-view wheel and tire assemblies with narrow low-drag tire profile (front and rear slim).
+      Racing slicks, 18-inch rims, Le Mans low-drag spec. No car body — pair at LMDh wheelbase spacing.
+  GT3Front20Rear21:
+    label: GT3 20/21-inch wheels
+    part: |
+      ONLY two side-view GT3 wheel+tire assemblies (front 20-inch slightly smaller, rear 21-inch taller).
+      GT3 slicks, spaced for GT3 wheelbase. No car body.
+  GT3WideRear21:
+    label: GT3 wide-rear wheels
+    part: |
+      ONLY two side-view GT3 wheel+tire assemblies with wider rear tire (21-inch rear, 20-inch front).
+      GT3 racing slicks. No car body — GT3 wheelbase spacing.
+  LMP2Oreca18:
+    label: LMP2 Oreca 18-inch wheels
+    part: |
+      ONLY two side-view LMP2 prototype wheel+tire assemblies, 18-inch rims, balanced LMP2 tire widths.
+      No car body — Oreca 07 wheelbase spacing.
 
 hybrid_system:
-  LMDh500kW:
+  LMDh50kW:
     label: LMDh hybrid unit
     part: |
-      ONLY subtle LMDh500kW hybrid details on engine cover: thin orange HV cable stripe and small
+      ONLY subtle LMDh50kW hybrid details on engine cover: thin orange HV cable stripe and small
       hybrid badge (palm-sized). Must NOT dominate the image. No large cable coils. No full car body.
   HypercarHV:
     label: hypercar HV hybrid
     part: |
-      ONLY the HypercarHV hybrid cover and orange HV lines on engine cover. No full car.
+      ONLY HypercarHV front-axle hybrid details on engine cover: orange HV cable bundle, small MGU badge,
+      subtle hybrid cover panel (palm-sized). Must NOT dominate the image. No full car body.

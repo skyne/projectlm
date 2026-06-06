@@ -1,4 +1,5 @@
 #include "car_entity.hpp"
+#include "car_parts.hpp"
 #include "driver.hpp"
 #include "track.hpp"
 #include "traffic.hpp"
@@ -72,6 +73,47 @@ void Car::placeOnGrid(int gridPosition) {
   gridPosition_ = gridPosition;
   state_.currentDistance = -(gridPosition - 1) * (body_.lengthM + 2.0);
   lateralOffset_ = (gridPosition % 2 == 0) ? 0.15 : -0.15;
+  garageHold_ = false;
+}
+
+void Car::placeInGarageHold(const TrackDefinition &track) {
+  garageHold_ = true;
+  state_.currentSpeed = 0.0;
+  state_.currentDistance = 0.0;
+  lateralOffset_ = 0.0;
+  pit_.pendingEnter = false;
+  pit_.plan = PitStopPlan{};
+  if (track.pitLane.valid()) {
+    pit_.inPit = true;
+    pit_.phase = PitPhase::AtBox;
+    pit_.pitLaneDistance = track.pitLane.boxDistance;
+    pit_.pitElapsed = 0.0;
+    pit_.pitDuration = 0.0;
+    pit_.statusMessage = "In garage";
+  } else {
+    pit_.inPit = false;
+    pit_.phase = PitPhase::None;
+    pit_.statusMessage = "In garage";
+  }
+}
+
+bool Car::releaseFromGarage(const TrackDefinition &track) {
+  if (!garageHold_ || retired_)
+    return false;
+  garageHold_ = false;
+  if (pit_.inPit && track.pitLane.valid()) {
+    pit_.phase = PitPhase::DrivingOut;
+    state_.currentSpeed = track.pitLane.speedLimitMs;
+    pit_.statusMessage = "Leaving garage";
+    return true;
+  }
+  state_.currentSpeed = 12.0;
+  pit_.statusMessage = "On track";
+  return true;
+}
+
+double Car::lastLapTime() const {
+  return telemetry_.laps().empty() ? 0.0 : telemetry_.laps().back().lapTime;
 }
 
 void Car::applyClassStintLimit(double maxStintSeconds) {
@@ -116,6 +158,7 @@ void Car::resetForRestart() {
   driver_ = MakeDefaultDrivers(
       teamName_, static_cast<int>(driver_.roster.size()),
       static_cast<uint32_t>(std::hash<std::string>{}(entryId_) & 0xFFFFFFFFu));
+  garageHold_ = false;
   placeOnGrid(gridPosition_);
 }
 
@@ -136,10 +179,25 @@ void Car::applyCommand(const SimCommand &command) {
   case SimCommandType::DriverMode:
     driver_.mode = command.driverMode;
     break;
+  case SimCommandType::HybridStrategy:
+    driver_.hybridStrategy = command.hybridStrategy;
+    break;
   case SimCommandType::DriverSwap:
     if (command.swapToDriverIndex >= 0)
       driver_.swapDriver(command.swapToDriverIndex);
     break;
+  case SimCommandType::StartingCompound: {
+    if (state_.elapsedRaceTime > 0.5 || state_.currentDistance > 5.0) {
+      setupFeedback_ = "Starting compound locked after green flag";
+      setupFeedbackTimer_ = 6.0;
+      break;
+    }
+    static const PartCatalog kCatalog{};
+    ApplyTireCompoundStats(config_, command.tireCompound, kCatalog);
+    setupFeedback_ = "Starting compound set";
+    setupFeedbackTimer_ = 6.0;
+    break;
+  }
   case SimCommandType::SetupChange: {
     if (!pit_.inPit && !pit_.pendingEnter) {
       setupFeedback_ = "Setup changes only in pit lane";
@@ -232,6 +290,8 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
 
   case PitPhase::AtBox:
     state_.currentSpeed = 0.0;
+    if (garageHold_)
+      break;
     pit_.pitElapsed += deltaTime;
     if (pit_.pitElapsed < pit_.pitDuration)
       break;
@@ -302,6 +362,13 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
   mods.wearMultiplier = driver_.modeWearMultiplier();
   mods.fuelMultiplier = driver_.modeFuelMultiplier();
   mods.skillFactor = driver_.paceFactor(trackWetness, isNight);
+  if (config_.hybridDeployPowerKW > 0.0) {
+    HybridStrategyModifiers(driver_.hybridStrategy, mods.hybridDeployScale,
+                            mods.hybridRegenScale);
+  } else {
+    mods.hybridDeployScale = 0.0;
+    mods.hybridRegenScale = 0.0;
+  }
 
   if (traffic != nullptr) {
     driver_.setPressure(traffic->pressureLevel);
@@ -487,7 +554,7 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const 
   if (pit_.inPit && track.pitLane.valid()) {
     pose = track.pitLane.poseAtDistance(pit_.pitLaneDistance);
   } else {
-    pose = track.poseAtDistance(state_.currentDistance);
+    pose = track.poseAtRaceDistance(state_.currentDistance);
   }
 
   CarSnapshot snap;
@@ -513,9 +580,12 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const 
   snap.tireTempC = state_.maxTireTempC();
   snap.coolantTempC = state_.currentThermalLoad;
   snap.hybridDeployMJ = state_.hybridDeployRemainingMJ;
+  snap.hybridBudgetMJ = config_.hybridStintDeployBudgetMJ;
+  snap.hybridStrategy = HybridStrategyLabel(driver_.hybridStrategy);
   snap.engineHealth = state_.engineHealth;
   snap.sectorIndex = static_cast<int>(state_.currentTrackNodeIndex);
   snap.racePosition = racePosition;
+  snap.inGarage = garageHold_;
   snap.inPit = pit_.inPit;
   snap.pitQueued = pit_.pendingEnter && !pit_.inPit;
   snap.retired = retired_;
@@ -605,6 +675,16 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const 
   snap.position = pose.position;
   snap.tangent = pose.tangent;
   return snap;
+}
+
+double ComputeTimingGap(const Car &car, const Car &leader) {
+  if (car.entryId() == leader.entryId())
+    return 0.0;
+  const double carBest = car.bestLapTime();
+  const double leaderBest = leader.bestLapTime();
+  if (carBest <= 0.0 || leaderBest <= 0.0)
+    return 0.0;
+  return std::max(0.0, carBest - leaderBest);
 }
 
 double ComputeGapToLeader(const Car &car, const Car &leader,

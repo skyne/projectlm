@@ -7,21 +7,191 @@
   },
   "chassisAliases": {
     "CarbonMonocoque": "LMDhDallara",
+    "GT3McLaren": "GT3McLaren",
+    "GT3Multimatic": "GT3Multimatic",
+    "GT3Oreca": "GT3Oreca",
+    "GT3PrattMiller": "GT3PrattMiller",
+    "GT3Spaceframe": "GT3Spaceframe",
     "LMDhDallara": "LMDhDallara",
+    "LMDhLigier": "LMDhLigier",
+    "LMDhMultimatic": "LMDhMultimatic",
+    "LMDhOreca": "LMDhOreca",
+    "LMHDallaraBuilt": "LMHDallaraBuilt",
+    "LMHInHouse": "LMHInHouse",
+    "LMHMonocoque": "LMHMonocoque",
+    "LMHMultimaticBuilt": "LMHMultimaticBuilt",
+    "Oreca07": "Oreca07",
     "Spaceframe": "LMDhDallara"
   },
   "layerOrder": [
-    { "slot": "chassis", "z": 10 },
-    { "slot": "hybrid_system", "z": 15, "skip": ["None"] },
-    { "slot": "wheel_package", "z": 12 },
-    { "slot": "rear_aero", "z": 18, "only": ["WinglessGroundEffect"] },
-    { "slot": "front_aero", "z": 20 },
-    { "slot": "rear_aero", "z": 30, "except": ["WinglessGroundEffect"] }
+    {
+      "slot": "chassis",
+      "z": 10
+    },
+    {
+      "slot": "hybrid_system",
+      "z": 15,
+      "skip": [
+        "None"
+      ]
+    },
+    {
+      "slot": "wheel_package",
+      "z": 12
+    },
+    {
+      "slot": "rear_aero",
+      "z": 18,
+      "only": [
+        "WinglessGroundEffect"
+      ]
+    },
+    {
+      "slot": "front_aero",
+      "z": 20
+    },
+    {
+      "slot": "rear_aero",
+      "z": 30,
+      "except": [
+        "WinglessGroundEffect"
+      ]
+    }
   ],
   "chassis": {
     "LMDhDallara": {
-      "bareSlots": ["front_aero", "rear_aero", "wheel_package", "hybrid_system"],
-      "groundLineY": 0.86
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package",
+        "hybrid_system"
+      ],
+      "groundLineY": 0.86,
+      "classId": "Hypercar"
+    },
+    "LMDhOreca": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package",
+        "hybrid_system"
+      ],
+      "groundLineY": 0.86,
+      "classId": "Hypercar"
+    },
+    "LMDhMultimatic": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package",
+        "hybrid_system"
+      ],
+      "groundLineY": 0.86,
+      "classId": "Hypercar"
+    },
+    "LMDhLigier": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package",
+        "hybrid_system"
+      ],
+      "groundLineY": 0.86,
+      "classId": "Hypercar"
+    },
+    "LMHInHouse": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package",
+        "hybrid_system"
+      ],
+      "groundLineY": 0.86,
+      "classId": "Hypercar"
+    },
+    "LMHDallaraBuilt": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package",
+        "hybrid_system"
+      ],
+      "groundLineY": 0.86,
+      "classId": "Hypercar"
+    },
+    "LMHMultimaticBuilt": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package",
+        "hybrid_system"
+      ],
+      "groundLineY": 0.86,
+      "classId": "Hypercar"
+    },
+    "LMHMonocoque": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package",
+        "hybrid_system"
+      ],
+      "groundLineY": 0.86,
+      "classId": "Hypercar"
+    },
+    "GT3Spaceframe": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package"
+      ],
+      "groundLineY": 0.86,
+      "classId": "LMGT3"
+    },
+    "GT3Oreca": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package"
+      ],
+      "groundLineY": 0.86,
+      "classId": "LMGT3"
+    },
+    "GT3PrattMiller": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package"
+      ],
+      "groundLineY": 0.86,
+      "classId": "LMGT3"
+    },
+    "GT3McLaren": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package"
+      ],
+      "groundLineY": 0.86,
+      "classId": "LMGT3"
+    },
+    "GT3Multimatic": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package"
+      ],
+      "groundLineY": 0.86,
+      "classId": "LMGT3"
+    },
+    "Oreca07": {
+      "bareSlots": [
+        "front_aero",
+        "rear_aero",
+        "wheel_package"
+      ],
+      "groundLineY": 0.86,
+      "classId": "LMP2"
     }
   },
   "partLabels": {
@@ -35,10 +205,15 @@
       "WinglessGroundEffect": "Wingless diffuser"
     },
     "wheel_package": {
-      "Hypercar18WideRear": "18\" hypercar wheels"
+      "Hypercar18Standard": "18\" standard wheels",
+      "Hypercar18WideRear": "18\" hypercar wheels",
+      "Hypercar18LowDrag": "18\" low-drag wheels",
+      "GT3Front20Rear21": "20\"/21\" GT3 wheels",
+      "GT3WideRear21": "GT3 wide rear",
+      "LMP2Oreca18": "18\" LMP2 wheels"
     },
     "hybrid_system": {
-      "LMDh500kW": "LMDh hybrid",
+      "LMDh50kW": "LMDh hybrid",
       "HypercarHV": "Hypercar HV",
       "None": "No hybrid"
     }

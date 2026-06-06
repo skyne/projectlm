@@ -1,6 +1,11 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { ClientSessionManager } from "./client_sessions";
 import { computeRaceFinances } from "./game/economy";
+import {
+  nextWeekendSession,
+  sortTimingResults,
+  type WeekendSessionType,
+} from "./game/weekend_sessions";
 import { EngineerService } from "./llm/engineer_service";
 import { GarageEngineerService } from "./llm/garage_engineer_service";
 import { SimHost } from "./sim_host";
@@ -196,6 +201,18 @@ function main(): void {
           afterSessionChange();
           console.log("[server] Race restarted");
         }
+      } else if (msg.type === "end_session") {
+        if (!host.endSession()) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", { message: "Failed to end session" }),
+            ),
+          );
+        } else {
+          broadcast(clients, serverMessage("session_init", host.getSessionInit()));
+          afterSessionChange();
+          console.log("[server] Session ended");
+        }
       } else if (msg.type === "reload_definitions") {
         if (!host.reloadDefinitions()) {
           ws.send(
@@ -297,7 +314,9 @@ function main(): void {
               JSON.stringify(serverMessage("error", { message: fleetErr })),
             );
           } else {
-            const startErr = host.startRound();
+            const startErr = host.startRound(
+              msg.payload as import("./ws_protocol").StartRoundPayload,
+            );
             if (startErr) {
               ws.send(
                 JSON.stringify(serverMessage("error", { message: startErr })),
@@ -582,7 +601,7 @@ function main(): void {
       const payload: EventsPayload = { events };
       broadcast(clients, serverMessage("events", payload));
     },
-    (raceTime, results) => {
+    (raceTime, results, weekendSessionType) => {
       const meta = host.getMetaState();
       const session = host.getSessionInit();
       const managedIds =
@@ -601,36 +620,55 @@ function main(): void {
       const event = meta.calendar.find((e) => e.round === meta.currentRound);
       const scoring =
         event?.eventType !== "test" && event?.format !== "test";
-      const finances = playerResult && event
-        ? computeRaceFinances(
-            playerResult.position,
-            playerResult.classId,
-            event.format,
-            meta.sponsors ?? [],
-            meta.staff,
-            { scoring },
-          )
-        : undefined;
+      const isRaceSession = weekendSessionType === "race";
+
+      const finances =
+        isRaceSession && playerResult && event
+          ? computeRaceFinances(
+              playerResult.position,
+              playerResult.classId,
+              event.format,
+              meta.sponsors ?? [],
+              meta.staff,
+              { scoring },
+            )
+          : undefined;
 
       let updatedMeta = meta;
-      if (playerResult && event && !event.completed) {
+      if (isRaceSession && playerResult && event && !event.completed) {
         updatedMeta = host.completeRound(
           playerResult.position,
           playerResult.classId,
         );
+      } else if (!isRaceSession) {
+        updatedMeta = host.completeWeekendSession(weekendSessionType, results);
       }
+
+      const completedSessions =
+        updatedMeta.weekendProgress?.round === updatedMeta.currentRound
+          ? updatedMeta.weekendProgress.completedSessions
+          : isRaceSession
+            ? []
+            : [weekendSessionType];
+      const nextSession: WeekendSessionType | null = isRaceSession
+        ? null
+        : nextWeekendSession(completedSessions);
+
+      const finalResults = isRaceSession ? results : sortTimingResults(results);
 
       const payload: RaceCompletePayload = {
         raceTime,
-        results,
+        results: finalResults,
         championshipPoints: finances?.championshipPoints ?? 0,
-        finances,
+        finances: isRaceSession ? finances : undefined,
+        weekendSessionType,
+        nextWeekendSession: nextSession,
       };
       broadcast(clients, serverMessage("race_complete", payload));
       if (updatedMeta !== meta) {
         broadcast(clients, serverMessage("meta_state", updatedMeta));
       }
-      console.log("[server] Race complete");
+      console.log(`[server] ${weekendSessionType} session complete`);
     },
   );
 

@@ -13,6 +13,162 @@
         "x": 672,
         "y": 316
       }
+    },
+    "GT3Spaceframe": {
+      "layer": "assets/chassis/GT3Spaceframe.6e652628.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "LMGT3",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "Oreca07": {
+      "layer": "assets/chassis/Oreca07.569f6c1f.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "LMP2",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "LMHMonocoque": {
+      "layer": "assets/chassis/LMHMonocoque.90c12405.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "Hypercar",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "LMDhOreca": {
+      "layer": "assets/chassis/LMDhOreca.c9271297.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "Hypercar",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "LMDhMultimatic": {
+      "layer": "assets/chassis/LMDhMultimatic.9a658e92.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "Hypercar",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "LMDhLigier": {
+      "layer": "assets/chassis/LMDhLigier.4e7a33f4.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "Hypercar",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "LMHInHouse": {
+      "layer": "assets/chassis/LMHInHouse.da537ba8.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "Hypercar",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "LMHDallaraBuilt": {
+      "layer": "assets/chassis/LMHDallaraBuilt.e6b7dcfa.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "Hypercar",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "LMHMultimaticBuilt": {
+      "layer": "assets/chassis/LMHMultimaticBuilt.e7795cef.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "Hypercar",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "GT3Oreca": {
+      "layer": "assets/chassis/GT3Oreca.faab3d51.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "LMGT3",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "GT3PrattMiller": {
+      "layer": "assets/chassis/GT3PrattMiller.36e03a1a.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "LMGT3",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "GT3McLaren": {
+      "layer": "assets/chassis/GT3McLaren.34563d20.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "LMGT3",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
+    },
+    "GT3Multimatic": {
+      "layer": "assets/chassis/GT3Multimatic.be6a950f.png",
+      "width": 1344,
+      "height": 576,
+      "layerType": "chassis_base",
+      "z": 10,
+      "classId": "LMGT3",
+      "anchor": {
+        "x": 672,
+        "y": 316
+      }
     }
   },
   "front_aero": {
@@ -122,32 +278,32 @@
       "socket": {
         "placements": [
           {
-            "sx": 0.5,
-            "sy": 0.5,
-            "cx": 0.251,
-            "cy": 0.619,
-            "h": 0.51,
-            "w": 0.2186,
+            "sx": 0.414,
+            "sy": 0.503,
+            "h": 0.339,
+            "w": 0.1453,
             "src": {
-              "x": 0.058,
-              "y": 0.084,
-              "w": 0.28,
-              "h": 0.84
-            }
+              "x": 0,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.2494,
+            "cy": 0.619
           },
           {
-            "sx": 0.5,
-            "sy": 0.5,
-            "cx": 0.798,
-            "cy": 0.621,
-            "h": 0.48,
-            "w": 0.2057,
+            "sx": 0.42,
+            "sy": 0.496,
+            "h": 0.339,
+            "w": 0.1453,
             "src": {
-              "x": 0.66,
-              "y": 0.102,
-              "w": 0.263,
-              "h": 0.789
-            }
+              "x": 0.52,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.7819,
+            "cy": 0.6247
           }
         ]
       },
@@ -155,11 +311,238 @@
       "compatibleChassis": [
         "LMDhDallara"
       ]
+    },
+    "Hypercar18Standard": {
+      "layer": "assets/wheel_package/Hypercar18Standard.23a4e238.png",
+      "width": 768,
+      "height": 256,
+      "layerType": "sprite",
+      "slot": "wheel_package",
+      "socket": {
+        "placements": [
+          {
+            "sx": 0.414,
+            "sy": 0.503,
+            "h": 0.339,
+            "w": 0.1453,
+            "src": {
+              "x": 0,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.2494,
+            "cy": 0.619
+          },
+          {
+            "sx": 0.42,
+            "sy": 0.496,
+            "h": 0.339,
+            "w": 0.1453,
+            "src": {
+              "x": 0.52,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.7819,
+            "cy": 0.6247
+          }
+        ]
+      },
+      "z": 12,
+      "compatibleChassis": [
+        "LMDhDallara"
+      ]
+    },
+    "Hypercar18LowDrag": {
+      "layer": "assets/wheel_package/Hypercar18LowDrag.63292fc0.png",
+      "width": 768,
+      "height": 256,
+      "layerType": "sprite",
+      "slot": "wheel_package",
+      "socket": {
+        "placements": [
+          {
+            "sx": 0.414,
+            "sy": 0.503,
+            "h": 0.339,
+            "w": 0.1453,
+            "src": {
+              "x": 0,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.2494,
+            "cy": 0.619
+          },
+          {
+            "sx": 0.42,
+            "sy": 0.496,
+            "h": 0.339,
+            "w": 0.1453,
+            "src": {
+              "x": 0.52,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.7819,
+            "cy": 0.6247
+          }
+        ]
+      },
+      "z": 12,
+      "compatibleChassis": [
+        "LMDhDallara"
+      ]
+    },
+    "GT3Front20Rear21": {
+      "layer": "assets/wheel_package/GT3Front20Rear21.35cf9b0a.png",
+      "width": 768,
+      "height": 256,
+      "layerType": "sprite",
+      "slot": "wheel_package",
+      "socket": {
+        "placements": [
+          {
+            "sx": 0.414,
+            "sy": 0.503,
+            "h": 0.339,
+            "w": 0.1453,
+            "src": {
+              "x": 0,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.2494,
+            "cy": 0.619
+          },
+          {
+            "sx": 0.42,
+            "sy": 0.496,
+            "h": 0.339,
+            "w": 0.1453,
+            "src": {
+              "x": 0.52,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.7819,
+            "cy": 0.6247
+          }
+        ]
+      },
+      "z": 12
+    },
+    "GT3WideRear21": {
+      "layer": "assets/wheel_package/GT3WideRear21.b2adc4d1.png",
+      "width": 768,
+      "height": 256,
+      "layerType": "sprite",
+      "slot": "wheel_package",
+      "socket": {
+        "placements": [
+          {
+            "sx": 0.414,
+            "sy": 0.503,
+            "h": 0.339,
+            "w": 0.1453,
+            "src": {
+              "x": 0,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.2494,
+            "cy": 0.619
+          },
+          {
+            "sx": 0.42,
+            "sy": 0.496,
+            "h": 0.339,
+            "w": 0.1453,
+            "src": {
+              "x": 0.52,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.7819,
+            "cy": 0.6247
+          }
+        ]
+      },
+      "z": 12
+    },
+    "LMP2Oreca18": {
+      "layer": "assets/wheel_package/LMP2Oreca18.694b67c4.png",
+      "width": 768,
+      "height": 256,
+      "layerType": "sprite",
+      "slot": "wheel_package",
+      "socket": {
+        "placements": [
+          {
+            "sx": 0.414,
+            "sy": 0.503,
+            "h": 0.339,
+            "w": 0.1453,
+            "src": {
+              "x": 0,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.2494,
+            "cy": 0.619
+          },
+          {
+            "sx": 0.42,
+            "sy": 0.496,
+            "h": 0.339,
+            "w": 0.1453,
+            "src": {
+              "x": 0.52,
+              "y": 0,
+              "w": 0.48,
+              "h": 1
+            },
+            "cx": 0.7819,
+            "cy": 0.6247
+          }
+        ]
+      },
+      "z": 12
     }
   },
   "hybrid_system": {
-    "LMDh500kW": {
-      "layer": "assets/hybrid_system/LMDh500kW.14c26bbb.png",
+    "LMDh50kW": {
+      "layer": "assets/hybrid_system/LMDh50kW.14c26bbb.png",
+      "width": 512,
+      "height": 256,
+      "layerType": "sprite",
+      "slot": "hybrid_system",
+      "socket": {
+        "anchor": {
+          "sx": 0.5,
+          "sy": 0.49,
+          "cx": 0.5,
+          "cy": 0.48
+        },
+        "w": 0.09,
+        "h": 0.12
+      },
+      "z": 15,
+      "compatibleChassis": [
+        "LMDhDallara"
+      ]
+    },
+    "HypercarHV": {
+      "layer": "assets/hybrid_system/HypercarHV.b5287ec8.png",
       "width": 512,
       "height": 256,
       "layerType": "sprite",

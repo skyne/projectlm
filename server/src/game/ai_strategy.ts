@@ -1,4 +1,4 @@
-import type { CarSnapshot } from "../ws_protocol";
+import type { CarSnapshot, WeekendSessionType } from "../ws_protocol";
 import type { AiStintPlan } from "../llm/stint_plan";
 
 /** Per-entry strategy memory across a race session. */
@@ -12,6 +12,7 @@ export interface AiCarState {
 export interface AiStrategyContext {
   raceTime: number;
   targetDurationSeconds: number;
+  weekendSessionType?: WeekendSessionType;
 }
 
 export interface AiPitDecision {

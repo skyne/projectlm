@@ -56,9 +56,11 @@ import { carBuildToVisual } from "../graphics/visualCatalog";
 import { EngineDesigner } from "./EngineDesigner";
 import { CoolingDesigner } from "./CoolingDesigner";
 import { GarageEngineerPanel } from "./GarageEngineerPanel";
+import type { CarBuildVisual } from "../graphics/visualCatalog";
 
 export interface CarGarageHandlers {
   onSaveBuild: (build: CarBuildPayload) => void;
+  onVisualBuildChange?: (build: CarBuildVisual) => void;
   onAskGarageEngineer?: (payload: {
     classId: string;
     build: CarBuildPayload;
@@ -446,14 +448,14 @@ export class CarGarage {
 
   private applyGuideLayout(mode: ReturnType<CarGarage["guidePanelMode"]>): void {
     const layout = this.root.querySelector(".garage-layout") as HTMLElement | null;
-    const diagramCol = this.root.querySelector(".garage-diagram-col") as HTMLElement | null;
+    const diagramCard = this.root.querySelector(".car-diagram-card") as HTMLElement | null;
     const partsCol = this.root.querySelector(".garage-parts-col") as HTMLElement | null;
     const statsCol = this.root.querySelector(".garage-stats-col") as HTMLElement | null;
     const nameWrap = this.root.querySelector(".garage-car-name-wrap") as HTMLElement | null;
 
     layout?.classList.toggle("hidden", mode === "hidden");
     layout?.classList.toggle("garage-guide-name-focus", mode === "name");
-    diagramCol?.classList.toggle("hidden", mode === "name");
+    diagramCard?.classList.toggle("hidden", mode === "name");
     statsCol?.classList.toggle("hidden", mode === "name" || mode === "hidden");
     partsCol?.classList.toggle("hidden", mode === "name");
     nameWrap?.classList.toggle("garage-name-step-only", mode === "name");
@@ -632,6 +634,10 @@ export class CarGarage {
     nameInput.oninput = () => {
       if (this.build) this.build.carName = nameInput.value;
     };
+    if (panelMode === "name") {
+      nameInput.focus();
+      nameInput.select();
+    }
 
     this.renderTabs();
     this.renderActivePanel();
@@ -645,6 +651,23 @@ export class CarGarage {
       this.root.querySelector(".garage-mass-note")!.textContent = "";
     }
     this.renderCompatibilityWarning();
+    this.emitVisualBuild();
+  }
+
+  private toVisualBuild(build: CarBuildPayload): CarBuildVisual {
+    return {
+      chassis_type: build.chassis_type,
+      front_aero_type: build.front_aero_type,
+      rear_aero_type: build.rear_aero_type,
+      wheel_package: build.wheel_package,
+      hybrid_system: build.hybrid_system || "None",
+    };
+  }
+
+  private emitVisualBuild(source?: CarBuildPayload): void {
+    const build = source ?? this.previewBuild ?? this.build;
+    if (!build) return;
+    this.handlers.onVisualBuildChange?.(this.toVisualBuild(build));
   }
 
   private async initCarVisual(): Promise<void> {
@@ -883,14 +906,14 @@ export class CarGarage {
         const preview = { ...this.build, [field]: part.partType };
         this.previewBuild = preview;
         this.renderStats();
-        void this.renderCarVisual();
+        this.emitVisualBuild(preview);
       });
 
       card.addEventListener("mouseleave", () => {
         if (this.previewBuild) {
           this.previewBuild = null;
           this.renderStats();
-          void this.renderCarVisual();
+          this.emitVisualBuild();
         }
       });
 

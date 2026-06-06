@@ -1,0 +1,11 @@
+# Open-session test — garage hold + timing leaderboard
+part_catalog=configs/part_catalog.txt
+physics_config=configs/physics_config.txt
+track_config=tracks/lemans_la_sarthe.json
+car_config=configs/car_config.txt
+
+session_mode=qualifying
+target_duration=120
+sim_timestep=0.1
+telemetry_output=
+entries=configs/open_session_test_entries.txt

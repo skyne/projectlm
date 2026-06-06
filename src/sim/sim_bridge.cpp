@@ -43,6 +43,7 @@ bool SimBridge::initFromRaceConfig(const std::string &raceConfigPath) {
 
   RaceSession session;
   session.physics = physics;
+  session.sessionMode = ParseSessionMode(config.sessionMode);
   session.targetLaps = config.targetLaps;
   session.targetDurationSeconds = config.targetDurationSeconds;
 
@@ -82,6 +83,7 @@ bool SimBridge::initFromRaceConfig(const std::string &raceConfigPath) {
   loadTeamConfig(config.staffConfigPath);
   session.staff = teamConfig_.staffModifiers();
   initWeatherOnSession(session, config);
+  ApplyOpenSessionPlacement(session);
   return initSession(session);
 }
 
@@ -114,6 +116,8 @@ bool SimBridge::restartRace() {
   resetWeatherState();
   for (Car &car : session_.cars)
     car.resetForRestart();
+  if (session_.sessionMode != SessionMode::Race)
+    ApplyOpenSessionPlacement(session_);
 
   pendingEvents_.clear();
   pendingCommands_.clear();
@@ -152,6 +156,18 @@ void SimBridge::processCommands() {
         ack.message = "Car retired — command rejected";
         pendingEvents_.push_back(std::move(ack));
         applied = true;
+        break;
+      }
+
+      if (cmd.type == SimCommandType::ReleaseGarage) {
+        applied = car.releaseFromGarage(session_.track);
+        SimEvent ack;
+        ack.type = SimEventType::CommandAck;
+        ack.entryId = pending.entryId;
+        ack.timestamp = session_.elapsedRaceTime;
+        ack.message = applied ? "Released to track"
+                              : "Cannot release (not in garage)";
+        pendingEvents_.push_back(std::move(ack));
         break;
       }
 
@@ -206,18 +222,33 @@ std::vector<CarSnapshot> SimBridge::getSnapshots() const {
   if (session_.cars.empty())
     return snapshots;
 
-  std::vector<Car *> board =
-      GetLeaderboard(const_cast<RaceSession &>(session_));
+  const bool timingMode = session_.sessionMode != SessionMode::Race;
+  std::vector<Car *> board = timingMode
+                                 ? GetTimingLeaderboard(
+                                       const_cast<RaceSession &>(session_))
+                                 : GetLeaderboard(
+                                       const_cast<RaceSession &>(session_));
   const Car *leader = board.empty() ? nullptr : board.front();
   const double lapLength = session_.track.lapLength();
   std::unordered_map<std::string, int> classRank;
+  std::unordered_map<std::string, const Car *> classLeader;
 
   for (size_t rank = 0; rank < board.size(); ++rank) {
     const Car &car = *board[rank];
     CarSnapshot snap =
         car.snapshot(session_.track, static_cast<int>(rank + 1));
-    if (leader != nullptr)
+    if (timingMode) {
+      const std::string &classId = car.raceClass().id;
+      const Car *classLead = classLeader[classId];
+      if (classLead == nullptr) {
+        classLeader[classId] = &car;
+        classLead = &car;
+      }
+      if (classLead != nullptr)
+        snap.gapToLeader = ComputeTimingGap(car, *classLead);
+    } else if (leader != nullptr) {
       snap.gapToLeader = ComputeGapToLeader(car, *leader, lapLength);
+    }
     snap.classPosition = ++classRank[car.raceClass().id];
     snapshots.push_back(std::move(snap));
   }

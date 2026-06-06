@@ -26,6 +26,13 @@ if_part=APRacingPrototype
 requires_slot=chassis
 requires_any_parts=LMHInHouse,LMHMonocoque,LMDhOreca,LMDhDallara,LMDhMultimatic,LMDhLigier
 
+# Le Mans low-drag rear floor needs matching low-drag nose
+rule=wingless_requires_low_drag_nose
+if_slot=rear_aero
+if_part=WinglessGroundEffect
+requires_slot=front_aero
+requires_part=LowDragNose
+
 # LMDh spec hybrid fits any homologated LMDh spine
 rule=lmdh_hybrid_requires_lmdh_spine
 if_slot=hybrid_system

@@ -339,9 +339,9 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     throttleLoad = p.fuelOverrunFraction + brakePedalPressure * 0.08;
     rpmPercent = state.currentRPM / maxEngineRPM;
 
-    if (car.hybridRegenRate > 0.0) {
-      const double regenMJ =
-          car.hybridRegenRate * brakePedalPressure * deltaTime * 0.05;
+    if (car.hybridRegenRate > 0.0 && mods.hybridRegenScale > 0.0) {
+      const double regenMJ = car.hybridRegenRate * brakePedalPressure * deltaTime *
+                             p.hybridRegenBaseScale * mods.hybridRegenScale;
       state.hybridDeployRemainingMJ = std::min(
           car.hybridStintDeployBudgetMJ,
           state.hybridDeployRemainingMJ + regenMJ);
@@ -452,8 +452,11 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       engineForce = 0.0;
 
     if (onStraight && car.hybridDeployPowerKW > 0.0 &&
-        state.hybridDeployRemainingMJ > 0.0) {
-      const double deployWatts = car.hybridDeployPowerKW * 1000.0;
+        state.hybridDeployRemainingMJ > 0.0 &&
+        state.currentSpeed >= p.hybridMinDeploySpeedMs &&
+        state.throttleBlend >= 0.55 && mods.hybridDeployScale > 0.0) {
+      const double deployWatts = car.hybridDeployPowerKW * 1000.0 *
+                                 mods.hybridDeployScale * state.throttleBlend;
       const double deployForce =
           deployWatts / std::max(state.currentSpeed, p.minSpeed);
       const double maxDeployForce = tireGripForce * 0.25;

@@ -9,6 +9,7 @@ const engineer_commands_js_1 = require("./engineer_commands.js");
 (0, node_test_1.describe)("validateEngineerCommand", () => {
     (0, node_test_1.it)("accepts driver mode and cancel_pit", () => {
         strict_1.default.equal((0, engineer_commands_js_1.validateEngineerCommand)("driver_mode=push"), "driver_mode=push");
+        strict_1.default.equal((0, engineer_commands_js_1.validateEngineerCommand)("hybrid_strategy=harvest"), "hybrid_strategy=harvest");
         strict_1.default.equal((0, engineer_commands_js_1.validateEngineerCommand)("cancel_pit"), "cancel_pit");
     });
     (0, node_test_1.it)("accepts pit with setup keys", () => {

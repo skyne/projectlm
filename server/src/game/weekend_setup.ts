@@ -1,4 +1,9 @@
-import type { CarBuildPayload, TrackSetupPresetPayload } from "../ws_protocol";
+import type {
+  CarBuildPayload,
+  FleetCarPayload,
+  MetaStatePayload,
+  TrackSetupPresetPayload,
+} from "../ws_protocol";
 import { trackDisplayName } from "./track_catalog";
 
 /** Suggested baseline offsets per track (applied when no saved preset). */
@@ -54,6 +59,17 @@ export function resolveTrackPreset(
     return { ...defaultTrackPreset(trackId), ...saved, trackId };
   }
   return defaultTrackPreset(trackId);
+}
+
+/** Per-car preset with legacy meta-level fallback. */
+export function resolveCarTrackPreset(
+  car: FleetCarPayload,
+  trackId: string,
+  meta: MetaStatePayload,
+): TrackSetupPresetPayload {
+  const saved =
+    car.trackSetupPresets?.[trackId] ?? meta.trackSetupPresets?.[trackId] ?? null;
+  return resolveTrackPreset(trackId, saved);
 }
 
 /** Merge weekend sheet onto garage platform build (does not mutate garage save). */

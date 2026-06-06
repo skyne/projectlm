@@ -11,10 +11,18 @@ import {
   formatCoolantTemp,
 } from "./formatCoolant";
 import type { FuelStats } from "./fuelTracker";
+import {
+  buildHybridChargeBarHtml,
+  formatHybridCharge,
+  hybridStrategyLabel,
+  type HybridStrategy,
+} from "./hybridStrategy";
 
 export interface TelemetryCardOptions {
   /** Show extended race-engineering fields (speed, fuel burn, hybrid, etc.) */
   extended?: boolean;
+  /** Dense layout for multi-car telemetry columns */
+  compact?: boolean;
   /** Hide per-wheel tyre panel (when rendered in a dedicated slot) */
   hideTyres?: boolean;
   fuelStats?: FuelStats;
@@ -26,13 +34,13 @@ function formatSpeedKmh(speedMs: number): string {
 }
 
 function formatHybrid(snap: CarSnapshot, budgetMJ: number | null | undefined): string {
-  if (snap.hybridDeployMJ == null || snap.hybridDeployMJ < 0) return "—";
-  const mj = snap.hybridDeployMJ;
-  if (budgetMJ != null && budgetMJ > 0) {
-    const pct = Math.min(100, (mj / budgetMJ) * 100);
-    return `${mj.toFixed(1)} MJ · ${pct.toFixed(0)}%`;
-  }
-  return `${mj.toFixed(1)} MJ`;
+  const budget = snap.hybridBudgetMJ ?? budgetMJ;
+  return formatHybridCharge(snap.hybridDeployMJ, budget);
+}
+
+function hybridChargeBar(snap: CarSnapshot, budgetMJ: number | null | undefined): string {
+  const budget = snap.hybridBudgetMJ ?? budgetMJ;
+  return buildHybridChargeBarHtml(snap.hybridDeployMJ, budget, false);
 }
 
 function formatLapsRemaining(stats: FuelStats | undefined): string {
@@ -113,22 +121,34 @@ function pitStatusLabel(snap: CarSnapshot): string {
 }
 
 /** Minimal at-a-glance summary for the track-map pit wall (full data lives on Telemetry). */
-export function buildRaceControlsSummaryHtml(snap: CarSnapshot): string {
+export function buildRaceControlsSummaryHtml(
+  snap: CarSnapshot,
+  options: { hideIdentity?: boolean } = {},
+): string {
   const activeDriver = snap.driverRoster?.find((d) => d.active);
   const tier = activeDriver?.tier ?? "";
+
+  const driverRow = options.hideIdentity
+    ? ""
+    : `
+      <div class="race-controls-driver">
+        <strong>${escapeHtml(snap.driverName ?? "—")}</strong>
+        ${tier ? `<span class="driver-tier tier-${tier.toLowerCase()}">${escapeHtml(tier)}</span>` : ""}
+      </div>`;
+
+  const statusSpan = options.hideIdentity
+    ? ""
+    : `<span class="pit-state">${escapeHtml(pitStatusLabel(snap))}</span>`;
 
   return `
     ${buildMistakeTelemetryHtml(snap)}
     <div class="race-controls-summary">
-      <div class="race-controls-driver">
-        <strong>${escapeHtml(snap.driverName ?? "—")}</strong>
-        ${tier ? `<span class="driver-tier tier-${tier.toLowerCase()}">${escapeHtml(tier)}</span>` : ""}
-      </div>
+      ${driverRow}
       <div class="race-controls-stats">
         <span>Fuel <strong>${snap.fuel.toFixed(1)} L</strong></span>
         <span>Wing <strong>${(snap.wingAngle ?? 0).toFixed(2)}</strong></span>
         <span>Bias <strong>${(snap.brakeBias ?? 0.5).toFixed(2)}</strong></span>
-        <span class="pit-state">${escapeHtml(pitStatusLabel(snap))}</span>
+        ${statusSpan}
       </div>
     </div>
   `;
@@ -138,7 +158,8 @@ export function buildTelemetryCardHtml(
   snap: CarSnapshot,
   options: TelemetryCardOptions = {},
 ): string {
-  const { extended = false, hideTyres = false, fuelStats, hybridBudgetMJ } = options;
+  const { extended = false, compact = false, hideTyres = false, fuelStats, hybridBudgetMJ } =
+    options;
 
   const pitLabel = pitStatusLabel(snap);
 
@@ -151,6 +172,11 @@ export function buildTelemetryCardHtml(
   const pressure = snap.driverPressure ?? 0;
   const mistakeRisk = snap.driverMistakeRisk ?? 0;
   const driverMode = snap.driverMode ?? "normal";
+  const hybridStrategy = (snap.hybridStrategy ?? "balanced") as HybridStrategy;
+  const hasHybrid =
+    snap.hybridDeployMJ != null &&
+    snap.hybridDeployMJ >= 0 &&
+    (snap.hybridBudgetMJ ?? hybridBudgetMJ ?? 0) > 0;
   const modeWearHint =
     driverMode === "push"
       ? "Push +22% wear"
@@ -160,28 +186,80 @@ export function buildTelemetryCardHtml(
   const activeDriver = snap.driverRoster?.find((d) => d.active);
   const tier = activeDriver?.tier ?? "";
 
+  const lapLabel = `${snap.lap} · P${snap.racePosition}${snap.classPosition != null ? ` · C${snap.classPosition}` : ""}`;
+
+  const tyrePanel = hideTyres
+    ? ""
+    : `
+    <div class="telemetry-row tyre-row tyre-grid-row${compact ? " telemetry-tyre-row-compact" : ""}">
+      ${compact ? "" : "<span>Tyres</span>"}
+      <div class="tyre-grid-wrap">
+        ${buildTyreTelemetryPanelHtml(snap, { compact, showSummary: !compact })}
+      </div>
+    </div>`;
+
+  if (compact) {
+    const statCell = (label: string, value: string) =>
+      `<div class="telemetry-stat-cell"><span>${label}</span><strong>${value}</strong></div>`;
+
+    const extendedGrid = extended
+      ? `
+      <div class="telemetry-stats-grid">
+        ${statCell("Speed", formatSpeedKmh(snap.speed))}
+        ${statCell("RPM", Math.round(snap.rpm).toLocaleString())}
+        ${statCell("Lap", lapLabel)}
+        ${statCell("Status", escapeHtml(pitLabel))}
+        ${hasHybrid ? statCell("Hybrid", formatHybrid(snap, hybridBudgetMJ)) : ""}
+        ${hasHybrid ? statCell("HV mode", hybridStrategyLabel(hybridStrategy)) : ""}
+        ${statCell("Fuel", `${snap.fuel.toFixed(1)} L`)}
+        ${statCell("Last lap", fuelStats && fuelStats.lastLapLiters > 0 ? `${fuelStats.lastLapLiters.toFixed(1)} L` : "—")}
+        ${statCell("Avg / lap", fuelStats && fuelStats.avgLitersPerLap > 0 ? `${fuelStats.avgLitersPerLap.toFixed(1)} L` : "—")}
+        ${statCell("This lap", fuelStats ? `${fuelStats.currentLapPartialUse.toFixed(1)} L` : "—")}
+        ${statCell("Range", formatLapsRemaining(fuelStats))}
+        ${statCell("Coolant", formatCoolantTemp(coolantTemp))}
+        ${statCell("Engine", `${engineHealth.toFixed(0)}% · ${escapeHtml(coolantLabel)}`)}
+      </div>`
+      : "";
+
+    return `
+      ${buildMistakeTelemetryHtml(snap)}
+      <div class="telemetry-row driver-row-main telemetry-row-compact">
+        <span>Driver</span>
+        <strong>${escapeHtml(snap.driverName ?? "—")}${tier ? ` <span class="driver-tier tier-${tier.toLowerCase()}">${escapeHtml(tier)}</span>` : ""}</strong>
+      </div>
+      <div class="telemetry-stats-grid telemetry-stats-grid-tight">
+        ${statCell("Stamina", `${(snap.driverStamina ?? 100).toFixed(0)}%`)}
+        ${statCell("Pressure", `${pressure.toFixed(0)}%`)}
+        ${statCell("Mistake", `<span class="${mistakeRisk > 130 ? "risk-high" : ""}">${mistakeRisk.toFixed(0)}%</span>`)}
+        ${statCell("Lap", lapLabel)}
+      </div>
+      ${tyrePanel}
+      ${
+        hasHybrid
+          ? `<div class="telemetry-row telemetry-row-compact"><span>Hybrid charge</span>${buildHybridChargeBarHtml(snap.hybridDeployMJ, snap.hybridBudgetMJ ?? hybridBudgetMJ, true)}</div>`
+          : ""
+      }
+      ${extendedGrid}
+    `;
+  }
+
   const extendedRows = extended
     ? `
       <div class="telemetry-row"><span>Speed</span><strong>${formatSpeedKmh(snap.speed)}</strong></div>
       <div class="telemetry-row"><span>RPM</span><strong>${Math.round(snap.rpm).toLocaleString()}</strong></div>
-      <div class="telemetry-row"><span>Lap</span><strong>${snap.lap} · P${snap.racePosition}${snap.classPosition != null ? ` · C${snap.classPosition}` : ""}</strong></div>
-      <div class="telemetry-row"><span>Hybrid battery</span><strong>${formatHybrid(snap, hybridBudgetMJ)}</strong></div>
+      <div class="telemetry-row"><span>Lap</span><strong>${lapLabel}</strong></div>
+      ${
+        hasHybrid
+          ? `<div class="telemetry-row"><span>Hybrid charge</span>${hybridChargeBar(snap, hybridBudgetMJ)}</div>
+      <div class="telemetry-row"><span>Hybrid strategy</span><strong class="hybrid-strategy-${hybridStrategy}">${hybridStrategyLabel(hybridStrategy)}</strong></div>`
+          : ""
+      }
       <div class="telemetry-row"><span>Fuel last lap</span><strong>${fuelStats && fuelStats.lastLapLiters > 0 ? `${fuelStats.lastLapLiters.toFixed(1)} L` : "—"}</strong></div>
       <div class="telemetry-row"><span>Fuel avg / lap</span><strong>${fuelStats && fuelStats.avgLitersPerLap > 0 ? `${fuelStats.avgLitersPerLap.toFixed(1)} L` : "—"}</strong></div>
       <div class="telemetry-row"><span>This lap use</span><strong>${fuelStats ? `${fuelStats.currentLapPartialUse.toFixed(1)} L` : "—"}</strong></div>
       <div class="telemetry-row"><span>Range (fuel)</span><strong>${formatLapsRemaining(fuelStats)}</strong></div>
     `
     : "";
-
-  const tyrePanel = hideTyres
-    ? ""
-    : `
-    <div class="telemetry-row tyre-row tyre-grid-row">
-      <span>Tyres</span>
-      <div class="tyre-grid-wrap">
-        ${buildTyreTelemetryPanelHtml(snap)}
-      </div>
-    </div>`;
 
   return `
     ${buildMistakeTelemetryHtml(snap)}

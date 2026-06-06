@@ -37,10 +37,13 @@ export interface CarSnapshot {
   tireTempRR?: number;
   coolantTempC?: number;
   hybridDeployMJ?: number;
+  hybridBudgetMJ?: number;
+  hybridStrategy?: string;
   engineHealth: number;
   sectorIndex: number;
   racePosition: number;
   classPosition?: number;
+  inGarage?: boolean;
   inPit: boolean;
   pitQueued?: boolean;
   retired: boolean;
@@ -146,12 +149,27 @@ export interface WeatherContextPayload {
   rainWeight: number;
 }
 
+export type WeekendSessionType = "practice" | "qualifying" | "race";
+
+export interface QualifyingResultPayload {
+  entryId: string;
+  classId: string;
+  bestLapTime: number;
+}
+
+export interface WeekendProgressPayload {
+  round: number;
+  completedSessions: WeekendSessionType[];
+  qualiResults?: QualifyingResultPayload[];
+}
+
 export interface SessionInitPayload {
   trackName: string;
   targetLaps: number;
   targetDurationSeconds?: number;
   raceFormat?: string;
   roundNumber?: number;
+  weekendSessionType?: WeekendSessionType;
   simTimestep: number;
   entries: Array<{
     entryId: string;
@@ -445,6 +463,8 @@ export interface FleetCarPayload {
   platformId?: string;
   build: CarBuildPayload;
   carConfigPath: string;
+  /** Per-track session setup sheets for this car (keyed by trackId). */
+  trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
   /** Indices into meta.driverRoster assigned to this car for race stints. */
   assignedDriverIndices?: number[];
 }
@@ -518,6 +538,7 @@ export interface MetaStatePayload {
   weekendTireCompound?: string;
   /** Saved per-track setup sheets keyed by trackId */
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
+  weekendProgress?: WeekendProgressPayload;
   driverMarket?: DriverMarketListingPayload[];
   driverMarketRefreshCount?: number;
   driverMarketRound?: number;
@@ -643,12 +664,15 @@ export interface RaceCompletePayload {
   raceTime: number;
   championshipPoints?: number;
   finances?: RaceFinancesPayload;
+  weekendSessionType?: WeekendSessionType;
+  nextWeekendSession?: WeekendSessionType | null;
   results: Array<{
     entryId: string;
     teamName: string;
     carNumber: string;
     classId: string;
     position: number;
+    bestLapTime?: number;
   }>;
 }
 
@@ -665,6 +689,17 @@ export interface AskEngineerPayload {
 export interface SaveTrackSetupPayload {
   trackId: string;
   preset: TrackSetupPresetPayload;
+}
+
+export interface SessionCarSetupPayload {
+  carId: string;
+  preset: TrackSetupPresetPayload;
+}
+
+export interface StartRoundPayload {
+  trackId?: string;
+  carSetups?: SessionCarSetupPayload[];
+  sessionType?: WeekendSessionType;
 }
 
 export interface EngineerAdvicePayload {
@@ -719,6 +754,7 @@ export type ClientMessageType =
   | "pause"
   | "resume"
   | "restart_race"
+  | "end_session"
   | "start_round"
   | "reload_definitions"
   | "submit_command"

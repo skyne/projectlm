@@ -74,6 +74,22 @@ static std::string MakeEntryId(int gridPosition) {
   return "entry-" + std::to_string(gridPosition);
 }
 
+SessionMode ParseSessionMode(const std::string &value) {
+  const std::string lower = Trim(value);
+  if (lower == "practice")
+    return SessionMode::Practice;
+  if (lower == "qualifying")
+    return SessionMode::Qualifying;
+  return SessionMode::Race;
+}
+
+void ApplyOpenSessionPlacement(RaceSession &session) {
+  if (session.sessionMode == SessionMode::Race)
+    return;
+  for (Car &car : session.cars)
+    car.placeInGarageHold(session.track);
+}
+
 void AddCar(RaceSession &session, CarConfig car, RaceClass raceClass,
             const std::string &teamName, int gridPosition,
             const std::string &carNumber) {
@@ -209,7 +225,7 @@ void TickRace(RaceSession &session, double deltaTime) {
       continue;
 
     const TrackPose pose =
-        session.track.poseAtDistance(car.state().currentDistance);
+        session.track.poseAtRaceDistance(car.state().currentDistance);
 
     if (car.processPitEntry(pose.normalizedT, false)) {
       EmitRaceEvent(SimEventType::PitEnter, car, car.state().currentLap,
@@ -275,6 +291,28 @@ std::vector<Car *> GetLeaderboard(RaceSession &session) {
 
   std::sort(board.begin(), board.end(),
             [](const Car *a, const Car *b) { return a->isAheadOf(*b); });
+  return board;
+}
+
+std::vector<Car *> GetTimingLeaderboard(RaceSession &session) {
+  std::vector<Car *> board;
+  board.reserve(session.cars.size());
+  for (Car &car : session.cars)
+    board.push_back(&car);
+
+  std::sort(board.begin(), board.end(), [](const Car *a, const Car *b) {
+    const double aBest = a->bestLapTime();
+    const double bBest = b->bestLapTime();
+    const bool aHas = aBest > 0.0;
+    const bool bHas = bBest > 0.0;
+    if (aHas != bHas)
+      return aHas;
+    if (aHas && bHas && aBest != bBest)
+      return aBest < bBest;
+    if (a->lastLapTime() != b->lastLapTime())
+      return a->lastLapTime() < b->lastLapTime();
+    return a->gridPosition() < b->gridPosition();
+  });
   return board;
 }
 

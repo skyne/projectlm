@@ -99,6 +99,10 @@ SimCommand ParseSimCommand(const std::string &raw) {
     cmd.type = SimCommandType::CancelPit;
     return cmd;
   }
+  if (lower == "release" || lower == "garage|exit" || lower == "garage|release") {
+    cmd.type = SimCommandType::ReleaseGarage;
+    return cmd;
+  }
   if (lower.rfind("driver_mode=", 0) == 0) {
     cmd.type = SimCommandType::DriverMode;
     const std::string mode = ToLower(Trim(trimmed.substr(12)));
@@ -108,6 +112,25 @@ SimCommand ParseSimCommand(const std::string &raw) {
       cmd.driverMode = DriverMode::Conserve;
     else
       cmd.driverMode = DriverMode::Normal;
+    return cmd;
+  }
+  if (lower.rfind("starting_compound=", 0) == 0) {
+    cmd.type = SimCommandType::StartingCompound;
+    cmd.tireCompound = ParseCompound(Trim(trimmed.substr(18)));
+    return cmd;
+  }
+
+  if (lower.rfind("hybrid_strategy=", 0) == 0) {
+    cmd.type = SimCommandType::HybridStrategy;
+    const std::string strategy = ToLower(Trim(trimmed.substr(16)));
+    if (strategy == "deploy")
+      cmd.hybridStrategy = HybridStrategy::Deploy;
+    else if (strategy == "harvest")
+      cmd.hybridStrategy = HybridStrategy::Harvest;
+    else if (strategy == "hold")
+      cmd.hybridStrategy = HybridStrategy::Hold;
+    else
+      cmd.hybridStrategy = HybridStrategy::Balanced;
     return cmd;
   }
 

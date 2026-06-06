@@ -117,6 +117,11 @@ rear_aero.HighDownforceWing.downforce=3.45
 rear_aero.HighDownforceWing.drag=0.148
 rear_aero.HighDownforceWing.permits_wingless=0
 
+rear_aero.WinglessGroundEffect.mass=10.0
+rear_aero.WinglessGroundEffect.downforce=3.70
+rear_aero.WinglessGroundEffect.drag=0.067
+rear_aero.WinglessGroundEffect.permits_wingless=1
+
 # =====================
 # COOLING
 # dissipation = coolingCapacity multiplier in sim (higher = more heat rejection)
@@ -421,6 +426,7 @@ attach.front_aero.LowDragNose=chassis.mount.front_aero
 attach.front_aero.HighDownforceSplitter=chassis.mount.front_aero
 attach.rear_aero.StandardWing=chassis.mount.rear_aero
 attach.rear_aero.HighDownforceWing=chassis.mount.rear_aero
+attach.rear_aero.WinglessGroundEffect=chassis.mount.rear_aero
 attach.cooling.SprintSlimline=chassis.mount.cooling
 attach.cooling.EnduranceHeavyDuty=chassis.mount.cooling
 attach.cooling.DuctedRacing=chassis.mount.cooling

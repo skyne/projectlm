@@ -1,10 +1,9 @@
-export type SidebarPanel = "drive" | "pit" | "comms" | "session";
+export type SidebarPanel = "drive" | "pit" | "comms";
 
 const PANELS: { id: SidebarPanel; label: string; icon: string }[] = [
   { id: "drive", label: "Drive", icon: "🏎" },
   { id: "pit", label: "Pit", icon: "⛽" },
   { id: "comms", label: "Comms", icon: "📡" },
-  { id: "session", label: "Session", icon: "⏱" },
 ];
 
 /** Tabbed race sidebar — groups pit wall, weather, engineer, etc. into focused panels. */
@@ -28,10 +27,9 @@ export class RaceSidebar {
     panelsWrap.className = "sidebar-panels";
 
     const groups: Record<SidebarPanel, string[]> = {
-      drive: ["car-preview-container", "race-controls-container"],
+      drive: ["car-preview-container", "race-controls-container", "playback-container"],
       pit: ["pitwall-container", "sidebar-weather-stack"],
       comms: ["engineer-container", "event-log-container"],
-      session: ["playback-container"],
     };
 
     for (const panel of PANELS) {

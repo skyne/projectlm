@@ -73,3 +73,24 @@ TEST_CASE("SimBridge reloadDefinitions refreshes session", "[unit][sim_bridge]")
   const TrackGeometry geometry = bridge.getTrackGeometry();
   REQUIRE(geometry.name == "Circuit de la Sarthe");
 }
+
+TEST_CASE("SimBridge open session garage hold and release",
+          "[unit][sim_bridge][open_session]") {
+  SimBridge bridge;
+  REQUIRE(bridge.initFromRaceConfig(
+      ConfigPath("race_config_open_session_test.txt")));
+
+  const auto initial = bridge.getSnapshots();
+  REQUIRE(initial.size() == 2);
+  for (const auto &snap : initial) {
+    REQUIRE(snap.inGarage);
+    REQUIRE(snap.distance == Catch::Approx(0.0));
+  }
+
+  REQUIRE(bridge.submitCommand(initial.front().entryId, "release"));
+  bridge.tick(0.1);
+
+  const auto afterRelease = bridge.getSnapshots();
+  const auto &released = afterRelease.front();
+  REQUIRE_FALSE(released.inGarage);
+}

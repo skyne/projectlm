@@ -35,20 +35,31 @@ export function applyAiTrackSetupToConfig(
     }
     const key = trimmed.slice(0, eq);
     if (
-      key === "front_ride_height_m" ||
-      key === "rear_ride_height_m" ||
-      key === "ride_height" ||
-      key === "front_spring_stiffness" ||
-      key === "rear_spring_stiffness" ||
-      key === "front_arb_stiffness" ||
-      key === "rear_arb_stiffness" ||
-      key === "front_damper_bump" ||
-      key === "front_damper_rebound" ||
-      key === "rear_damper_bump" ||
-      key === "rear_damper_rebound" ||
       key === "duct_airflow" ||
       key === "starting_wing_delta" ||
       key === "starting_brake_bias"
+    ) {
+      continue;
+    }
+    // Only strip suspension keys when the track preset supplies a replacement.
+    const stripIfPreset = (presetKey: keyof typeof preset, lineKey: string) => {
+      if (key === lineKey && preset[presetKey] != null) return true;
+      return false;
+    };
+    if (
+      stripIfPreset("frontRideHeightMm", "front_ride_height_m") ||
+      stripIfPreset("rearRideHeightMm", "rear_ride_height_m") ||
+      (key === "ride_height" &&
+        preset.frontRideHeightMm != null &&
+        preset.rearRideHeightMm != null) ||
+      stripIfPreset("frontSpringNm", "front_spring_stiffness") ||
+      stripIfPreset("rearSpringNm", "rear_spring_stiffness") ||
+      stripIfPreset("frontArbStiffness", "front_arb_stiffness") ||
+      stripIfPreset("rearArbStiffness", "rear_arb_stiffness") ||
+      stripIfPreset("frontDamperBump", "front_damper_bump") ||
+      stripIfPreset("frontDamperRebound", "front_damper_rebound") ||
+      stripIfPreset("rearDamperBump", "rear_damper_bump") ||
+      stripIfPreset("rearDamperRebound", "rear_damper_rebound")
     ) {
       continue;
     }
@@ -72,12 +83,10 @@ export function applyAiTrackSetupToConfig(
     );
   }
   if (preset.frontSpringNm != null) {
-    const base = readNumeric(lines, "front_spring_stiffness") ?? 135000;
-    setLine("front_spring_stiffness", String(base + preset.frontSpringNm));
+    setLine("front_spring_stiffness", String(preset.frontSpringNm));
   }
   if (preset.rearSpringNm != null) {
-    const base = readNumeric(lines, "rear_spring_stiffness") ?? 150000;
-    setLine("rear_spring_stiffness", String(base + preset.rearSpringNm));
+    setLine("rear_spring_stiffness", String(preset.rearSpringNm));
   }
   if (preset.frontArbStiffness != null) {
     setLine("front_arb_stiffness", preset.frontArbStiffness.toFixed(2));
