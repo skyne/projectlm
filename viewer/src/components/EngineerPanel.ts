@@ -24,7 +24,7 @@ export class EngineerPanel {
     this.root = document.createElement("section");
     this.root.className = "panel engineer-panel panel-wec hidden";
     this.root.innerHTML = `
-      ${mmPanelHeader("Race Engineer", { subtitle: "Local LLM · pit strategy", badge: "AI" })}
+      ${mmPanelHeader("Race Engineer", { subtitle: "Local LLM · pit & setup strategy", badge: "AI" })}
       <p class="engineer-status-line">
         <span class="engineer-status-badge">Checking Ollama…</span>
         <button type="button" class="text-btn engineer-refresh-status">Refresh</button>

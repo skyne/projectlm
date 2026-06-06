@@ -30,6 +30,14 @@ export interface TelemetrySummary {
   setupFeedback: string | null;
   wingAngle: number;
   brakeBias: number;
+  frontRideHeightMm?: number;
+  rearRideHeightMm?: number;
+  frontSpringNm?: number;
+  rearSpringNm?: number;
+  frontArbStiffness?: number;
+  rearArbStiffness?: number;
+  frontCamberDeg?: number;
+  rearCamberDeg?: number;
   recentLaps: Array<{ lap: number; timeSec: number }>;
 }
 
@@ -103,6 +111,14 @@ export function summarizeTelemetry(
     setupFeedback: snap.setupFeedback ?? null,
     wingAngle: snap.wingAngle ?? 0,
     brakeBias: snap.brakeBias ?? 0.5,
+    frontRideHeightMm: snap.frontRideHeightMm,
+    rearRideHeightMm: snap.rearRideHeightMm,
+    frontSpringNm: snap.frontSpringNm,
+    rearSpringNm: snap.rearSpringNm,
+    frontArbStiffness: snap.frontArbStiffness,
+    rearArbStiffness: snap.rearArbStiffness,
+    frontCamberDeg: snap.frontCamberDeg,
+    rearCamberDeg: snap.rearCamberDeg,
     recentLaps,
     ...(raceTimeSec > 0 ? { raceTimeSec: Math.round(raceTimeSec) } : {}),
   };

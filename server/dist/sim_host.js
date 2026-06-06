@@ -268,6 +268,9 @@ class SimHost {
     setWeekendTireCompound(compound) {
         return this.meta.setWeekendTireCompound(compound);
     }
+    saveTrackSetupPreset(trackId, preset) {
+        return this.meta.saveTrackSetupPreset(trackId, preset);
+    }
     validateFleetForRace() {
         return this.meta.validateFleetForRace();
     }

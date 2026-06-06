@@ -11,11 +11,13 @@ import {
   trackDisplayName,
   trackIconSvg,
 } from "../utils/trackIcons";
+import { WeekendSetupPanel } from "./WeekendSetupPanel";
 
 export interface RaceHubHandlers {
   onStartRace: () => void;
   onOpenGarage?: () => void;
   onSetWeekendCompound?: (compound: string) => void;
+  onSaveTrackSetup?: (trackId: string, preset: import("../ws/protocol").TrackSetupPresetPayload) => void;
 }
 
 function escapeHtml(text: string): string {
@@ -33,6 +35,7 @@ export class RaceHub {
   private pointsEl: HTMLElement;
   private startBtn: HTMLButtonElement;
   private garageBtn: HTMLButtonElement;
+  private weekendSetup: WeekendSetupPanel;
   private handlers: RaceHubHandlers;
   private latestMeta: MetaStatePayload | null = null;
   private sessionInfo: SessionInitPayload | null = null;
@@ -80,6 +83,7 @@ export class RaceHub {
                 </select>
               </label>
               <p class="wizard-hint">Change compound anytime before the session or at pit stops during the race.</p>
+              <div class="weekend-setup-host"></div>
             </div>
             <div class="race-hub-staff"></div>
             <div class="round-actions">
@@ -105,6 +109,13 @@ export class RaceHub {
     this.pointsEl = this.root.querySelector(".championship-points")!;
     this.startBtn = this.root.querySelector(".start-race-btn")!;
     this.garageBtn = this.root.querySelector(".garage-link-btn")!;
+
+    this.weekendSetup = new WeekendSetupPanel(
+      this.root.querySelector(".weekend-setup-host")!,
+      {
+        onSave: (trackId, preset) => this.handlers.onSaveTrackSetup?.(trackId, preset),
+      },
+    );
 
     this.startBtn.addEventListener("click", () => {
       this.handlers.onStartRace();
@@ -168,6 +179,8 @@ export class RaceHub {
     if (compoundSelect) {
       compoundSelect.value = meta.weekendTireCompound ?? "Medium";
     }
+
+    this.weekendSetup.bindTrack(meta);
 
     this.calendarEl.replaceChildren();
     for (const event of meta.calendar) {

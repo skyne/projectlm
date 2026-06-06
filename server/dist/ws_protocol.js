@@ -41,6 +41,7 @@ function parseClientMessage(raw) {
             "new_game",
             "get_track_preview",
             "set_weekend_tire_compound",
+            "save_track_setup",
             "ask_engineer",
             "get_engineer_status",
             "ask_garage_engineer",

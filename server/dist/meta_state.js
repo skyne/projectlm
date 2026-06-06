@@ -40,6 +40,7 @@ const game_state_1 = require("./game_state");
 const car_marketplace_1 = require("./game/car_marketplace");
 const fleet_1 = require("./game/fleet");
 const car_builder_1 = require("./game/car_builder");
+const weekend_setup_1 = require("./game/weekend_setup");
 const driver_catalog_1 = require("./game/driver_catalog");
 const driver_market_1 = require("./game/driver_market");
 const economy_1 = require("./game/economy");
@@ -84,6 +85,7 @@ function parseConfigFile(repoRoot) {
         activeCarId: "",
         driverRoster: [],
         weekendTireCompound: "Medium",
+        trackSetupPresets: {},
     };
     if (!fs.existsSync(configPath))
         return defaults;
@@ -653,6 +655,15 @@ class MetaStateManager {
         }
         this.state.weekendTireCompound = normalized;
         (0, car_builder_1.writePlayerCarConfig)(this.repoRoot, this.state);
+        return this.persist();
+    }
+    saveTrackSetupPreset(trackId, preset) {
+        const err = (0, weekend_setup_1.validateTrackPreset)({ ...preset, trackId });
+        if (err)
+            return { error: err };
+        if (!this.state.trackSetupPresets)
+            this.state.trackSetupPresets = {};
+        this.state.trackSetupPresets[trackId] = { ...preset, trackId };
         return this.persist();
     }
     reload() {

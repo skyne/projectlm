@@ -389,11 +389,19 @@ function main() {
                     ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: "Unknown entry for engineer" })));
                 }
                 else {
+                    const meta = host.getMetaState();
+                    const engineerSkill = meta.staff?.find((s) => s.role === "engineer")?.skill ?? 75;
+                    const round = meta.calendar.find((e) => e.round === meta.currentRound);
+                    const trackPreset = round
+                        ? meta.trackSetupPresets?.[round.trackId]
+                        : undefined;
                     const advice = await engineer.advise({
                         snap,
                         raceTimeSec: host.getRaceTime(),
                         trackName: host.getSessionInit().trackName,
+                        trackPresetNotes: trackPreset?.notes,
                         question: payload.question,
+                        engineerSkill,
                     });
                     ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("engineer_advice", advice)));
                 }
@@ -426,6 +434,26 @@ function main() {
                 }
                 else {
                     broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
+                }
+            }
+            else if (msg.type === "save_track_setup") {
+                const body = msg.payload;
+                const trackId = String(body.trackId ?? "").trim();
+                const preset = body.preset;
+                if (!trackId || !preset) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: "trackId and preset required" })));
+                }
+                else {
+                    const result = host.saveTrackSetupPreset(trackId, {
+                        ...preset,
+                        trackId,
+                    });
+                    if ("error" in result) {
+                        ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                    }
+                    else {
+                        broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
+                    }
                 }
             }
         });

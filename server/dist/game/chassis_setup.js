@@ -1,5 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_DAMPER_CLICKS = exports.DAMPER_LIMITS = exports.ARB_STIFFNESS_LIMITS = exports.SPRING_RATE_TOLERANCE = exports.SPRING_RATE_STEP_NM = exports.RIDE_HEIGHT_LIMITS = void 0;
+exports.rideHeightLimitsForClass = rideHeightLimitsForClass;
+exports.springRateRange = springRateRange;
+exports.resolveSuspensionSetup = resolveSuspensionSetup;
+exports.clampSuspensionSetup = clampSuspensionSetup;
+exports.suspensionSetupToBuildFields = suspensionSetupToBuildFields;
 exports.wheelLimitsForClass = wheelLimitsForClass;
 exports.defaultWheelSetup = defaultWheelSetup;
 exports.wheelSetupFromPackage = wheelSetupFromPackage;
@@ -20,7 +26,23 @@ exports.validateWheelSetup = validateWheelSetup;
 exports.validateSuspensionSetup = validateSuspensionSetup;
 exports.normalizeCarBuild = normalizeCarBuild;
 exports.wheelSetupToBuildFields = wheelSetupToBuildFields;
-const IN_TO_M = 0.0254;
+/** Per-class ride height slider bounds (mm). */
+exports.RIDE_HEIGHT_LIMITS = {
+    Hypercar: { min: 30, max: 55, step: 1 },
+    LMP2: { min: 32, max: 58, step: 1 },
+    LMGT3: { min: 38, max: 65, step: 1 },
+};
+exports.SPRING_RATE_STEP_NM = 1000;
+/** Spring rate sliders: ±25% from selected part baseline. */
+exports.SPRING_RATE_TOLERANCE = 0.25;
+exports.ARB_STIFFNESS_LIMITS = {
+    min: 0.7,
+    max: 1.3,
+    step: 0.05,
+};
+exports.DAMPER_LIMITS = { min: 1, max: 15 };
+exports.DEFAULT_DAMPER_CLICKS = 8;
+const MM_PER_M = 1000;
 const REAR_ONLY_SUSPENSION = new Set(["MultilinkRearHypercar"]);
 const FRONT_ONLY_SUSPENSION = new Set(["MacPhersonStrutGT3"]);
 /** Front axle layouts that cannot package a hub motor / e-axle. */
@@ -53,12 +75,118 @@ const DEFAULT_WHEEL_BY_CLASS = {
     LMP2: { frontDiameterIn: 18, rearDiameterIn: 18, frontWidthMm: 300, rearWidthMm: 305 },
     LMGT3: { frontDiameterIn: 20, rearDiameterIn: 21, frontWidthMm: 325, rearWidthMm: 340 },
 };
+const IN_TO_M = 0.0254;
 function num(stats, key, fallback) {
     const v = stats[key];
     return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
 function diameterInFromM(m) {
     return Math.round((m * 1000) / 25.4);
+}
+function rideHeightLimitsForClass(classId) {
+    return exports.RIDE_HEIGHT_LIMITS[classId] ?? exports.RIDE_HEIGHT_LIMITS.Hypercar;
+}
+function springRateRange(baselineNm) {
+    const minRaw = baselineNm * (1 - exports.SPRING_RATE_TOLERANCE);
+    const maxRaw = baselineNm * (1 + exports.SPRING_RATE_TOLERANCE);
+    const step = exports.SPRING_RATE_STEP_NM;
+    return {
+        min: Math.ceil(minRaw / step) * step,
+        max: Math.floor(maxRaw / step) * step,
+        step,
+    };
+}
+function rideHeightMmFromPart(stats, fallbackMm) {
+    return Math.round(num(stats, "ride_height", fallbackMm / MM_PER_M) * MM_PER_M);
+}
+function suspensionBaselines(build, parts) {
+    const { front, rear } = resolveSuspensionLayouts(build);
+    const frontPart = suspensionPart(parts, front);
+    const rearPart = suspensionPart(parts, rear);
+    const fs = frontPart?.stats ?? {};
+    const rs = rearPart?.stats ?? {};
+    return {
+        frontRideHeightMm: rideHeightMmFromPart(fs, 40),
+        rearRideHeightMm: rideHeightMmFromPart(rs, 40),
+        frontSpringNm: num(fs, "front_spring", 130000),
+        rearSpringNm: num(rs, "rear_spring", 145000),
+    };
+}
+function resolveSuspensionSetup(build, parts, classId) {
+    const base = suspensionBaselines(build, parts);
+    return {
+        frontRideHeightMm: build.front_ride_height_mm ?? base.frontRideHeightMm,
+        rearRideHeightMm: build.rear_ride_height_mm ?? base.rearRideHeightMm,
+        frontSpringNm: build.front_spring_nm ?? base.frontSpringNm,
+        rearSpringNm: build.rear_spring_nm ?? base.rearSpringNm,
+        frontArbStiffness: build.front_arb_stiffness ?? 1,
+        rearArbStiffness: build.rear_arb_stiffness ?? 1,
+        frontDamperBump: build.front_damper_bump ?? exports.DEFAULT_DAMPER_CLICKS,
+        frontDamperRebound: build.front_damper_rebound ?? exports.DEFAULT_DAMPER_CLICKS,
+        rearDamperBump: build.rear_damper_bump ?? exports.DEFAULT_DAMPER_CLICKS,
+        rearDamperRebound: build.rear_damper_rebound ?? exports.DEFAULT_DAMPER_CLICKS,
+    };
+}
+function snapToStep(value, step) {
+    return Math.round(value / step) * step;
+}
+function clampToRange(value, min, max, step) {
+    return snapToStep(Math.min(max, Math.max(min, value)), step);
+}
+function clampSuspensionSetup(setup, build, parts, classId) {
+    const base = suspensionBaselines(build, parts);
+    const rh = rideHeightLimitsForClass(classId);
+    const frontSpringRange = springRateRange(base.frontSpringNm);
+    const rearSpringRange = springRateRange(base.rearSpringNm);
+    const clampDamper = (v) => Math.min(exports.DAMPER_LIMITS.max, Math.max(exports.DAMPER_LIMITS.min, Math.round(v)));
+    return {
+        frontRideHeightMm: clampToRange(setup.frontRideHeightMm, rh.min, rh.max, rh.step),
+        rearRideHeightMm: clampToRange(setup.rearRideHeightMm, rh.min, rh.max, rh.step),
+        frontSpringNm: clampToRange(setup.frontSpringNm, frontSpringRange.min, frontSpringRange.max, frontSpringRange.step),
+        rearSpringNm: clampToRange(setup.rearSpringNm, rearSpringRange.min, rearSpringRange.max, rearSpringRange.step),
+        frontArbStiffness: Math.round(clampToRange(setup.frontArbStiffness, exports.ARB_STIFFNESS_LIMITS.min, exports.ARB_STIFFNESS_LIMITS.max, exports.ARB_STIFFNESS_LIMITS.step) * 100) / 100,
+        rearArbStiffness: Math.round(clampToRange(setup.rearArbStiffness, exports.ARB_STIFFNESS_LIMITS.min, exports.ARB_STIFFNESS_LIMITS.max, exports.ARB_STIFFNESS_LIMITS.step) * 100) / 100,
+        frontDamperBump: clampDamper(setup.frontDamperBump),
+        frontDamperRebound: clampDamper(setup.frontDamperRebound),
+        rearDamperBump: clampDamper(setup.rearDamperBump),
+        rearDamperRebound: clampDamper(setup.rearDamperRebound),
+    };
+}
+function validateSuspensionTuning(setup, build, parts, classId) {
+    const base = suspensionBaselines(build, parts);
+    const rh = rideHeightLimitsForClass(classId);
+    const checkRange = (v, min, max, label) => {
+        if (v < min - 0.001 || v > max + 0.001) {
+            return `${label} must be ${min}–${max}`;
+        }
+        return null;
+    };
+    const frontSpringRange = springRateRange(base.frontSpringNm);
+    const rearSpringRange = springRateRange(base.rearSpringNm);
+    return (checkRange(setup.frontRideHeightMm, rh.min, rh.max, "Front ride height") ??
+        checkRange(setup.rearRideHeightMm, rh.min, rh.max, "Rear ride height") ??
+        checkRange(setup.frontSpringNm, frontSpringRange.min, frontSpringRange.max, "Front spring rate") ??
+        checkRange(setup.rearSpringNm, rearSpringRange.min, rearSpringRange.max, "Rear spring rate") ??
+        checkRange(setup.frontArbStiffness, exports.ARB_STIFFNESS_LIMITS.min, exports.ARB_STIFFNESS_LIMITS.max, "Front anti-roll bar") ??
+        checkRange(setup.rearArbStiffness, exports.ARB_STIFFNESS_LIMITS.min, exports.ARB_STIFFNESS_LIMITS.max, "Rear anti-roll bar") ??
+        checkRange(setup.frontDamperBump, exports.DAMPER_LIMITS.min, exports.DAMPER_LIMITS.max, "Front bump") ??
+        checkRange(setup.frontDamperRebound, exports.DAMPER_LIMITS.min, exports.DAMPER_LIMITS.max, "Front rebound") ??
+        checkRange(setup.rearDamperBump, exports.DAMPER_LIMITS.min, exports.DAMPER_LIMITS.max, "Rear bump") ??
+        checkRange(setup.rearDamperRebound, exports.DAMPER_LIMITS.min, exports.DAMPER_LIMITS.max, "Rear rebound"));
+}
+function suspensionSetupToBuildFields(setup) {
+    return {
+        front_ride_height_mm: setup.frontRideHeightMm,
+        rear_ride_height_mm: setup.rearRideHeightMm,
+        front_spring_nm: setup.frontSpringNm,
+        rear_spring_nm: setup.rearSpringNm,
+        front_arb_stiffness: setup.frontArbStiffness,
+        rear_arb_stiffness: setup.rearArbStiffness,
+        front_damper_bump: setup.frontDamperBump,
+        front_damper_rebound: setup.frontDamperRebound,
+        rear_damper_bump: setup.rearDamperBump,
+        rear_damper_rebound: setup.rearDamperRebound,
+    };
 }
 function wheelLimitsForClass(classId) {
     return WHEEL_LIMITS[classId] ?? WHEEL_LIMITS.Hypercar;
@@ -275,7 +403,7 @@ function validateWheelSetup(setup, classId) {
         check(setup.frontWidthMm, limits.frontWidth, "Front tyre width") ??
         check(setup.rearWidthMm, limits.rearWidth, "Rear tyre width"));
 }
-function validateSuspensionSetup(build, legalLayouts) {
+function validateSuspensionSetup(build, legalLayouts, classId, parts) {
     const drivetrain = build.engine?.drivetrain;
     const { front, rear } = resolveSuspensionLayouts(build);
     for (const layout of [front, rear]) {
@@ -290,6 +418,12 @@ function validateSuspensionSetup(build, legalLayouts) {
         const reason = suspensionIncompatibilityReason(layout, axle, drivetrain);
         if (reason)
             return reason;
+    }
+    if (classId) {
+        const setup = resolveSuspensionSetup(build, parts, classId);
+        const tuningErr = validateSuspensionTuning(setup, build, parts, classId);
+        if (tuningErr)
+            return tuningErr;
     }
     return null;
 }
@@ -310,6 +444,13 @@ function normalizeCarBuild(build, classId, partsBySlot) {
             partsBySlot?.suspension?.find((p) => isSuspensionLegalForAxle(p.partType, "rear"))
                 ?.partType ?? "PushrodDoubleWishbone";
     }
+    const suspensionParts = partsBySlot?.suspension;
+    const layoutBuild = {
+        ...build,
+        front_suspension_layout: frontLayout,
+        rear_suspension_layout: rearLayout,
+    };
+    const suspension = clampSuspensionSetup(resolveSuspensionSetup(layoutBuild, suspensionParts, classId), layoutBuild, suspensionParts, classId);
     return {
         ...build,
         suspension_layout: build.suspension_layout || frontLayout,
@@ -319,6 +460,7 @@ function normalizeCarBuild(build, classId, partsBySlot) {
         rear_wheel_diameter_in: wheel.rearDiameterIn,
         front_tire_width_mm: wheel.frontWidthMm,
         rear_tire_width_mm: wheel.rearWidthMm,
+        ...suspensionSetupToBuildFields(suspension),
     };
 }
 function wheelSetupToBuildFields(setup) {

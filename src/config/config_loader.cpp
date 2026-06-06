@@ -268,12 +268,69 @@ bool LoadCarConfig(const std::string &filename, CarConfig &car) {
           car.hybridSystemChoice = EHybridSystem::LMDh50kW;
         else
           car.hybridSystemChoice = EHybridSystem::None;
-      } else if (key == "front_spring_stiffness")
+      } else if (key == "front_spring_stiffness") {
         car.frontSpringStiffness = std::stod(value);
-      else if (key == "rear_spring_stiffness")
+        car.hasCustomFrontSpring = true;
+        car.hasCustomSuspensionSetup = true;
+      } else if (key == "rear_spring_stiffness") {
         car.rearSpringStiffness = std::stod(value);
-      else if (key == "ride_height")
-        car.rideHeight = std::stod(value);
+        car.hasCustomRearSpring = true;
+        car.hasCustomSuspensionSetup = true;
+      } else if (key == "ride_height") {
+        const double rh = std::stod(value);
+        car.frontRideHeightM = rh;
+        car.rearRideHeightM = rh;
+        car.rideHeight = rh;
+        car.hasCustomFrontRideHeight = true;
+        car.hasCustomRearRideHeight = true;
+        car.hasCustomSuspensionSetup = true;
+      } else if (key == "front_ride_height_m") {
+        car.frontRideHeightM = std::stod(value);
+        car.hasCustomFrontRideHeight = true;
+        car.hasCustomSuspensionSetup = true;
+      } else if (key == "rear_ride_height_m") {
+        car.rearRideHeightM = std::stod(value);
+        car.hasCustomRearRideHeight = true;
+        car.hasCustomSuspensionSetup = true;
+      } else if (key == "front_arb_stiffness") {
+        car.frontArbStiffness = std::stod(value);
+        car.hasCustomFrontArb = true;
+        car.hasCustomSuspensionSetup = true;
+      } else if (key == "rear_arb_stiffness") {
+        car.rearArbStiffness = std::stod(value);
+        car.hasCustomRearArb = true;
+        car.hasCustomSuspensionSetup = true;
+      } else if (key == "front_damper_bump") {
+        car.frontDamperBump = std::stoi(value);
+        car.hasCustomDampers = true;
+        car.hasCustomSuspensionSetup = true;
+      } else if (key == "front_damper_rebound") {
+        car.frontDamperRebound = std::stoi(value);
+        car.hasCustomDampers = true;
+        car.hasCustomSuspensionSetup = true;
+      } else if (key == "rear_damper_bump") {
+        car.rearDamperBump = std::stoi(value);
+        car.hasCustomDampers = true;
+        car.hasCustomSuspensionSetup = true;
+      } else if (key == "rear_damper_rebound") {
+        car.rearDamperRebound = std::stoi(value);
+        car.hasCustomDampers = true;
+        car.hasCustomSuspensionSetup = true;
+      } else if (key == "front_camber_deg") {
+        car.frontCamberDeg = std::stod(value);
+      } else if (key == "rear_camber_deg") {
+        car.rearCamberDeg = std::stod(value);
+      } else if (key == "front_toe_deg") {
+        car.frontToeDeg = std::stod(value);
+      } else if (key == "rear_toe_deg") {
+        car.rearToeDeg = std::stod(value);
+      } else if (key == "final_drive_ratio") {
+        car.finalDriveRatio = std::stod(value);
+      } else if (key == "starting_wing_delta") {
+        car.startingWingDelta = std::stod(value);
+      } else if (key == "starting_brake_bias") {
+        car.startingBrakeBias = std::stod(value);
+      }
     }
   }
   return true;

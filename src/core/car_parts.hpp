@@ -324,6 +324,24 @@ struct CarConfig {
   EHybridSystem hybridSystemChoice = EHybridSystem::None;
   double frontSpringStiffness = 100000.0;
   double rearSpringStiffness = 100000.0;
+  double frontRideHeightM = 0.040;
+  double rearRideHeightM = 0.040;
+  double frontArbStiffness = 1.0;
+  double rearArbStiffness = 1.0;
+  int frontDamperBump = 8;
+  int frontDamperRebound = 8;
+  int rearDamperBump = 8;
+  int rearDamperRebound = 8;
+  bool hasCustomSuspensionSetup = false;
+  bool hasCustomFrontSpring = false;
+  bool hasCustomRearSpring = false;
+  bool hasCustomFrontRideHeight = false;
+  bool hasCustomRearRideHeight = false;
+  bool hasCustomFrontArb = false;
+  bool hasCustomRearArb = false;
+  bool hasCustomDampers = false;
+  /** Tyre balance from wheel widths only; rake/ARB applied in FinalizeSuspensionDerivedStats. */
+  double wheelTyreBalanceFactor = 1.0;
   double rideHeight = 0.050;
   double calculatedTotalMass = 0.0;
   double totalDragCd = 0.0;
@@ -356,6 +374,8 @@ struct CarConfig {
   double frontAxleCoolFactor = 1.0;
   double rearAxleCoolFactor = 1.0;
   double rollStiffnessFactor = 1.0;
+  /** Roll stiffness from parts + CG before ARB multiplier. */
+  double suspensionRollStiffnessBase = 1.0;
   double aeroPlatformStability = 1.0;
   double suspensionMechanicalGrip = 1.0;
   double unsprungMassKg = 0.0;
@@ -384,6 +404,14 @@ struct CarConfig {
   double drivetrainEfficiency = 1.0;
   double electricalDeployKW = 0.0;
   double powertrainServiceabilityMult = 1.0;
+  double frontCamberDeg = -2.5;
+  double rearCamberDeg = -1.8;
+  double frontToeDeg = 0.0;
+  double rearToeDeg = 0.0;
+  /** Per-car final drive; 0 = use physics_config default. */
+  double finalDriveRatio = 0.0;
+  double startingWingDelta = 0.0;
+  double startingBrakeBias = 0.5;
 };
 
 ChassisPart GetChassisStats(EChassis type, const PartCatalog &catalog);
@@ -408,5 +436,24 @@ std::string GetAttachmentPoint(const PartCatalog &catalog,
 void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
                             const AssemblyConfig &assembly);
 void ApplyClassBoP(CarConfig &car, const ClassRule &rule);
+
+struct SuspensionSetupDelta {
+  double frontRideHeightDelta = 0.0;
+  double rearRideHeightDelta = 0.0;
+  double frontSpringDelta = 0.0;
+  double rearSpringDelta = 0.0;
+  double frontArbDelta = 0.0;
+  double rearArbDelta = 0.0;
+  int frontDamperBumpDelta = 0;
+  int frontDamperReboundDelta = 0;
+  int rearDamperBumpDelta = 0;
+  int rearDamperReboundDelta = 0;
+
+  bool hasAnyChange() const;
+};
+
+void ClampSuspensionSetup(CarConfig &car);
+void FinalizeSuspensionDerivedStats(CarConfig &car);
+void ApplySuspensionSetupDelta(CarConfig &car, const SuspensionSetupDelta &delta);
 
 #endif

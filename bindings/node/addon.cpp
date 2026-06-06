@@ -145,6 +145,14 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
   obj.Set("setupFeedback", snapshot.setupFeedback);
   obj.Set("wingAngle", snapshot.wingAngle);
   obj.Set("brakeBias", snapshot.brakeBias);
+  obj.Set("frontRideHeightMm", snapshot.frontRideHeightMm);
+  obj.Set("rearRideHeightMm", snapshot.rearRideHeightMm);
+  obj.Set("frontSpringNm", snapshot.frontSpringNm);
+  obj.Set("rearSpringNm", snapshot.rearSpringNm);
+  obj.Set("frontArbStiffness", snapshot.frontArbStiffness);
+  obj.Set("rearArbStiffness", snapshot.rearArbStiffness);
+  obj.Set("frontCamberDeg", snapshot.frontCamberDeg);
+  obj.Set("rearCamberDeg", snapshot.rearCamberDeg);
   obj.Set("serviceabilityFactor", snapshot.serviceabilityFactor);
   obj.Set("driverChangeFactor", snapshot.driverChangeFactor);
   obj.Set("pitCount", snapshot.pitCount);

@@ -40,6 +40,7 @@ exports.writePlayerCarConfig = writePlayerCarConfig;
 exports.playerCarPath = playerCarPath;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const weekend_setup_1 = require("./weekend_setup");
 const catalog_1 = require("./catalog");
 const engine_model_1 = require("./engine_model");
 const car_marketplace_1 = require("./car_marketplace");
@@ -56,6 +57,14 @@ function parseTemplateSuspension(repoRoot, templatePath) {
         "front_spring_stiffness",
         "rear_spring_stiffness",
         "ride_height",
+        "front_ride_height_m",
+        "rear_ride_height_m",
+        "front_arb_stiffness",
+        "rear_arb_stiffness",
+        "front_damper_bump",
+        "front_damper_rebound",
+        "rear_damper_bump",
+        "rear_damper_rebound",
     ]);
     const lines = [];
     for (const line of fs.readFileSync(abs, "utf8").split("\n")) {
@@ -155,7 +164,7 @@ function validateCarBuild(repoRoot, classId, build, unlockedParts) {
     if (wheelErr)
         return wheelErr;
     const legalSusp = legal["legal_suspension"];
-    const suspErr = (0, chassis_setup_1.validateSuspensionSetup)(build, legalSusp ? legalSusp : undefined);
+    const suspErr = (0, chassis_setup_1.validateSuspensionSetup)(build, legalSusp ? legalSusp : undefined, classId, catalog.partsBySlot.suspension);
     if (suspErr)
         return suspErr;
     const engine = resolveEngine(repoRoot, classId, build);
@@ -176,6 +185,9 @@ function writeCarConfigFile(repoRoot, relPath, teamName, classId, build, platfor
     const engine = resolveEngine(repoRoot, classId, build, platformTemplatePath);
     if (!engine)
         throw new Error("Engine configuration is required");
+    const catalog = (0, catalog_1.loadGameCatalog)(repoRoot);
+    const suspension = (0, chassis_setup_1.clampSuspensionSetup)((0, chassis_setup_1.resolveSuspensionSetup)(build, catalog.partsBySlot.suspension, classId), build, catalog.partsBySlot.suspension, classId);
+    const avgRideHeightM = (suspension.frontRideHeightMm + suspension.rearRideHeightMm) / 2 / 1000;
     const abs = path.join(repoRoot, relPath);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     const lines = [
@@ -215,6 +227,38 @@ function writeCarConfigFile(repoRoot, relPath, teamName, classId, build, platfor
         ...(build.rear_tire_width_mm != null
             ? [`rear_tire_width_mm=${build.rear_tire_width_mm}`]
             : []),
+        `front_ride_height_m=${(suspension.frontRideHeightMm / 1000).toFixed(4)}`,
+        `rear_ride_height_m=${(suspension.rearRideHeightMm / 1000).toFixed(4)}`,
+        `ride_height=${avgRideHeightM.toFixed(4)}`,
+        `front_spring_stiffness=${suspension.frontSpringNm}`,
+        `rear_spring_stiffness=${suspension.rearSpringNm}`,
+        `front_arb_stiffness=${suspension.frontArbStiffness.toFixed(2)}`,
+        `rear_arb_stiffness=${suspension.rearArbStiffness.toFixed(2)}`,
+        `front_damper_bump=${suspension.frontDamperBump}`,
+        `front_damper_rebound=${suspension.frontDamperRebound}`,
+        `rear_damper_bump=${suspension.rearDamperBump}`,
+        `rear_damper_rebound=${suspension.rearDamperRebound}`,
+        ...(build.front_camber_deg != null
+            ? [`front_camber_deg=${build.front_camber_deg.toFixed(2)}`]
+            : []),
+        ...(build.rear_camber_deg != null
+            ? [`rear_camber_deg=${build.rear_camber_deg.toFixed(2)}`]
+            : []),
+        ...(build.front_toe_deg != null
+            ? [`front_toe_deg=${build.front_toe_deg.toFixed(3)}`]
+            : []),
+        ...(build.rear_toe_deg != null
+            ? [`rear_toe_deg=${build.rear_toe_deg.toFixed(3)}`]
+            : []),
+        ...(build.final_drive_ratio != null
+            ? [`final_drive_ratio=${build.final_drive_ratio.toFixed(3)}`]
+            : []),
+        ...(build.starting_wing_delta != null
+            ? [`starting_wing_delta=${build.starting_wing_delta.toFixed(3)}`]
+            : []),
+        ...(build.starting_brake_bias != null
+            ? [`starting_brake_bias=${build.starting_brake_bias.toFixed(3)}`]
+            : []),
         `starting_tire_compound=${startingTireCompound}`,
         `fuel_system=${build.fuel_system}`,
         `brake_system=${build.brake_system}`,
@@ -228,13 +272,14 @@ function writeCarConfigFile(repoRoot, relPath, teamName, classId, build, platfor
 function writeFleetCarConfig(repoRoot, teamName, car, platformTemplatePath, startingTireCompound = "Medium") {
     return writeCarConfigFile(repoRoot, car.carConfigPath, teamName, car.classId, car.build, platformTemplatePath, startingTireCompound);
 }
-function writeAllFleetConfigs(repoRoot, meta, platforms) {
+function writeAllFleetConfigs(repoRoot, meta, platforms, trackPreset) {
     const compound = meta.weekendTireCompound ?? "Medium";
     for (const car of meta.fleet ?? []) {
         const platformPath = car.platformId
             ? platforms?.get(car.platformId)
             : undefined;
-        writeFleetCarConfig(repoRoot, meta.teamName, car, platformPath, compound);
+        const build = (0, weekend_setup_1.mergeBuildWithTrackPreset)(car.build, trackPreset);
+        writeFleetCarConfig(repoRoot, meta.teamName, { ...car, build }, platformPath, compound);
     }
 }
 function writePlayerCarConfig(repoRoot, meta) {

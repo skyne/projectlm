@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildRaceForRound = buildRaceForRound;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const track_ai_setup_1 = require("./track_ai_setup");
 const regulations_1 = require("./regulations");
 const grid_generator_1 = require("./grid_generator");
 const car_builder_1 = require("./car_builder");
@@ -74,7 +75,8 @@ function buildRaceForRound(repoRoot, meta) {
     if (fleetErr)
         return null;
     const platformMap = new Map((0, car_marketplace_1.loadCarPlatforms)(repoRoot).map((p) => [p.id, p.templatePath]));
-    (0, car_builder_1.writeAllFleetConfigs)(repoRoot, meta, platformMap);
+    const trackPreset = meta.trackSetupPresets?.[round.trackId] ?? null;
+    (0, car_builder_1.writeAllFleetConfigs)(repoRoot, meta, platformMap, trackPreset);
     const trackConfigPath = (0, track_catalog_1.trackJsonPath)(round.trackId);
     const durationSec = (0, track_catalog_1.formatToDurationSeconds)(round.format);
     const regulation = (0, regulations_1.regulationForRound)(round.round);
@@ -92,6 +94,19 @@ function buildRaceForRound(repoRoot, meta) {
     const managedEntryIds = entries
         .filter((e) => e.teamName === meta.teamName && e.fleetCarId)
         .map((e) => e.entryId);
+    for (const entry of entries) {
+        if (entry.isPlayer)
+            continue;
+        const rel = `configs/runtime/ai/grid_${entry.grid}_${path.basename(entry.carConfigPath)}`;
+        const src = path.join(repoRoot, entry.carConfigPath);
+        const dest = path.join(repoRoot, rel);
+        if (!fs.existsSync(src))
+            continue;
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(src, dest);
+        entry.carConfigPath = rel;
+    }
+    (0, track_ai_setup_1.materializeAiGridConfigs)(repoRoot, entries, round.trackId);
     const playerFleetEntry = entries.find((e) => e.fleetCarId === playerCarId);
     const resolvedPlayerEntryId = playerFleetEntry?.entryId ??
         managedEntryIds[0] ??

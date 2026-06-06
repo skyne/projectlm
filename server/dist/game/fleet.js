@@ -147,7 +147,7 @@ function inferClassId(chassis) {
         return "LMP2";
     return "Hypercar";
 }
-function rawToBuild(raw, carName) {
+function rawToBuild(raw, carName, partsBySlot) {
     const classId = inferClassId(raw.chassis_type ?? "LMDhDallara");
     const build = {
         carName,
@@ -170,6 +170,44 @@ function rawToBuild(raw, carName) {
             : undefined,
         rear_tire_width_mm: raw.rear_tire_width_mm
             ? parseFloat(raw.rear_tire_width_mm)
+            : undefined,
+        front_ride_height_mm: raw.front_ride_height_mm
+            ? parseFloat(raw.front_ride_height_mm)
+            : raw.front_ride_height_m
+                ? parseFloat(raw.front_ride_height_m) * 1000
+                : undefined,
+        rear_ride_height_mm: raw.rear_ride_height_mm
+            ? parseFloat(raw.rear_ride_height_mm)
+            : raw.rear_ride_height_m
+                ? parseFloat(raw.rear_ride_height_m) * 1000
+                : undefined,
+        front_spring_nm: raw.front_spring_nm
+            ? parseFloat(raw.front_spring_nm)
+            : raw.front_spring_stiffness
+                ? parseFloat(raw.front_spring_stiffness)
+                : undefined,
+        rear_spring_nm: raw.rear_spring_nm
+            ? parseFloat(raw.rear_spring_nm)
+            : raw.rear_spring_stiffness
+                ? parseFloat(raw.rear_spring_stiffness)
+                : undefined,
+        front_arb_stiffness: raw.front_arb_stiffness
+            ? parseFloat(raw.front_arb_stiffness)
+            : undefined,
+        rear_arb_stiffness: raw.rear_arb_stiffness
+            ? parseFloat(raw.rear_arb_stiffness)
+            : undefined,
+        front_damper_bump: raw.front_damper_bump
+            ? parseInt(raw.front_damper_bump, 10)
+            : undefined,
+        front_damper_rebound: raw.front_damper_rebound
+            ? parseInt(raw.front_damper_rebound, 10)
+            : undefined,
+        rear_damper_bump: raw.rear_damper_bump
+            ? parseInt(raw.rear_damper_bump, 10)
+            : undefined,
+        rear_damper_rebound: raw.rear_damper_rebound
+            ? parseInt(raw.rear_damper_rebound, 10)
             : undefined,
         fuel_system: raw.fuel_system ?? "StandardTank",
         brake_system: raw.brake_system ?? "StandardCaliper",
@@ -201,7 +239,7 @@ function rawToBuild(raw, carName) {
     if (raw.duct_airflow) {
         build.duct_airflow = parseFloat(raw.duct_airflow);
     }
-    return (0, chassis_setup_1.normalizeCarBuild)(build, classId);
+    return (0, chassis_setup_1.normalizeCarBuild)(build, classId, partsBySlot);
 }
 function buyCarUnitCost(repoRoot, payload) {
     if (payload.acquisition === "privateer") {
@@ -234,8 +272,9 @@ function createFleetCar(repoRoot, teamName, payload, fleet) {
         const platform = (0, car_marketplace_1.platformById)(repoRoot, payload.platformId);
         if (!platform)
             return null;
+        const catalog = (0, catalog_1.loadGameCatalog)(repoRoot);
         const raw = (0, car_marketplace_1.buildFromPlatform)(repoRoot, platform, teamName);
-        build = rawToBuild(raw, raw.carName ?? `${teamName} ${platform.displayName}`);
+        build = rawToBuild(raw, raw.carName ?? `${teamName} ${platform.displayName}`, catalog.partsBySlot);
         manufacturerId = platform.manufacturerId;
         platformId = platform.id;
     }
@@ -248,10 +287,11 @@ function createFleetCar(repoRoot, teamName, payload, fleet) {
                     teamName.toLowerCase().replace(/\s+/g, "_").slice(0, 24);
         }
         else {
+            const catalog = (0, catalog_1.loadGameCatalog)(repoRoot);
             const raw = (0, catalog_1.defaultBuildForClass)(repoRoot, payload.classId);
             if (!raw)
                 return null;
-            build = rawToBuild(raw, raw.carName ?? `${teamName} ${payload.classId}`);
+            build = rawToBuild(raw, raw.carName ?? `${teamName} ${payload.classId}`, catalog.partsBySlot);
             manufacturerId = teamName.toLowerCase().replace(/\s+/g, "_").slice(0, 24);
         }
     }

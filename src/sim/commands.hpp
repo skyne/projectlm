@@ -24,7 +24,9 @@ struct PitStopPlan {
   int swapToDriverIndex = -1;
   double wingAngleDelta = 0.0;
   double brakeBiasDelta = 0.0;
+  /** Legacy: equal delta applied to both axles. */
   double rideHeightDelta = 0.0;
+  SuspensionSetupDelta suspension;
 };
 
 struct SimCommand {
@@ -33,7 +35,9 @@ struct SimCommand {
   DriverMode driverMode = DriverMode::Normal;
   double wingAngleDelta = 0.0;
   double brakeBiasDelta = 0.0;
+  /** Legacy: equal delta applied to both axles. */
   double rideHeightDelta = 0.0;
+  SuspensionSetupDelta suspension;
   int swapToDriverIndex = -1;
 };
 

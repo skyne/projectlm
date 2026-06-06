@@ -126,6 +126,8 @@ export function buildRaceControlsSummaryHtml(snap: CarSnapshot): string {
       </div>
       <div class="race-controls-stats">
         <span>Fuel <strong>${snap.fuel.toFixed(1)} L</strong></span>
+        <span>Wing <strong>${(snap.wingAngle ?? 0).toFixed(2)}</strong></span>
+        <span>Bias <strong>${(snap.brakeBias ?? 0.5).toFixed(2)}</strong></span>
         <span class="pit-state">${escapeHtml(pitStatusLabel(snap))}</span>
       </div>
     </div>

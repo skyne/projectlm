@@ -44,7 +44,8 @@ double ComputePitServiceDuration(const PitStopPlan &plan, const CarConfig &car,
 
   const bool hasSetup = std::abs(plan.wingAngleDelta) > 1e-6 ||
                         std::abs(plan.brakeBiasDelta) > 1e-6 ||
-                        std::abs(plan.rideHeightDelta) > 1e-6;
+                        std::abs(plan.rideHeightDelta) > 1e-6 ||
+                        plan.suspension.hasAnyChange();
   if (hasSetup)
     total += kSetupChangeSec * (1.0 - (staff.engineerSkill / 100.0 - 0.5) * 0.2);
 
@@ -128,8 +129,13 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
     car.totalDragCd =
         std::max(0.05, car.totalDragCd + plan.wingAngleDelta * 0.02);
   }
-  if (std::abs(plan.rideHeightDelta) > 1e-6)
-    car.rideHeight = std::clamp(car.rideHeight + plan.rideHeightDelta, 0.02, 0.12);
+
+  SuspensionSetupDelta suspensionDelta = plan.suspension;
+  if (std::abs(plan.rideHeightDelta) > 1e-6 && !suspensionDelta.hasAnyChange()) {
+    suspensionDelta.frontRideHeightDelta = plan.rideHeightDelta;
+    suspensionDelta.rearRideHeightDelta = plan.rideHeightDelta;
+  }
+  ApplySuspensionSetupDelta(car, suspensionDelta);
 
   (void)plan.brakeBiasDelta;
 }

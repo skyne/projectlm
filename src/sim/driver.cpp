@@ -142,8 +142,9 @@ double DriverState::modeFuelMultiplier() const {
   }
 }
 
-std::string DriverState::setupFeedbackForChange(double wingDelta,
-                                                double brakeDelta) const {
+std::string DriverState::setupFeedbackForChange(
+    double wingDelta, double brakeDelta,
+    const SuspensionSetupDelta &suspension) const {
   const DriverProfile &d = active();
   const double quality = d.setupFeedback / 100.0;
 
@@ -172,6 +173,39 @@ std::string DriverState::setupFeedbackForChange(double wingDelta,
     else
       out << d.name << ": Brakes feel " <<
              (brakeDelta > 0 ? "safer" : "livelier") << " now";
+  } else if (suspension.hasAnyChange()) {
+    if (std::abs(suspension.frontRideHeightDelta) > 1e-4 ||
+        std::abs(suspension.rearRideHeightDelta) > 1e-4) {
+      const double rakeDelta =
+          suspension.rearRideHeightDelta - suspension.frontRideHeightDelta;
+      if (quality > 0.82)
+        out << d.name << ": Ride height change — "
+            << (rakeDelta > 0.001 ? "more rake, rear stable"
+                : rakeDelta < -0.001 ? "nose down, sharper turn-in"
+                                       : "platform feels different");
+      else
+        out << d.name << ": Ride height tweak — balance shifted";
+    } else if (std::abs(suspension.frontSpringDelta) > 100.0 ||
+               std::abs(suspension.rearSpringDelta) > 100.0) {
+      out << d.name << ": Spring change — "
+          << (quality > 0.78 ? "platform stiffer over curbs"
+                             : "suspension feels firmer");
+    } else if (std::abs(suspension.frontArbDelta) > 0.01 ||
+               std::abs(suspension.rearArbDelta) > 0.01) {
+      out << d.name << ": ARB tweak — "
+          << (suspension.frontArbDelta > 0.01 ? "more understeer tendency"
+              : suspension.rearArbDelta > 0.01 ? "rear wants to rotate"
+                                               : "balance shifted mid-corner");
+    } else if (suspension.frontDamperBumpDelta != 0 ||
+               suspension.frontDamperReboundDelta != 0 ||
+               suspension.rearDamperBumpDelta != 0 ||
+               suspension.rearDamperReboundDelta != 0) {
+      out << d.name << ": Damper click change — "
+          << (quality > 0.80 ? "high-speed stability different"
+                             : "dampers feel changed");
+    } else {
+      out << d.name << ": Suspension adjusted — needs laps to judge";
+    }
   } else {
     out << d.name << ": Subtle change — needs more laps to judge";
   }

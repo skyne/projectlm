@@ -102,6 +102,14 @@ struct CarSnapshot {
   std::string setupFeedback;
   double wingAngle = 0.0;
   double brakeBias = 0.5;
+  double frontRideHeightMm = 0.0;
+  double rearRideHeightMm = 0.0;
+  double frontSpringNm = 0.0;
+  double rearSpringNm = 0.0;
+  double frontArbStiffness = 1.0;
+  double rearArbStiffness = 1.0;
+  double frontCamberDeg = 0.0;
+  double rearCamberDeg = 0.0;
   double serviceabilityFactor = 1.0;
   double driverChangeFactor = 1.0;
   int pitCount = 0;

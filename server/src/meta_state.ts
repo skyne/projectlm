@@ -27,6 +27,7 @@ import {
   writeFleetCarConfig,
   writePlayerCarConfig,
 } from "./game/car_builder";
+import { validateTrackPreset } from "./game/weekend_setup";
 import {
   allDriverIndices,
   sanitizeAssignedIndices,
@@ -121,6 +122,7 @@ function parseConfigFile(repoRoot: string): MetaStatePayload {
     activeCarId: "",
     driverRoster: [],
     weekendTireCompound: "Medium",
+    trackSetupPresets: {},
   };
 
   if (!fs.existsSync(configPath)) return defaults;
@@ -801,6 +803,17 @@ export class MetaStateManager {
     }
     this.state.weekendTireCompound = normalized;
     writePlayerCarConfig(this.repoRoot, this.state);
+    return this.persist();
+  }
+
+  saveTrackSetupPreset(
+    trackId: string,
+    preset: import("./ws_protocol").TrackSetupPresetPayload,
+  ): MetaStatePayload | { error: string } {
+    const err = validateTrackPreset({ ...preset, trackId });
+    if (err) return { error: err };
+    if (!this.state.trackSetupPresets) this.state.trackSetupPresets = {};
+    this.state.trackSetupPresets[trackId] = { ...preset, trackId };
     return this.persist();
   }
 

@@ -27,17 +27,28 @@ import {
 } from "../utils/partCompatibility";
 import {
   clampWheelSetup,
+  clampSuspensionSetup,
+  computeSuspensionTuningStats,
   computeWheelStats,
   isSuspensionCompatibleWithDrivetrain,
   isSuspensionLegalForAxle,
   normalizeCarBuild,
   resolveSuspensionLayouts,
+  resolveSuspensionSetup,
   resolveWheelSetup,
+  springRateRange,
+  rideHeightLimitsForClass,
   suspensionIncompatibilityReason,
+  suspensionPart,
+  suspensionSetupToBuildFields,
+  suspensionSpringBaseline,
   validateSuspensionSetup,
   validateWheelSetup,
   wheelLimitsForClass,
   wheelSetupToBuildFields,
+  ARB_STIFFNESS_LIMITS,
+  DAMPER_LIMITS,
+  type SuspensionSetup,
   type WheelSetup,
 } from "../utils/chassisSetup";
 import { EngineDesigner } from "./EngineDesigner";
@@ -158,7 +169,7 @@ function buildGuideText(step: BuildGuideStep, classId: string): string {
         case "wheel_package":
           return "Set front and rear wheel diameter and tyre width — compound is selected at the track.";
         case "suspension":
-          return "Pick front and rear suspension architecture independently. Front e-axle / hybrid drivetrains need compatible front packaging.";
+          return "Pick front and rear suspension architecture, then fine-tune ride height, spring rates, ARB, and damper clickers per axle. Front e-axle / hybrid drivetrains need compatible front packaging.";
         case "fuel_system":
           return "Tank size and flow rate affect stint length and refuelling time in the pits.";
         case "brake":
@@ -834,9 +845,36 @@ export class CarGarage {
               ? "front_suspension_layout"
               : "rear_suspension_layout";
           const nextLayout = part.partType;
-          this.build = {
+          const nextFront =
+            axle === "front" ? nextLayout : layouts.front;
+          const nextRear =
+            axle === "rear" ? nextLayout : layouts.rear;
+          const classId = this.activeClassId();
+          const layoutBuild: CarBuildPayload = {
             ...this.build,
             [field]: nextLayout,
+            front_suspension_layout: nextFront,
+            rear_suspension_layout: nextRear,
+            front_ride_height_mm: undefined,
+            rear_ride_height_mm: undefined,
+            front_spring_nm: undefined,
+            rear_spring_nm: undefined,
+            front_arb_stiffness: undefined,
+            rear_arb_stiffness: undefined,
+            front_damper_bump: undefined,
+            front_damper_rebound: undefined,
+            rear_damper_bump: undefined,
+            rear_damper_rebound: undefined,
+          };
+          const tuning = clampSuspensionSetup(
+            resolveSuspensionSetup(layoutBuild, parts, classId),
+            layoutBuild,
+            parts,
+            classId,
+          );
+          this.build = {
+            ...layoutBuild,
+            ...suspensionSetupToBuildFields(tuning),
           };
           this.previewBuild = null;
           this.statusEl.textContent = "";
@@ -849,7 +887,294 @@ export class CarGarage {
       panel.appendChild(section);
     }
 
+    panel.appendChild(this.renderSuspensionTuningPanel());
+
     grid.appendChild(panel);
+  }
+
+  private renderSuspensionTuningPanel(): HTMLElement {
+    const tuningPanel = document.createElement("div");
+    tuningPanel.className = "suspension-tuning-panel";
+    if (!this.catalog || !this.build) return tuningPanel;
+
+    const classId = this.activeClassId();
+    const parts = this.catalog.partsBySlot.suspension ?? [];
+    const setup = resolveSuspensionSetup(this.build, parts, classId);
+    const preview = computeSuspensionTuningStats(setup, this.build, parts);
+    const rhLimits = rideHeightLimitsForClass(classId);
+    const frontSpringBaseline = suspensionSpringBaseline(this.build, parts, "front");
+    const rearSpringBaseline = suspensionSpringBaseline(this.build, parts, "rear");
+
+    const summary = document.createElement("div");
+    summary.className = "suspension-tuning-summary";
+    summary.innerHTML = `
+      <p class="suspension-tuning-hint">Part baselines set the starting point — sliders adjust within class limits. Lower ride height helps aero; spring and ARB balance roll stiffness.</p>
+      <div class="suspension-tuning-metrics">
+        <span>Roll stiffness <strong>×${preview.rollStiffness.toFixed(2)}</strong></span>
+        <span>Mech grip <strong>×${preview.mechanicalGrip.toFixed(2)}</strong></span>
+        <span>Rake <strong>${escapeHtml(preview.rideHeightBalanceHint)}</strong></span>
+      </div>
+    `;
+    tuningPanel.appendChild(summary);
+
+    const grid = document.createElement("div");
+    grid.className = "suspension-tuning-grid";
+
+    type SetupKey = keyof SuspensionSetup;
+    const axleSections: Array<{
+      axle: "front" | "rear";
+      fields: Array<{
+        key: SetupKey;
+        label: string;
+        range: { min: number; max: number; step: number };
+        format: (v: number, baseline?: number) => string;
+        baseline?: number;
+      }>;
+    }> = [
+      {
+        axle: "front",
+        fields: [
+          {
+            key: "frontRideHeightMm",
+            label: "Ride height",
+            range: rhLimits,
+            format: (v) => `${v} mm`,
+          },
+          {
+            key: "frontSpringNm",
+            label: "Spring rate",
+            range: springRateRange(frontSpringBaseline),
+            format: (v, b) => `${v.toLocaleString()} N/m${b ? ` (part ${b.toLocaleString()})` : ""}`,
+            baseline: frontSpringBaseline,
+          },
+          {
+            key: "frontArbStiffness",
+            label: "ARB stiffness",
+            range: ARB_STIFFNESS_LIMITS,
+            format: (v) => `×${v.toFixed(2)}`,
+          },
+          {
+            key: "frontDamperBump",
+            label: "Damper bump",
+            range: { min: DAMPER_LIMITS.min, max: DAMPER_LIMITS.max, step: 1 },
+            format: (v) => `${v} clicks`,
+          },
+          {
+            key: "frontDamperRebound",
+            label: "Damper rebound",
+            range: { min: DAMPER_LIMITS.min, max: DAMPER_LIMITS.max, step: 1 },
+            format: (v) => `${v} clicks`,
+          },
+        ],
+      },
+      {
+        axle: "rear",
+        fields: [
+          {
+            key: "rearRideHeightMm",
+            label: "Ride height",
+            range: rhLimits,
+            format: (v) => `${v} mm`,
+          },
+          {
+            key: "rearSpringNm",
+            label: "Spring rate",
+            range: springRateRange(rearSpringBaseline),
+            format: (v, b) => `${v.toLocaleString()} N/m${b ? ` (part ${b.toLocaleString()})` : ""}`,
+            baseline: rearSpringBaseline,
+          },
+          {
+            key: "rearArbStiffness",
+            label: "ARB stiffness",
+            range: ARB_STIFFNESS_LIMITS,
+            format: (v) => `×${v.toFixed(2)}`,
+          },
+          {
+            key: "rearDamperBump",
+            label: "Damper bump",
+            range: { min: DAMPER_LIMITS.min, max: DAMPER_LIMITS.max, step: 1 },
+            format: (v) => `${v} clicks`,
+          },
+          {
+            key: "rearDamperRebound",
+            label: "Damper rebound",
+            range: { min: DAMPER_LIMITS.min, max: DAMPER_LIMITS.max, step: 1 },
+            format: (v) => `${v} clicks`,
+          },
+        ],
+      },
+    ];
+
+    for (const section of axleSections) {
+      const col = document.createElement("div");
+      col.className = "suspension-tuning-axle";
+      col.innerHTML = `<h4 class="chassis-setup-heading">${section.axle === "front" ? "Front" : "Rear"} tuning</h4>`;
+
+      for (const def of section.fields) {
+        const value = setup[def.key];
+        const wrap = document.createElement("label");
+        wrap.className = "engine-slider-field chassis-slider-field";
+        wrap.innerHTML = `
+          <span class="engine-slider-label">
+            <span class="engine-slider-name">${def.label}</span>
+            <span class="engine-slider-value">${def.format(value, def.baseline)}</span>
+          </span>
+          <input type="range" class="engine-slider" />
+        `;
+        const slider = wrap.querySelector<HTMLInputElement>(".engine-slider")!;
+        slider.min = String(def.range.min);
+        slider.max = String(def.range.max);
+        slider.step = String(def.range.step);
+        slider.value = String(value);
+        slider.addEventListener("pointerdown", () => {
+          this.captureStatSnapshot();
+        });
+        slider.addEventListener("input", () => {
+          if (!this.build) return;
+          const current = resolveSuspensionSetup(this.build, parts, classId);
+          const nextSetup = clampSuspensionSetup(
+            { ...current, [def.key]: parseFloat(slider.value) },
+            this.build,
+            parts,
+            classId,
+          );
+          wrap.querySelector(".engine-slider-value")!.textContent = def.format(
+            nextSetup[def.key],
+            def.baseline,
+          );
+          this.build = {
+            ...this.build,
+            ...suspensionSetupToBuildFields(nextSetup),
+          };
+          this.previewBuild = null;
+          this.updateSuspensionTuningSummary(parts);
+          this.renderStats();
+        });
+        col.appendChild(wrap);
+      }
+
+      grid.appendChild(col);
+    }
+
+    tuningPanel.appendChild(grid);
+    tuningPanel.appendChild(this.renderAlignmentGearingPanel());
+    return tuningPanel;
+  }
+
+  private renderAlignmentGearingPanel(): HTMLElement {
+    const panel = document.createElement("div");
+    panel.className = "suspension-alignment-panel";
+    if (!this.build) return panel;
+
+    panel.innerHTML = `
+      <h4 class="chassis-setup-heading">Alignment & gearing</h4>
+      <p class="suspension-tuning-hint">Camber and toe affect mechanical grip balance; final drive trades acceleration for top speed.</p>
+    `;
+
+    const fields: Array<{
+      key: keyof CarBuildPayload;
+      label: string;
+      min: number;
+      max: number;
+      step: number;
+      format: (v: number) => string;
+      default: number;
+    }> = [
+      {
+        key: "front_camber_deg",
+        label: "Front camber",
+        min: -4,
+        max: 0,
+        step: 0.1,
+        format: (v) => `${v.toFixed(1)}°`,
+        default: -2.5,
+      },
+      {
+        key: "rear_camber_deg",
+        label: "Rear camber",
+        min: -4,
+        max: 0,
+        step: 0.1,
+        format: (v) => `${v.toFixed(1)}°`,
+        default: -1.8,
+      },
+      {
+        key: "front_toe_deg",
+        label: "Front toe",
+        min: -0.5,
+        max: 0.5,
+        step: 0.05,
+        format: (v) => `${v.toFixed(2)}°`,
+        default: 0,
+      },
+      {
+        key: "rear_toe_deg",
+        label: "Rear toe",
+        min: 0,
+        max: 0.5,
+        step: 0.05,
+        format: (v) => `${v.toFixed(2)}°`,
+        default: 0.1,
+      },
+      {
+        key: "final_drive_ratio",
+        label: "Final drive",
+        min: 3,
+        max: 4.2,
+        step: 0.05,
+        format: (v) => v.toFixed(2),
+        default: 3.5,
+      },
+    ];
+
+    const grid = document.createElement("div");
+    grid.className = "suspension-tuning-grid";
+
+    for (const def of fields) {
+      const raw = this.build[def.key];
+      const value =
+        typeof raw === "number" && Number.isFinite(raw) ? raw : def.default;
+      const wrap = document.createElement("label");
+      wrap.className = "engine-slider-field chassis-slider-field";
+      wrap.innerHTML = `
+        <span class="engine-slider-label">
+          <span class="engine-slider-name">${def.label}</span>
+          <span class="engine-slider-value">${def.format(value)}</span>
+        </span>
+        <input type="range" class="engine-slider" />
+      `;
+      const slider = wrap.querySelector<HTMLInputElement>(".engine-slider")!;
+      slider.min = String(def.min);
+      slider.max = String(def.max);
+      slider.step = String(def.step);
+      slider.value = String(value);
+      slider.addEventListener("input", () => {
+        if (!this.build) return;
+        const next = parseFloat(slider.value);
+        wrap.querySelector(".engine-slider-value")!.textContent = def.format(next);
+        this.build = { ...this.build, [def.key]: next };
+        this.previewBuild = null;
+        this.renderStats();
+      });
+      grid.appendChild(wrap);
+    }
+
+    panel.appendChild(grid);
+    return panel;
+  }
+
+  private updateSuspensionTuningSummary(
+    parts: PartOptionPayload[],
+  ): void {
+    const metrics = this.root.querySelector(".suspension-tuning-metrics");
+    if (!metrics || !this.build) return;
+    const setup = resolveSuspensionSetup(this.build, parts);
+    const preview = computeSuspensionTuningStats(setup, this.build, parts);
+    metrics.innerHTML = `
+      <span>Roll stiffness <strong>×${preview.rollStiffness.toFixed(2)}</strong></span>
+      <span>Mech grip <strong>×${preview.mechanicalGrip.toFixed(2)}</strong></span>
+      <span>Rake <strong>${escapeHtml(preview.rideHeightBalanceHint)}</strong></span>
+    `;
   }
 
   private renderWheelPanel(): void {
@@ -1274,6 +1599,16 @@ function defaultBuild(meta: MetaStatePayload): CarBuildPayload {
     rear_wheel_diameter_in: classId === "LMGT3" ? 21 : 18,
     front_tire_width_mm: classId === "LMGT3" ? 325 : classId === "LMP2" ? 300 : 305,
     rear_tire_width_mm: classId === "LMGT3" ? 340 : classId === "LMP2" ? 305 : 310,
+    front_ride_height_mm: classId === "LMGT3" ? 45 : classId === "LMP2" ? 42 : 40,
+    rear_ride_height_mm: classId === "LMGT3" ? 45 : classId === "LMP2" ? 42 : 40,
+    front_spring_nm: classId === "LMGT3" ? 122000 : classId === "LMP2" ? 128000 : 135000,
+    rear_spring_nm: classId === "LMGT3" ? 138000 : classId === "LMP2" ? 142000 : 150000,
+    front_arb_stiffness: 1,
+    rear_arb_stiffness: 1,
+    front_damper_bump: 8,
+    front_damper_rebound: 8,
+    rear_damper_bump: 8,
+    rear_damper_rebound: 8,
     fuel_system: classId === "Hypercar" ? "LeMans110L" : "StandardTank",
     brake_system: classId === "Hypercar" ? "BremboHypercar" : "StandardCaliper",
     transmission: classId === "LMGT3" ? "XtracP529" : classId === "Hypercar" ? "XtracP1359" : "SixSpeedSequential",

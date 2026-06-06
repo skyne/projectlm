@@ -47,7 +47,142 @@ double AxleDiameterThermalMassFactor(double diaDelta) {
   return std::clamp(1.0 + diaDelta * 0.04, 0.88, 1.10);
 }
 
+constexpr double kRideHeightMinM = 0.020;
+constexpr double kRideHeightMaxM = 0.120;
+constexpr double kSpringMinNm = 80000.0;
+constexpr double kSpringMaxNm = 220000.0;
+constexpr double kArbMin = 0.5;
+constexpr double kArbMax = 1.5;
+constexpr int kDamperMin = 1;
+constexpr int kDamperMax = 15;
+
+double RideHeightBalanceFactor(double frontM, double rearM) {
+  const double rakeMm = (frontM - rearM) * 1000.0;
+  return std::clamp(1.0 - rakeMm * 0.004, 0.92, 1.04);
+}
+
+double ArbBalanceFactor(double frontArb, double rearArb) {
+  const double frontEffect = 1.0 - (frontArb - 1.0) * 0.06;
+  const double rearEffect = 1.0 + (rearArb - 1.0) * 0.06;
+  return std::clamp(frontEffect * rearEffect, 0.92, 1.04);
+}
+
 } // namespace
+
+bool SuspensionSetupDelta::hasAnyChange() const {
+  return std::abs(frontRideHeightDelta) > 1e-9 ||
+         std::abs(rearRideHeightDelta) > 1e-9 ||
+         std::abs(frontSpringDelta) > 1e-6 ||
+         std::abs(rearSpringDelta) > 1e-6 ||
+         std::abs(frontArbDelta) > 1e-6 || std::abs(rearArbDelta) > 1e-6 ||
+         frontDamperBumpDelta != 0 || frontDamperReboundDelta != 0 ||
+         rearDamperBumpDelta != 0 || rearDamperReboundDelta != 0;
+}
+
+void ClampSuspensionSetup(CarConfig &car) {
+  car.frontRideHeightM =
+      std::clamp(car.frontRideHeightM, kRideHeightMinM, kRideHeightMaxM);
+  car.rearRideHeightM =
+      std::clamp(car.rearRideHeightM, kRideHeightMinM, kRideHeightMaxM);
+  car.frontSpringStiffness =
+      std::clamp(car.frontSpringStiffness, kSpringMinNm, kSpringMaxNm);
+  car.rearSpringStiffness =
+      std::clamp(car.rearSpringStiffness, kSpringMinNm, kSpringMaxNm);
+  car.frontArbStiffness =
+      std::clamp(car.frontArbStiffness, kArbMin, kArbMax);
+  car.rearArbStiffness = std::clamp(car.rearArbStiffness, kArbMin, kArbMax);
+  car.frontDamperBump =
+      std::clamp(car.frontDamperBump, kDamperMin, kDamperMax);
+  car.frontDamperRebound =
+      std::clamp(car.frontDamperRebound, kDamperMin, kDamperMax);
+  car.rearDamperBump = std::clamp(car.rearDamperBump, kDamperMin, kDamperMax);
+  car.rearDamperRebound =
+      std::clamp(car.rearDamperRebound, kDamperMin, kDamperMax);
+}
+
+void FinalizeSuspensionDerivedStats(CarConfig &car) {
+  car.rideHeight = (car.frontRideHeightM + car.rearRideHeightM) * 0.5;
+  const double rhBalance =
+      RideHeightBalanceFactor(car.frontRideHeightM, car.rearRideHeightM);
+  const double arbBalance =
+      ArbBalanceFactor(car.frontArbStiffness, car.rearArbStiffness);
+  car.tyreBalanceFactor = std::clamp(
+      car.wheelTyreBalanceFactor * rhBalance * arbBalance, 0.72, 1.04);
+  const double arbRoll =
+      (car.frontArbStiffness + car.rearArbStiffness) * 0.5;
+  car.rollStiffnessFactor = car.suspensionRollStiffnessBase * arbRoll;
+
+  const double camberDelta = (car.frontCamberDeg - car.rearCamberDeg) / 10.0;
+  const double toePenalty =
+      (std::abs(car.frontToeDeg) + std::abs(car.rearToeDeg)) * 0.04;
+  const double camberGrip =
+      1.0 + (car.frontCamberDeg + car.rearCamberDeg) * 0.004;
+  car.suspensionMechanicalGrip =
+      std::clamp(car.suspensionMechanicalGrip * camberGrip * (1.0 - toePenalty),
+                 0.85, 1.08);
+  car.tyreBalanceFactor = std::clamp(
+      car.tyreBalanceFactor * (1.0 - camberDelta * 0.06), 0.72, 1.04);
+}
+
+void ApplySuspensionSetupDelta(CarConfig &car,
+                               const SuspensionSetupDelta &delta) {
+  if (!delta.hasAnyChange())
+    return;
+
+  if (std::abs(delta.frontRideHeightDelta) > 1e-9) {
+    car.frontRideHeightM += delta.frontRideHeightDelta;
+    car.hasCustomFrontRideHeight = true;
+    car.hasCustomSuspensionSetup = true;
+  }
+  if (std::abs(delta.rearRideHeightDelta) > 1e-9) {
+    car.rearRideHeightM += delta.rearRideHeightDelta;
+    car.hasCustomRearRideHeight = true;
+    car.hasCustomSuspensionSetup = true;
+  }
+  if (std::abs(delta.frontSpringDelta) > 1e-6) {
+    car.frontSpringStiffness += delta.frontSpringDelta;
+    car.hasCustomFrontSpring = true;
+    car.hasCustomSuspensionSetup = true;
+  }
+  if (std::abs(delta.rearSpringDelta) > 1e-6) {
+    car.rearSpringStiffness += delta.rearSpringDelta;
+    car.hasCustomRearSpring = true;
+    car.hasCustomSuspensionSetup = true;
+  }
+  if (std::abs(delta.frontArbDelta) > 1e-6) {
+    car.frontArbStiffness += delta.frontArbDelta;
+    car.hasCustomFrontArb = true;
+    car.hasCustomSuspensionSetup = true;
+  }
+  if (std::abs(delta.rearArbDelta) > 1e-6) {
+    car.rearArbStiffness += delta.rearArbDelta;
+    car.hasCustomRearArb = true;
+    car.hasCustomSuspensionSetup = true;
+  }
+  if (delta.frontDamperBumpDelta != 0) {
+    car.frontDamperBump += delta.frontDamperBumpDelta;
+    car.hasCustomDampers = true;
+    car.hasCustomSuspensionSetup = true;
+  }
+  if (delta.frontDamperReboundDelta != 0) {
+    car.frontDamperRebound += delta.frontDamperReboundDelta;
+    car.hasCustomDampers = true;
+    car.hasCustomSuspensionSetup = true;
+  }
+  if (delta.rearDamperBumpDelta != 0) {
+    car.rearDamperBump += delta.rearDamperBumpDelta;
+    car.hasCustomDampers = true;
+    car.hasCustomSuspensionSetup = true;
+  }
+  if (delta.rearDamperReboundDelta != 0) {
+    car.rearDamperRebound += delta.rearDamperReboundDelta;
+    car.hasCustomDampers = true;
+    car.hasCustomSuspensionSetup = true;
+  }
+
+  ClampSuspensionSetup(car);
+  FinalizeSuspensionDerivedStats(car);
+}
 
 ChassisPart GetChassisStats(EChassis type, const PartCatalog &catalog) {
   switch (type) {
@@ -254,6 +389,24 @@ std::string GetAttachmentPoint(const PartCatalog &catalog,
 
 void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
                             const AssemblyConfig &ac) {
+  const bool customFrontSpring = car.hasCustomFrontSpring;
+  const bool customRearSpring = car.hasCustomRearSpring;
+  const bool customFrontRide = car.hasCustomFrontRideHeight;
+  const bool customRearRide = car.hasCustomRearRideHeight;
+  const bool customFrontArb = car.hasCustomFrontArb;
+  const bool customRearArb = car.hasCustomRearArb;
+  const bool customDampers = car.hasCustomDampers;
+  const double frontSpringOverride = car.frontSpringStiffness;
+  const double rearSpringOverride = car.rearSpringStiffness;
+  const double frontRideOverride = car.frontRideHeightM;
+  const double rearRideOverride = car.rearRideHeightM;
+  const double frontArbOverride = car.frontArbStiffness;
+  const double rearArbOverride = car.rearArbStiffness;
+  const int frontBumpOverride = car.frontDamperBump;
+  const int frontReboundOverride = car.frontDamperRebound;
+  const int rearBumpOverride = car.rearDamperBump;
+  const int rearReboundOverride = car.rearDamperRebound;
+
   ChassisPart ch = GetChassisStats(car.chassisChoice, catalog);
   FrontAeroPart fa = GetFrontAeroStats(car.frontAeroChoice, catalog);
   RearAeroPart ra = GetRearAeroStats(car.rearAeroChoice, catalog);
@@ -322,6 +475,7 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   car.tyreBalanceFactor = TyreBalanceCorneringFactor(
       wp.frontWidthMm, wp.rearWidthMm, wpBase.frontWidthMm,
       wpBase.rearWidthMm);
+  car.wheelTyreBalanceFactor = car.tyreBalanceFactor;
   car.frontAxleWearFactor =
       AxleWidthWearFactor(wp.frontWidthMm, wpBase.frontWidthMm);
   car.rearAxleWearFactor =
@@ -345,6 +499,8 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
 
   car.frontSpringStiffness = frontSp.frontSpringStiffness;
   car.rearSpringStiffness = rearSp.rearSpringStiffness;
+  car.frontRideHeightM = frontSp.rideHeightM;
+  car.rearRideHeightM = rearSp.rideHeightM;
   car.rideHeight = (frontSp.rideHeightM + rearSp.rideHeightM) * 0.5;
   car.rollStiffnessFactor =
       (frontSp.rollStiffness + rearSp.rollStiffness) * 0.5;
@@ -352,6 +508,35 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
       (frontSp.aeroPlatformStability + rearSp.aeroPlatformStability) * 0.5;
   car.suspensionMechanicalGrip =
       (frontSp.mechanicalGrip + rearSp.mechanicalGrip) * 0.5;
+
+  if (customFrontSpring)
+    car.frontSpringStiffness = frontSpringOverride;
+  if (customRearSpring)
+    car.rearSpringStiffness = rearSpringOverride;
+  if (customFrontRide)
+    car.frontRideHeightM = frontRideOverride;
+  if (customRearRide)
+    car.rearRideHeightM = rearRideOverride;
+  if (customFrontArb)
+    car.frontArbStiffness = frontArbOverride;
+  else
+    car.frontArbStiffness = 1.0;
+  if (customRearArb)
+    car.rearArbStiffness = rearArbOverride;
+  else
+    car.rearArbStiffness = 1.0;
+  if (customDampers) {
+    car.frontDamperBump = frontBumpOverride;
+    car.frontDamperRebound = frontReboundOverride;
+    car.rearDamperBump = rearBumpOverride;
+    car.rearDamperRebound = rearReboundOverride;
+  } else {
+    car.frontDamperBump = 8;
+    car.frontDamperRebound = 8;
+    car.rearDamperBump = 8;
+    car.rearDamperRebound = 8;
+  }
+  ClampSuspensionSetup(car);
 
   car.totalDragCd =
       ac.bodyBaseDragCd + ch.baselineDrag + fa.dragCd + ra.dragCd +
@@ -446,8 +631,12 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   car.generatorPowerKW = pt.generatorKw;
   car.drivetrainEfficiency = pt.drivetrainEfficiency;
   car.powertrainServiceabilityMult = pt.serviceabilityMult;
-  car.rollStiffnessFactor *= pt.cgCorneringBonus;
+  car.suspensionRollStiffnessBase =
+      (frontSp.rollStiffness + rearSp.rollStiffness) * 0.5 *
+      pt.cgCorneringBonus;
   car.serviceabilityFactor *= pt.serviceabilityMult;
+
+  FinalizeSuspensionDerivedStats(car);
 
   if (pt.deployKw > 0.0 && hp.deployPowerKW <= 0.0) {
     car.hybridDeployPowerKW = pt.deployKw;

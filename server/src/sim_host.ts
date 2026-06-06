@@ -353,6 +353,13 @@ export class SimHost {
     return this.meta.setWeekendTireCompound(compound);
   }
 
+  saveTrackSetupPreset(
+    trackId: string,
+    preset: import("./ws_protocol").TrackSetupPresetPayload,
+  ): MetaStatePayload | { error: string } {
+    return this.meta.saveTrackSetupPreset(trackId, preset);
+  }
+
   validateFleetForRace(): string | null {
     return this.meta.validateFleetForRace();
   }

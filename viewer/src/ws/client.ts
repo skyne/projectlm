@@ -360,6 +360,10 @@ export class ViewerClient {
     this.send(clientMessage("set_weekend_tire_compound", { compound }));
   }
 
+  saveTrackSetup(trackId: string, preset: import("./protocol").TrackSetupPresetPayload): void {
+    this.send(clientMessage("save_track_setup", { trackId, preset }));
+  }
+
   getTrackPreview(trackId: string): void {
     this.send(clientMessage("get_track_preview", { trackId }));
   }

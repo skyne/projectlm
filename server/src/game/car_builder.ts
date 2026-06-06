@@ -5,7 +5,9 @@ import type {
   EngineBuildPayload,
   FleetCarPayload,
   MetaStatePayload,
+  TrackSetupPresetPayload,
 } from "../ws_protocol";
+import { mergeBuildWithTrackPreset } from "./weekend_setup";
 import { defaultBuildForClass, loadGameCatalog, parseEngineFromTemplate, defaultWheelPackageForClass, defaultSuspensionForClass } from "./catalog";
 import { validateEngineBuild } from "./engine_model";
 import { loadCarPlatforms } from "./car_marketplace";
@@ -17,6 +19,8 @@ import {
 import { sanitizeCarConfigFile } from "./class_legality";
 import {
   resolveWheelSetup,
+  resolveSuspensionSetup,
+  clampSuspensionSetup,
   validateSuspensionSetup,
   validateWheelSetup,
 } from "./chassis_setup";
@@ -30,6 +34,14 @@ function parseTemplateSuspension(repoRoot: string, templatePath: string): string
     "front_spring_stiffness",
     "rear_spring_stiffness",
     "ride_height",
+    "front_ride_height_m",
+    "rear_ride_height_m",
+    "front_arb_stiffness",
+    "rear_arb_stiffness",
+    "front_damper_bump",
+    "front_damper_rebound",
+    "rear_damper_bump",
+    "rear_damper_rebound",
   ]);
   const lines: string[] = [];
   for (const line of fs.readFileSync(abs, "utf8").split("\n")) {
@@ -150,6 +162,8 @@ export function validateCarBuild(
   const suspErr = validateSuspensionSetup(
     build,
     legalSusp ? legalSusp : undefined,
+    classId,
+    catalog.partsBySlot.suspension,
   );
   if (suspErr) return suspErr;
 
@@ -180,6 +194,16 @@ function writeCarConfigFile(
 ): string {
   const engine = resolveEngine(repoRoot, classId, build, platformTemplatePath);
   if (!engine) throw new Error("Engine configuration is required");
+
+  const catalog = loadGameCatalog(repoRoot);
+  const suspension = clampSuspensionSetup(
+    resolveSuspensionSetup(build, catalog.partsBySlot.suspension, classId),
+    build,
+    catalog.partsBySlot.suspension,
+    classId,
+  );
+  const avgRideHeightM =
+    (suspension.frontRideHeightMm + suspension.rearRideHeightMm) / 2 / 1000;
 
   const abs = path.join(repoRoot, relPath);
   fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -221,6 +245,38 @@ function writeCarConfigFile(
     ...(build.rear_tire_width_mm != null
       ? [`rear_tire_width_mm=${build.rear_tire_width_mm}`]
       : []),
+    `front_ride_height_m=${(suspension.frontRideHeightMm / 1000).toFixed(4)}`,
+    `rear_ride_height_m=${(suspension.rearRideHeightMm / 1000).toFixed(4)}`,
+    `ride_height=${avgRideHeightM.toFixed(4)}`,
+    `front_spring_stiffness=${suspension.frontSpringNm}`,
+    `rear_spring_stiffness=${suspension.rearSpringNm}`,
+    `front_arb_stiffness=${suspension.frontArbStiffness.toFixed(2)}`,
+    `rear_arb_stiffness=${suspension.rearArbStiffness.toFixed(2)}`,
+    `front_damper_bump=${suspension.frontDamperBump}`,
+    `front_damper_rebound=${suspension.frontDamperRebound}`,
+    `rear_damper_bump=${suspension.rearDamperBump}`,
+    `rear_damper_rebound=${suspension.rearDamperRebound}`,
+    ...(build.front_camber_deg != null
+      ? [`front_camber_deg=${build.front_camber_deg.toFixed(2)}`]
+      : []),
+    ...(build.rear_camber_deg != null
+      ? [`rear_camber_deg=${build.rear_camber_deg.toFixed(2)}`]
+      : []),
+    ...(build.front_toe_deg != null
+      ? [`front_toe_deg=${build.front_toe_deg.toFixed(3)}`]
+      : []),
+    ...(build.rear_toe_deg != null
+      ? [`rear_toe_deg=${build.rear_toe_deg.toFixed(3)}`]
+      : []),
+    ...(build.final_drive_ratio != null
+      ? [`final_drive_ratio=${build.final_drive_ratio.toFixed(3)}`]
+      : []),
+    ...(build.starting_wing_delta != null
+      ? [`starting_wing_delta=${build.starting_wing_delta.toFixed(3)}`]
+      : []),
+    ...(build.starting_brake_bias != null
+      ? [`starting_brake_bias=${build.starting_brake_bias.toFixed(3)}`]
+      : []),
     `starting_tire_compound=${startingTireCompound}`,
     `fuel_system=${build.fuel_system}`,
     `brake_system=${build.brake_system}`,
@@ -255,16 +311,18 @@ export function writeAllFleetConfigs(
   repoRoot: string,
   meta: MetaStatePayload,
   platforms?: Map<string, string>,
+  trackPreset?: TrackSetupPresetPayload | null,
 ): void {
   const compound = meta.weekendTireCompound ?? "Medium";
   for (const car of meta.fleet ?? []) {
     const platformPath = car.platformId
       ? platforms?.get(car.platformId)
       : undefined;
+    const build = mergeBuildWithTrackPreset(car.build, trackPreset);
     writeFleetCarConfig(
       repoRoot,
       meta.teamName,
-      car,
+      { ...car, build },
       platformPath,
       compound,
     );

@@ -23,6 +23,7 @@ import {
   type RdInvestPayload,
   type SignSponsorPayload,
   type SaveTeamColorsPayload,
+  type SaveTrackSetupPayload,
   type SessionInitPayload,
   type GetTrackPreviewPayload,
   type SubmitCommandPayload,
@@ -476,11 +477,20 @@ function main(): void {
             ),
           );
         } else {
+          const meta = host.getMetaState();
+          const engineerSkill =
+            meta.staff?.find((s) => s.role === "engineer")?.skill ?? 75;
+          const round = meta.calendar.find((e) => e.round === meta.currentRound);
+          const trackPreset = round
+            ? meta.trackSetupPresets?.[round.trackId]
+            : undefined;
           const advice = await engineer.advise({
             snap,
             raceTimeSec: host.getRaceTime(),
             trackName: host.getSessionInit().trackName,
+            trackPresetNotes: trackPreset?.notes,
             question: payload.question,
+            engineerSkill,
           });
           ws.send(JSON.stringify(serverMessage("engineer_advice", advice)));
         }
@@ -518,6 +528,29 @@ function main(): void {
           );
         } else {
           broadcast(clients, serverMessage("meta_state", result));
+        }
+      } else if (msg.type === "save_track_setup") {
+        const body = msg.payload as SaveTrackSetupPayload;
+        const trackId = String(body.trackId ?? "").trim();
+        const preset = body.preset;
+        if (!trackId || !preset) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", { message: "trackId and preset required" }),
+            ),
+          );
+        } else {
+          const result = host.saveTrackSetupPreset(trackId, {
+            ...preset,
+            trackId,
+          });
+          if ("error" in result) {
+            ws.send(
+              JSON.stringify(serverMessage("error", { message: result.error })),
+            );
+          } else {
+            broadcast(clients, serverMessage("meta_state", result));
+          }
         }
       }
     });

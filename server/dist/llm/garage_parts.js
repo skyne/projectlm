@@ -96,5 +96,28 @@ function normalizeGarageChanges(repoRoot, raw, unlockedParts) {
         if (resolved)
             out[key] = resolved;
     }
+    const numericKeys = [
+        "front_ride_height_mm",
+        "rear_ride_height_mm",
+        "front_spring_nm",
+        "rear_spring_nm",
+        "front_arb_stiffness",
+        "rear_arb_stiffness",
+        "front_damper_bump",
+        "front_damper_rebound",
+        "rear_damper_bump",
+        "rear_damper_rebound",
+        "front_camber_deg",
+        "rear_camber_deg",
+        "front_toe_deg",
+        "rear_toe_deg",
+        "final_drive_ratio",
+    ];
+    for (const key of numericKeys) {
+        const val = raw[key];
+        if (typeof val === "number" && Number.isFinite(val)) {
+            out[key] = val;
+        }
+    }
     return out;
 }

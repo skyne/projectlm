@@ -164,6 +164,8 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     state.batteryChargeMJ = car.hybridStintDeployBudgetMJ;
 
   const size_t prevSectorIdx = state.currentTrackNodeIndex;
+  const double finalDrive =
+      car.finalDriveRatio > 0.0 ? car.finalDriveRatio : p.finalDriveRatio;
 
   const double kappa =
       track.maxCurvatureAhead(state.currentDistance, p.curvatureLookAheadM);
@@ -238,7 +240,9 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       totalVerticalLoad /
       ((car.frontSpringStiffness + car.rearSpringStiffness) *
        std::max(0.5, car.aeroPlatformStability));
-  double activeDynamicRideHeight = car.rideHeight - mechanicalSquat;
+  const double avgRideHeight =
+      (car.frontRideHeightM + car.rearRideHeightM) * 0.5;
+  double activeDynamicRideHeight = avgRideHeight - mechanicalSquat;
 
   double frictionDragModifier = 1.0;
   if (activeDynamicRideHeight <= p.rideHeightScrapeLimit) {
@@ -257,10 +261,31 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       state.effectiveGripTireTempFactor(kTireOptimalC, kTireOverheatC);
   double tireGripForce = netVerticalForce * effectiveTireFriction;
 
-  const double maxCorneringSpeed =
+  const double maxCorneringSpeedBase =
       std::sqrt((tireGripForce * cornerRadius) / car.calculatedTotalMass) *
       std::sqrt(std::max(0.75, car.rollStiffnessFactor)) *
       car.tyreBalanceFactor;
+
+  const auto damperAxleStability = [](int bump, int rebound) {
+    return (1.0 - 0.02 * std::abs(bump - 8) +
+            1.0 - 0.02 * std::abs(rebound - 8)) *
+           0.5;
+  };
+  const double damperStability =
+      0.5 * damperAxleStability(car.frontDamperBump, car.frontDamperRebound) +
+      0.5 * damperAxleStability(car.rearDamperBump, car.rearDamperRebound);
+  constexpr double kHighSpeedDamperOnsetMs = 38.0;
+  constexpr double kHighSpeedDamperFullMs = 55.0;
+  double damperCorneringScale = 1.0;
+  if (state.currentSpeed > kHighSpeedDamperOnsetMs) {
+    const double blend = std::clamp(
+        (state.currentSpeed - kHighSpeedDamperOnsetMs) /
+            std::max(1.0, kHighSpeedDamperFullMs - kHighSpeedDamperOnsetMs),
+        0.0, 1.0);
+    damperCorneringScale = 1.0 - blend * (1.0 - damperStability);
+  }
+  const double maxCorneringSpeed =
+      maxCorneringSpeedBase * damperCorneringScale;
   double targetSpeed = maxCorneringSpeed * mods.skillFactor;
 
   if (mods.mistakePenalty > 0.0)
@@ -307,7 +332,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     const double gearRatio =
         car.gearRatios[std::clamp(state.currentGearIndex, 0, 7)];
     const double kinematicRPM = KinematicRPM(
-        state.currentSpeed, gearRatio, drivenWheelRadius, p.finalDriveRatio);
+        state.currentSpeed, gearRatio, drivenWheelRadius, finalDrive);
     state.currentRPM =
         std::clamp(kinematicRPM * 0.55, p.minRPM, maxEngineRPM);
 
@@ -337,7 +362,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     double gearRatio =
         car.gearRatios[std::clamp(state.currentGearIndex, 0, 7)];
     double kinematicRPM = KinematicRPM(
-        state.currentSpeed, gearRatio, drivenWheelRadius, p.finalDriveRatio);
+        state.currentSpeed, gearRatio, drivenWheelRadius, finalDrive);
 
     if (kinematicRPM >= maxEngineRPM * 0.96 &&
         state.currentGearIndex < maxGear - 1 &&
@@ -346,7 +371,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       state.shiftCooldownSec = car.shiftDelaySec * 0.55;
       gearRatio = car.gearRatios[std::clamp(state.currentGearIndex, 0, 7)];
       kinematicRPM = KinematicRPM(state.currentSpeed, gearRatio,
-                                  drivenWheelRadius, p.finalDriveRatio);
+                                  drivenWheelRadius, finalDrive);
     }
 
     state.currentRPM = std::clamp(kinematicRPM, p.minRPM, maxEngineRPM);
@@ -397,7 +422,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     } else {
       const double activeEngineTorque = car.peakTorque * torqueCurveMultiplier;
       const double wheelTorque =
-          activeEngineTorque * gearRatio * p.finalDriveRatio;
+          activeEngineTorque * gearRatio * finalDrive;
       engineForce = wheelTorque / drivenWheelRadius;
     }
 
@@ -422,7 +447,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     engineForce *= revLimiterFactor;
 
     const double maxSpeedInGear = MaxSpeedForGear(
-        car.engine.maxRPM, gearRatio, drivenWheelRadius, p.finalDriveRatio);
+        car.engine.maxRPM, gearRatio, drivenWheelRadius, finalDrive);
     if (state.currentSpeed >= maxSpeedInGear - 0.2 && engineForce > 0.0)
       engineForce = 0.0;
 

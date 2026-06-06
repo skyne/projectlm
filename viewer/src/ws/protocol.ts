@@ -76,6 +76,14 @@ export interface CarSnapshot {
   setupFeedback?: string;
   wingAngle?: number;
   brakeBias?: number;
+  frontRideHeightMm?: number;
+  rearRideHeightMm?: number;
+  frontSpringNm?: number;
+  rearSpringNm?: number;
+  frontArbStiffness?: number;
+  rearArbStiffness?: number;
+  frontCamberDeg?: number;
+  rearCamberDeg?: number;
   serviceabilityFactor?: number;
   driverChangeFactor?: number;
   pitCount?: number;
@@ -371,11 +379,60 @@ export interface CarBuildPayload {
   rear_wheel_diameter_in?: number;
   front_tire_width_mm?: number;
   rear_tire_width_mm?: number;
+  /** Per-axle ride height tuning (mm). */
+  front_ride_height_mm?: number;
+  rear_ride_height_mm?: number;
+  /** Per-axle spring rate tuning (N/m). */
+  front_spring_nm?: number;
+  rear_spring_nm?: number;
+  /** Anti-roll bar stiffness multiplier vs part baseline (0.70–1.30). */
+  front_arb_stiffness?: number;
+  rear_arb_stiffness?: number;
+  /** Damper clickers — bump/rebound per axle (1–15, default 8). */
+  front_damper_bump?: number;
+  front_damper_rebound?: number;
+  rear_damper_bump?: number;
+  rear_damper_rebound?: number;
+  /** Alignment — degrees, negative = top-in. */
+  front_camber_deg?: number;
+  rear_camber_deg?: number;
+  front_toe_deg?: number;
+  rear_toe_deg?: number;
+  /** Override physics final drive (3.0–4.2); omit to use class default. */
+  final_drive_ratio?: number;
+  /** Race-start aero/brake baseline (weekend sheet). */
+  starting_wing_delta?: number;
+  starting_brake_bias?: number;
   fuel_system: string;
   brake_system: string;
   transmission: string;
   hybrid_system: string;
   engine?: EngineBuildPayload;
+}
+
+/** Per-track race weekend baseline — merged onto garage build at session start. */
+export interface TrackSetupPresetPayload {
+  trackId: string;
+  label?: string;
+  notes?: string;
+  ductAirflow?: number;
+  wingBaseline?: number;
+  brakeBiasBaseline?: number;
+  frontRideHeightMm?: number;
+  rearRideHeightMm?: number;
+  frontSpringNm?: number;
+  rearSpringNm?: number;
+  frontArbStiffness?: number;
+  rearArbStiffness?: number;
+  frontDamperBump?: number;
+  frontDamperRebound?: number;
+  rearDamperBump?: number;
+  rearDamperRebound?: number;
+  frontCamberDeg?: number;
+  rearCamberDeg?: number;
+  frontToeDeg?: number;
+  rearToeDeg?: number;
+  finalDriveRatio?: number;
 }
 
 export interface FleetCarPayload {
@@ -459,6 +516,8 @@ export interface MetaStatePayload {
   carBuildGuidePending?: boolean;
   /** Soft / Medium / Hard — changed during race weekend, not in car design */
   weekendTireCompound?: string;
+  /** Saved per-track setup sheets keyed by trackId */
+  trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
   driverMarket?: DriverMarketListingPayload[];
   driverMarketRefreshCount?: number;
   driverMarketRound?: number;
@@ -603,6 +662,11 @@ export interface AskEngineerPayload {
   question?: string;
 }
 
+export interface SaveTrackSetupPayload {
+  trackId: string;
+  preset: TrackSetupPresetPayload;
+}
+
 export interface EngineerAdvicePayload {
   entryId: string;
   text: string;
@@ -677,6 +741,7 @@ export type ClientMessageType =
   | "new_game"
   | "get_track_preview"
   | "set_weekend_tire_compound"
+  | "save_track_setup"
   | "ask_engineer"
   | "get_engineer_status"
   | "ask_garage_engineer";

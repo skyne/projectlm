@@ -1110,6 +1110,64 @@ body {
   margin: 0.5rem 0 0;
 }
 
+.weekend-setup-panel {
+  margin-top: 0.75rem;
+}
+
+.weekend-setup-sheet {
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-bright);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.weekend-setup-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.weekend-setup-notes {
+  margin: 0 0 0.65rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.weekend-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.weekend-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.weekend-field input {
+  padding: 0.35rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-bright);
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.weekend-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.suspension-alignment-panel {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-bright);
+}
+
 .championship-card {
   display: flex;
   flex-direction: column;
@@ -3323,6 +3381,48 @@ body {
   margin: 0;
 }
 
+.suspension-tuning-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  max-width: 720px;
+}
+
+.suspension-tuning-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.suspension-tuning-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.45rem 0.75rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.suspension-tuning-metrics strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.suspension-tuning-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.25rem;
+}
+
+.suspension-tuning-axle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
 .part-card {
   text-align: left;
   padding: 0.65rem;
@@ -4548,6 +4648,59 @@ body {
   gap: 0.5rem;
   margin-top: 1rem;
   justify-content: flex-end;
+}
+
+.pit-setup-fieldset {
+  margin-top: 0.75rem;
+}
+
+.pit-setup-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0 0 0.65rem;
+}
+
+.pit-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 0.75rem;
+}
+
+.pit-setup-grid .mm-field {
+  font-size: 0.78rem;
+}
+
+.pit-setup-grid select {
+  width: 100%;
+  margin-top: 0.2rem;
+}
+
+.pit-setup-summary {
+  margin: 0.65rem 0 0;
+  font-size: 0.78rem;
+  color: var(--accent-bright);
+}
+
+.race-setup-quick {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border);
+}
+
+.race-setup-readout {
+  margin: 0.45rem 0 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.race-setup-quick .setup-row {
+  margin-top: 0.35rem;
+}
+
+.race-setup-quick .secondary-btn {
+  font-size: 0.72rem;
+  padding: 0.28rem 0.45rem;
 }
 
 /* ── Compact leaderboard (left rail) ── */
