@@ -1,23 +1,34 @@
 # Assembly compatibility rules (slot-based + matrix)
 # rule= starts a new rule block
 
-# Ground-effect rear package needs low-drag front aero
-rule=wingless_requires_low_drag_front
-if_slot=rear_aero
-if_part=WinglessGroundEffect
-requires_slot=front_aero
-requires_part=LowDragNose
-
-# Sprint cooling package cannot fit a large fuel cell
-rule=sprint_no_large_tank
-if_slot=cooling
-if_part=SprintSlimline
-forbids_slot=fuel_system
-forbids_part=LargeTank
-
-# Carbon ceramic brakes need a carbon monocoque for heat dissipation
+# Carbon brakes need a carbon-class chassis
 rule=ceramic_requires_carbon_chassis
 if_slot=brake_system
 if_part=CarbonCeramic
 requires_slot=chassis
-requires_part=CarbonMonocoque
+requires_any_parts=LMHInHouse,LMHDallaraBuilt,LMHMultimaticBuilt,LMHMonocoque,LMDhDallara,LMDhOreca,LMDhMultimatic,LMDhLigier,Oreca07,GT3Spaceframe,GT3Oreca,GT3PrattMiller,GT3McLaren,GT3Multimatic
+
+rule=brembo_requires_carbon_chassis
+if_slot=brake_system
+if_part=BremboHypercar
+requires_slot=chassis
+requires_any_parts=LMHInHouse,LMHDallaraBuilt,LMHMultimaticBuilt,LMHMonocoque,LMDhDallara,LMDhOreca,LMDhMultimatic,LMDhLigier
+
+rule=akebono_requires_lmh_chassis
+if_slot=brake_system
+if_part=AkebonoHypercar
+requires_slot=chassis
+requires_any_parts=LMHInHouse,LMHMonocoque,LMHDallaraBuilt
+
+rule=apr_requires_prototype_chassis
+if_slot=brake_system
+if_part=APRacingPrototype
+requires_slot=chassis
+requires_any_parts=LMHInHouse,LMHMonocoque,LMDhOreca,LMDhDallara,LMDhMultimatic,LMDhLigier
+
+# LMDh spec hybrid fits any homologated LMDh spine
+rule=lmdh_hybrid_requires_lmdh_spine
+if_slot=hybrid_system
+if_part=LMDh50kW
+requires_slot=chassis
+requires_any_parts=LMDhDallara,LMDhOreca,LMDhMultimatic,LMDhLigier

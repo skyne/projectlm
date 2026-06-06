@@ -1,0 +1,25 @@
+# Acura ARX-06 — AR24e 2.4L twin-turbo V6 + spec 50 kW LMDh hybrid (IMSA GTP / Daytona)
+# Chassis: Oreca LMP2 spine. IMSA-only — not on 2026 Le Mans entry list.
+car_name=Acura ARX-06
+engine_layout=V6
+fuel_type=Gasoline
+cylinders=6
+bore=0.089
+stroke=0.0642
+max_rpm=10000
+peak_torque_nm=580
+peak_torque_rpm=7500
+base_vibration=1.12
+
+chassis_type=LMDhOreca
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PushrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=LeMans110L
+brake_system=APRacingPrototype
+transmission=XtracP1359
+hybrid_system=LMDh50kW
+

@@ -1,0 +1,24 @@
+# Oreca 07 — Gibson GK428 4.2L NA V8 (spec LMP2, 2026 Le Mans)
+car_name=Oreca 07-Gibson
+engine_layout=V8
+fuel_type=Gasoline
+cylinders=8
+bore=0.104
+stroke=0.098
+max_rpm=9000
+peak_torque_nm=556
+peak_torque_rpm=7000
+base_vibration=1.0
+
+chassis_type=Oreca07
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=DuctedRacing
+wheel_package=LMP2Oreca18
+suspension_layout=OrecaLMP2Spec
+starting_tire_compound=Medium
+fuel_system=StandardTank
+brake_system=StandardCaliper
+transmission=SixSpeedSequential
+hybrid_system=None
+

@@ -60,9 +60,21 @@ private:
   bool linear_ = false;
 };
 
+struct PitLaneDefinition {
+  TrackSpline spline;
+  double speedLimitMs = 60.0 / 3.6;
+  double boxDistance = 0.0;
+  double mergeTrackDistance = 0.0;
+
+  double totalLength() const { return spline.totalLength(); }
+  bool valid() const { return totalLength() > 1.0; }
+  TrackPose poseAtDistance(double distance) const;
+};
+
 struct TrackDefinition {
   std::string name;
   TrackSpline spline;
+  PitLaneDefinition pitLane;
   std::vector<TrackSector> sectors;
   std::vector<Vec3> displayPolyline;
 
@@ -71,6 +83,7 @@ struct TrackDefinition {
   const TrackSector &sectorAt(size_t index) const;
   TrackPose poseAtDistance(double distance) const;
   double curvatureAtDistance(double distance) const;
+  double signedCurvatureAtDistance(double distance) const;
   double maxCurvatureAhead(double distance, double lookAheadMeters) const;
 };
 

@@ -1,0 +1,24 @@
+# Genesis GMR-001 — G8MR 3.2L twin-turbo V8 + spec 50 kW LMDh hybrid (2026 Le Mans debut)
+car_name=Genesis GMR-001
+engine_layout=V8
+fuel_type=Gasoline
+cylinders=8
+bore=0.096
+stroke=0.055
+max_rpm=8200
+peak_torque_nm=637
+peak_torque_rpm=6500
+base_vibration=0.98
+
+chassis_type=LMDhOreca
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PushrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=LeMans110L
+brake_system=BremboHypercar
+transmission=XtracP1359
+hybrid_system=LMDh50kW
+

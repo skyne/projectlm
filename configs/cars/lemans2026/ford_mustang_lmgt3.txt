@@ -1,0 +1,24 @@
+# Ford Mustang LMGT3 — 5.4L NA V8 (2026 Le Mans LMGT3)
+car_name=Ford Mustang LMGT3
+engine_layout=V8
+fuel_type=Gasoline
+cylinders=8
+bore=0.100
+stroke=0.086
+max_rpm=7800
+peak_torque_nm=600
+peak_torque_rpm=6200
+base_vibration=0.95
+
+chassis_type=GT3Multimatic
+front_aero_type=HighDownforceSplitter
+rear_aero_type=HighDownforceWing
+cooling_pack=EnduranceHeavyDuty
+wheel_package=GT3Front20Rear21
+suspension_layout=DoubleWishboneGT3
+starting_tire_compound=Medium
+fuel_system=StandardTank
+brake_system=CarbonCeramic
+transmission=XtracP529
+hybrid_system=None
+

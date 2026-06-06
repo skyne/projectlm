@@ -1,0 +1,24 @@
+# Toyota GR010 Hybrid — H8909 3.5L twin-turbo V6 + 200 kW front-axle hybrid (2026 Le Mans)
+car_name=Toyota GR010 Hybrid
+engine_layout=V6
+fuel_type=Gasoline
+cylinders=6
+bore=0.094
+stroke=0.083
+max_rpm=7800
+peak_torque_nm=504
+peak_torque_rpm=6500
+base_vibration=0.95
+
+chassis_type=LMHInHouse
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PushrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=LeMans90L
+brake_system=AkebonoHypercar
+transmission=XtracP1359
+hybrid_system=HypercarHV
+

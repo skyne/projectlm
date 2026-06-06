@@ -1,9 +1,21 @@
+import { mmPanelHeader } from "../utils/mmUi";
+
 export interface PlaybackHandlers {
   onTimeScale: (scale: number) => void;
   onPause: () => void;
   onResume: () => void;
   onRestartRace: () => void;
   onReloadDefinitions: () => void;
+}
+
+function formatClock(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  }
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 export class PlaybackControls {
@@ -13,26 +25,38 @@ export class PlaybackControls {
   private pauseBtn: HTMLButtonElement;
   private resumeBtn: HTMLButtonElement;
   private raceTimeLabel: HTMLElement;
+  private remainingRow: HTMLElement;
+  private remainingLabel: HTMLElement;
+  private targetDurationSeconds: number | null = null;
   private paused = false;
 
   constructor(container: HTMLElement, handlers: PlaybackHandlers) {
     this.root = document.createElement("section");
-    this.root.className = "panel playback";
+    this.root.className = "panel playback panel-wec";
     this.root.innerHTML = `
-      <h2>Playback</h2>
-      <div class="race-time">Race time: <span id="race-time">0:00</span></div>
+      ${mmPanelHeader("Session Control", { subtitle: "Endurance time compression", badge: "SIM" })}
+      <div class="playback-clocks">
+        <div class="endurance-clock-block">
+          <span class="clock-block-label">Elapsed</span>
+          <div class="race-time"><span id="race-time">0:00</span></div>
+        </div>
+        <div class="endurance-clock-block race-remaining hidden">
+          <span class="clock-block-label">Remaining</span>
+          <div class="race-remaining-value"><span id="race-remaining">—</span></div>
+        </div>
+      </div>
       <label class="scale-control">
-        Time scale
+        <span>Time compression</span>
         <input type="range" min="0" max="20" step="0.5" value="1" />
         <span class="scale-value">1.0×</span>
       </label>
-      <div class="buttons">
-        <button type="button" class="btn-pause">Pause</button>
-        <button type="button" class="btn-resume">Resume</button>
+      <div class="buttons playback-transport">
+        <button type="button" class="btn-pause secondary-btn">⏸ Pause</button>
+        <button type="button" class="btn-resume primary-btn">▶ Resume</button>
       </div>
       <div class="buttons session-actions">
-        <button type="button" class="btn-restart">Restart race</button>
-        <button type="button" class="btn-reload">Reload config</button>
+        <button type="button" class="btn-restart secondary-btn">↺ Restart</button>
+        <button type="button" class="btn-reload secondary-btn">Reload</button>
       </div>
     `;
 
@@ -42,6 +66,8 @@ export class PlaybackControls {
     this.pauseBtn = this.root.querySelector(".btn-pause")!;
     this.resumeBtn = this.root.querySelector(".btn-resume")!;
     this.raceTimeLabel = this.root.querySelector("#race-time")!;
+    this.remainingRow = this.root.querySelector(".race-remaining")!;
+    this.remainingLabel = this.root.querySelector("#race-remaining")!;
 
     this.slider.addEventListener("input", () => {
       const scale = parseFloat(this.slider.value);
@@ -74,10 +100,19 @@ export class PlaybackControls {
     });
   }
 
+  setTargetDuration(seconds: number | null): void {
+    this.targetDurationSeconds = seconds && seconds > 0 ? seconds : null;
+    this.remainingRow.classList.toggle("hidden", !this.targetDurationSeconds);
+  }
+
   setRaceTime(seconds: number): void {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    this.raceTimeLabel.textContent = `${m}:${s.toString().padStart(2, "0")}`;
+    this.raceTimeLabel.textContent = formatClock(seconds);
+
+    if (this.targetDurationSeconds) {
+      const remaining = Math.max(0, this.targetDurationSeconds - seconds);
+      this.remainingLabel.textContent = formatClock(remaining);
+      this.remainingRow.classList.toggle("time-low", remaining <= 300 && remaining > 0);
+    }
   }
 
   setPaused(paused: boolean): void {
@@ -94,11 +129,11 @@ export class PlaybackControls {
     this.slider.disabled = true;
   }
 
-  resetRaceActive(): void {
+  resetSession(): void {
     this.slider.disabled = false;
-    this.setPaused(false);
     this.slider.value = "1";
     this.scaleLabel.textContent = "1.0×";
     this.setRaceTime(0);
+    this.remainingRow.classList.remove("time-low");
   }
 }

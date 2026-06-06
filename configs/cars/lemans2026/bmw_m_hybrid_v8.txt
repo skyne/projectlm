@@ -1,0 +1,24 @@
+# BMW M Hybrid V8 — P66/3 4.0L twin-turbo V8 + spec 50 kW LMDh hybrid (2026 Le Mans)
+car_name=BMW M Hybrid V8
+engine_layout=V8
+fuel_type=Gasoline
+cylinders=8
+bore=0.093
+stroke=0.074
+max_rpm=8200
+peak_torque_nm=650
+peak_torque_rpm=6800
+base_vibration=1.0
+
+chassis_type=LMDhDallara
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PushrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=LeMans110L
+brake_system=BremboHypercar
+transmission=XtracP1359
+hybrid_system=LMDh50kW
+

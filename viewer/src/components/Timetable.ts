@@ -1,6 +1,8 @@
 import type { CarSnapshot, TrackGeometryPayload } from "../ws/protocol";
 import { formatCarNumber } from "../entryNumbers";
 import { formatLapTime } from "../utils/formatTime";
+import { mmPanelHeader } from "../utils/mmUi";
+import { resolveRetireReason } from "../utils/retireReason";
 
 export type TimetableLapMode = "live" | number;
 
@@ -10,15 +12,16 @@ export class Timetable {
   private lapSelect: HTMLSelectElement;
   private sectorCount = 0;
   private selectedLap: TimetableLapMode = "live";
+  private lapOptionCount = 0;
 
   constructor(container: HTMLElement) {
     this.root = document.createElement("section");
-    this.root.className = "panel timetable hidden";
+    this.root.className = "panel timetable panel-wec";
     this.root.innerHTML = `
-      <div class="timetable-header">
-        <h2>Live Timing</h2>
+      ${mmPanelHeader("Live Timing", { subtitle: "Sector times · lap history", badge: "LIVE" })}
+      <div class="timetable-toolbar">
         <label class="lap-select-label">
-          Lap
+          <span>Lap</span>
           <select class="lap-select"></select>
         </label>
       </div>
@@ -53,6 +56,7 @@ export class Timetable {
 
   reset(): void {
     this.selectedLap = "live";
+    this.lapOptionCount = 0;
     this.lapSelect.value = "live";
     this.lastSnapshots = [];
     this.renderTable([]);
@@ -64,6 +68,10 @@ export class Timetable {
       return Math.max(max, completed);
     }, 0);
 
+    if (document.activeElement === this.lapSelect) return;
+    if (maxCompleted === this.lapOptionCount) return;
+
+    this.lapOptionCount = maxCompleted;
     const prev = this.lapSelect.value;
     this.lapSelect.replaceChildren();
 
@@ -103,12 +111,16 @@ export class Timetable {
       .map((snap) => {
         const sectorCells = this.sectorCells(snap);
         const rowClass = snap.retired ? "retired" : "";
+        const statusCell = snap.retired
+          ? `<td><span class="status-tag status-retired" title="${escapeHtml(resolveRetireReason(snap))}">OUT</span></td>`
+          : `<td></td>`;
         return `
           <tr class="${rowClass}">
             <td>${snap.racePosition}</td>
             <td class="car-num">${formatCarNumber(snap)}</td>
             <td>${escapeHtml(snap.teamName)}</td>
             <td><span class="class-badge class-${snap.classId}">${escapeHtml(snap.classId)}</span></td>
+            ${statusCell}
             ${sectorCells}
             <td class="timing-cell">${formatLapTime(snap.lastLapTime ?? 0)}</td>
             <td class="timing-cell">${formatLapTime(snap.bestLapTime ?? 0)}</td>
@@ -125,6 +137,7 @@ export class Timetable {
             <th>#</th>
             <th>Team</th>
             <th>Class</th>
+            <th>St</th>
             ${sectorHeaders}
             <th>Last</th>
             <th>Best</th>

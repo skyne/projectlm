@@ -49,3 +49,112 @@ TEST_CASE("fuel clamps at zero", "[unit][sim]") {
 
   REQUIRE(state.fuelRemaining >= 0.0);
 }
+
+TEST_CASE("Tyre wear accumulates gradually not instantly", "[unit][sim]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  CarConfig car;
+  PhysicsConfig physics;
+  TrackDefinition track;
+  LoadGoldenCar(catalog, assembly, car, physics, track);
+  car.tireChoice = ETireCompound::Soft;
+  CompileCarArchitecture(car, catalog, assembly);
+
+  SimulationState state;
+  state.currentSpeed = 55.0;
+  const double dt = 0.1;
+  for (int i = 0; i < 80; ++i)
+    TickSimulation(car, track, state, dt, physics);
+
+  REQUIRE(state.maxTireWear() < 0.5);
+}
+
+TEST_CASE("Mistake wear spike adds immediate tyre damage", "[unit][sim]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  CarConfig car;
+  PhysicsConfig physics;
+  TrackDefinition track;
+  LoadGoldenCar(catalog, assembly, car, physics, track);
+
+  SimulationState state;
+  state.currentSpeed = 55.0;
+  SimulationModifiers mods;
+  mods.wearSpikePerWheel[static_cast<int>(WheelIndex::FR)] = 0.04;
+  mods.tireTempSpikePerWheel[static_cast<int>(WheelIndex::FR)] = 12.0;
+
+  TickSimulation(car, track, state, 0.1, physics, nullptr, mods);
+
+  REQUIRE(state.tireWear[static_cast<int>(WheelIndex::FR)] >= 0.04);
+  REQUIRE(state.tireWear[static_cast<int>(WheelIndex::FL)] < 0.01);
+  REQUIRE(state.tireTempC[static_cast<int>(WheelIndex::FR)] >= 85.0 + 10.0);
+  REQUIRE(state.tireTempC[static_cast<int>(WheelIndex::FL)] < 90.0);
+}
+
+TEST_CASE("Per-wheel corner wear loads outside tyres more", "[unit][sim]") {
+  double weights[4];
+  CornerTireWearWeights(0.05, weights);
+  REQUIRE(weights[static_cast<int>(WheelIndex::FR)] >
+            weights[static_cast<int>(WheelIndex::FL)]);
+  REQUIRE(weights[static_cast<int>(WheelIndex::RR)] >
+            weights[static_cast<int>(WheelIndex::RL)]);
+
+  CornerTireWearWeights(-0.05, weights);
+  REQUIRE(weights[static_cast<int>(WheelIndex::FL)] >
+            weights[static_cast<int>(WheelIndex::FR)]);
+}
+
+TEST_CASE("Wide front tyres heat and wear front axle more", "[unit][sim]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  CarConfig car;
+  PhysicsConfig physics;
+  TrackDefinition track;
+  LoadGoldenCar(catalog, assembly, car, physics, track);
+
+  CarConfig wideFront = car;
+  wideFront.hasCustomWheelDims = true;
+  wideFront.customFrontTireWidthMm = 335.0;
+  CompileCarArchitecture(wideFront, catalog, assembly);
+
+  REQUIRE(wideFront.frontAxleWearFactor > car.frontAxleWearFactor);
+  REQUIRE(wideFront.frontAxleHeatFactor > car.frontAxleHeatFactor);
+  REQUIRE(wideFront.rearAxleWearFactor == Catch::Approx(car.rearAxleWearFactor));
+
+  SimulationState baselineState;
+  SimulationState wideState;
+  baselineState.currentSpeed = 55.0;
+  wideState.currentSpeed = 55.0;
+  const double dt = 0.1;
+  for (int i = 0; i < 120; ++i) {
+    TickSimulation(car, track, baselineState, dt, physics);
+    TickSimulation(wideFront, track, wideState, dt, physics);
+  }
+
+  const int fl = static_cast<int>(WheelIndex::FL);
+  const int fr = static_cast<int>(WheelIndex::FR);
+  const int rl = static_cast<int>(WheelIndex::RL);
+  REQUIRE(wideState.tireWear[fl] > baselineState.tireWear[fl]);
+  REQUIRE(wideState.tireWear[fr] > baselineState.tireWear[fr]);
+  REQUIRE(wideState.tireTempC[fl] > baselineState.tireTempC[fl]);
+  REQUIRE(wideState.tireTempC[fr] > baselineState.tireTempC[fr]);
+  REQUIRE(wideState.tireWear[rl] == Catch::Approx(baselineState.tireWear[rl]).margin(0.002));
+}
+
+TEST_CASE("Out of fuel car coasts to stop", "[unit][sim]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  CarConfig car;
+  PhysicsConfig physics;
+  TrackDefinition track;
+  LoadGoldenCar(catalog, assembly, car, physics, track);
+
+  SimulationState state;
+  state.currentSpeed = 40.0;
+  state.fuelRemaining = 0.0;
+
+  for (int i = 0; i < 500; ++i)
+    TickSimulation(car, track, state, 0.1, physics);
+
+  REQUIRE(state.currentSpeed < 1.0);
+}

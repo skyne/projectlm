@@ -1,13 +1,31 @@
 import { WebSocketServer, WebSocket } from "ws";
+import { computeRaceFinances } from "./game/economy";
+import { EngineerService } from "./llm/engineer_service";
+import { GarageEngineerService } from "./llm/garage_engineer_service";
 import { SimHost } from "./sim_host";
 import {
   parseClientMessage,
   serverMessage,
+  type AskEngineerPayload,
+  type AskGarageEngineerPayload,
+  type BuyCarPayload,
+  type CarBuildPayload,
+  type CreateTeamPayload,
+  type TeamCreationDraftPayload,
   type EventsPayload,
+  type CompleteRoundPayload,
+  type DropSponsorPayload,
+  type HireStaffPayload,
   type RaceCompletePayload,
+  type RdInvestPayload,
+  type SignSponsorPayload,
+  type SaveTeamColorsPayload,
   type SessionInitPayload,
+  type GetTrackPreviewPayload,
+  type SubmitCommandPayload,
   type TickPayload,
   type TrackGeometryPayload,
+  type TrackPreviewPayload,
 } from "./ws_protocol";
 
 const PORT = Number(process.env.PORT ?? 8765);
@@ -23,6 +41,8 @@ function broadcast(clients: Set<WebSocket>, data: unknown): void {
 
 function main(): void {
   const host = new SimHost();
+  const engineer = new EngineerService();
+  const garageEngineer = new GarageEngineerService();
   const wss = new WebSocketServer({ port: PORT });
   const clients = new Set<WebSocket>();
   let trackSent = false;
@@ -35,6 +55,11 @@ function main(): void {
 
     const sessionInit: SessionInitPayload = host.getSessionInit();
     ws.send(JSON.stringify(serverMessage("session_init", sessionInit)));
+    ws.send(JSON.stringify(serverMessage("meta_state", host.getMetaState())));
+    ws.send(JSON.stringify(serverMessage("game_catalog", host.getGameCatalog())));
+    void engineer.getStatus().then((status) => {
+      ws.send(JSON.stringify(serverMessage("engineer_status", status)));
+    });
 
     if (!trackSent) {
       const geometry: TrackGeometryPayload = host.getTrackGeometry();
@@ -45,7 +70,7 @@ function main(): void {
       ws.send(JSON.stringify(serverMessage("track_geometry", geometry)));
     }
 
-    ws.on("message", (data) => {
+    ws.on("message", async (data) => {
       const raw = data.toString();
       const msg = parseClientMessage(raw);
       if (!msg) {
@@ -72,6 +97,7 @@ function main(): void {
             ),
           );
         } else {
+          broadcast(clients, serverMessage("meta_state", host.getMetaState()));
           const payload: TickPayload = {
             raceTime: host.getRaceTime(),
             snapshots: host.getSnapshots(),
@@ -90,6 +116,7 @@ function main(): void {
           );
         } else {
           broadcast(clients, serverMessage("session_init", host.getSessionInit()));
+          broadcast(clients, serverMessage("meta_state", host.getMetaState()));
           broadcast(
             clients,
             serverMessage("track_geometry", host.getTrackGeometry()),
@@ -100,6 +127,278 @@ function main(): void {
           };
           broadcast(clients, serverMessage("tick", payload));
           console.log("[server] Reloaded definitions");
+        }
+      } else if (msg.type === "submit_command") {
+        const payload = msg.payload as SubmitCommandPayload;
+        const commandError = host.submitCommand(payload.entryId, payload.command);
+        if (commandError) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: commandError })),
+          );
+        }
+      } else if (msg.type === "hire_staff") {
+        const payload = msg.payload as HireStaffPayload;
+        const meta = host.hireStaff(payload.role, payload.name, payload.skill);
+        broadcast(clients, serverMessage("meta_state", meta));
+      } else if (msg.type === "rd_invest") {
+        const payload = msg.payload as RdInvestPayload;
+        const meta = host.investRd(payload.partId, payload.points);
+        broadcast(clients, serverMessage("meta_state", meta));
+      } else if (msg.type === "complete_round") {
+        const payload = msg.payload as CompleteRoundPayload;
+        const position = Number(payload.position ?? 0);
+        const classId = String(payload.classId ?? "");
+        const meta = host.completeRound(position, classId);
+        broadcast(clients, serverMessage("meta_state", meta));
+      } else if (msg.type === "sign_sponsor") {
+        const payload = msg.payload as SignSponsorPayload;
+        const result = host.signSponsor(payload.offerId ?? "");
+        if ("error" in result) {
+          ws.send(JSON.stringify(serverMessage("error", { message: result.error })));
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+        }
+      } else if (msg.type === "drop_sponsor") {
+        const payload = msg.payload as DropSponsorPayload;
+        const result = host.dropSponsor(payload.offerId ?? "");
+        if ("error" in result) {
+          ws.send(JSON.stringify(serverMessage("error", { message: result.error })));
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+        }
+      } else if (msg.type === "start_round") {
+        if (!host.getMetaState().setupComplete) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", { message: "Complete team setup first" }),
+            ),
+          );
+        } else {
+          const fleetErr = host.validateFleetForRace();
+          if (fleetErr) {
+            ws.send(
+              JSON.stringify(serverMessage("error", { message: fleetErr })),
+            );
+          } else {
+            const startErr = host.startRound();
+            if (startErr) {
+              ws.send(
+                JSON.stringify(serverMessage("error", { message: startErr })),
+              );
+            } else {
+          broadcast(clients, serverMessage("session_init", host.getSessionInit()));
+          broadcast(
+            clients,
+            serverMessage("track_geometry", host.getTrackGeometry()),
+          );
+          const payload: TickPayload = {
+            raceTime: host.getRaceTime(),
+            snapshots: host.getSnapshots(),
+          };
+          broadcast(clients, serverMessage("tick", payload));
+          console.log("[server] Round started");
+            }
+          }
+        }
+      } else if (msg.type === "create_team") {
+        const payload = msg.payload as CreateTeamPayload;
+        const meta = host.createTeam(payload);
+        if (!meta) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", { message: "Invalid team setup" }),
+            ),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", meta));
+          console.log("[server] Team created:", meta.teamName);
+        }
+      } else if (msg.type === "save_team_creation_draft") {
+        const draft = msg.payload as TeamCreationDraftPayload;
+        const result = host.saveTeamCreationDraft(draft);
+        if ("error" in result) {
+          ws.send(JSON.stringify(serverMessage("error", { message: result.error })));
+        } else {
+          ws.send(JSON.stringify(serverMessage("meta_state", result)));
+        }
+      } else if (msg.type === "save_car_build") {
+        const payload = msg.payload as CarBuildPayload;
+        const result = host.saveCarBuild(payload);
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+          console.log("[server] Car build saved");
+        }
+      } else if (msg.type === "save_driver_roster") {
+        const payload = msg.payload as {
+          roster?: import("./ws_protocol").DriverProfilePayload[];
+          assignments?: Record<string, number[]>;
+        };
+        const result = host.saveDriverRoster(
+          payload.roster ?? [],
+          payload.assignments,
+        );
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+          console.log("[server] Driver roster saved");
+        }
+      } else if (msg.type === "refresh_driver_market") {
+        const result = host.refreshDriverMarket();
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+          console.log("[server] Driver market refreshed");
+        }
+      } else if (msg.type === "sign_driver_contract") {
+        const listingId =
+          (msg.payload as { listingId?: string }).listingId ?? "";
+        const result = host.signDriverContract(listingId);
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+          console.log("[server] Driver contract signed");
+        }
+      } else if (msg.type === "save_team_colors") {
+        const payload = msg.payload as SaveTeamColorsPayload;
+        const meta = host.saveTeamColors(payload);
+        if (!meta) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", { message: "Invalid team colors" }),
+            ),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", meta));
+          console.log("[server] Team livery saved");
+        }
+      } else if (msg.type === "buy_car") {
+        const payload = msg.payload as BuyCarPayload;
+        const result = host.buyCar(payload);
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+          console.log("[server] Car purchased");
+        }
+      } else if (msg.type === "set_active_car") {
+        const carId = (msg.payload as { carId?: string }).carId ?? "";
+        const meta = host.setActiveCar(carId);
+        if (!meta) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", { message: "Unknown car" }),
+            ),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", meta));
+        }
+      } else if (msg.type === "set_player_entry") {
+        const carId = (msg.payload as { carId?: string }).carId ?? "";
+        const meta = host.setPlayerEntry(carId);
+        if (!meta) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", { message: "Unknown car" }),
+            ),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", meta));
+        }
+      } else if (msg.type === "remove_car") {
+        const carId = (msg.payload as { carId?: string }).carId ?? "";
+        const result = host.removeCar(carId);
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+        }
+      } else if (msg.type === "ask_garage_engineer") {
+        const payload = msg.payload as AskGarageEngineerPayload;
+        const meta = host.getMetaState();
+        const advice = await garageEngineer.advise({
+          repoRoot: host.repoRoot,
+          classId: String(payload.classId ?? meta.playerClassId ?? "Hypercar"),
+          build: payload.build,
+          unlockedParts: meta.unlockedParts ?? [],
+          compiled: payload.compiled,
+          trackHint: payload.trackHint,
+          question: payload.question,
+        });
+        ws.send(JSON.stringify(serverMessage("garage_advice", advice)));
+      } else if (msg.type === "get_engineer_status") {
+        const status = await engineer.getStatus();
+        ws.send(JSON.stringify(serverMessage("engineer_status", status)));
+      } else if (msg.type === "ask_engineer") {
+        const payload = msg.payload as AskEngineerPayload;
+        const entryId = String(payload.entryId ?? "").trim();
+        const snap = host
+          .getSnapshots()
+          .find((row) => row.entryId === entryId);
+        if (!snap) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", { message: "Unknown entry for engineer" }),
+            ),
+          );
+        } else {
+          const advice = await engineer.advise({
+            snap,
+            raceTimeSec: host.getRaceTime(),
+            trackName: host.getSessionInit().trackName,
+            question: payload.question,
+          });
+          ws.send(JSON.stringify(serverMessage("engineer_advice", advice)));
+        }
+      } else if (msg.type === "get_track_preview") {
+        const trackId = String(
+          (msg.payload as GetTrackPreviewPayload).trackId ?? "",
+        ).trim();
+        const geometry = host.getTrackPreview(trackId);
+        if (!geometry) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", {
+                message: `Unknown track: ${trackId}`,
+              }),
+            ),
+          );
+        } else {
+          const payload: TrackPreviewPayload = { trackId, geometry };
+          ws.send(JSON.stringify(serverMessage("track_preview", payload)));
+        }
+      } else if (msg.type === "new_game") {
+        const meta = host.newGame();
+        broadcast(clients, serverMessage("meta_state", meta));
+        broadcast(clients, serverMessage("session_init", host.getSessionInit()));
+        console.log("[server] New game started");
+      } else if (msg.type === "set_weekend_tire_compound") {
+        const compound = String(
+          (msg.payload as { compound?: string }).compound ?? "Medium",
+        );
+        const result = host.setWeekendTireCompound(compound);
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
         }
       }
     });
@@ -120,8 +419,41 @@ function main(): void {
       broadcast(clients, serverMessage("events", payload));
     },
     (raceTime, results) => {
-      const payload: RaceCompletePayload = { raceTime, results };
+      const meta = host.getMetaState();
+      const player = meta.playerEntryId;
+      const playerResult = results.find((r) => r.entryId === player);
+      const event = meta.calendar.find((e) => e.round === meta.currentRound);
+      const scoring =
+        event?.eventType !== "test" && event?.format !== "test";
+      const finances = playerResult && event
+        ? computeRaceFinances(
+            playerResult.position,
+            playerResult.classId,
+            event.format,
+            meta.sponsors ?? [],
+            meta.staff,
+            { scoring },
+          )
+        : undefined;
+
+      let updatedMeta = meta;
+      if (playerResult && event && !event.completed) {
+        updatedMeta = host.completeRound(
+          playerResult.position,
+          playerResult.classId,
+        );
+      }
+
+      const payload: RaceCompletePayload = {
+        raceTime,
+        results,
+        championshipPoints: finances?.championshipPoints ?? 0,
+        finances,
+      };
       broadcast(clients, serverMessage("race_complete", payload));
+      if (updatedMeta !== meta) {
+        broadcast(clients, serverMessage("meta_state", updatedMeta));
+      }
       console.log("[server] Race complete");
     },
   );

@@ -1,37 +1,132 @@
-export type MainView = "map" | "timetable";
+import { NAV_ICONS } from "../utils/mmUi";
+
+export type MainView =
+  | "season"
+  | "calendar"
+  | "map"
+  | "timing"
+  | "telemetry"
+  | "team"
+  | "garage"
+  | "drivers";
+
+const OFFSEASON_TABS: MainView[] = ["season", "calendar", "garage", "drivers", "team"];
+const RACE_TABS: MainView[] = ["map", "timing", "telemetry"];
+
+const TAB_LABELS: Record<MainView, string> = {
+  season: "Championship",
+  calendar: "Calendar",
+  map: "Track Map",
+  timing: "Live Timing",
+  telemetry: "Telemetry",
+  garage: "Garage",
+  drivers: "Drivers",
+  team: "Headquarters",
+};
 
 export class HeaderNav {
   readonly root: HTMLElement;
   private onChange?: (view: MainView) => void;
-  private active: MainView = "map";
+  private active: MainView = "season";
+  private raceActive = false;
+  private buttons = new Map<MainView, HTMLButtonElement>();
 
   constructor(container: HTMLElement) {
     this.root = document.createElement("nav");
-    this.root.className = "view-nav";
-    this.root.innerHTML = `
-      <button type="button" class="view-tab active" data-view="map">Map</button>
-      <button type="button" class="view-tab" data-view="timetable">Timetable</button>
-    `;
+    this.root.className = "view-nav view-nav-wec";
+    this.root.setAttribute("aria-label", "Main navigation");
 
-    for (const button of this.root.querySelectorAll<HTMLButtonElement>(".view-tab")) {
+    const allViews: MainView[] = [
+      "season",
+      "calendar",
+      "map",
+      "timing",
+      "telemetry",
+      "garage",
+      "drivers",
+      "team",
+    ];
+    for (const view of allViews) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "view-tab";
+      button.dataset.view = view;
+      button.innerHTML = `
+        <span class="view-tab-icon" aria-hidden="true">${NAV_ICONS[view] ?? "•"}</span>
+        <span class="view-tab-label">${TAB_LABELS[view]}</span>
+      `;
       button.addEventListener("click", () => {
-        const view = button.dataset.view as MainView;
+        if (button.hidden) return;
         this.setActive(view);
         this.onChange?.(view);
       });
+      this.buttons.set(view, button);
+      this.root.appendChild(button);
     }
 
     container.appendChild(this.root);
+    this.applyTabVisibility();
+    this.setActive("season");
   }
 
   setHandler(handler: (view: MainView) => void): void {
     this.onChange = handler;
   }
 
+  setRaceActive(active: boolean): void {
+    this.raceActive = active;
+    this.applyTabVisibility();
+    if (
+      active &&
+      (this.active === "garage" ||
+        this.active === "team" ||
+        this.active === "season" ||
+        this.active === "calendar" ||
+        this.active === "drivers")
+    ) {
+      this.setActive("map");
+    } else if (
+      !active &&
+      (this.active === "map" || this.active === "timing" || this.active === "telemetry")
+    ) {
+      this.setActive("season");
+    }
+  }
+
+  isRaceActive(): boolean {
+    return this.raceActive;
+  }
+
+  private applyTabVisibility(): void {
+    for (const view of OFFSEASON_TABS) {
+      const btn = this.buttons.get(view)!;
+      btn.hidden = this.raceActive;
+    }
+    for (const view of RACE_TABS) {
+      const btn = this.buttons.get(view)!;
+      btn.hidden = !this.raceActive;
+    }
+  }
+
   setActive(view: MainView): void {
+    if (
+      this.raceActive &&
+      (view === "garage" ||
+        view === "team" ||
+        view === "season" ||
+        view === "calendar" ||
+        view === "drivers")
+    ) {
+      return;
+    }
+    if (!this.raceActive && (view === "map" || view === "timing" || view === "telemetry")) {
+      return;
+    }
     this.active = view;
-    for (const button of this.root.querySelectorAll<HTMLButtonElement>(".view-tab")) {
-      button.classList.toggle("active", button.dataset.view === view);
+    for (const [v, button] of this.buttons) {
+      const isActive = v === view && !button.hidden;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-current", isActive ? "page" : "false");
     }
   }
 

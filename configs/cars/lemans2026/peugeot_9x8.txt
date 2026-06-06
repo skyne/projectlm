@@ -1,0 +1,24 @@
+# Peugeot 9X8 Evo — X6H 2.6L twin-turbo V6 + 200 kW front-axle hybrid (2026 Le Mans)
+car_name=Peugeot 9X8 Evo
+engine_layout=V6
+fuel_type=Gasoline
+cylinders=6
+bore=0.086
+stroke=0.075
+max_rpm=8500
+peak_torque_nm=700
+peak_torque_rpm=6500
+base_vibration=1.0
+
+chassis_type=LMHInHouse
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PullrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=LeMans110L
+brake_system=APRacingPrototype
+transmission=XtracP1359
+hybrid_system=HypercarHV
+

@@ -1,26 +1,178 @@
 import { SvgTrack } from "./components/SvgTrack";
-import { Leaderboard } from "./components/Leaderboard";
+import { CompactLeaderboard } from "./components/CompactLeaderboard";
 import { EventLog } from "./components/EventLog";
 import { PlaybackControls } from "./components/PlaybackControls";
 import { Timetable } from "./components/Timetable";
-import { HeaderNav } from "./components/HeaderNav";
+import { HeaderNav, type MainView } from "./components/HeaderNav";
+import { TeamHQ } from "./components/TeamHQ";
+import { RaceHub } from "./components/RaceHub";
+import { SeasonCalendar } from "./components/SeasonCalendar";
+import { PostRaceOverlay } from "./components/PostRaceOverlay";
+import { TeamCreationWizard } from "./components/TeamCreationWizard";
+import { CarGarage } from "./components/CarGarage";
+import { RaceControls } from "./components/RaceControls";
+import { EngineerPanel } from "./components/EngineerPanel";
+import { TelemetryPanel } from "./components/TelemetryPanel";
+import { PitStopModal } from "./components/PitStopModal";
+import { DriverCenter } from "./components/DriverCenter";
 import { ViewerClient } from "./ws/client";
 import { enrichSnapshots, setEntryNumbersFromSession } from "./entryNumbers";
-import type { CarSnapshot } from "./ws/protocol";
+import { resolveRetireReason } from "./utils/retireReason";
+import { setTrackLapLengthMeters } from "./utils/pitCommands";
+import type { CarSnapshot, GameCatalogPayload, MetaStatePayload, SessionInitPayload, SimEvent } from "./ws/protocol";
 
 const statusEl = document.getElementById("status")!;
+const seasonPanel = document.getElementById("race-hub-container")!;
+const calendarPanel = document.getElementById("calendar-container")!;
 const mapPanel = document.getElementById("map-panel")!;
 const timetableContainer = document.getElementById("timetable-container")!;
+const telemetryContainer = document.getElementById("telemetry-container")!;
+const teamContainer = document.getElementById("team-container")!;
+const garageContainer = document.getElementById("garage-container")!;
+const driversContainer = document.getElementById("drivers-container")!;
+const sidebar = document.querySelector(".sidebar")!;
+const compactLbColumn = document.getElementById("compact-leaderboard-container")!;
 
 const headerNav = new HeaderNav(document.getElementById("header-nav")!);
 const track = new SvgTrack(document.getElementById("track-container")!);
 const timetable = new Timetable(timetableContainer);
-const leaderboard = new Leaderboard(document.getElementById("leaderboard-container")!);
+const telemetryPanel = new TelemetryPanel(telemetryContainer, {
+  onDriverMode: (entryId, mode) => client.submitCommand(entryId, `driver_mode=${mode}`),
+});
+const telemetryTrack = new SvgTrack(telemetryPanel.mapContainer, { zoomable: true });
+const compactLeaderboard = new CompactLeaderboard(
+  document.getElementById("compact-leaderboard-container")!,
+);
 const eventLog = new EventLog(document.getElementById("event-log-container")!);
+
+let playerEntryId = "entry-1";
+let raceStarted = false;
+let pendingRaceStart = false;
+let latestSession: SessionInitPayload | null = null;
+let latestMeta: MetaStatePayload | null = null;
+let gameCatalog: GameCatalogPayload | null = null;
+let liverySavePending = false;
+const retiredSeen = new Set<string>();
+
+const pitModal = new PitStopModal(document.getElementById("pit-stop-modal")!, {
+  onConfirm: (entryId, command) => {
+    client.submitCommand(entryId, command);
+    raceControls.setStatus("Pit queued — enter at start/finish");
+  },
+  onCancelPit: (entryId) => {
+    client.submitCommand(entryId, "cancel_pit");
+    raceControls.setStatus("Pit cancelled");
+  },
+});
+
+const raceControls = new RaceControls(document.getElementById("race-controls-container")!, {
+  onDriverMode: (entryId, mode) => client.submitCommand(entryId, `driver_mode=${mode}`),
+  onPitNow: () => pitModal.open(raceControls.getPlayerSnapshot()),
+  onCancelPit: (entryId) => client.submitCommand(entryId, "cancel_pit"),
+});
+
+const engineerPanel = new EngineerPanel(document.getElementById("engineer-container")!, {
+  onAsk: (entryId, question) => client.askEngineer(entryId, question),
+  onApplyCommand: (entryId, command) => {
+    client.submitCommand(entryId, command);
+    raceControls.setStatus(`Engineer command sent: ${command}`);
+  },
+  onRefreshStatus: () => client.getEngineerStatus(),
+});
+
+const teamWizard = new TeamCreationWizard(document.getElementById("team-wizard-overlay")!, {
+  onComplete: (payload) => client.createTeam(payload),
+  onSaveDraft: (draft) => client.saveTeamCreationDraft(draft),
+});
+
+const carGarage = new CarGarage(garageContainer, {
+  onSaveBuild: (build) => {
+    client.saveCarBuild(build);
+    carGarage.setStatus("Saving build…");
+  },
+  onAskGarageEngineer: (payload) => client.askGarageEngineer(payload),
+});
+
+const raceHub = new RaceHub(seasonPanel, {
+  onStartRace: () => startRound(),
+  onOpenGarage: () => setMainView("garage"),
+  onSetWeekendCompound: (compound) => client.setWeekendTireCompound(compound),
+});
+
+const seasonCalendar = new SeasonCalendar(calendarPanel, {
+  onSelectTrack: (trackId) => client.getTrackPreview(trackId),
+  onStartRace: () => startRound(),
+});
+
+const postRace = new PostRaceOverlay(document.getElementById("post-race-overlay")!, {
+  onContinue: () => {
+    endRaceSession();
+    setMainView("season");
+  },
+  onRestart: () => {
+    postRace.hide();
+    restartRaceSession();
+  },
+});
+
+const driverCenter = new DriverCenter(driversContainer, {
+  onSaveRoster: (roster, assignments) => {
+    client.saveDriverRoster(roster, assignments);
+    driverCenter.setStatus("Saving roster…");
+  },
+  onRefreshMarket: () => {
+    client.refreshDriverMarket();
+    driverCenter.setStatus("Refreshing driver market…");
+  },
+  onSignContract: (listingId) => {
+    client.signDriverContract(listingId);
+    driverCenter.setStatus("Offering contract…");
+  },
+});
+
+const teamHQ = new TeamHQ(teamContainer, {
+  onHireStaff: (role, name, skill) => client.hireStaff(role, name, skill),
+  onRdInvest: (partId, points) => client.rdInvest(partId, points),
+  onSignSponsor: (offerId) => client.signSponsor(offerId),
+  onDropSponsor: (offerId) => client.dropSponsor(offerId),
+  onOpenGarage: () => setMainView("garage"),
+  onBuyCar: (payload) => client.buyCar(payload),
+  onSetActiveCar: (carId) => client.setActiveCar(carId),
+  onSetPlayerEntry: (carId) => client.setPlayerEntry(carId),
+  onRemoveCar: (carId) => client.removeCar(carId),
+  onSaveTeamColors: (colors) => {
+    liverySavePending = true;
+    client.saveTeamColors(colors);
+    teamHQ.setLiveryStatus("Saving livery…");
+  },
+  onNewGame: () => {
+    if (
+      !window.confirm(
+        "Start a new game?\n\nYour current save will be permanently deleted and you'll set up a new team from scratch.",
+      )
+    ) {
+      return;
+    }
+    endRaceSession();
+    postRace.hide();
+    playback.resetSession();
+    syncPlaybackPaused(true);
+    eventLog.clear();
+    track.clearCars();
+    telemetryTrack.clearCars();
+    timetable.reset();
+    telemetryPanel.reset();
+    client.setTimeScale(1);
+    client.newGame();
+    setMainView("season");
+  },
+});
 
 function normalizeSnapshots(snapshots: CarSnapshot[]): CarSnapshot[] {
   return enrichSnapshots(snapshots).map((snap) => ({
     ...snap,
+    retired: snap.retired === true,
+    retireReason: snap.retireReason ?? "",
     currentLapTime: snap.currentLapTime ?? 0,
     currentSectorTime: snap.currentSectorTime ?? 0,
     lastLapTime: snap.lastLapTime ?? 0,
@@ -31,11 +183,194 @@ function normalizeSnapshots(snapshots: CarSnapshot[]): CarSnapshot[] {
   }));
 }
 
-function setMainView(view: "map" | "timetable"): void {
+function clearRetirementTracking(): void {
+  retiredSeen.clear();
+}
+
+function detectRetirements(snapshots: CarSnapshot[], raceTime: number): SimEvent[] {
+  const events: SimEvent[] = [];
+  for (const snap of snapshots) {
+    if (!snap.retired || retiredSeen.has(snap.entryId)) continue;
+    retiredSeen.add(snap.entryId);
+    const reason = resolveRetireReason(snap);
+    events.push({
+      type: "Retirement",
+      entryId: snap.entryId,
+      lap: snap.lap,
+      timestamp: raceTime,
+      message: `${snap.teamName} retired: ${reason}`,
+    });
+  }
+  return events;
+}
+
+function applySessionInit(payload: SessionInitPayload): void {
+  clearRetirementTracking();
+  latestSession = payload;
+  setEntryNumbersFromSession(payload);
+  playerEntryId = payload.playerEntryId ?? "entry-1";
+  track.setPlayerEntry(playerEntryId);
+  telemetryTrack.setPlayerEntry(playerEntryId);
+  telemetryPanel.setPlayerEntry(playerEntryId);
+  raceControls.setPlayerEntry(playerEntryId);
+  engineerPanel.setPlayerEntry(playerEntryId);
+  pitModal.setPlayerEntry(playerEntryId);
+  compactLeaderboard.setPlayerEntry(playerEntryId);
+  eventLog.setPlayerEntry(playerEntryId);
+  eventLog.setEntryNames(payload.entries ?? []);
+  raceHub.setSessionInfo(payload);
+  playback.setTargetDuration(payload.targetDurationSeconds ?? null);
+  telemetryPanel.setEntries(payload.entries ?? []);
+}
+
+function applyMetaState(meta: MetaStatePayload): void {
+  const wasIncomplete = latestMeta != null && !latestMeta.setupComplete;
+  latestMeta = meta;
+  teamHQ.update(meta);
+  raceHub.update(meta);
+  seasonCalendar.update(meta);
+  carGarage.update(meta);
+  driverCenter.update(meta);
+
+  if (!meta.setupComplete) {
+    if (gameCatalog) teamWizard.setCatalog(gameCatalog);
+    if (!teamWizard.isVisible()) teamWizard.open(meta.teamCreationDraft);
+  } else {
+    teamWizard.hide();
+    if (wasIncomplete && !raceStarted) setMainView("garage");
+  }
+}
+
+function isRaceView(view: MainView): boolean {
+  return view === "map" || view === "timing" || view === "telemetry";
+}
+
+function setMainView(view: MainView): void {
+  if (latestMeta && !latestMeta.setupComplete && view !== "season") return;
+  if (carGarage.isBuildGuideActive() && view !== "garage") return;
+  if (
+    raceStarted &&
+    (view === "garage" ||
+      view === "team" ||
+      view === "season" ||
+      view === "calendar" ||
+      view === "drivers")
+  ) {
+    return;
+  }
+  if (!raceStarted && isRaceView(view)) return;
+
+  seasonPanel.classList.toggle("hidden", view !== "season");
+  calendarPanel.classList.toggle("hidden", view !== "calendar");
   mapPanel.classList.toggle("hidden", view !== "map");
-  timetableContainer.classList.toggle("hidden", view !== "timetable");
-  timetable.setVisible(view === "timetable");
+  timetableContainer.classList.toggle("hidden", view !== "timing");
+  telemetryContainer.classList.toggle("hidden", view !== "telemetry");
+  teamContainer.classList.toggle("hidden", view !== "team");
+  garageContainer.classList.toggle("hidden", view !== "garage");
+  driversContainer.classList.toggle("hidden", view !== "drivers");
+  timetable.setVisible(view === "timing");
+  telemetryPanel.setVisible(view === "telemetry");
   headerNav.setActive(view);
+
+  document.getElementById("live-badge")?.classList.toggle("hidden", !raceStarted || !isRaceView(view));
+
+  const showSidebar = raceStarted && isRaceView(view);
+  sidebar.classList.toggle("hidden", !showSidebar);
+  compactLbColumn.classList.toggle("hidden", !showSidebar);
+  compactLeaderboard.setVisible(showSidebar);
+  raceControls.setRaceActive(showSidebar);
+  engineerPanel.setRaceActive(showSidebar);
+}
+
+function syncPlaybackPaused(paused: boolean): void {
+  playback.setPaused(paused);
+  if (paused) client.pause();
+  else client.resume();
+}
+
+function applySessionPlayback(payload: SessionInitPayload): void {
+  playback.resetSession();
+  client.setTimeScale(1);
+  syncPlaybackPaused(payload.paused ?? true);
+}
+
+function beginRaceSession(startPaused = true): void {
+  clearRetirementTracking();
+  raceStarted = true;
+  headerNav.setRaceActive(true);
+  playback.resetSession();
+  playback.setPaused(startPaused);
+  raceControls.setRaceActive(true);
+  engineerPanel.setRaceActive(true);
+  document.getElementById("race-lap-counter")?.classList.remove("hidden");
+}
+
+function endRaceSession(): void {
+  raceStarted = false;
+  headerNav.setRaceActive(false);
+  raceControls.setRaceActive(false);
+  engineerPanel.setRaceActive(false);
+  pitModal.hide();
+  document.getElementById("race-lap-counter")?.classList.add("hidden");
+}
+
+function startRound(): void {
+  postRace.hide();
+  pendingRaceStart = true;
+  client.startRound();
+}
+
+function restartRaceSession(): void {
+  clearRetirementTracking();
+  beginRaceSession(false);
+  eventLog.clear();
+  track.clearCars();
+  telemetryTrack.clearCars();
+  timetable.reset();
+  telemetryPanel.reset();
+  client.setTimeScale(1);
+  client.restartRace();
+  setMainView("map");
+}
+
+function updateFromTick(snapshots: CarSnapshot[], raceTime: number): void {
+  const normalized = normalizeSnapshots(snapshots);
+  track.updateCars(normalized);
+  telemetryTrack.updateCars(normalized);
+  compactLeaderboard.update(normalized);
+  timetable.update(normalized);
+  telemetryPanel.update(normalized);
+  playback.setRaceTime(raceTime);
+  const playerSnap = normalized.find((s) => s.entryId === playerEntryId) ?? null;
+  raceControls.updateSnapshot(playerSnap);
+  updateLapCounter(playerSnap);
+  eventLog.append(detectRetirements(normalized, raceTime));
+}
+
+function updateLapCounter(playerSnap: CarSnapshot | null): void {
+  const el = document.getElementById("race-lap-counter");
+  if (!el || !raceStarted) return;
+
+  if (!playerSnap) {
+    el.textContent = "Lap —";
+    return;
+  }
+
+  if (playerSnap.retired) {
+    const reason = resolveRetireReason(playerSnap);
+    el.textContent = reason === "Retired from race" ? "OUT" : `OUT · ${reason}`;
+    el.classList.add("race-lap-counter-retired");
+    return;
+  }
+  el.classList.remove("race-lap-counter-retired");
+
+  const targetLaps = latestSession?.targetLaps ?? 0;
+  const targetDuration = latestSession?.targetDurationSeconds ?? 0;
+  if (targetDuration > 0 || targetLaps <= 0) {
+    el.textContent = `Lap ${playerSnap.lap}`;
+  } else {
+    el.textContent = `Lap ${playerSnap.lap} / ${targetLaps}`;
+  }
 }
 
 headerNav.setHandler((view) => setMainView(view));
@@ -47,27 +382,75 @@ const client = new ViewerClient({
     statusEl.className = `status status-${state}`;
   },
   onSessionInit: (payload) => {
-    setEntryNumbersFromSession(payload);
-    leaderboard.setTrackName(`${payload.trackName} — ${payload.targetLaps} lap(s)`);
-    eventLog.clear();
-    playback.resetRaceActive();
-    client.setTimeScale(1);
+    applySessionInit(payload);
+    if (pendingRaceStart) {
+      pendingRaceStart = false;
+      beginRaceSession(true);
+      eventLog.clear();
+      track.clearCars();
+      telemetryTrack.clearCars();
+      timetable.reset();
+      telemetryPanel.reset();
+      syncPlaybackPaused(payload.paused ?? true);
+      setMainView("map");
+    } else {
+      eventLog.clear();
+      applySessionPlayback(payload);
+      if (!raceStarted && !teamWizard.isVisible()) setMainView("season");
+    }
   },
   onTrackGeometry: (geometry) => {
     track.setGeometry(geometry);
+    telemetryTrack.setGeometry(geometry);
     timetable.setGeometry(geometry);
+    compactLeaderboard.setLapLength(geometry.lapLength);
+    setTrackLapLengthMeters(geometry.lapLength);
+  },
+  onTrackPreview: (payload) => {
+    seasonCalendar.setTrackPreview(payload.trackId, payload.geometry);
   },
   onTick: (payload) => {
-    const snapshots = normalizeSnapshots(payload.snapshots);
-    track.updateCars(snapshots);
-    leaderboard.update(snapshots);
-    timetable.update(snapshots);
-    playback.setRaceTime(payload.raceTime);
+    if (!raceStarted) return;
+    updateFromTick(payload.snapshots, payload.raceTime);
   },
   onEvents: (payload) => {
+    if (!raceStarted) return;
+    for (const event of payload.events) {
+      if (event.type === "Retirement" && event.entryId) retiredSeen.add(event.entryId);
+    }
     eventLog.append(payload.events);
   },
+  onMetaState: (payload) => {
+    const hadBuildGuide = latestMeta?.carBuildGuidePending;
+    applyMetaState(payload);
+    if (payload.carBuild && payload.setupComplete) {
+      if (hadBuildGuide && !payload.carBuildGuidePending) {
+        carGarage.setStatus("Platform saved — head to Championship Hub when ready.", false);
+      } else if (!hadBuildGuide) {
+        carGarage.setStatus("Build synced with server.", false);
+      }
+    }
+    if (liverySavePending && payload.teamColors) {
+      teamHQ.setLiveryStatus("Livery saved.");
+      liverySavePending = false;
+    }
+  },
+  onGameCatalog: (catalog) => {
+    gameCatalog = catalog;
+    carGarage.setCatalog(catalog);
+    teamWizard.setCatalog(catalog);
+    driverCenter.setCatalog(catalog);
+    teamHQ.setCatalog(catalog);
+    if (latestMeta && !latestMeta.setupComplete && !teamWizard.isVisible()) {
+      teamWizard.open(latestMeta.teamCreationDraft);
+    }
+  },
+  onEngineerAdvice: (payload) => engineerPanel.showAdvice(payload),
+  onEngineerStatus: (payload) =>
+    engineerPanel.setEngineerStatus(payload.online, payload.model),
+  onGarageAdvice: (payload) => carGarage.showGarageAdvice(payload),
   onRaceComplete: (payload) => {
+    endRaceSession();
     playback.setRaceTime(payload.raceTime);
     playback.markRaceComplete();
     eventLog.append([
@@ -77,10 +460,20 @@ const client = new ViewerClient({
         message: "Race complete — check final standings",
       },
     ]);
+    postRace.show(payload, playerEntryId);
   },
   onError: (message) => {
     statusEl.textContent = message;
     statusEl.className = "status status-error";
+    if (pendingRaceStart) {
+      pendingRaceStart = false;
+      setMainView("season");
+    }
+    carGarage.setStatus(message, true);
+    if (liverySavePending) {
+      teamHQ.setLiveryStatus(message, true);
+      liverySavePending = false;
+    }
   },
 });
 
@@ -88,23 +481,21 @@ const playback = new PlaybackControls(document.getElementById("playback-containe
   onTimeScale: (scale) => client.setTimeScale(scale),
   onPause: () => client.pause(),
   onResume: () => client.resume(),
-  onRestartRace: () => {
-    playback.resetRaceActive();
-    eventLog.clear();
-    track.clearCars();
-    timetable.reset();
-    client.setTimeScale(1);
-    client.restartRace();
-  },
+  onRestartRace: () => restartRaceSession(),
   onReloadDefinitions: () => {
-    playback.resetRaceActive();
+    endRaceSession();
+    playback.resetSession();
+    syncPlaybackPaused(true);
     eventLog.clear();
     track.clearCars();
+    telemetryTrack.clearCars();
     timetable.reset();
-    leaderboard.update([]);
-    client.setTimeScale(1);
+    telemetryPanel.reset();
+    compactLeaderboard.update([]);
     client.reloadDefinitions();
+    setMainView("season");
   },
 });
 
+setMainView("season");
 client.connect();

@@ -4,15 +4,23 @@ import * as path from "path";
 export interface ParsedRaceConfig {
   trackConfigPath: string;
   targetLaps: number;
+  targetDurationSeconds: number;
   simTimestep: number;
   entriesPath: string;
+  classRulesPath: string;
 }
 
 export interface ParsedEntry {
   entryId: string;
   teamName: string;
-  carNumber: number;
+  carNumber: string;
   classId: string;
+}
+
+export function parseCarNumber(raw: string | undefined, fallbackGrid: number): string {
+  const trimmed = raw?.trim() ?? "";
+  if (/^\d+$/.test(trimmed) && trimmed !== "0") return trimmed;
+  return String(fallbackGrid);
 }
 
 export function parseRaceConfig(
@@ -25,9 +33,11 @@ export function parseRaceConfig(
   const text = fs.readFileSync(abs, "utf8");
   const config: ParsedRaceConfig = {
     trackConfigPath: "tracks/sample_circuit.json",
-    targetLaps: 1,
+    targetLaps: 0,
+    targetDurationSeconds: 0,
     simTimestep: 0.1,
     entriesPath: "",
+    classRulesPath: "configs/class_rules.txt",
   };
 
   for (const line of text.split("\n")) {
@@ -39,8 +49,13 @@ export function parseRaceConfig(
     const val = trimmed.slice(eq + 1).trim();
     if (key === "track_config") config.trackConfigPath = val;
     else if (key === "target_laps") config.targetLaps = parseInt(val, 10);
+    else if (key === "target_duration_hours")
+      config.targetDurationSeconds = parseFloat(val) * 3600;
+    else if (key === "target_duration_seconds")
+      config.targetDurationSeconds = parseFloat(val);
     else if (key === "sim_timestep") config.simTimestep = parseFloat(val);
     else if (key === "entries") config.entriesPath = val;
+    else if (key === "class_rules") config.classRulesPath = val;
   }
 
   return config;
@@ -61,12 +76,11 @@ export function parseEntries(
     if (parts.length < 4) continue;
     const grid = parseInt(parts[3].trim(), 10);
     if (!Number.isFinite(grid) || grid <= 0) continue;
-    const carNumber =
-      parts.length >= 5 ? parseInt(parts[4].trim(), 10) : grid;
+    const carNumber = parseCarNumber(parts[4], grid);
     rows.push({
       entryId: `entry-${grid}`,
       teamName: parts[0].trim(),
-      carNumber: Number.isFinite(carNumber) && carNumber > 0 ? carNumber : grid,
+      carNumber,
       classId: parts[2].trim(),
     });
   }

@@ -1,191 +1,446 @@
+# Part catalog — masses (kg), aero Cl/Cd (sim units on 1.75 m² reference area)
+# Downforce scales with 0.5·ρ·v²·A·Cl; tune Cl for prototype vs GT3 cornering.
+
 # =====================
 # CHASSIS
 # =====================
-chassis.CarbonMonocoque.mass=75.0
-chassis.CarbonMonocoque.rigidity=1.2
-chassis.CarbonMonocoque.drag=0.01
+# LMH bespoke monocoques
+# serviceability: pit work speed (tyres/fuel/repairs); driver_change: swap speed
+chassis.LMHInHouse.mass=72.0
+chassis.LMHInHouse.rigidity=1.35
+chassis.LMHInHouse.drag=0.006
+chassis.LMHInHouse.serviceability=0.92
+chassis.LMHInHouse.driver_change=0.90
 
-chassis.Spaceframe.mass=120.0
-chassis.Spaceframe.rigidity=0.6
-chassis.Spaceframe.drag=0.05
+chassis.LMHDallaraBuilt.mass=73.0
+chassis.LMHDallaraBuilt.rigidity=1.33
+chassis.LMHDallaraBuilt.drag=0.007
+chassis.LMHDallaraBuilt.serviceability=0.93
+chassis.LMHDallaraBuilt.driver_change=0.91
+
+chassis.LMHMultimaticBuilt.mass=74.0
+chassis.LMHMultimaticBuilt.rigidity=1.32
+chassis.LMHMultimaticBuilt.drag=0.007
+chassis.LMHMultimaticBuilt.serviceability=0.91
+chassis.LMHMultimaticBuilt.driver_change=0.89
+
+chassis.LMHMonocoque.mass=72.0
+chassis.LMHMonocoque.rigidity=1.35
+chassis.LMHMonocoque.drag=0.006
+chassis.LMHMonocoque.serviceability=0.92
+chassis.LMHMonocoque.driver_change=0.90
+
+# LMDh homologated spines (FIA four suppliers)
+chassis.LMDhDallara.mass=76.0
+chassis.LMDhDallara.rigidity=1.25
+chassis.LMDhDallara.drag=0.009
+chassis.LMDhDallara.serviceability=1.05
+chassis.LMDhDallara.driver_change=1.04
+
+chassis.LMDhOreca.mass=75.0
+chassis.LMDhOreca.rigidity=1.24
+chassis.LMDhOreca.drag=0.010
+chassis.LMDhOreca.serviceability=1.06
+chassis.LMDhOreca.driver_change=1.05
+
+chassis.LMDhMultimatic.mass=77.0
+chassis.LMDhMultimatic.rigidity=1.26
+chassis.LMDhMultimatic.drag=0.008
+chassis.LMDhMultimatic.serviceability=1.04
+chassis.LMDhMultimatic.driver_change=1.03
+
+chassis.LMDhLigier.mass=76.0
+chassis.LMDhLigier.rigidity=1.23
+chassis.LMDhLigier.drag=0.010
+chassis.LMDhLigier.serviceability=1.03
+chassis.LMDhLigier.driver_change=1.02
+
+# LMP2
+chassis.Oreca07.mass=74.0
+chassis.Oreca07.rigidity=1.22
+chassis.Oreca07.drag=0.010
+chassis.Oreca07.serviceability=1.08
+chassis.Oreca07.driver_change=1.06
+
+# LMGT3 homologated constructors
+chassis.GT3Spaceframe.mass=95.0
+chassis.GT3Spaceframe.rigidity=0.95
+chassis.GT3Spaceframe.drag=0.018
+chassis.GT3Spaceframe.serviceability=0.98
+chassis.GT3Spaceframe.driver_change=1.06
+
+chassis.GT3Oreca.mass=94.0
+chassis.GT3Oreca.rigidity=0.96
+chassis.GT3Oreca.drag=0.017
+chassis.GT3Oreca.serviceability=1.00
+chassis.GT3Oreca.driver_change=1.05
+
+chassis.GT3PrattMiller.mass=96.0
+chassis.GT3PrattMiller.rigidity=0.94
+chassis.GT3PrattMiller.drag=0.019
+chassis.GT3PrattMiller.serviceability=0.96
+chassis.GT3PrattMiller.driver_change=1.02
+
+chassis.GT3McLaren.mass=93.0
+chassis.GT3McLaren.rigidity=0.97
+chassis.GT3McLaren.drag=0.016
+chassis.GT3McLaren.serviceability=1.02
+chassis.GT3McLaren.driver_change=1.10
+
+chassis.GT3Multimatic.mass=95.0
+chassis.GT3Multimatic.rigidity=0.95
+chassis.GT3Multimatic.drag=0.018
+chassis.GT3Multimatic.serviceability=0.97
+chassis.GT3Multimatic.driver_change=1.04
 
 # =====================
 # FRONT AERO
 # =====================
-front_aero.LowDragNose.mass=8.0
-front_aero.LowDragNose.downforce=0.5
-front_aero.LowDragNose.drag=0.04
+front_aero.LowDragNose.mass=9.0
+front_aero.LowDragNose.downforce=1.05
+front_aero.LowDragNose.drag=0.032
 
-front_aero.HighDownforceSplitter.mass=15.0
-front_aero.HighDownforceSplitter.downforce=1.2
-front_aero.HighDownforceSplitter.drag=0.12
+front_aero.HighDownforceSplitter.mass=16.0
+front_aero.HighDownforceSplitter.downforce=1.55
+front_aero.HighDownforceSplitter.drag=0.088
 
 # =====================
 # REAR AERO
 # =====================
-rear_aero.StandardWing.mass=18.0
-rear_aero.StandardWing.downforce=1.0
-rear_aero.StandardWing.drag=0.14
+rear_aero.StandardWing.mass=19.0
+rear_aero.StandardWing.downforce=2.85
+rear_aero.StandardWing.drag=0.118
 rear_aero.StandardWing.permits_wingless=0
 
-rear_aero.HighDownforceWing.mass=25.0
-rear_aero.HighDownforceWing.downforce=1.8
-rear_aero.HighDownforceWing.drag=0.22
+rear_aero.HighDownforceWing.mass=26.0
+rear_aero.HighDownforceWing.downforce=3.45
+rear_aero.HighDownforceWing.drag=0.148
 rear_aero.HighDownforceWing.permits_wingless=0
-
-rear_aero.WinglessGroundEffect.mass=10.0
-rear_aero.WinglessGroundEffect.downforce=1.3
-rear_aero.WinglessGroundEffect.drag=0.08
-rear_aero.WinglessGroundEffect.permits_wingless=1
 
 # =====================
 # COOLING
+# dissipation = coolingCapacity multiplier in sim (higher = more heat rejection)
 # =====================
 cooling.SprintSlimline.mass=10.0
-cooling.SprintSlimline.drag=0.03
-cooling.SprintSlimline.dissipation=0.8
+cooling.SprintSlimline.drag=0.030
+cooling.SprintSlimline.dissipation=0.80
 
-cooling.EnduranceHeavyDuty.mass=25.0
-cooling.EnduranceHeavyDuty.drag=0.09
-cooling.EnduranceHeavyDuty.dissipation=1.5
+cooling.EnduranceHeavyDuty.mass=26.0
+cooling.EnduranceHeavyDuty.drag=0.075
+cooling.EnduranceHeavyDuty.dissipation=1.50
+
+cooling.DuctedRacing.mass=22.0
+cooling.DuctedRacing.drag=0.095
+cooling.DuctedRacing.dissipation=1.95
+
+cooling.MaxFlowEndurance.mass=38.0
+cooling.MaxFlowEndurance.drag=0.140
+cooling.MaxFlowEndurance.dissipation=2.40
 
 # =====================
-# TIRES
+# TIRE COMPOUNDS (race-weekend selection — Soft/Medium/Hard via pits & strategy)
 # =====================
-tire.Soft.mass=12.0
-tire.Soft.grip=1.15
+tire.Soft.mass=11.0
+tire.Soft.grip=1.16
 tire.Soft.wear_rate=0.08
 tire.Soft.optimal_temp=85.0
 
-tire.Medium.mass=12.0
-tire.Medium.grip=1.0
+tire.Medium.mass=11.0
+tire.Medium.grip=1.08
 tire.Medium.wear_rate=0.05
 tire.Medium.optimal_temp=80.0
 
-tire.Hard.mass=12.0
-tire.Hard.grip=0.90
+tire.Hard.mass=11.0
+tire.Hard.grip=1.00
 tire.Hard.wear_rate=0.03
 tire.Hard.optimal_temp=75.0
+
+tire.MichelinEndurance.mass=11.0
+tire.MichelinEndurance.grip=1.05
+tire.MichelinEndurance.wear_rate=0.04
+tire.MichelinEndurance.optimal_temp=82.0
+
+# =====================
+# WHEEL / TYRE DIMENSIONS (car design — diameter & width per axle)
+# =====================
+wheel_package.Hypercar18Standard.mass=22.0
+wheel_package.Hypercar18Standard.front_diameter_m=0.457
+wheel_package.Hypercar18Standard.rear_diameter_m=0.457
+wheel_package.Hypercar18Standard.front_width_mm=305
+wheel_package.Hypercar18Standard.rear_width_mm=310
+wheel_package.Hypercar18Standard.grip_factor=1.00
+wheel_package.Hypercar18Standard.wear_factor=1.00
+wheel_package.Hypercar18Standard.drag_cd=0.012
+wheel_package.Hypercar18Standard.unsprung_mass=8.0
+
+wheel_package.Hypercar18WideRear.mass=24.0
+wheel_package.Hypercar18WideRear.front_diameter_m=0.457
+wheel_package.Hypercar18WideRear.rear_diameter_m=0.457
+wheel_package.Hypercar18WideRear.front_width_mm=305
+wheel_package.Hypercar18WideRear.rear_width_mm=335
+wheel_package.Hypercar18WideRear.grip_factor=1.06
+wheel_package.Hypercar18WideRear.wear_factor=1.12
+wheel_package.Hypercar18WideRear.drag_cd=0.018
+wheel_package.Hypercar18WideRear.unsprung_mass=9.5
+
+wheel_package.Hypercar18LowDrag.mass=20.0
+wheel_package.Hypercar18LowDrag.front_diameter_m=0.457
+wheel_package.Hypercar18LowDrag.rear_diameter_m=0.457
+wheel_package.Hypercar18LowDrag.front_width_mm=295
+wheel_package.Hypercar18LowDrag.rear_width_mm=300
+wheel_package.Hypercar18LowDrag.grip_factor=0.96
+wheel_package.Hypercar18LowDrag.wear_factor=0.92
+wheel_package.Hypercar18LowDrag.drag_cd=0.008
+wheel_package.Hypercar18LowDrag.unsprung_mass=7.0
+
+wheel_package.LMP2Oreca18.mass=21.0
+wheel_package.LMP2Oreca18.front_diameter_m=0.457
+wheel_package.LMP2Oreca18.rear_diameter_m=0.457
+wheel_package.LMP2Oreca18.front_width_mm=300
+wheel_package.LMP2Oreca18.rear_width_mm=305
+wheel_package.LMP2Oreca18.grip_factor=1.00
+wheel_package.LMP2Oreca18.wear_factor=1.00
+wheel_package.LMP2Oreca18.drag_cd=0.011
+wheel_package.LMP2Oreca18.unsprung_mass=7.5
+
+wheel_package.GT3Front20Rear21.mass=26.0
+wheel_package.GT3Front20Rear21.front_diameter_m=0.508
+wheel_package.GT3Front20Rear21.rear_diameter_m=0.533
+wheel_package.GT3Front20Rear21.front_width_mm=325
+wheel_package.GT3Front20Rear21.rear_width_mm=340
+wheel_package.GT3Front20Rear21.grip_factor=1.04
+wheel_package.GT3Front20Rear21.wear_factor=1.05
+wheel_package.GT3Front20Rear21.drag_cd=0.016
+wheel_package.GT3Front20Rear21.unsprung_mass=10.0
+
+wheel_package.GT3WideRear21.mass=28.0
+wheel_package.GT3WideRear21.front_diameter_m=0.508
+wheel_package.GT3WideRear21.rear_diameter_m=0.533
+wheel_package.GT3WideRear21.front_width_mm=325
+wheel_package.GT3WideRear21.rear_width_mm=355
+wheel_package.GT3WideRear21.grip_factor=1.08
+wheel_package.GT3WideRear21.wear_factor=1.14
+wheel_package.GT3WideRear21.drag_cd=0.022
+wheel_package.GT3WideRear21.unsprung_mass=11.0
+
+# =====================
+# SUSPENSION LAYOUT (double wishbone, pushrod/pullrod, multilink, etc.)
+# =====================
+suspension.PushrodDoubleWishbone.mass=14.0
+suspension.PushrodDoubleWishbone.front_spring=135000
+suspension.PushrodDoubleWishbone.rear_spring=150000
+suspension.PushrodDoubleWishbone.ride_height=0.040
+suspension.PushrodDoubleWishbone.roll_stiffness=1.00
+suspension.PushrodDoubleWishbone.aero_stability=1.00
+suspension.PushrodDoubleWishbone.unsprung_factor=1.00
+suspension.PushrodDoubleWishbone.mechanical_grip=1.00
+
+suspension.PullrodDoubleWishbone.mass=13.0
+suspension.PullrodDoubleWishbone.front_spring=132000
+suspension.PullrodDoubleWishbone.rear_spring=148000
+suspension.PullrodDoubleWishbone.ride_height=0.038
+suspension.PullrodDoubleWishbone.roll_stiffness=1.02
+suspension.PullrodDoubleWishbone.aero_stability=1.08
+suspension.PullrodDoubleWishbone.unsprung_factor=0.95
+suspension.PullrodDoubleWishbone.mechanical_grip=1.02
+
+suspension.DoubleWishboneHeaveSpring.mass=16.0
+suspension.DoubleWishboneHeaveSpring.front_spring=142000
+suspension.DoubleWishboneHeaveSpring.rear_spring=158000
+suspension.DoubleWishboneHeaveSpring.ride_height=0.041
+suspension.DoubleWishboneHeaveSpring.roll_stiffness=1.08
+suspension.DoubleWishboneHeaveSpring.aero_stability=1.12
+suspension.DoubleWishboneHeaveSpring.unsprung_factor=1.05
+suspension.DoubleWishboneHeaveSpring.mechanical_grip=1.04
+
+suspension.MultilinkRearHypercar.mass=15.0
+suspension.MultilinkRearHypercar.front_spring=138000
+suspension.MultilinkRearHypercar.rear_spring=162000
+suspension.MultilinkRearHypercar.ride_height=0.039
+suspension.MultilinkRearHypercar.roll_stiffness=1.05
+suspension.MultilinkRearHypercar.aero_stability=1.10
+suspension.MultilinkRearHypercar.unsprung_factor=1.02
+suspension.MultilinkRearHypercar.mechanical_grip=1.03
+
+suspension.MacPhersonStrutGT3.mass=11.0
+suspension.MacPhersonStrutGT3.front_spring=118000
+suspension.MacPhersonStrutGT3.rear_spring=132000
+suspension.MacPhersonStrutGT3.ride_height=0.048
+suspension.MacPhersonStrutGT3.roll_stiffness=0.92
+suspension.MacPhersonStrutGT3.aero_stability=0.95
+suspension.MacPhersonStrutGT3.unsprung_factor=1.08
+suspension.MacPhersonStrutGT3.mechanical_grip=0.94
+
+suspension.DoubleWishboneGT3.mass=13.0
+suspension.DoubleWishboneGT3.front_spring=122000
+suspension.DoubleWishboneGT3.rear_spring=138000
+suspension.DoubleWishboneGT3.ride_height=0.045
+suspension.DoubleWishboneGT3.roll_stiffness=1.00
+suspension.DoubleWishboneGT3.aero_stability=1.00
+suspension.DoubleWishboneGT3.unsprung_factor=1.00
+suspension.DoubleWishboneGT3.mechanical_grip=1.00
+
+suspension.OrecaLMP2Spec.mass=12.0
+suspension.OrecaLMP2Spec.front_spring=128000
+suspension.OrecaLMP2Spec.rear_spring=142000
+suspension.OrecaLMP2Spec.ride_height=0.042
+suspension.OrecaLMP2Spec.roll_stiffness=0.98
+suspension.OrecaLMP2Spec.aero_stability=1.00
+suspension.OrecaLMP2Spec.unsprung_factor=0.98
+suspension.OrecaLMP2Spec.mechanical_grip=0.98
 
 # =====================
 # FUEL SYSTEM
 # =====================
-fuel_system.StandardTank.mass=35.0
+fuel_system.StandardTank.mass=38.0
 fuel_system.StandardTank.capacity=100.0
 
-fuel_system.LargeTank.mass=50.0
-fuel_system.LargeTank.capacity=140.0
+fuel_system.LeMans90L.mass=42.0
+fuel_system.LeMans90L.capacity=90.0
+
+fuel_system.LeMans110L.mass=48.0
+fuel_system.LeMans110L.capacity=110.0
+
+fuel_system.HydrogenTank.mass=62.0
+fuel_system.HydrogenTank.capacity=75.0
 
 # =====================
 # BRAKES
 # =====================
-brake.StandardCaliper.mass=8.0
-brake.StandardCaliper.max_pressure=0.70
-brake.StandardCaliper.fade=0.15
+brake.StandardCaliper.mass=9.0
+brake.StandardCaliper.max_pressure=0.72
+brake.StandardCaliper.fade=0.14
 
-brake.CarbonCeramic.mass=12.0
-brake.CarbonCeramic.max_pressure=0.85
+brake.CarbonCeramic.mass=13.0
+brake.CarbonCeramic.max_pressure=0.88
 brake.CarbonCeramic.fade=0.05
 
-brake.HeavyDutyEndurance.mass=18.0
-brake.HeavyDutyEndurance.max_pressure=0.75
-brake.HeavyDutyEndurance.fade=0.08
+brake.BremboHypercar.mass=11.0
+brake.BremboHypercar.max_pressure=0.92
+brake.BremboHypercar.fade=0.04
+
+brake.AkebonoHypercar.mass=10.5
+brake.AkebonoHypercar.max_pressure=0.90
+brake.AkebonoHypercar.fade=0.045
+
+brake.APRacingPrototype.mass=11.5
+brake.APRacingPrototype.max_pressure=0.91
+brake.APRacingPrototype.fade=0.042
 
 # =====================
-# TRANSMISSION
+# TRANSMISSION (ratios sized for ~330 km/h Hypercar / ~310 km/h LMP2 at Le Mans)
 # =====================
-transmission.SixSpeedSequential.mass=45.0
+transmission.SixSpeedSequential.mass=46.0
 transmission.SixSpeedSequential.gear_count=6
-transmission.SixSpeedSequential.shift_delay=0.08
-transmission.SixSpeedSequential.gear_1=4.5
-transmission.SixSpeedSequential.gear_2=2.50
-transmission.SixSpeedSequential.gear_3=1.85
-transmission.SixSpeedSequential.gear_4=1.35
-transmission.SixSpeedSequential.gear_5=1.05
-transmission.SixSpeedSequential.gear_6=0.82
-transmission.SixSpeedSequential.shift_1=18.0
-transmission.SixSpeedSequential.shift_2=38.0
-transmission.SixSpeedSequential.shift_3=55.0
-transmission.SixSpeedSequential.shift_4=72.0
+transmission.SixSpeedSequential.shift_delay=0.07
+transmission.SixSpeedSequential.gear_1=3.2
+transmission.SixSpeedSequential.gear_2=2.05
+transmission.SixSpeedSequential.gear_3=1.55
+transmission.SixSpeedSequential.gear_4=1.22
+transmission.SixSpeedSequential.gear_5=0.98
+transmission.SixSpeedSequential.gear_6=0.78
+transmission.SixSpeedSequential.shift_1=22.0
+transmission.SixSpeedSequential.shift_2=42.0
+transmission.SixSpeedSequential.shift_3=58.0
+transmission.SixSpeedSequential.shift_4=74.0
 transmission.SixSpeedSequential.shift_5=88.0
 
-transmission.SevenSpeedSequential.mass=48.0
-transmission.SevenSpeedSequential.gear_count=7
-transmission.SevenSpeedSequential.shift_delay=0.06
-transmission.SevenSpeedSequential.gear_1=4.2
-transmission.SevenSpeedSequential.gear_2=2.6
-transmission.SevenSpeedSequential.gear_3=1.9
-transmission.SevenSpeedSequential.gear_4=1.45
-transmission.SevenSpeedSequential.gear_5=1.15
-transmission.SevenSpeedSequential.gear_6=0.92
-transmission.SevenSpeedSequential.gear_7=0.75
-transmission.SevenSpeedSequential.shift_1=16.0
-transmission.SevenSpeedSequential.shift_2=34.0
-transmission.SevenSpeedSequential.shift_3=50.0
-transmission.SevenSpeedSequential.shift_4=66.0
-transmission.SevenSpeedSequential.shift_5=80.0
-transmission.SevenSpeedSequential.shift_6=94.0
+transmission.XtracP1359.mass=49.0
+transmission.XtracP1359.gear_count=7
+transmission.XtracP1359.shift_delay=0.050
+transmission.XtracP1359.gear_1=3.0
+transmission.XtracP1359.gear_2=2.0
+transmission.XtracP1359.gear_3=1.52
+transmission.XtracP1359.gear_4=1.20
+transmission.XtracP1359.gear_5=0.96
+transmission.XtracP1359.gear_6=0.78
+transmission.XtracP1359.gear_7=0.60
+transmission.XtracP1359.shift_1=20.0
+transmission.XtracP1359.shift_2=38.0
+transmission.XtracP1359.shift_3=54.0
+transmission.XtracP1359.shift_4=68.0
+transmission.XtracP1359.shift_5=82.0
+transmission.XtracP1359.shift_6=94.0
 
-transmission.EightSpeedPaddle.mass=52.0
-transmission.EightSpeedPaddle.gear_count=8
-transmission.EightSpeedPaddle.shift_delay=0.04
-transmission.EightSpeedPaddle.gear_1=3.8
-transmission.EightSpeedPaddle.gear_2=2.4
-transmission.EightSpeedPaddle.gear_3=1.8
-transmission.EightSpeedPaddle.gear_4=1.4
-transmission.EightSpeedPaddle.gear_5=1.1
-transmission.EightSpeedPaddle.gear_6=0.9
-transmission.EightSpeedPaddle.gear_7=0.75
-transmission.EightSpeedPaddle.gear_8=0.62
-transmission.EightSpeedPaddle.shift_1=14.0
-transmission.EightSpeedPaddle.shift_2=30.0
-transmission.EightSpeedPaddle.shift_3=46.0
-transmission.EightSpeedPaddle.shift_4=60.0
-transmission.EightSpeedPaddle.shift_5=74.0
-transmission.EightSpeedPaddle.shift_6=86.0
-transmission.EightSpeedPaddle.shift_7=98.0
+transmission.XtracP529.mass=46.0
+transmission.XtracP529.gear_count=6
+transmission.XtracP529.shift_delay=0.060
+transmission.XtracP529.gear_1=3.2
+transmission.XtracP529.gear_2=2.05
+transmission.XtracP529.gear_3=1.55
+transmission.XtracP529.gear_4=1.22
+transmission.XtracP529.gear_5=0.98
+transmission.XtracP529.gear_6=0.78
+transmission.XtracP529.shift_1=22.0
+transmission.XtracP529.shift_2=42.0
+transmission.XtracP529.shift_3=58.0
+transmission.XtracP529.shift_4=74.0
+transmission.XtracP529.shift_5=88.0
+
+transmission.SingleSpeedEDrive.mass=38.0
+transmission.SingleSpeedEDrive.gear_count=1
+transmission.SingleSpeedEDrive.shift_delay=0.0
+transmission.SingleSpeedEDrive.gear_1=3.2
 
 # =====================
-# HYBRID / ERS
+# HYBRID / ERS (FIA LMDh / Hypercar HV limits)
 # =====================
 hybrid.None.mass=0.0
 hybrid.None.deploy_kw=0.0
 hybrid.None.regen_rate=0.0
 hybrid.None.stint_budget_mj=0.0
 
-hybrid.LMDh500kW.mass=85.0
-hybrid.LMDh500kW.deploy_kw=500.0
-hybrid.LMDh500kW.regen_rate=0.30
-hybrid.LMDh500kW.stint_budget_mj=8.0
-
-hybrid.HypercarHV.mass=95.0
+hybrid.HypercarHV.mass=98.0
 hybrid.HypercarHV.deploy_kw=200.0
 hybrid.HypercarHV.regen_rate=0.50
-hybrid.HypercarHV.stint_budget_mj=3.5
+hybrid.HypercarHV.stint_budget_mj=4.5
+
+hybrid.LMDh50kW.mass=92.0
+hybrid.LMDh50kW.deploy_kw=50.0
+hybrid.LMDh50kW.regen_rate=0.35
+hybrid.LMDh50kW.stint_budget_mj=8.0
 
 # =====================
 # ATTACHMENT POINTS (UE Lego sockets)
 # =====================
-attach.chassis.CarbonMonocoque=chassis.mount.base
-attach.chassis.Spaceframe=chassis.mount.base
+attach.chassis.LMHInHouse=chassis.mount.lmh_inhouse
+attach.chassis.LMHDallaraBuilt=chassis.mount.lmh_dallara
+attach.chassis.LMHMultimaticBuilt=chassis.mount.lmh_multimatic
+attach.chassis.LMHMonocoque=chassis.mount.lmh
+attach.chassis.LMDhDallara=chassis.mount.lmdh_dallara
+attach.chassis.LMDhOreca=chassis.mount.lmdh_oreca
+attach.chassis.LMDhMultimatic=chassis.mount.lmdh_multimatic
+attach.chassis.LMDhLigier=chassis.mount.lmdh_ligier
+attach.chassis.Oreca07=chassis.mount.lmp2
+attach.chassis.GT3Spaceframe=chassis.mount.gt3
+attach.chassis.GT3Oreca=chassis.mount.gt3_oreca
+attach.chassis.GT3PrattMiller=chassis.mount.gt3_prattmiller
+attach.chassis.GT3McLaren=chassis.mount.gt3_mclaren
+attach.chassis.GT3Multimatic=chassis.mount.gt3_multimatic
 attach.front_aero.LowDragNose=chassis.mount.front_aero
 attach.front_aero.HighDownforceSplitter=chassis.mount.front_aero
 attach.rear_aero.StandardWing=chassis.mount.rear_aero
 attach.rear_aero.HighDownforceWing=chassis.mount.rear_aero
-attach.rear_aero.WinglessGroundEffect=chassis.mount.rear_floor
 attach.cooling.SprintSlimline=chassis.mount.cooling
 attach.cooling.EnduranceHeavyDuty=chassis.mount.cooling
+attach.cooling.DuctedRacing=chassis.mount.cooling
+attach.cooling.MaxFlowEndurance=chassis.mount.cooling
 attach.tire.Soft=chassis.mount.wheel_set
 attach.tire.Medium=chassis.mount.wheel_set
 attach.tire.Hard=chassis.mount.wheel_set
+attach.tire.MichelinEndurance=chassis.mount.wheel_set
 attach.fuel_system.StandardTank=chassis.mount.fuel_cell
-attach.fuel_system.LargeTank=chassis.mount.fuel_cell
+attach.fuel_system.LeMans90L=chassis.mount.fuel_cell
+attach.fuel_system.LeMans110L=chassis.mount.fuel_cell
+attach.fuel_system.HydrogenTank=chassis.mount.fuel_cell
 attach.brake.StandardCaliper=chassis.mount.brake_front
 attach.brake.CarbonCeramic=chassis.mount.brake_front
-attach.brake.HeavyDutyEndurance=chassis.mount.brake_front
+attach.brake.BremboHypercar=chassis.mount.brake_front
+attach.brake.AkebonoHypercar=chassis.mount.brake_front
+attach.brake.APRacingPrototype=chassis.mount.brake_front
 attach.transmission.SixSpeedSequential=chassis.mount.transmission
-attach.transmission.SevenSpeedSequential=chassis.mount.transmission
-attach.transmission.EightSpeedPaddle=chassis.mount.transmission
+attach.transmission.XtracP1359=chassis.mount.transmission
+attach.transmission.XtracP529=chassis.mount.transmission
 attach.hybrid.None=chassis.mount.hybrid
-attach.hybrid.LMDh500kW=chassis.mount.hybrid
 attach.hybrid.HypercarHV=chassis.mount.hybrid
+attach.hybrid.LMDh50kW=chassis.mount.hybrid

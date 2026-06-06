@@ -5,6 +5,8 @@
       "sources": [
         "addon.cpp",
         "../../src/core/car_parts.cpp",
+        "../../src/core/cooling_layout.cpp",
+        "../../src/core/powertrain_traits.cpp",
         "../../src/core/simulation.cpp",
         "../../src/core/track.cpp",
         "../../src/core/track_sampler.cpp",
@@ -12,10 +14,16 @@
         "../../src/sim/car_entity.cpp",
         "../../src/sim/race.cpp",
         "../../src/sim/sim_bridge.cpp",
+        "../../src/sim/driver.cpp",
+        "../../src/sim/commands.cpp",
+        "../../src/sim/pit_stop.cpp",
+        "../../src/sim/traffic.cpp",
         "../../src/config/config_loader.cpp",
         "../../src/config/race_config.cpp",
         "../../src/config/class_rules.cpp",
-        "../../src/config/part_compatibility.cpp"
+        "../../src/config/part_compatibility.cpp",
+        "../../src/config/team_config.cpp",
+        "../../src/config/driver_catalog.cpp"
       ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")",

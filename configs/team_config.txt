@@ -1,0 +1,25 @@
+# Team HQ / season meta (Phase 7)
+team_name=ProjectLM Racing
+budget=5200000
+rd_points=120
+player_entry=entry-1
+season_year=2026
+current_round=0
+
+# role,name,skill
+staff=engineer,Marie Chen,88
+staff=mechanic,Jean Dupont,82
+staff=strategist,Sam Okoye,76
+
+unlocked_parts=hybrid.LMDh50kW,brake.CarbonCeramic,tire.Soft
+
+# round,track_id,format,completed,event_type,event_name
+calendar=0,paul_ricard,test,false,test,Official Test — Paul Ricard
+calendar=1,imola,6h,false,race,6 Hours of Imola
+calendar=2,spa,6h,false,race,6 Hours of Spa-Francorchamps
+calendar=3,lemans_la_sarthe,24h,false,race,24 Hours of Le Mans
+calendar=4,sao_paulo,6h,false,race,6 Hours of São Paulo
+calendar=5,cota,6h,false,race,Lone Star Le Mans
+calendar=6,fuji,6h,false,race,6 Hours of Fuji
+calendar=7,losail,1812km,false,race,Qatar 1812 km
+calendar=8,bahrain,8h,false,race,8 Hours of Bahrain

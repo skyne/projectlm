@@ -1,0 +1,25 @@
+# Ford Mustang LMDh — Coyote 5.4L NA V8 + spec 50 kW LMDh hybrid (2027 WEC debut)
+# Chassis: Oreca LMP2 spine (confirmed). NA Coyote architecture confirmed Jan 2026.
+car_name=Ford Mustang LMDh
+engine_layout=V8
+fuel_type=Gasoline
+cylinders=8
+bore=0.094
+stroke=0.0974
+max_rpm=8200
+peak_torque_nm=660
+peak_torque_rpm=7000
+base_vibration=1.04
+
+chassis_type=LMDhOreca
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PushrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=LeMans110L
+brake_system=BremboHypercar
+transmission=XtracP1359
+hybrid_system=LMDh50kW
+

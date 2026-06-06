@@ -27,6 +27,10 @@ const EVENT_TYPE_MAP: Record<string, SimEventType> = {
   pit_exit: "PitExit",
   retirement: "Retirement",
   race_complete: "RaceComplete",
+  overtake: "Overtake",
+  collision: "Collision",
+  blocked: "Blocked",
+  command_ack: "CommandAck",
 };
 
 export function normalizeEvent(event: NativeEvent): SimEvent {

@@ -19,6 +19,14 @@ const char *EventTypeName(SimEventType type) {
     return "retirement";
   case SimEventType::RaceComplete:
     return "race_complete";
+  case SimEventType::Overtake:
+    return "overtake";
+  case SimEventType::Collision:
+    return "collision";
+  case SimEventType::Blocked:
+    return "blocked";
+  case SimEventType::CommandAck:
+    return "command_ack";
   }
   return "unknown";
 }
@@ -51,12 +59,25 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
   obj.Set("rpm", snapshot.rpm);
   obj.Set("fuel", snapshot.fuel);
   obj.Set("tireWear", snapshot.tireWear);
+  obj.Set("tireWearFL", snapshot.tireWearFL);
+  obj.Set("tireWearFR", snapshot.tireWearFR);
+  obj.Set("tireWearRL", snapshot.tireWearRL);
+  obj.Set("tireWearRR", snapshot.tireWearRR);
+  obj.Set("tireTempC", snapshot.tireTempC);
+  obj.Set("tireTempFL", snapshot.tireTempFL);
+  obj.Set("tireTempFR", snapshot.tireTempFR);
+  obj.Set("tireTempRL", snapshot.tireTempRL);
+  obj.Set("tireTempRR", snapshot.tireTempRR);
+  obj.Set("coolantTempC", snapshot.coolantTempC);
   obj.Set("hybridDeployMJ", snapshot.hybridDeployMJ);
   obj.Set("engineHealth", snapshot.engineHealth);
   obj.Set("sectorIndex", snapshot.sectorIndex);
   obj.Set("racePosition", snapshot.racePosition);
+  obj.Set("classPosition", snapshot.classPosition);
   obj.Set("inPit", snapshot.inPit);
+  obj.Set("pitQueued", snapshot.pitQueued);
   obj.Set("retired", snapshot.retired);
+  obj.Set("retireReason", snapshot.retireReason);
   obj.Set("currentLapTime", snapshot.currentLapTime);
   obj.Set("currentSectorTime", snapshot.currentSectorTime);
   obj.Set("lastLapTime", snapshot.lastLapTime);
@@ -77,6 +98,59 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
 
   obj.Set("position", Vec3ToObject(env, snapshot.position));
   obj.Set("tangent", Vec3ToObject(env, snapshot.tangent));
+  obj.Set("lateralOffset", snapshot.lateralOffset);
+  obj.Set("carLengthM", snapshot.carLengthM);
+  obj.Set("carWidthM", snapshot.carWidthM);
+  obj.Set("driverName", snapshot.driverName);
+  obj.Set("driverMode", snapshot.driverMode);
+  obj.Set("driverStamina", snapshot.driverStamina);
+  obj.Set("driverPressure", snapshot.driverPressure);
+  obj.Set("driverMistakeRisk", snapshot.driverMistakeRisk);
+  obj.Set("activeDriverIndex", snapshot.activeDriverIndex);
+  if (!snapshot.lastMistakeKind.empty()) {
+    obj.Set("lastMistakeKind", snapshot.lastMistakeKind);
+    obj.Set("lastMistakeRemainingSec", snapshot.lastMistakeRemainingSec);
+    obj.Set("lastMistakeWearPct", snapshot.lastMistakeWearPct);
+    if (!snapshot.lastMistakeWheel.empty())
+      obj.Set("lastMistakeWheel", snapshot.lastMistakeWheel);
+  }
+  if (snapshot.wearBoostRemainingSec > 0.0) {
+    obj.Set("wearBoostRemainingSec", snapshot.wearBoostRemainingSec);
+    obj.Set("wearBoostMultiplier", snapshot.wearBoostMultiplier);
+  }
+
+  Napi::Array roster = Napi::Array::New(env, snapshot.driverRoster.size());
+  for (size_t i = 0; i < snapshot.driverRoster.size(); ++i) {
+    const DriverSnapshot &d = snapshot.driverRoster[i];
+    Napi::Object row = Napi::Object::New(env);
+    row.Set("name", d.name);
+    row.Set("tier", d.tier);
+    row.Set("nationality", d.nationality);
+    row.Set("dryPace", d.dryPace);
+    row.Set("wetPace", d.wetPace);
+    row.Set("consistency", d.consistency);
+    row.Set("overtaking", d.overtaking);
+    row.Set("defending", d.defending);
+    row.Set("setupFeedback", d.setupFeedback);
+    row.Set("stamina", d.stamina);
+    row.Set("composure", d.composure);
+    row.Set("active", d.active);
+    roster.Set(static_cast<uint32_t>(i), row);
+  }
+  obj.Set("driverRoster", roster);
+
+  obj.Set("overtaking", snapshot.overtaking);
+  obj.Set("blocked", snapshot.blocked);
+  obj.Set("pitRemainingSec", snapshot.pitRemainingSec);
+  obj.Set("setupFeedback", snapshot.setupFeedback);
+  obj.Set("wingAngle", snapshot.wingAngle);
+  obj.Set("brakeBias", snapshot.brakeBias);
+  obj.Set("serviceabilityFactor", snapshot.serviceabilityFactor);
+  obj.Set("driverChangeFactor", snapshot.driverChangeFactor);
+  obj.Set("pitCount", snapshot.pitCount);
+  obj.Set("fuelTankCapacity", snapshot.fuelTankCapacity);
+  obj.Set("driverStintSeconds", snapshot.driverStintSeconds);
+  obj.Set("maxDriverStintSeconds", snapshot.maxDriverStintSeconds);
   return obj;
 }
 
@@ -178,6 +252,68 @@ Napi::Value RestartRace(const Napi::CallbackInfo &info) {
   return Napi::Boolean::New(env, g_bridge.restartRace());
 }
 
+Napi::Value SubmitCommand(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString()) {
+    Napi::TypeError::New(env, "Expected entryId and command strings")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  const std::string entryId = info[0].As<Napi::String>().Utf8Value();
+  const std::string command = info[1].As<Napi::String>().Utf8Value();
+  return Napi::Boolean::New(env, g_bridge.submitCommand(entryId, command));
+}
+
+Napi::Object TeamConfigToObject(Napi::Env env) {
+  const TeamConfig &team = g_bridge.teamConfig();
+  Napi::Object obj = Napi::Object::New(env);
+  obj.Set("teamName", team.teamName);
+  obj.Set("budget", team.budget);
+  obj.Set("rdPoints", team.rdPoints);
+  obj.Set("playerEntryId", team.playerEntryId);
+  obj.Set("seasonYear", team.seasonYear);
+  obj.Set("currentRound", team.currentRound);
+
+  Napi::Array staff = Napi::Array::New(env, team.staff.size());
+  for (size_t i = 0; i < team.staff.size(); ++i) {
+    Napi::Object member = Napi::Object::New(env);
+    member.Set("role", team.staff[i].role);
+    member.Set("name", team.staff[i].name);
+    member.Set("skill", team.staff[i].skill);
+    staff.Set(static_cast<uint32_t>(i), member);
+  }
+  obj.Set("staff", staff);
+
+  Napi::Array parts = Napi::Array::New(env, team.unlockedParts.size());
+  for (size_t i = 0; i < team.unlockedParts.size(); ++i)
+    parts.Set(static_cast<uint32_t>(i), team.unlockedParts[i]);
+  obj.Set("unlockedParts", parts);
+
+  Napi::Array calendar = Napi::Array::New(env, team.calendar.size());
+  for (size_t i = 0; i < team.calendar.size(); ++i) {
+    Napi::Object event = Napi::Object::New(env);
+    event.Set("round", team.calendar[i].round);
+    event.Set("trackId", team.calendar[i].trackId);
+    event.Set("format", team.calendar[i].format);
+    event.Set("completed", team.calendar[i].completed);
+    event.Set("championshipPoints", team.calendar[i].championshipPoints);
+    calendar.Set(static_cast<uint32_t>(i), event);
+  }
+  obj.Set("calendar", calendar);
+  return obj;
+}
+
+Napi::Value GetRaceTime(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  return Napi::Number::New(env, g_bridge.getRaceTime());
+}
+
+Napi::Value GetTeamConfig(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  return TeamConfigToObject(env);
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("initFromRaceConfig",
               Napi::Function::New(env, InitFromRaceConfig));
@@ -189,6 +325,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("reloadDefinitions",
               Napi::Function::New(env, ReloadDefinitions));
   exports.Set("restartRace", Napi::Function::New(env, RestartRace));
+  exports.Set("submitCommand", Napi::Function::New(env, SubmitCommand));
+  exports.Set("getRaceTime", Napi::Function::New(env, GetRaceTime));
+  exports.Set("getTeamConfig", Napi::Function::New(env, GetTeamConfig));
   return exports;
 }
 

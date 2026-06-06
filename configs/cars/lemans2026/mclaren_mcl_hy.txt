@@ -1,0 +1,25 @@
+# McLaren MCL-HY — 2.9L twin-turbo V6 + spec 50 kW LMDh hybrid (2027 WEC debut)
+# Chassis: Dallara LMP2 spine (confirmed). Speculative engine tune from MCL-HY GTR reveal.
+car_name=McLaren MCL-HY
+engine_layout=V6
+fuel_type=Gasoline
+cylinders=6
+bore=0.092
+stroke=0.0725
+max_rpm=9000
+peak_torque_nm=620
+peak_torque_rpm=7000
+base_vibration=1.06
+
+chassis_type=LMDhDallara
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PushrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=LeMans110L
+brake_system=BremboHypercar
+transmission=XtracP1359
+hybrid_system=LMDh50kW
+

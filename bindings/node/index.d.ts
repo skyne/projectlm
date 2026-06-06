@@ -13,7 +13,7 @@ export interface LapTimingSnapshot {
 export interface CarSnapshot {
   entryId: string;
   teamName: string;
-  carNumber: number;
+  carNumber: string;
   classId: string;
   lap: number;
   distance: number;
@@ -22,12 +22,25 @@ export interface CarSnapshot {
   rpm: number;
   fuel: number;
   tireWear: number;
+  tireWearFL?: number;
+  tireWearFR?: number;
+  tireWearRL?: number;
+  tireWearRR?: number;
+  tireTempC?: number;
+  tireTempFL?: number;
+  tireTempFR?: number;
+  tireTempRL?: number;
+  tireTempRR?: number;
+  coolantTempC?: number;
   hybridDeployMJ: number;
   engineHealth: number;
   sectorIndex: number;
   racePosition: number;
+  classPosition?: number;
   inPit: boolean;
+  pitQueued?: boolean;
   retired: boolean;
+  retireReason?: string;
   currentLapTime: number;
   currentSectorTime: number;
   lastLapTime: number;
@@ -37,6 +50,47 @@ export interface CarSnapshot {
   lapHistory: LapTimingSnapshot[];
   position: Vec3;
   tangent: Vec3;
+  lateralOffset?: number;
+  carLengthM?: number;
+  carWidthM?: number;
+  driverName?: string;
+  driverMode?: string;
+  driverStamina?: number;
+  driverPressure?: number;
+  driverMistakeRisk?: number;
+  activeDriverIndex?: number;
+  driverRoster?: Array<{
+    name: string;
+    tier: string;
+    nationality: string;
+    dryPace: number;
+    wetPace: number;
+    consistency: number;
+    overtaking: number;
+    defending: number;
+    setupFeedback: number;
+    stamina: number;
+    composure: number;
+    active: boolean;
+  }>;
+  lastMistakeKind?: string;
+  lastMistakeRemainingSec?: number;
+  lastMistakeWearPct?: number;
+  lastMistakeWheel?: string;
+  wearBoostRemainingSec?: number;
+  wearBoostMultiplier?: number;
+  overtaking?: boolean;
+  blocked?: boolean;
+  pitRemainingSec?: number;
+  setupFeedback?: string;
+  wingAngle?: number;
+  brakeBias?: number;
+  serviceabilityFactor?: number;
+  driverChangeFactor?: number;
+  pitCount?: number;
+  fuelTankCapacity?: number;
+  driverStintSeconds?: number;
+  maxDriverStintSeconds?: number;
 }
 
 export type SimEventType =
@@ -46,6 +100,10 @@ export type SimEventType =
   | 'pit_exit'
   | 'retirement'
   | 'race_complete'
+  | 'overtake'
+  | 'collision'
+  | 'blocked'
+  | 'command_ack'
   | 'unknown';
 
 export interface SimEvent {
@@ -75,6 +133,32 @@ export interface TrackGeometry {
   sectors: TrackSectorInfo[];
 }
 
+export interface StaffMemberPayload {
+  role: string;
+  name: string;
+  skill: number;
+}
+
+export interface CalendarEventPayload {
+  round: number;
+  trackId: string;
+  format: string;
+  completed: boolean;
+  championshipPoints: number;
+}
+
+export interface MetaStatePayload {
+  teamName: string;
+  budget: number;
+  rdPoints: number;
+  playerEntryId: string;
+  seasonYear: number;
+  currentRound: number;
+  staff: StaffMemberPayload[];
+  unlockedParts: string[];
+  calendar: CalendarEventPayload[];
+}
+
 export interface SimSession {
   initFromRaceConfig(path: string): boolean;
   reloadDefinitions(): boolean;
@@ -84,6 +168,8 @@ export interface SimSession {
   drainEvents(): SimEvent[];
   getTrackGeometry(): TrackGeometry;
   isRaceComplete(): boolean;
+  getRaceTime(): number;
+  submitCommand(entryId: string, command: string): boolean;
 }
 
 declare const sim: SimSession;

@@ -1,0 +1,24 @@
+# McLaren 720S LMGT3 — M840T 4.0L twin-turbo V8 (2026 Le Mans LMGT3)
+car_name=McLaren 720S LMGT3
+engine_layout=V8
+fuel_type=Gasoline
+cylinders=8
+bore=0.093
+stroke=0.073
+max_rpm=8200
+peak_torque_nm=590
+peak_torque_rpm=6000
+base_vibration=0.88
+
+chassis_type=GT3McLaren
+front_aero_type=HighDownforceSplitter
+rear_aero_type=HighDownforceWing
+cooling_pack=EnduranceHeavyDuty
+wheel_package=GT3Front20Rear21
+suspension_layout=DoubleWishboneGT3
+starting_tire_compound=Medium
+fuel_system=StandardTank
+brake_system=CarbonCeramic
+transmission=XtracP529
+hybrid_system=None
+

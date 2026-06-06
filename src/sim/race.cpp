@@ -1,12 +1,63 @@
 #include "race.hpp"
 #include "class_rules.hpp"
 #include "config_loader.hpp"
+#include "driver_catalog.hpp"
 #include "part_compatibility.hpp"
 #include "sim_bridge.hpp"
+#include "traffic.hpp"
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+
+namespace {
+
+void UpdateFullCourseYellow(RaceSession &session) {
+  if (session.targetDurationSeconds < 3600.0)
+    return;
+
+  if (session.nextFcyScheduleTime <= 0.0)
+    session.nextFcyScheduleTime = 2400.0;
+
+  if (session.fcyActive) {
+    if (session.elapsedRaceTime >= session.fcyEndTime) {
+      session.fcyActive = false;
+      if (g_raceEventOut != nullptr) {
+        SimEvent ev;
+        ev.type = SimEventType::Blocked;
+        ev.timestamp = session.elapsedRaceTime;
+        ev.message = "Race control: Green flag — FCY ended";
+        g_raceEventOut->push_back(std::move(ev));
+      }
+    }
+    return;
+  }
+
+  if (session.elapsedRaceTime < session.nextFcyScheduleTime)
+    return;
+
+  session.nextFcyScheduleTime = session.elapsedRaceTime + 1200.0;
+  const double hours = session.elapsedRaceTime / 3600.0;
+  const double chance = std::min(0.32, 0.07 + hours * 0.035);
+  const double roll =
+      std::fmod(std::sin(session.elapsedRaceTime * 0.013) * 43758.5453, 1.0);
+  if (roll > chance)
+    return;
+
+  session.fcyActive = true;
+  session.fcyEndTime = session.elapsedRaceTime + 180.0;
+  if (g_raceEventOut != nullptr) {
+    SimEvent ev;
+    ev.type = SimEventType::Blocked;
+    ev.timestamp = session.elapsedRaceTime;
+    ev.message = "Race control: Full course yellow";
+    g_raceEventOut->push_back(std::move(ev));
+  }
+}
+
+} // namespace
 
 static std::string Trim(const std::string &s) {
   size_t start = 0;
@@ -23,7 +74,8 @@ static std::string MakeEntryId(int gridPosition) {
 }
 
 void AddCar(RaceSession &session, CarConfig car, RaceClass raceClass,
-            const std::string &teamName, int gridPosition, int carNumber) {
+            const std::string &teamName, int gridPosition,
+            const std::string &carNumber) {
   session.cars.emplace_back(MakeEntryId(gridPosition), teamName,
                             std::move(raceClass), std::move(car), gridPosition,
                             carNumber);
@@ -45,20 +97,109 @@ static void EmitRaceEvent(SimEventType type, const Car &car, int lap,
   g_raceEventOut->push_back(std::move(event));
 }
 
+bool IsNightSession(double raceTimeSeconds) {
+  const double hour = std::fmod(raceTimeSeconds / 3600.0, 24.0);
+  return hour >= 22.0 || hour < 6.0;
+}
+
+double ComputeTrackWetness(double raceTimeSeconds,
+                           double targetDurationSeconds) {
+  if (targetDurationSeconds < 4.0 * 3600.0)
+    return 0.0;
+
+  const double hours = raceTimeSeconds / 3600.0;
+  auto rainBand = [](double h, double start, double peak, double end) {
+    if (h < start || h > end)
+      return 0.0;
+    if (h < peak)
+      return (h - start) / std::max(peak - start, 0.01);
+    return (end - h) / std::max(end - peak, 0.01);
+  };
+
+  const double dawn = rainBand(hours, 7.0, 9.0, 11.0) * 0.55;
+  const double dusk = rainBand(hours, 19.0, 21.0, 23.0) * 0.40;
+  return std::clamp(std::max(dawn, dusk), 0.0, 1.0);
+}
+
 void TickRace(RaceSession &session, double deltaTime) {
   session.elapsedRaceTime += deltaTime;
+  session.trackWetness =
+      ComputeTrackWetness(session.elapsedRaceTime, session.targetDurationSeconds);
+  const bool night = IsNightSession(session.elapsedRaceTime);
 
-  CarInteractionContext interaction;
-  interaction.field = &session.cars;
-  interaction.raceTime = session.elapsedRaceTime;
+  UpdateFullCourseYellow(session);
 
-  for (Car &car : session.cars) {
+  std::vector<TrafficModifiers> trafficMods;
+  std::vector<TrafficEvent> trafficEvents;
+  ResolveTraffic(session.cars, session.track.lapLength(), session.trackWidthM,
+                 session.elapsedRaceTime, session.trafficEventCooldowns,
+                 trafficMods, trafficEvents);
+
+  if (session.fcyActive) {
+    for (TrafficModifiers &mod : trafficMods) {
+      if (mod.speedCapMs <= 0.0)
+        mod.speedCapMs = 72.0;
+      else
+        mod.speedCapMs = std::min(mod.speedCapMs, 72.0);
+    }
+  }
+
+  for (const TrafficEvent &ev : trafficEvents) {
+    if (g_raceEventOut == nullptr)
+      continue;
+    SimEvent event;
+    event.entryId = ev.entryId;
+    event.timestamp = session.elapsedRaceTime;
+    event.message = ev.message;
+    if (ev.type == TrafficEvent::Type::Overtake)
+      event.type = SimEventType::Overtake;
+    else if (ev.type == TrafficEvent::Type::Collision)
+      event.type = SimEventType::Collision;
+    else
+      event.type = SimEventType::Blocked;
+    g_raceEventOut->push_back(std::move(event));
+  }
+
+  for (size_t i = 0; i < session.cars.size(); ++i) {
+    Car &car = session.cars[i];
     if (car.isRetired())
       continue;
 
-    interaction.self = &car;
-    const CarTickResult result =
-        car.tick(session.track, session.physics, deltaTime, nullptr, &interaction);
+    const TrackPose pose =
+        session.track.poseAtDistance(car.state().currentDistance);
+
+    if (car.processPitEntry(pose.normalizedT, false)) {
+      EmitRaceEvent(SimEventType::PitEnter, car, car.state().currentLap,
+                    static_cast<int>(car.state().currentTrackNodeIndex),
+                    session.elapsedRaceTime,
+                    car.teamName() + " entered pit lane");
+    }
+
+    if (car.inPitLane()) {
+      if (car.processPitLaneTick(session.track, deltaTime, session.staff)) {
+        EmitRaceEvent(SimEventType::PitExit, car, car.state().currentLap,
+                      static_cast<int>(car.state().currentTrackNodeIndex),
+                      session.elapsedRaceTime,
+                      car.teamName() + " exited pit lane");
+      }
+      continue;
+    }
+
+    const TrafficModifiers *traffic =
+        i < trafficMods.size() ? &trafficMods[i] : nullptr;
+
+    const CarTickResult result = car.tick(
+        session.track, session.physics, deltaTime, session.elapsedRaceTime,
+        nullptr, traffic, session.trackWetness, night);
+
+    if (result.lapCompleted && car.pit().pendingEnter) {
+      if (car.processPitEntry(0.0, true)) {
+        EmitRaceEvent(SimEventType::PitEnter, car, car.state().currentLap,
+                      static_cast<int>(car.state().currentTrackNodeIndex),
+                      session.elapsedRaceTime,
+                      car.teamName() + " entered pit lane at lap end");
+      }
+    }
 
     if (result.sectorCrossed) {
       EmitRaceEvent(SimEventType::SectorCross, car, car.state().currentLap,
@@ -102,18 +243,30 @@ bool IsRaceComplete(const RaceSession &session) {
   if (session.targetLaps <= 0)
     return false;
 
+  bool anyRacing = false;
   for (const Car &car : session.cars) {
     if (car.isRetired())
       continue;
+    anyRacing = true;
     if (car.state().currentLap > session.targetLaps)
       return true;
   }
-  return false;
+  return !anyRacing && !session.cars.empty();
+}
+
+static bool IsValidCarNumber(const std::string &number) {
+  if (number.empty())
+    return false;
+  for (char c : number) {
+    if (!std::isdigit(static_cast<unsigned char>(c)))
+      return false;
+  }
+  return number != "0";
 }
 
 static bool ParseEntryLine(const std::string &line, std::string &teamName,
                            std::string &carConfigPath, std::string &classId,
-                           int &gridPosition, int &carNumber) {
+                           int &gridPosition, std::string &carNumber) {
   if (line.empty() || line[0] == '#')
     return false;
 
@@ -140,18 +293,22 @@ static bool ParseEntryLine(const std::string &line, std::string &teamName,
   classId = Trim(cls);
   gridPosition = std::stoi(Trim(gridStr));
   if (std::getline(fields, numberStr))
-    carNumber = std::stoi(Trim(numberStr));
+    carNumber = Trim(numberStr);
   else
-    carNumber = gridPosition;
+    carNumber = std::to_string(gridPosition);
   return !teamName.empty() && !carConfigPath.empty() && !classId.empty() &&
-         carNumber > 0;
+         IsValidCarNumber(carNumber);
 }
 
 bool LoadEntriesFromConfig(RaceSession &session, const std::string &filename,
                            const PartCatalog &catalog,
                            const AssemblyConfig &assembly,
-                           const std::string &classRulesPath) {
+                           const std::string &classRulesPath,
+                           const std::string &driverConfigPath) {
   auto classRules = LoadClassRules(classRulesPath);
+  DriverCatalog driverCatalog;
+  if (!driverConfigPath.empty())
+    LoadDriverCatalog(driverConfigPath, driverCatalog);
   if (classRules.empty()) {
     std::cerr << "Warning: no class rules loaded from " << classRulesPath
               << std::endl;
@@ -165,7 +322,7 @@ bool LoadEntriesFromConfig(RaceSession &session, const std::string &filename,
   while (std::getline(file, line)) {
     std::string teamName, carConfigPath, classId;
     int gridPosition = 0;
-    int carNumber = 0;
+    std::string carNumber;
     if (!ParseEntryLine(line, teamName, carConfigPath, classId, gridPosition,
                         carNumber))
       continue;
@@ -178,12 +335,10 @@ bool LoadEntriesFromConfig(RaceSession &session, const std::string &filename,
         LoadPartCompatibility("configs/part_compatibility.txt");
     std::string compatError;
     if (!ValidatePartCompatibility(car, compatRules, &compatError)) {
-      std::cerr << "Error: entry \"" << teamName
-                << "\" has incompatible parts: " << compatError << std::endl;
-      return false;
+      std::cerr << "Warning: entry \"" << teamName
+                << "\" has incompatible parts: " << compatError
+                << " (regulatory penalties TBD)" << std::endl;
     }
-
-    CompileCarArchitecture(car, catalog, assembly);
 
     RaceClass raceClass;
     raceClass.id = classId;
@@ -191,11 +346,9 @@ bool LoadEntriesFromConfig(RaceSession &session, const std::string &filename,
     auto ruleIt = classRules.find(classId);
     if (ruleIt != classRules.end()) {
       raceClass.displayName = ruleIt->second.displayName;
-      ApplyClassBoP(car, ruleIt->second);
-      if (!IsCarLegal(car, ruleIt->second)) {
-        std::cerr << "Warning: entry \"" << teamName << "\" [" << classId
-                  << "] has illegal part choices for class rules (added anyway)"
-                  << std::endl;
+      if (SanitizeCarForClassRules(car, ruleIt->second)) {
+        std::cerr << "Note: auto-fixed illegal parts for \"" << teamName
+                  << "\" [" << classId << "]" << std::endl;
       }
     } else {
       raceClass.displayName = classId;
@@ -203,8 +356,30 @@ bool LoadEntriesFromConfig(RaceSession &session, const std::string &filename,
                 << teamName << "\" — BoP not applied" << std::endl;
     }
 
+    CompileCarArchitecture(car, catalog, assembly);
+
+    if (ruleIt != classRules.end()) {
+      ApplyClassBoP(car, ruleIt->second);
+      if (!IsCarLegal(car, ruleIt->second)) {
+        std::cerr << "Warning: entry \"" << teamName << "\" [" << classId
+                  << "] still has illegal parts after auto-fix (added anyway)"
+                  << std::endl;
+      }
+    }
+
     AddCar(session, std::move(car), std::move(raceClass), teamName,
            gridPosition, carNumber);
+    Car &added = session.cars.back();
+    if (!driverCatalog.empty()) {
+      const uint32_t seed = static_cast<uint32_t>(
+          std::hash<std::string>{}(added.entryId()) & 0xFFFFFFFFu);
+      added.setDrivers(
+          BuildDriverState(driverCatalog, teamName, carNumber, seed));
+    }
+    if (ruleIt != classRules.end() &&
+        ruleIt->second.maxDriverStintSeconds > 0.0) {
+      added.applyClassStintLimit(ruleIt->second.maxDriverStintSeconds);
+    }
   }
 
   return !session.cars.empty();

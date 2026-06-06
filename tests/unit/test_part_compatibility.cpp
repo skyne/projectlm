@@ -36,7 +36,7 @@ TEST_CASE("WinglessGroundEffect requires LowDragNose front",
   REQUIRE(error.find("LowDragNose") != std::string::npos);
 }
 
-TEST_CASE("CarbonCeramic brakes require CarbonMonocoque chassis",
+TEST_CASE("CarbonCeramic brakes require carbon-class chassis",
           "[unit][compat]") {
   CarConfig car;
   car.brakeSystemChoice = EBrakeSystem::CarbonCeramic;
@@ -45,15 +45,28 @@ TEST_CASE("CarbonCeramic brakes require CarbonMonocoque chassis",
   const auto rules = LoadPartCompatibility(ConfigPath("part_compatibility.txt"));
   std::string error;
   REQUIRE_FALSE(ValidatePartCompatibility(car, rules, &error));
-  REQUIRE(error.find("CarbonMonocoque") != std::string::npos);
+  REQUIRE(error.find("carbon-class") != std::string::npos);
+}
+
+TEST_CASE("HydrogenTank requires Hydrogen fuel in powertrain", "[unit][compat]") {
+  CarConfig car;
+  car.fuelSystemChoice = EFuelSystem::HydrogenTank;
+  car.engine.fuelType = "Gasoline";
+
+  std::string error;
+  REQUIRE_FALSE(ValidatePartCompatibility(car, {}, &error));
+  REQUIRE(error.find("Hydrogen") != std::string::npos);
+
+  car.engine.fuelType = "Hydrogen";
+  REQUIRE(ValidatePartCompatibility(car, {}));
 }
 
 TEST_CASE("GetAttachmentPoint returns catalog socket ids", "[unit][compat]") {
   PartCatalog catalog;
   REQUIRE(LoadPartCatalog(ConfigPath("part_catalog.txt"), catalog));
 
-  REQUIRE(GetAttachmentPoint(catalog, "chassis", "CarbonMonocoque") ==
-          "chassis.mount.base");
-  REQUIRE(GetAttachmentPoint(catalog, "rear_aero", "WinglessGroundEffect") ==
-          "chassis.mount.rear_floor");
+  REQUIRE(GetAttachmentPoint(catalog, "chassis", "LMDhDallara") ==
+          "chassis.mount.lmdh_dallara");
+  REQUIRE(GetAttachmentPoint(catalog, "rear_aero", "StandardWing") ==
+          "chassis.mount.rear_aero");
 }

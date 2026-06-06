@@ -34,12 +34,22 @@ bool LoadRaceConfig(const std::string &filename, RaceConfig &config) {
       config.carConfigPath = val;
     else if (key == "target_laps")
       config.targetLaps = std::stoi(val);
+    else if (key == "target_duration_hours")
+      config.targetDurationSeconds = std::stod(val) * 3600.0;
+    else if (key == "target_duration_seconds")
+      config.targetDurationSeconds = std::stod(val);
     else if (key == "sim_timestep")
       config.simTimestep = std::stod(val);
     else if (key == "telemetry_output")
       config.telemetryOutputPath = val;
     else if (key == "entries")
       config.entriesPath = val;
+    else if (key == "class_rules")
+      config.classRulesPath = val;
+    else if (key == "staff_config")
+      config.staffConfigPath = val;
+    else if (key == "driver_config")
+      config.driverConfigPath = val;
   }
   return true;
 }

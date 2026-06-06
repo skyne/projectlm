@@ -1,0 +1,24 @@
+# Chevrolet Corvette Z06 GT3.R — LT6.R 5.5L flat-plane NA V8 (2026 Le Mans LMGT3)
+car_name=Corvette Z06 LMGT3.R
+engine_layout=V8
+fuel_type=Gasoline
+cylinders=8
+bore=0.104
+stroke=0.080
+max_rpm=7400
+peak_torque_nm=620
+peak_torque_rpm=6400
+base_vibration=0.9
+
+chassis_type=GT3PrattMiller
+front_aero_type=HighDownforceSplitter
+rear_aero_type=HighDownforceWing
+cooling_pack=EnduranceHeavyDuty
+wheel_package=GT3Front20Rear21
+suspension_layout=DoubleWishboneGT3
+starting_tire_compound=Medium
+fuel_system=StandardTank
+brake_system=CarbonCeramic
+transmission=XtracP529
+hybrid_system=None
+

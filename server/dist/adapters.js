@@ -9,6 +9,10 @@ const EVENT_TYPE_MAP = {
     pit_exit: "PitExit",
     retirement: "Retirement",
     race_complete: "RaceComplete",
+    overtake: "Overtake",
+    collision: "Collision",
+    blocked: "Blocked",
+    command_ack: "CommandAck",
 };
 function normalizeEvent(event) {
     return {

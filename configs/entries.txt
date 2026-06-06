@@ -1,15 +1,80 @@
-# Multiclass grid — entry=team_name,car_config_path,class_id,grid,car_number
+# 2026 24 Hours of Le Mans — 62-car official grid + 6 reserve Hypercar entries
+# Official: 18 Hypercar / 19 LMP2 / 25 LMGT3. Reserve: Porsche, Lamborghini, Acura, McLaren, Ford.
+# Sources: motorsport.com, 24h-lemans.com, manufacturer technical data (June 2026)
+# entry=team_name,car_config_path,class_id,grid,car_number
 
-# Hypercar
-entry=Hypercar LMDh Hybrid,configs/cars/hypercar_lmdh.txt,Hypercar,1,7
-entry=Hypercar Ground Effect,configs/cars/hypercar_ground_effect.txt,Hypercar,2,9
-entry=Hypercar Endurance Stint,configs/cars/hypercar_endurance.txt,Hypercar,3,5
+# Hypercar — 18 cars
+entry=007 Aston Martin Thor Team,configs/cars/lemans2026/aston_martin_valkyrie.txt,Hypercar,1,007
+entry=009 Aston Martin Thor Team,configs/cars/lemans2026/aston_martin_valkyrie.txt,Hypercar,2,009
+entry=Toyota Racing,configs/cars/lemans2026/toyota_gr010.txt,Hypercar,3,7
+entry=Toyota Racing,configs/cars/lemans2026/toyota_gr010.txt,Hypercar,4,8
+entry=Cadillac Hertz Team JOTA,configs/cars/lemans2026/cadillac_v_series_r.txt,Hypercar,5,12
+entry=BMW M Team WRT,configs/cars/lemans2026/bmw_m_hybrid_v8.txt,Hypercar,6,15
+entry=Genesis Magma Racing,configs/cars/lemans2026/genesis_gmr001.txt,Hypercar,7,17
+entry=Genesis Magma Racing,configs/cars/lemans2026/genesis_gmr001.txt,Hypercar,8,19
+entry=BMW M Team WRT,configs/cars/lemans2026/bmw_m_hybrid_v8.txt,Hypercar,9,20
+entry=Alpine Endurance Team,configs/cars/lemans2026/alpine_a424.txt,Hypercar,10,35
+entry=Alpine Endurance Team,configs/cars/lemans2026/alpine_a424.txt,Hypercar,11,36
+entry=Cadillac Hertz Team JOTA,configs/cars/lemans2026/cadillac_v_series_r.txt,Hypercar,12,38
+entry=Ferrari AF Corse,configs/cars/lemans2026/ferrari_499p.txt,Hypercar,13,50
+entry=Ferrari AF Corse,configs/cars/lemans2026/ferrari_499p.txt,Hypercar,14,51
+entry=AF Corse,configs/cars/lemans2026/ferrari_499p.txt,Hypercar,15,83
+entry=Peugeot TotalEnergies,configs/cars/lemans2026/peugeot_9x8.txt,Hypercar,16,93
+entry=Peugeot TotalEnergies,configs/cars/lemans2026/peugeot_9x8.txt,Hypercar,17,94
+entry=Cadillac WTR,configs/cars/lemans2026/cadillac_v_series_r.txt,Hypercar,18,101
 
-# LMP2
-entry=LMP2 High Downforce,configs/cars/lmp2_high_downforce.txt,LMP2,4,23
-entry=LMP2 Baseline,configs/cars/lmp2_baseline.txt,LMP2,5,45
+# LMP2 — 19 cars (Oreca 07-Gibson)
+entry=DKR Engineering,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,19,3
+entry=Crowdstrike Racing by APR,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,20,4
+entry=Proton Competition,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,21,9
+entry=TDS Racing,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,22,14
+entry=United Autosports,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,23,22
+entry=Nielsen Racing,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,24,24
+entry=Algarve Pro Racing,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,25,25
+entry=Vector Sport,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,26,26
+entry=IDEC Sport,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,27,28
+entry=Forestier Racing by Panis,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,28,29
+entry=Duqueine Team,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,29,30
+entry=CLX Motorsport,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,30,37
+entry=Inter Europol Competition,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,31,43
+entry=Proton Competition,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,32,44
+entry=RD Limited,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,33,48
+entry=AO by TF,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,34,99
+entry=AF Corse,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,35,183
+entry=United Autosports,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,36,222
+entry=Inter Europol Competition,configs/cars/lemans2026/oreca_07_gibson.txt,LMP2,37,343
 
-# LMGT3
-entry=LMGT3 Sprint Setup,configs/cars/gt3_sprint.txt,LMGT3,6,91
-entry=LMGT3 Endurance Setup,configs/cars/gt3_endurance.txt,LMGT3,7,52
-entry=LMGT3 Low Drag,configs/cars/gt3_low_drag.txt,LMGT3,8,33
+# LMGT3 — 25 cars
+entry=TF Sport,configs/cars/lemans2026/corvette_z06_lmgt3.txt,LMGT3,38,2
+entry=Garage 59,configs/cars/lemans2026/mclaren_720s_lmgt3.txt,LMGT3,39,10
+entry=13 Autosport,configs/cars/lemans2026/corvette_z06_lmgt3.txt,LMGT3,40,13
+entry=Vista AF Corse,configs/cars/lemans2026/ferrari_296_lmgt3.txt,LMGT3,41,21
+entry=Heart of Racing Team,configs/cars/lemans2026/aston_martin_vantage_lmgt3.txt,LMGT3,42,23
+entry=Heart of Racing Team,configs/cars/lemans2026/aston_martin_vantage_lmgt3.txt,LMGT3,43,27
+entry=Team WRT,configs/cars/lemans2026/bmw_m4_lmgt3.txt,LMGT3,44,32
+entry=TF Sport,configs/cars/lemans2026/corvette_z06_lmgt3.txt,LMGT3,45,33
+entry=Racing Team Turkey by TF,configs/cars/lemans2026/corvette_z06_lmgt3.txt,LMGT3,46,34
+entry=Vista AF Corse,configs/cars/lemans2026/ferrari_296_lmgt3.txt,LMGT3,47,54
+entry=Kessel Racing,configs/cars/lemans2026/ferrari_296_lmgt3.txt,LMGT3,48,57
+entry=Garage 59,configs/cars/lemans2026/mclaren_720s_lmgt3.txt,LMGT3,49,58
+entry=Racing Spirit of Leman,configs/cars/lemans2026/aston_martin_vantage_lmgt3.txt,LMGT3,50,59
+entry=Iron Lynx,configs/cars/lemans2026/mercedes_amg_lmgt3.txt,LMGT3,51,61
+entry=Team Qatar by Iron Lynx,configs/cars/lemans2026/mercedes_amg_lmgt3.txt,LMGT3,52,62
+entry=Team WRT,configs/cars/lemans2026/bmw_m4_lmgt3.txt,LMGT3,53,69
+entry=Kessel Racing,configs/cars/lemans2026/ferrari_296_lmgt3.txt,LMGT3,54,74
+entry=Proton Competition,configs/cars/lemans2026/ford_mustang_lmgt3.txt,LMGT3,55,77
+entry=Akkodis ASP Team,configs/cars/lemans2026/lexus_rc_f_lmgt3.txt,LMGT3,56,78
+entry=Iron Lynx,configs/cars/lemans2026/mercedes_amg_lmgt3.txt,LMGT3,57,79
+entry=Akkodis ASP Team,configs/cars/lemans2026/lexus_rc_f_lmgt3.txt,LMGT3,58,87
+entry=Proton Competition,configs/cars/lemans2026/ford_mustang_lmgt3.txt,LMGT3,59,88
+entry=Manthey DK Engineering,configs/cars/lemans2026/porsche_911_gt3_r.txt,LMGT3,60,91
+entry=The Bend Manthey,configs/cars/lemans2026/porsche_911_gt3_r.txt,LMGT3,61,92
+entry=Richard Mille AF Corse,configs/cars/lemans2026/ferrari_296_lmgt3.txt,LMGT3,62,150
+
+# Reserve Hypercar — not on 2026 Le Mans grid (previous seasons, IMSA, or announced 2027)
+entry=Porsche Penske Motorsport,configs/cars/lemans2026/porsche_963.txt,Hypercar,63,5
+entry=Porsche Penske Motorsport,configs/cars/lemans2026/porsche_963.txt,Hypercar,64,6
+entry=Iron Lynx,configs/cars/lemans2026/lamborghini_sc63.txt,Hypercar,65,63
+entry=Meyer Shank Racing,configs/cars/lemans2026/acura_arx06.txt,Hypercar,66,60
+entry=McLaren Hypercar Team,configs/cars/lemans2026/mclaren_mcl_hy.txt,Hypercar,67,25
+entry=Ford Racing,configs/cars/lemans2026/ford_lmdh_2027.txt,Hypercar,68,66

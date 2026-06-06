@@ -1,0 +1,24 @@
+# Alpine A424 — V634 3.4L single-turbo V6 + spec 50 kW LMDh hybrid (2026 Le Mans)
+car_name=Alpine A424
+engine_layout=V6
+fuel_type=Gasoline
+cylinders=6
+bore=0.095
+stroke=0.080
+max_rpm=8500
+peak_torque_nm=600
+peak_torque_rpm=6800
+base_vibration=1.0
+
+chassis_type=LMDhOreca
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PushrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=LeMans110L
+brake_system=APRacingPrototype
+transmission=XtracP1359
+hybrid_system=LMDh50kW
+

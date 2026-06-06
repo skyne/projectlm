@@ -260,11 +260,15 @@ double WrapAngle(double radians) {
 } // namespace
 
 double TrackDefinition::curvatureAtDistance(double distance) const {
+  return std::abs(signedCurvatureAtDistance(distance));
+}
+
+double TrackDefinition::signedCurvatureAtDistance(double distance) const {
   const double ds = 6.0;
   const TrackPose behind = poseAtDistance(distance - ds);
   const TrackPose ahead = poseAtDistance(distance + ds);
-  const double delta = std::abs(
-      WrapAngle(TangentHeading(ahead.tangent) - TangentHeading(behind.tangent)));
+  const double delta =
+      WrapAngle(TangentHeading(ahead.tangent) - TangentHeading(behind.tangent));
   return delta / (2.0 * ds);
 }
 
@@ -285,6 +289,43 @@ static void ResolveSectorDistances(TrackDefinition &track, double lapLength) {
     sector.startDistance = sector.startT * lapLength;
     sector.endDistance = sector.endT * lapLength;
   }
+}
+
+TrackPose PitLaneDefinition::poseAtDistance(double distance) const {
+  return spline.poseAtDistance(distance);
+}
+
+static void BuildDefaultPitLane(TrackDefinition &track) {
+  const double lapLen = track.lapLength();
+  if (lapLen <= 0.0)
+    return;
+
+  constexpr double kLaneFraction = 0.06;
+  constexpr double kLateralOffsetM = 10.0;
+  constexpr double kSampleStepM = 12.0;
+
+  const double segLen = lapLen * kLaneFraction;
+  std::vector<Vec3> points;
+  for (double d = 0.0; d <= segLen + 1e-6; d += kSampleStepM) {
+    const double sampleD = std::min(d, segLen);
+    const TrackPose pose = track.spline.poseAtDistance(sampleD);
+    Vec3 perp = {-pose.tangent.z, 0.0, pose.tangent.x};
+    perp = VecNormalize(perp);
+    points.push_back(VecAdd(pose.position, VecScale(perp, kLateralOffsetM)));
+    if (sampleD >= segLen - 1e-6)
+      break;
+  }
+  if (points.size() < 2)
+    return;
+
+  track.pitLane.spline.setControlPoints(points, false);
+  track.pitLane.spline.setLinear(true);
+  track.pitLane.spline.build(2.0);
+  if (segLen > 0.0)
+    track.pitLane.spline.setTargetLength(segLen);
+  track.pitLane.speedLimitMs = 60.0 / 3.6;
+  track.pitLane.boxDistance = track.pitLane.totalLength() * 0.48;
+  track.pitLane.mergeTrackDistance = segLen;
 }
 
 static std::vector<Vec3> DefaultCircuitControlPoints() {
@@ -333,6 +374,7 @@ static bool LoadLegacyTrackCsv(const std::string &filename,
   track.spline.build(2.0);
   track.spline.setTargetLength(nominalLength);
   ResolveSectorDistances(track, nominalLength);
+  BuildDefaultPitLane(track);
   return true;
 }
 
@@ -627,6 +669,7 @@ static bool LoadTrackJson(const std::string &filename, TrackDefinition &track) {
   if (targetLength > 0.0)
     track.spline.setTargetLength(targetLength);
   ResolveSectorDistances(track, track.spline.totalLength());
+  BuildDefaultPitLane(track);
   return true;
 }
 

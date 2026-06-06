@@ -6,12 +6,13 @@
 #include <vector>
 
 struct CompatibilityRule {
-  enum class Kind { Requires, Forbids };
+  enum class Kind { Requires, Forbids, RequiresAny };
   std::string ifSlot;
   std::string ifPart;
   Kind kind = Kind::Requires;
   std::string otherSlot;
   std::string otherPart;
+  std::vector<std::string> otherPartsAny;
 };
 
 std::vector<CompatibilityRule>

@@ -1,0 +1,25 @@
+# Lamborghini SC63 — 3.8L cold-V twin-turbo V8 + spec 50 kW LMDh hybrid (2024–2025 WEC)
+# Chassis: Ligier LMP2 spine. Absent from 2026 Le Mans Hypercar grid.
+car_name=Lamborghini SC63
+engine_layout=V8
+fuel_type=Gasoline
+cylinders=8
+bore=0.095
+stroke=0.067
+max_rpm=8500
+peak_torque_nm=640
+peak_torque_rpm=6800
+base_vibration=1.08
+
+chassis_type=LMDhLigier
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PushrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=LeMans110L
+brake_system=BremboHypercar
+transmission=XtracP1359
+hybrid_system=LMDh50kW
+

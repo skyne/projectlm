@@ -33,12 +33,19 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.parseCarNumber = parseCarNumber;
 exports.parseRaceConfig = parseRaceConfig;
 exports.parseEntries = parseEntries;
 exports.loadTrackName = loadTrackName;
 exports.loadMapLabels = loadMapLabels;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+function parseCarNumber(raw, fallbackGrid) {
+    const trimmed = raw?.trim() ?? "";
+    if (/^\d+$/.test(trimmed) && trimmed !== "0")
+        return trimmed;
+    return String(fallbackGrid);
+}
 function parseRaceConfig(repoRoot, configPath) {
     const abs = path.isAbsolute(configPath)
         ? configPath
@@ -46,9 +53,11 @@ function parseRaceConfig(repoRoot, configPath) {
     const text = fs.readFileSync(abs, "utf8");
     const config = {
         trackConfigPath: "tracks/sample_circuit.json",
-        targetLaps: 1,
+        targetLaps: 0,
+        targetDurationSeconds: 0,
         simTimestep: 0.1,
         entriesPath: "",
+        classRulesPath: "configs/class_rules.txt",
     };
     for (const line of text.split("\n")) {
         const trimmed = line.trim();
@@ -63,10 +72,16 @@ function parseRaceConfig(repoRoot, configPath) {
             config.trackConfigPath = val;
         else if (key === "target_laps")
             config.targetLaps = parseInt(val, 10);
+        else if (key === "target_duration_hours")
+            config.targetDurationSeconds = parseFloat(val) * 3600;
+        else if (key === "target_duration_seconds")
+            config.targetDurationSeconds = parseFloat(val);
         else if (key === "sim_timestep")
             config.simTimestep = parseFloat(val);
         else if (key === "entries")
             config.entriesPath = val;
+        else if (key === "class_rules")
+            config.classRulesPath = val;
     }
     return config;
 }
@@ -85,11 +100,11 @@ function parseEntries(repoRoot, entriesPath) {
         const grid = parseInt(parts[3].trim(), 10);
         if (!Number.isFinite(grid) || grid <= 0)
             continue;
-        const carNumber = parts.length >= 5 ? parseInt(parts[4].trim(), 10) : grid;
+        const carNumber = parseCarNumber(parts[4], grid);
         rows.push({
             entryId: `entry-${grid}`,
             teamName: parts[0].trim(),
-            carNumber: Number.isFinite(carNumber) && carNumber > 0 ? carNumber : grid,
+            carNumber,
             classId: parts[2].trim(),
         });
     }

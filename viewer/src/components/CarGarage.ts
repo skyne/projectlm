@@ -1,0 +1,1283 @@
+import type {
+  CarBuildPayload,
+  EngineBuildPayload,
+  GameCatalogPayload,
+  MetaStatePayload,
+  PartOptionPayload,
+} from "../ws/protocol";
+import { peakHorsepower } from "../utils/engineModel";
+import {
+  compileCarStats,
+  effectiveCorneringScore,
+  effectiveGripScore,
+  effectiveLateralScore,
+  formatPartStatLines,
+  partStatLines,
+  formatStatSummary,
+  SIM_STAT_BARS,
+  statBarHtml,
+  toBarValues,
+  type PartSlot,
+  type SimBarId,
+} from "../utils/carStats";
+import { mmPanelHeader } from "../utils/mmUi";
+import {
+  isPartCompatibleWithBuild,
+  validateAssemblyCompatibility,
+} from "../utils/partCompatibility";
+import {
+  clampWheelSetup,
+  computeWheelStats,
+  isSuspensionCompatibleWithDrivetrain,
+  isSuspensionLegalForAxle,
+  normalizeCarBuild,
+  resolveSuspensionLayouts,
+  resolveWheelSetup,
+  suspensionIncompatibilityReason,
+  validateSuspensionSetup,
+  validateWheelSetup,
+  wheelLimitsForClass,
+  wheelSetupToBuildFields,
+  type WheelSetup,
+} from "../utils/chassisSetup";
+import { EngineDesigner } from "./EngineDesigner";
+import { CoolingDesigner } from "./CoolingDesigner";
+import { GarageEngineerPanel } from "./GarageEngineerPanel";
+
+export interface CarGarageHandlers {
+  onSaveBuild: (build: CarBuildPayload) => void;
+  onAskGarageEngineer?: (payload: {
+    classId: string;
+    build: CarBuildPayload;
+    compiled: Record<string, number>;
+    question?: string;
+  }) => void;
+}
+
+type BuildSlot =
+  | "engine"
+  | "chassis"
+  | "front_aero"
+  | "rear_aero"
+  | "cooling"
+  | "wheel_package"
+  | "suspension"
+  | "fuel_system"
+  | "brake"
+  | "transmission"
+  | "hybrid";
+
+const SLOT_LABELS: Record<BuildSlot, string> = {
+  engine: "Engine",
+  chassis: "Chassis",
+  front_aero: "Front Aero",
+  rear_aero: "Rear Aero",
+  cooling: "Cooling",
+  wheel_package: "Wheels & Tyres",
+  suspension: "Suspension",
+  fuel_system: "Fuel System",
+  brake: "Brakes",
+  transmission: "Transmission",
+  hybrid: "Hybrid / ERS",
+};
+
+const BUILD_FIELD: Record<PartSlot, keyof CarBuildPayload> = {
+  chassis: "chassis_type",
+  front_aero: "front_aero_type",
+  rear_aero: "rear_aero_type",
+  cooling: "cooling_pack",
+  wheel_package: "wheel_package",
+  suspension: "suspension_layout",
+  fuel_system: "fuel_system",
+  brake: "brake_system",
+  transmission: "transmission",
+  hybrid: "hybrid_system",
+};
+
+const FIELD_TO_BUILD_SLOT: Partial<Record<keyof CarBuildPayload, BuildSlot>> = {
+  chassis_type: "chassis",
+  front_aero_type: "front_aero",
+  rear_aero_type: "rear_aero",
+  cooling_pack: "cooling",
+  wheel_package: "wheel_package",
+  suspension_layout: "suspension",
+  fuel_system: "fuel_system",
+  brake_system: "brake",
+  transmission: "transmission",
+  hybrid_system: "hybrid",
+};
+
+type BuildGuideStep =
+  | { kind: "intro" }
+  | { kind: "name" }
+  | { kind: "slot"; slot: BuildSlot }
+  | { kind: "confirm" };
+
+const BUILD_GUIDE_STEPS: BuildGuideStep[] = [
+  { kind: "intro" },
+  { kind: "name" },
+  { kind: "slot", slot: "engine" },
+  { kind: "slot", slot: "chassis" },
+  { kind: "slot", slot: "front_aero" },
+  { kind: "slot", slot: "rear_aero" },
+  { kind: "slot", slot: "cooling" },
+  { kind: "slot", slot: "wheel_package" },
+  { kind: "slot", slot: "suspension" },
+  { kind: "slot", slot: "fuel_system" },
+  { kind: "slot", slot: "brake" },
+  { kind: "slot", slot: "transmission" },
+  { kind: "slot", slot: "hybrid" },
+  { kind: "confirm" },
+];
+
+function buildGuideLabel(step: BuildGuideStep): string {
+  if (step.kind === "intro") return "Welcome";
+  if (step.kind === "name") return "Car Name";
+  if (step.kind === "confirm") return "Confirm";
+  return SLOT_LABELS[step.slot];
+}
+
+function buildGuideText(step: BuildGuideStep, classId: string): string {
+  switch (step.kind) {
+    case "intro":
+      return `You chose to build your own ${classId}. We'll walk through each system — pick parts within class rules, then save your platform.`;
+    case "name":
+      return "Name your car. This appears on the timing screens and entry list.";
+    case "slot":
+      switch (step.slot) {
+        case "engine":
+          return "Build your powertrain — fuel, architecture, turbos, and drivetrain each trade power, weight, stints, and reliability. Nothing is free.";
+        case "chassis":
+          return "Choose a monocoque or frame. Packaging affects pit service speed, driver swap times, structural durability, mass, and drag.";
+        case "front_aero":
+          return "Front downforce vs drag — low drag helps Le Mans, high downforce helps Spa and wet sessions.";
+        case "rear_aero":
+          return "Rear wing profile sets balance with the front package. Match your track strategy.";
+        case "cooling":
+          return "Size each cooler — engine, oil, charge-air, gearbox. Bigger exchangers reject more heat but cost mass and drag. Balance against your powertrain heat load.";
+        case "wheel_package":
+          return "Set front and rear wheel diameter and tyre width — compound is selected at the track.";
+        case "suspension":
+          return "Pick front and rear suspension architecture independently. Front e-axle / hybrid drivetrains need compatible front packaging.";
+        case "fuel_system":
+          return "Tank size and flow rate affect stint length and refuelling time in the pits.";
+        case "brake":
+          return "Brake torque and thermal capacity matter for multi-class traffic and night driving.";
+        case "transmission":
+          return "Gear ratios and shift speed influence acceleration out of slow corners.";
+        case "hybrid":
+          return classId === "Hypercar"
+            ? "Configure hybrid deployment — extra power on straights, but adds mass and complexity."
+            : "This class runs without hybrid assistance — confirm the spec fits your programme.";
+        default:
+          return `Configure ${SLOT_LABELS[step.slot]}.`;
+      }
+    case "confirm":
+      return "Review your platform. Save the build to finish setup — you can return anytime to refine it.";
+  }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function isPartLocked(
+  part: PartOptionPayload,
+  unlockedParts: string[],
+): boolean {
+  if (part.fullId === "tire.Soft" && !unlockedParts.includes("tire.Soft")) {
+    return true;
+  }
+  if (
+    part.fullId === "brake.CarbonCeramic" &&
+    !unlockedParts.includes("brake.CarbonCeramic")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function compileOptions(classInfo: { id?: string; powerCapHp?: number; minWeightKg?: number; maxWeightKg?: number } | null) {
+  return {
+    classId: classInfo?.id,
+    powerCapHp: classInfo?.powerCapHp ?? 0,
+    minWeightKg: classInfo?.minWeightKg,
+    maxWeightKg: classInfo?.maxWeightKg,
+  };
+}
+
+export class CarGarage {
+  readonly root: HTMLElement;
+  private catalog: GameCatalogPayload | null = null;
+  private meta: MetaStatePayload | null = null;
+  private build: CarBuildPayload | null = null;
+  private activeSlot: BuildSlot = "engine";
+  private buildGuideActive = false;
+  private buildGuideStepIndex = 0;
+  private statusEl!: HTMLElement;
+  private partGridEl!: HTMLElement;
+  private guideEl!: HTMLElement;
+  private guideTextEl!: HTMLElement;
+  private guideStepsEl!: HTMLElement;
+  private guideBackBtn!: HTMLButtonElement;
+  private guideNextBtn!: HTMLButtonElement;
+  private saveBtn!: HTMLButtonElement;
+  private engineDesigner: EngineDesigner;
+  private coolingDesigner: CoolingDesigner;
+  private garageEngineer: GarageEngineerPanel;
+  private handlers: CarGarageHandlers;
+  private compareBars: Record<SimBarId, number> | null = null;
+  private compareCompiled: ReturnType<typeof compileCarStats> | null = null;
+  private previewBuild: CarBuildPayload | null = null;
+
+  constructor(container: HTMLElement, handlers: CarGarageHandlers) {
+    this.handlers = handlers;
+    this.root = document.createElement("section");
+    this.root.className = "panel car-garage";
+    this.root.innerHTML = `
+      ${mmPanelHeader("Garage · Car Design", { subtitle: "Hypercar / LMP2 / LMGT3 platform", badge: "TECH" })}
+      <div class="car-build-guide hidden">
+        <div class="car-build-guide-top">
+          <span class="wizard-badge mm-badge-wec">Platform Design</span>
+          <nav class="car-build-guide-steps" aria-label="Build steps"></nav>
+        </div>
+        <p class="car-build-guide-text"></p>
+        <footer class="car-build-guide-footer">
+          <button type="button" class="secondary-btn car-build-guide-back">Back</button>
+          <button type="button" class="primary-btn car-build-guide-next">Continue</button>
+        </footer>
+      </div>
+      <div class="garage-header-actions">
+        <button type="button" class="primary-btn garage-save">Save Build</button>
+      </div>
+      <div class="garage-layout">
+        <div class="garage-diagram-col">
+          <div class="car-diagram-card">
+            <svg class="car-diagram" viewBox="0 0 320 120" aria-hidden="true">
+              <defs>
+                <linearGradient id="carBodyGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" class="car-grad-start"/>
+                  <stop offset="100%" class="car-grad-end"/>
+                </linearGradient>
+              </defs>
+              <ellipse cx="160" cy="95" rx="120" ry="12" fill="rgba(0,0,0,0.35)"/>
+              <path d="M40 70 Q50 45 90 40 L230 38 Q270 42 285 65 L275 78 Q260 88 160 90 Q60 88 45 78 Z" fill="url(#carBodyGrad)" stroke="#4a5870" stroke-width="1.5"/>
+              <path d="M95 42 L115 55 L105 70 L85 58 Z" fill="rgba(255,255,255,0.08)"/>
+              <rect x="130" y="48" width="55" height="22" rx="4" fill="rgba(0,0,0,0.35)" stroke="#3d4a62"/>
+              <circle cx="75" cy="82" r="14" fill="#1a2030" stroke="#555"/>
+              <circle cx="245" cy="82" r="14" fill="#1a2030" stroke="#555"/>
+              <path d="M255 55 L290 50 L295 62 L260 68 Z" fill="#6b7385" opacity="0.9"/>
+            </svg>
+            <div class="car-diagram-labels"></div>
+          </div>
+          <div class="garage-car-name-wrap">
+            <label>Car Name<input type="text" class="garage-car-name wizard-input" maxlength="48" /></label>
+          </div>
+        </div>
+        <div class="garage-parts-col">
+          <nav class="garage-slot-tabs"></nav>
+          <div class="garage-part-grid"></div>
+          <div class="garage-engine-host"></div>
+          <div class="garage-cooling-host"></div>
+        </div>
+        <div class="garage-stats-col">
+          <h3>Sim Performance</h3>
+          <p class="garage-stats-hint">↑ higher / ↓ lower is better · green/red deltas vs previous pick · hover to preview before committing.</p>
+          <div class="garage-perf-stats"></div>
+          <div class="garage-mass-note"></div>
+          <p class="garage-status"></p>
+        </div>
+      </div>
+    `;
+    container.appendChild(this.root);
+
+    this.statusEl = this.root.querySelector(".garage-status")!;
+    this.partGridEl = this.root.querySelector(".garage-part-grid")!;
+    this.guideEl = this.root.querySelector(".car-build-guide")!;
+    this.guideTextEl = this.root.querySelector(".car-build-guide-text")!;
+    this.guideStepsEl = this.root.querySelector(".car-build-guide-steps")!;
+    this.guideBackBtn = this.root.querySelector(".car-build-guide-back")!;
+    this.guideNextBtn = this.root.querySelector(".car-build-guide-next")!;
+    this.saveBtn = this.root.querySelector(".garage-save")!;
+    this.coolingDesigner = new CoolingDesigner(
+      this.root.querySelector(".garage-cooling-host")!,
+      {
+        onChange: (patch) => {
+          if (!this.build) return;
+          this.captureStatSnapshot();
+          this.build = { ...this.build, ...patch };
+          this.previewBuild = null;
+          this.statusEl.textContent = "";
+          this.renderStats();
+          this.renderDiagramLabels();
+        },
+      },
+    );
+    this.engineDesigner = new EngineDesigner(
+      this.root.querySelector(".garage-engine-host")!,
+      {
+        onChange: (engine, suggestions) => {
+          if (!this.build) return;
+          this.captureStatSnapshot();
+          let next: typeof this.build = { ...this.build, engine };
+          if (suggestions?.hybrid_system) {
+            next = { ...next, hybrid_system: suggestions.hybrid_system };
+          }
+          if (suggestions?.fuel_system && this.catalog?.partsBySlot.fuel_system?.some((p) => p.partType === suggestions.fuel_system)) {
+            next = { ...next, fuel_system: suggestions.fuel_system };
+          } else if (
+            engine.fuel_type !== "Hydrogen" &&
+            next.fuel_system === "HydrogenTank"
+          ) {
+            const classId = this.activeClassId();
+            next = {
+              ...next,
+              fuel_system: classId === "Hypercar" ? "LeMans110L" : "StandardTank",
+            };
+          }
+          if (suggestions?.transmission && this.catalog?.partsBySlot.transmission?.some((p) => p.partType === suggestions.transmission)) {
+            next = { ...next, transmission: suggestions.transmission };
+          }
+          this.build = next;
+          this.statusEl.textContent = "";
+          this.previewBuild = null;
+          this.renderStats();
+          this.renderDiagramLabels();
+          if (this.activeSlot === "suspension") {
+            this.renderActivePanel();
+          }
+          if (this.activeSlot === "cooling" && this.build) {
+            this.coolingDesigner.setContext(
+              this.activeClassId(),
+              this.build.engine,
+              this.build.duct_airflow ?? 1,
+            );
+            this.coolingDesigner.setBuild(this.build);
+          }
+        },
+      },
+    );
+    this.garageEngineer = new GarageEngineerPanel(
+      this.root.querySelector(".garage-stats-col")!,
+      {
+        onAsk: (question) => {
+          if (!this.build || !this.handlers.onAskGarageEngineer) {
+            this.garageEngineer.showAdvice({
+              text: "Load a car build first.",
+              offline: true,
+            });
+            return;
+          }
+          this.handlers.onAskGarageEngineer({
+            classId: this.activeClassId(),
+            build: this.build,
+            compiled: this.compiledSnapshotForEngineer(),
+            question,
+          });
+        },
+        onApplyChanges: (changes) => this.applyGarageChanges(changes),
+      },
+    );
+    this.root.querySelector(".garage-save")!.addEventListener("click", () => {
+      this.trySaveBuild();
+    });
+    this.guideBackBtn.addEventListener("click", () => this.guideBack());
+    this.guideNextBtn.addEventListener("click", () => this.guideNext());
+  }
+
+  isBuildGuideActive(): boolean {
+    return this.buildGuideActive;
+  }
+
+  startBuildGuide(): void {
+    this.buildGuideActive = true;
+    this.buildGuideStepIndex = 0;
+    this.render();
+  }
+
+  endBuildGuide(): void {
+    this.buildGuideActive = false;
+    this.buildGuideStepIndex = 0;
+    this.root.classList.remove("car-build-guide-active");
+    this.guideEl.classList.add("hidden");
+    this.saveBtn.hidden = false;
+    this.render();
+  }
+
+  private currentGuideStep(): BuildGuideStep {
+    return BUILD_GUIDE_STEPS[this.buildGuideStepIndex] ?? BUILD_GUIDE_STEPS[0];
+  }
+
+  private guideBack(): void {
+    if (this.buildGuideStepIndex > 0) {
+      this.buildGuideStepIndex -= 1;
+      this.render();
+    }
+  }
+
+  private guideNext(): void {
+    if (!this.validateGuideStep()) {
+      this.setStatus("Enter a car name (2+ characters).", true);
+      return;
+    }
+    const step = this.currentGuideStep();
+    if (step.kind === "confirm") {
+      this.trySaveBuild("Saving build…");
+      return;
+    }
+    if (this.buildGuideStepIndex < BUILD_GUIDE_STEPS.length - 1) {
+      this.buildGuideStepIndex += 1;
+      this.render();
+    }
+  }
+
+  private validateGuideStep(): boolean {
+    const step = this.currentGuideStep();
+    if (step.kind === "name") {
+      return (this.build?.carName.trim().length ?? 0) >= 2;
+    }
+    return true;
+  }
+
+  private assemblyRules() {
+    return this.catalog?.assemblyRules ?? [];
+  }
+
+  private trySaveBuild(pendingMessage = ""): void {
+    if (!this.build) return;
+    const classId = this.activeClassId();
+    const wheelErr = validateWheelSetup(
+      resolveWheelSetup(
+        this.build,
+        classId,
+        this.catalog?.partsBySlot.wheel_package?.find(
+          (p) => p.partType === this.build!.wheel_package,
+        ),
+      ),
+      classId,
+    );
+    if (wheelErr) {
+      this.setStatus(wheelErr, true);
+      return;
+    }
+    const legalSusp = this.legalSuspensionLayouts(classId);
+    const suspErr = validateSuspensionSetup(this.build, legalSusp);
+    if (suspErr) {
+      this.setStatus(suspErr, true);
+      return;
+    }
+    const assemblyErr = validateAssemblyCompatibility(
+      this.build,
+      this.assemblyRules(),
+    );
+    if (assemblyErr) {
+      this.setStatus(`${assemblyErr} — pick compatible parts before saving.`, true);
+      return;
+    }
+    this.build = normalizeCarBuild(this.build, classId, this.catalog?.partsBySlot);
+    if (pendingMessage) this.setStatus(pendingMessage);
+    this.handlers.onSaveBuild(this.build);
+  }
+
+  private renderBuildGuide(): void {
+    if (!this.buildGuideActive) {
+      this.guideEl.classList.add("hidden");
+      this.root.classList.remove("car-build-guide-active");
+      this.saveBtn.hidden = false;
+      return;
+    }
+
+    this.guideEl.classList.remove("hidden");
+    this.root.classList.add("car-build-guide-active");
+    this.saveBtn.hidden = true;
+
+    const step = this.currentGuideStep();
+    const classId = this.activeClassId();
+    this.guideTextEl.textContent = buildGuideText(step, classId);
+    this.guideBackBtn.disabled = this.buildGuideStepIndex === 0;
+    this.guideNextBtn.textContent =
+      step.kind === "confirm" ? "Save Build & Finish" : "Continue";
+
+    this.guideStepsEl.replaceChildren();
+    for (let i = 0; i < BUILD_GUIDE_STEPS.length; i++) {
+      const s = BUILD_GUIDE_STEPS[i];
+      const pill = document.createElement("div");
+      pill.className = "wizard-step-pill";
+      if (i === this.buildGuideStepIndex) pill.classList.add("active");
+      else if (i < this.buildGuideStepIndex) pill.classList.add("done");
+      pill.textContent = buildGuideLabel(s);
+      this.guideStepsEl.appendChild(pill);
+    }
+  }
+
+  setCatalog(catalog: GameCatalogPayload): void {
+    this.catalog = catalog;
+    this.render();
+  }
+
+  update(meta: MetaStatePayload): void {
+    this.meta = meta;
+    const activeCar =
+      meta.fleet?.find((c) => c.id === meta.activeCarId) ?? meta.fleet?.[0];
+    if (activeCar?.build) {
+      this.build = normalizeCarBuild(
+        { ...activeCar.build },
+        activeCar.classId ?? meta.playerClassId ?? "Hypercar",
+        this.catalog?.partsBySlot,
+      );
+    } else if (meta.carBuild) {
+      this.build = normalizeCarBuild(
+        { ...meta.carBuild },
+        meta.playerClassId ?? "Hypercar",
+        this.catalog?.partsBySlot,
+      );
+    } else if (!this.build) {
+      this.build = defaultBuild(meta);
+    }
+    this.ensureEngine(activeCar?.classId ?? meta.playerClassId ?? "Hypercar");
+    this.applyLivery(meta);
+    if (meta.carBuildGuidePending && !this.buildGuideActive) {
+      this.startBuildGuide();
+    } else if (!meta.carBuildGuidePending && this.buildGuideActive) {
+      this.endBuildGuide();
+    }
+    this.render();
+  }
+
+  private applyLivery(meta: MetaStatePayload): void {
+    const primary = meta.teamColors?.primary ?? "#d4a843";
+    const secondary = meta.teamColors?.secondary ?? "#1a2a44";
+    this.root.style.setProperty("--garage-primary", primary);
+    this.root.style.setProperty("--garage-secondary", secondary);
+  }
+
+  private render(): void {
+    if (!this.catalog || !this.build) return;
+    this.renderBuildGuide();
+
+    const guideStep = this.buildGuideActive ? this.currentGuideStep() : null;
+    const layout = this.root.querySelector(".garage-layout") as HTMLElement | null;
+    if (layout) {
+      layout.classList.toggle("hidden", guideStep?.kind === "intro");
+    }
+
+    if (guideStep?.kind === "intro") return;
+
+    if (guideStep?.kind === "slot") {
+      this.activeSlot = guideStep.slot;
+    }
+
+    this.ensureEngine(this.activeClassId());
+
+    const nameInput = this.root.querySelector<HTMLInputElement>(".garage-car-name")!;
+    nameInput.value = this.build.carName;
+    nameInput.oninput = () => {
+      if (this.build) this.build.carName = nameInput.value;
+    };
+
+    this.renderTabs();
+    this.renderActivePanel();
+    this.renderStats();
+    this.renderDiagramLabels();
+    this.renderCompatibilityWarning();
+  }
+
+  private renderCompatibilityWarning(): void {
+    if (!this.build) return;
+    const classId = this.activeClassId();
+    const wheelErr = validateWheelSetup(
+      resolveWheelSetup(
+        this.build,
+        classId,
+        this.catalog?.partsBySlot.wheel_package?.find(
+          (p) => p.partType === this.build!.wheel_package,
+        ),
+      ),
+      classId,
+    );
+    const suspErr = validateSuspensionSetup(
+      this.build,
+      this.legalSuspensionLayouts(classId),
+    );
+    const err =
+      wheelErr ??
+      suspErr ??
+      validateAssemblyCompatibility(this.build, this.assemblyRules());
+    if (err) {
+      this.setStatus(`${err} — pick compatible parts before saving.`, true);
+    } else if (this.statusEl.classList.contains("error")) {
+      this.setStatus("");
+    }
+  }
+
+  private ensureEngine(classId: string): void {
+    if (!this.build || this.build.engine) return;
+    const fallback = this.catalog?.defaultEngines?.[classId];
+    if (fallback) {
+      this.build = { ...this.build, engine: { ...fallback } };
+    }
+  }
+
+  private activeClassId(): string {
+    const activeCar =
+      this.meta?.fleet?.find((c) => c.id === this.meta?.activeCarId) ??
+      this.meta?.fleet?.[0];
+    return activeCar?.classId ?? this.meta?.playerClassId ?? "Hypercar";
+  }
+
+  private activeClassInfo() {
+    const classId = this.activeClassId();
+    return this.catalog?.classes.find((c) => c.id === classId) ?? null;
+  }
+
+  private captureStatSnapshot(): void {
+    if (!this.catalog || !this.build) return;
+    const compiled = compileCarStats(
+      this.build,
+      this.catalog.partsBySlot,
+      compileOptions(this.activeClassInfo()),
+    );
+    this.compareCompiled = compiled;
+    this.compareBars = toBarValues(compiled);
+  }
+
+  private legalSuspensionLayouts(classId: string): Set<string> | undefined {
+    const classInfo = this.catalog?.classes.find((c) => c.id === classId);
+    if (!classInfo) return undefined;
+    const parts = this.catalog?.partsBySlot.suspension ?? [];
+    return new Set(parts.map((p) => p.partType));
+  }
+
+  private renderActivePanel(): void {
+    if (this.buildGuideActive) {
+      const step = this.currentGuideStep();
+      if (step.kind === "name") {
+        this.partGridEl.classList.add("hidden");
+        this.engineDesigner.setVisible(false);
+        this.coolingDesigner.setVisible(false);
+        return;
+      }
+      if (step.kind === "confirm") {
+        this.renderGuideConfirm();
+        return;
+      }
+    }
+
+    const isEngine = this.activeSlot === "engine";
+    const isCooling = this.activeSlot === "cooling";
+    this.partGridEl.classList.toggle("hidden", isEngine || isCooling);
+    this.engineDesigner.setVisible(isEngine);
+    this.coolingDesigner.setVisible(isCooling);
+    if (isEngine) {
+      this.ensureEngine(this.activeClassId());
+      if (this.build?.engine) {
+        this.engineDesigner.setClassInfo(this.activeClassInfo());
+        this.engineDesigner.setEngine(this.build.engine);
+      }
+    } else if (isCooling && this.build) {
+      this.coolingDesigner.setContext(
+        this.activeClassId(),
+        this.build.engine,
+        this.build.duct_airflow ?? 1,
+      );
+      this.coolingDesigner.setBuild(this.build);
+    } else {
+      this.renderParts();
+    }
+  }
+
+  private renderTabs(): void {
+    const tabs = this.root.querySelector(".garage-slot-tabs")!;
+    tabs.replaceChildren();
+    if (this.buildGuideActive) {
+      tabs.classList.add("hidden");
+      return;
+    }
+    tabs.classList.remove("hidden");
+    for (const slot of Object.keys(SLOT_LABELS) as BuildSlot[]) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `garage-slot-tab${slot === this.activeSlot ? " active" : ""}`;
+      btn.textContent = SLOT_LABELS[slot];
+      btn.addEventListener("click", () => {
+        this.activeSlot = slot;
+        this.render();
+      });
+      tabs.appendChild(btn);
+    }
+  }
+
+  private renderParts(): void {
+    if (!this.catalog || !this.build || !this.meta) return;
+    if (this.activeSlot === "engine") return;
+    if (this.activeSlot === "suspension") {
+      this.renderSuspensionPanel();
+      return;
+    }
+    if (this.activeSlot === "wheel_package") {
+      this.renderWheelPanel();
+      return;
+    }
+    const grid = this.root.querySelector(".garage-part-grid")!;
+    grid.replaceChildren();
+
+    const slot = this.activeSlot as PartSlot;
+    const parts = this.catalog.partsBySlot[slot] ?? [];
+    const field = BUILD_FIELD[slot];
+    const selected = this.build[field] as string;
+
+    for (const part of parts) {
+      const locked = isPartLocked(part, this.meta.unlockedParts);
+      const incompatible =
+        !locked &&
+        !isPartCompatibleWithBuild(
+          this.build,
+          slot,
+          part.partType,
+          this.assemblyRules(),
+        );
+      const disabled = locked || incompatible;
+      const card = document.createElement("button");
+      card.type = "button";
+      card.disabled = disabled;
+      card.className = `part-card${part.partType === selected ? " selected" : ""}${locked ? " locked" : ""}${incompatible ? " incompatible" : ""}`;
+      const statHtml = formatPartStatLines(partStatLines(slot, part));
+
+      card.innerHTML = `
+        <span class="part-card-name">${escapeHtml(part.displayName)}</span>
+        <div class="part-card-stats">${statHtml || '<span class="part-stat-line">Standard spec</span>'}</div>
+        ${locked ? '<span class="part-lock-badge">R&amp;D Locked</span>' : ""}
+        ${incompatible ? '<span class="part-lock-badge">Incompatible</span>' : ""}
+      `;
+
+      card.addEventListener("mouseenter", () => {
+        if (!this.build || disabled || part.partType === selected) return;
+        const preview = { ...this.build, [field]: part.partType };
+        this.previewBuild = preview;
+        this.renderStats();
+      });
+
+      card.addEventListener("mouseleave", () => {
+        if (this.previewBuild) {
+          this.previewBuild = null;
+          this.renderStats();
+        }
+      });
+
+      card.addEventListener("click", () => {
+        if (!this.build || disabled) return;
+        if (part.partType === selected) return;
+        this.captureStatSnapshot();
+        this.build = { ...this.build, [field]: part.partType };
+        this.previewBuild = null;
+        this.statusEl.textContent = "";
+        this.render();
+      });
+      grid.appendChild(card);
+    }
+  }
+
+  private renderSuspensionPanel(): void {
+    if (!this.catalog || !this.build || !this.meta) return;
+    const grid = this.root.querySelector(".garage-part-grid")!;
+    grid.replaceChildren();
+    grid.classList.remove("hidden");
+
+    const drivetrain = this.build.engine?.drivetrain;
+    const layouts = resolveSuspensionLayouts(this.build);
+    const parts = this.catalog.partsBySlot.suspension ?? [];
+
+    const panel = document.createElement("div");
+    panel.className = "chassis-setup-panel";
+
+    for (const axle of ["front", "rear"] as const) {
+      const section = document.createElement("div");
+      section.className = "chassis-setup-section";
+      const selected =
+        axle === "front" ? layouts.front : layouts.rear;
+      section.innerHTML = `<h4 class="chassis-setup-heading">${axle === "front" ? "Front" : "Rear"} suspension</h4>`;
+      const cards = document.createElement("div");
+      cards.className = "garage-part-grid chassis-setup-grid";
+
+      for (const part of parts) {
+        const axleLegal = isSuspensionLegalForAxle(part.partType, axle);
+        const drvLegal = isSuspensionCompatibleWithDrivetrain(
+          part.partType,
+          axle,
+          drivetrain,
+        );
+        const incompatible = !axleLegal || !drvLegal;
+        const card = document.createElement("button");
+        card.type = "button";
+        card.disabled = incompatible;
+        card.className = `part-card${part.partType === selected ? " selected" : ""}${incompatible ? " incompatible" : ""}`;
+        const reason = suspensionIncompatibilityReason(
+          part.partType,
+          axle,
+          drivetrain,
+        );
+        const statHtml = formatPartStatLines(partStatLines("suspension", part));
+        card.innerHTML = `
+          <span class="part-card-name">${escapeHtml(part.displayName)}</span>
+          <div class="part-card-stats">${statHtml || '<span class="part-stat-line">Standard spec</span>'}</div>
+          ${incompatible && reason ? `<span class="part-lock-badge">${escapeHtml(reason)}</span>` : ""}
+        `;
+        card.addEventListener("click", () => {
+          if (!this.build || incompatible) return;
+          this.captureStatSnapshot();
+          const field =
+            axle === "front"
+              ? "front_suspension_layout"
+              : "rear_suspension_layout";
+          const nextLayout = part.partType;
+          this.build = {
+            ...this.build,
+            [field]: nextLayout,
+          };
+          this.previewBuild = null;
+          this.statusEl.textContent = "";
+          this.render();
+        });
+        cards.appendChild(card);
+      }
+
+      section.appendChild(cards);
+      panel.appendChild(section);
+    }
+
+    grid.appendChild(panel);
+  }
+
+  private renderWheelPanel(): void {
+    if (!this.catalog || !this.build) return;
+    const grid = this.root.querySelector(".garage-part-grid")!;
+    grid.replaceChildren();
+    grid.classList.remove("hidden");
+
+    const classId = this.activeClassId();
+    const limits = wheelLimitsForClass(classId);
+    const packagePart = this.catalog.partsBySlot.wheel_package?.find(
+      (p) => p.partType === this.build!.wheel_package,
+    );
+    const setup = resolveWheelSetup(this.build, classId, packagePart);
+
+    const panel = document.createElement("div");
+    panel.className = "chassis-setup-panel wheel-setup-panel";
+
+    const defs: Array<{
+      key: keyof WheelSetup;
+      label: string;
+      range: { min: number; max: number; step: number };
+      format: (v: number) => string;
+    }> = [
+      {
+        key: "frontDiameterIn",
+        label: "Front wheel diameter",
+        range: limits.frontDiameter,
+        format: (v) => `${v}"`,
+      },
+      {
+        key: "rearDiameterIn",
+        label: "Rear wheel diameter",
+        range: limits.rearDiameter,
+        format: (v) => `${v}"`,
+      },
+      {
+        key: "frontWidthMm",
+        label: "Front tyre width",
+        range: limits.frontWidth,
+        format: (v) => `${v} mm`,
+      },
+      {
+        key: "rearWidthMm",
+        label: "Rear tyre width",
+        range: limits.rearWidth,
+        format: (v) => `${v} mm`,
+      },
+    ];
+
+    for (const def of defs) {
+      const wrap = document.createElement("label");
+      wrap.className = "engine-slider-field chassis-slider-field";
+      const value = setup[def.key];
+      wrap.innerHTML = `
+        <span class="engine-slider-label">
+          <span class="engine-slider-name">${def.label}</span>
+          <span class="engine-slider-value">${def.format(value)}</span>
+        </span>
+        <input type="range" class="engine-slider" />
+      `;
+      const slider = wrap.querySelector<HTMLInputElement>(".engine-slider")!;
+      slider.min = String(def.range.min);
+      slider.max = String(def.range.max);
+      slider.step = String(def.range.step);
+      slider.value = String(value);
+      slider.addEventListener("pointerdown", () => {
+        this.captureStatSnapshot();
+      });
+      slider.addEventListener("input", () => {
+        if (!this.build) return;
+        const current = resolveWheelSetup(this.build, classId, packagePart);
+        const nextSetup = clampWheelSetup(
+          { ...current, [def.key]: parseFloat(slider.value) },
+          classId,
+        );
+        wrap.querySelector(".engine-slider-value")!.textContent =
+          def.format(nextSetup[def.key]);
+        this.build = {
+          ...this.build,
+          ...wheelSetupToBuildFields(nextSetup),
+        };
+        this.previewBuild = null;
+        this.updateWheelSetupSummary(classId, packagePart);
+        this.renderStats();
+      });
+      panel.appendChild(wrap);
+    }
+
+    const wheelStats = computeWheelStats(setup, packagePart, classId);
+    const summary = document.createElement("div");
+    summary.className = "wheel-setup-summary";
+    summary.innerHTML = `
+      <p class="wheel-setup-hint">Package baseline is the tuned setup. Width affects per-wheel heat &amp; wear in the race sim.</p>
+      <div class="wheel-setup-metrics">
+        <span>Front grip <strong>×${wheelStats.frontAxleGrip.toFixed(2)}</strong></span>
+        <span>Rear grip <strong>×${wheelStats.rearAxleGrip.toFixed(2)}</strong></span>
+        <span>Balance <strong>${(wheelStats.balanceFactor * 100).toFixed(0)}%</strong></span>
+        <span>F wear <strong>×${(wheelStats.wearFactor * wheelStats.frontAxleWear).toFixed(2)}</strong></span>
+        <span>R wear <strong>×${(wheelStats.wearFactor * wheelStats.rearAxleWear).toFixed(2)}</strong></span>
+        <span>F heat <strong>×${wheelStats.frontAxleHeat.toFixed(2)}</strong></span>
+        <span>R heat <strong>×${wheelStats.rearAxleHeat.toFixed(2)}</strong></span>
+        <span>Wheel drag <strong>+${wheelStats.dragCd.toFixed(3)} Cd</strong></span>
+      </div>
+    `;
+    panel.appendChild(summary);
+
+    grid.appendChild(panel);
+  }
+
+  private updateWheelSetupSummary(
+    classId: string,
+    packagePart: PartOptionPayload | undefined,
+  ): void {
+    const metrics = this.root.querySelector(".wheel-setup-metrics");
+    if (!metrics || !this.build) return;
+    const setup = resolveWheelSetup(this.build, classId, packagePart);
+    const wheelStats = computeWheelStats(setup, packagePart, classId);
+    metrics.innerHTML = `
+      <span>Front grip <strong>×${wheelStats.frontAxleGrip.toFixed(2)}</strong></span>
+      <span>Rear grip <strong>×${wheelStats.rearAxleGrip.toFixed(2)}</strong></span>
+      <span>Balance <strong>${(wheelStats.balanceFactor * 100).toFixed(0)}%</strong></span>
+      <span>F wear <strong>×${(wheelStats.wearFactor * wheelStats.frontAxleWear).toFixed(2)}</strong></span>
+      <span>R wear <strong>×${(wheelStats.wearFactor * wheelStats.rearAxleWear).toFixed(2)}</strong></span>
+      <span>F heat <strong>×${wheelStats.frontAxleHeat.toFixed(2)}</strong></span>
+      <span>R heat <strong>×${wheelStats.rearAxleHeat.toFixed(2)}</strong></span>
+      <span>Wheel drag <strong>+${wheelStats.dragCd.toFixed(3)} Cd</strong></span>
+    `;
+  }
+
+  private renderGuideConfirm(): void {
+    if (!this.build || !this.catalog) return;
+    this.partGridEl.classList.remove("hidden");
+    this.engineDesigner.setVisible(false);
+    const classId = this.activeClassId();
+    const compiled = compileCarStats(
+      this.build,
+      this.catalog.partsBySlot,
+      compileOptions(this.activeClassInfo()),
+    );
+    const engineLabel = this.build.engine
+      ? `${this.build.engine.engine_layout} · ${this.build.engine.fuel_type}${this.build.engine.aspiration ? ` · ${this.build.engine.aspiration}` : ""}`
+      : "Default engine";
+
+    const perfLine = formatStatSummary(compiled);
+
+    this.partGridEl.innerHTML = `
+      <div class="confirm-grid garage-confirm-grid">
+        <div class="confirm-card">
+          <h4>${escapeHtml(classId)} Platform</h4>
+          <p class="confirm-detail"><strong>${escapeHtml(this.build.carName.trim())}</strong></p>
+          <p class="confirm-detail">${escapeHtml(engineLabel)}</p>
+        </div>
+        <div class="confirm-card">
+          <h4>Aero &amp; Chassis</h4>
+          <p class="confirm-detail">${escapeHtml(this.build.chassis_type)}</p>
+          <p class="confirm-detail">${escapeHtml(this.build.front_aero_type)} / ${escapeHtml(this.build.rear_aero_type)}</p>
+          <p class="confirm-detail">${escapeHtml(this.build.hybrid_system)}</p>
+        </div>
+        <div class="confirm-card">
+          <h4>Sim Performance</h4>
+          <p class="confirm-detail">${escapeHtml(perfLine)}</p>
+          <p class="confirm-detail">${Math.round(compiled.calculatedTotalMass)} kg · Cl ${compiled.totalDownforceCl.toFixed(2)} · Cd ${compiled.totalDragCd.toFixed(3)}</p>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderStats(): void {
+    if (!this.catalog || !this.build) return;
+    const classInfo = this.activeClassInfo();
+    const opts = compileOptions(classInfo);
+
+    const currentCompiled = compileCarStats(
+      this.build,
+      this.catalog.partsBySlot,
+      opts,
+    );
+
+    let displayCompiled = currentCompiled;
+    let baselineCompiled: ReturnType<typeof compileCarStats> | null = null;
+    let baselineBars: Record<SimBarId, number> | null = null;
+
+    if (this.previewBuild) {
+      displayCompiled = compileCarStats(
+        this.previewBuild,
+        this.catalog.partsBySlot,
+        opts,
+      );
+      baselineCompiled = currentCompiled;
+      baselineBars = toBarValues(currentCompiled);
+    } else if (this.compareCompiled && this.compareBars) {
+      baselineCompiled = this.compareCompiled;
+      baselineBars = this.compareBars;
+    }
+
+    const displayBars = toBarValues(displayCompiled);
+
+    const perf = this.root.querySelector(".garage-perf-stats")!;
+    perf.innerHTML = SIM_STAT_BARS.map((def) =>
+      statBarHtml(
+        def,
+        displayBars[def.id],
+        displayCompiled,
+        baselineCompiled ?? undefined,
+        baselineBars?.[def.id],
+      ),
+    ).join("");
+
+    const engineHp = currentCompiled.peakHorsepower;
+    const rawHp = this.build.engine
+      ? Math.round(peakHorsepower(this.build.engine, this.activeClassId()))
+      : 0;
+    const cap = classInfo?.powerCapHp ?? 0;
+    const powerNote =
+      cap > 0 && rawHp > cap
+        ? `${Math.round(engineHp)} hp effective (${rawHp} hp before BoP)`
+        : `${Math.round(engineHp)} hp`;
+    const hybridNote =
+      currentCompiled.hybridDeployKw > 0
+        ? ` · +${currentCompiled.hybridDeployKw} kW hybrid`
+        : "";
+    this.root.querySelector(".garage-mass-note")!.textContent =
+      `Sim mass: ${Math.round(currentCompiled.calculatedTotalMass)} kg · Engine ${powerNote}${hybridNote} · Grip ×${effectiveGripScore(currentCompiled).toFixed(2)} · Corner ×${effectiveCorneringScore(currentCompiled).toFixed(2)}`;
+
+    const activeCar =
+      this.meta?.fleet?.find((c) => c.id === this.meta?.activeCarId) ??
+      this.meta?.fleet?.[0];
+    const cls = activeCar?.classId ?? this.meta?.playerClassId ?? "Hypercar";
+    const carNum = activeCar ? `#${activeCar.carNumber}` : "";
+    const subtitle = this.root.querySelector(".mm-panel-subtitle");
+    if (subtitle) {
+      subtitle.textContent = `${carNum} ${cls} · Configure components within class regulations.`;
+    }
+  }
+
+  private renderDiagramLabels(): void {
+    if (!this.build) return;
+    const labels = this.root.querySelector(".car-diagram-labels")!;
+    const engineLabel = this.build.engine
+      ? `${this.build.engine.engine_layout} · ${this.build.engine.fuel_type}${this.build.engine.drivetrain && this.build.engine.drivetrain !== "Mechanical" ? ` · ${this.build.engine.drivetrain}` : ""}`
+      : "Engine TBD";
+    labels.innerHTML = `
+      <span>${escapeHtml(engineLabel)}</span>
+      <span>${escapeHtml(this.build.front_aero_type)}</span>
+      <span>${escapeHtml(this.build.rear_aero_type)}</span>
+      <span>${escapeHtml(this.build.hybrid_system)}</span>
+    `;
+  }
+
+  setStatus(message: string, isError = false): void {
+    this.statusEl.textContent = message;
+    this.statusEl.className = isError
+      ? "garage-status error"
+      : message
+        ? "garage-status ok"
+        : "garage-status";
+  }
+
+  showGarageAdvice(payload: {
+    text: string;
+    suggestedChanges?: Partial<CarBuildPayload>;
+    offline?: boolean;
+    model?: string;
+    latencyMs?: number;
+  }): void {
+    this.garageEngineer.showAdvice(payload);
+  }
+
+  private compiledSnapshotForEngineer(): Record<string, number> {
+    if (!this.build || !this.catalog) return {};
+    const classId = this.activeClassId();
+    const classInfo = this.catalog.classes.find((c) => c.id === classId);
+    const compiled = compileCarStats(this.build, this.catalog.partsBySlot, {
+      classId,
+      powerCapHp: classInfo?.powerCapHp,
+      minWeightKg: classInfo?.minWeightKg,
+      maxWeightKg: classInfo?.maxWeightKg,
+    });
+    return {
+      powerHp: compiled.peakHorsepower,
+      downforceCl: compiled.totalDownforceCl,
+      dragCd: compiled.totalDragCd,
+      massKg: compiled.calculatedTotalMass,
+      gripIndex: compiled.gripIndex,
+      corneringFactor: compiled.corneringFactor,
+      coolingCapacity: compiled.coolingCapacity,
+      fuelTankL: compiled.fuelTankCapacity,
+      pitWorkFactor: compiled.serviceabilityFactor,
+    };
+  }
+
+  private applyGarageChanges(changes: Partial<CarBuildPayload>): void {
+    if (!this.build || !this.catalog || !this.meta) return;
+
+    const resolved = this.resolveEngineerChanges(changes);
+    if (!Object.keys(resolved).length) {
+      this.setStatus("Could not apply — parts unknown, locked, or incompatible.", true);
+      return;
+    }
+
+    const merged = { ...this.build, ...resolved };
+    const assemblyErr = validateAssemblyCompatibility(merged, this.assemblyRules());
+    if (assemblyErr) {
+      this.setStatus(`${assemblyErr} — engineer suggestion blocked.`, true);
+      return;
+    }
+
+    const firstField = Object.keys(resolved)[0] as keyof CarBuildPayload;
+    const slot = FIELD_TO_BUILD_SLOT[firstField];
+    if (slot) this.activeSlot = slot;
+
+    this.captureStatSnapshot();
+    this.build = normalizeCarBuild(merged, this.activeClassId(), this.catalog.partsBySlot);
+    this.previewBuild = null;
+    this.render();
+
+    const summary = Object.entries(resolved)
+      .map(([field, partType]) => {
+        const slotKey = FIELD_TO_BUILD_SLOT[field as keyof CarBuildPayload];
+        const part = slotKey
+          ? this.catalog?.partsBySlot[slotKey as PartSlot]?.find((p) => p.partType === partType)
+          : undefined;
+        return part?.displayName ?? partType;
+      })
+      .join(", ");
+    this.setStatus(`Applied: ${summary} — review stats and save.`);
+    this.garageEngineer.clearPendingChanges();
+  }
+
+  private resolveEngineerChanges(
+    changes: Partial<CarBuildPayload>,
+  ): Partial<CarBuildPayload> {
+    if (!this.catalog || !this.meta) return {};
+    const out: Partial<CarBuildPayload> = {};
+
+    for (const [field, rawVal] of Object.entries(changes)) {
+      const buildField = field as keyof CarBuildPayload;
+      const slot = FIELD_TO_BUILD_SLOT[buildField];
+      if (!slot || typeof rawVal !== "string") continue;
+
+      const parts = this.catalog.partsBySlot[slot as PartSlot] ?? [];
+      const needle = rawVal.trim().toLowerCase();
+      const match =
+        parts.find((p) => p.partType === rawVal) ??
+        parts.find((p) => p.partType.toLowerCase() === needle) ??
+        parts.find((p) => p.displayName.toLowerCase() === needle) ??
+        parts.find(
+          (p) =>
+            p.partType.toLowerCase().includes(needle) ||
+            p.displayName.toLowerCase().includes(needle),
+        );
+
+      if (!match || isPartLocked(match, this.meta.unlockedParts)) continue;
+      if (
+        !isPartCompatibleWithBuild(
+          this.build!,
+          slot as PartSlot,
+          match.partType,
+          this.assemblyRules(),
+        )
+      ) {
+        continue;
+      }
+
+      (out as Record<string, string>)[buildField] = match.partType;
+    }
+
+    return out;
+  }
+}
+
+const FALLBACK_ENGINE: EngineBuildPayload = {
+  engine_layout: "V6",
+  fuel_type: "Gasoline",
+  cylinders: 6,
+  bore: 0.096,
+  stroke: 0.055,
+  max_rpm: 9000,
+  peak_torque_nm: 435,
+  peak_torque_rpm: 6500,
+  base_vibration: 0.95,
+  aspiration: "TwinParallel",
+  drivetrain: "Mechanical",
+  power_target: 660,
+  rev_character: 0.55,
+  block_size: 0.5,
+};
+
+function defaultBuild(meta: MetaStatePayload): CarBuildPayload {
+  const classId = meta.playerClassId ?? "Hypercar";
+  const wheel =
+    classId === "LMGT3"
+      ? "GT3Front20Rear21"
+      : classId === "LMP2"
+        ? "LMP2Oreca18"
+        : "Hypercar18Standard";
+  const suspension =
+    classId === "LMGT3"
+      ? "DoubleWishboneGT3"
+      : classId === "LMP2"
+        ? "OrecaLMP2Spec"
+        : "PushrodDoubleWishbone";
+  return {
+    carName: `${meta.teamName} ${classId}`,
+    chassis_type: classId === "LMGT3" ? "GT3Spaceframe" : classId === "LMP2" ? "Oreca07" : "LMDhDallara",
+    front_aero_type: "LowDragNose",
+    rear_aero_type: classId === "LMGT3" ? "HighDownforceWing" : "StandardWing",
+    cooling_pack: "EnduranceHeavyDuty",
+    cooling: {
+      engine_radiator: 0.65,
+      oil_cooler: 0.55,
+      charge_air_cooler: 0.5,
+      gearbox_cooler: 0.4,
+    },
+    duct_airflow: 1,
+    wheel_package: wheel,
+    suspension_layout: suspension,
+    front_suspension_layout: suspension,
+    rear_suspension_layout: suspension,
+    front_wheel_diameter_in: classId === "LMGT3" ? 20 : 18,
+    rear_wheel_diameter_in: classId === "LMGT3" ? 21 : 18,
+    front_tire_width_mm: classId === "LMGT3" ? 325 : classId === "LMP2" ? 300 : 305,
+    rear_tire_width_mm: classId === "LMGT3" ? 340 : classId === "LMP2" ? 305 : 310,
+    fuel_system: classId === "Hypercar" ? "LeMans110L" : "StandardTank",
+    brake_system: classId === "Hypercar" ? "BremboHypercar" : "StandardCaliper",
+    transmission: classId === "LMGT3" ? "XtracP529" : classId === "Hypercar" ? "XtracP1359" : "SixSpeedSequential",
+    hybrid_system: classId === "Hypercar" ? "LMDh50kW" : "None",
+    engine: { ...FALLBACK_ENGINE },
+  };
+}

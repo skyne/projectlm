@@ -1,7 +1,7 @@
 import type { CarSnapshot, SessionInitPayload } from "./ws/protocol";
 
-const numbersByEntryId = new Map<string, number>();
-const numbersByTeamName = new Map<string, number>();
+const numbersByEntryId = new Map<string, string>();
+const numbersByTeamName = new Map<string, string>();
 
 export function setEntryNumbersFromSession(payload: SessionInitPayload): void {
   numbersByEntryId.clear();
@@ -10,34 +10,32 @@ export function setEntryNumbersFromSession(payload: SessionInitPayload): void {
   const fromRecord = payload.carNumberByEntryId ?? {};
 
   for (const entry of payload.entries ?? []) {
-    const parsed = Number(entry.carNumber ?? fromRecord[entry.entryId]);
-    if (!Number.isFinite(parsed) || parsed <= 0) continue;
+    const parsed = entry.carNumber ?? fromRecord[entry.entryId];
+    if (!parsed) continue;
     numbersByEntryId.set(entry.entryId, parsed);
     numbersByTeamName.set(entry.teamName, parsed);
   }
 }
 
-export function resolveCarNumber(snap: CarSnapshot): number {
-  const direct = Number(snap.carNumber);
-  if (Number.isFinite(direct) && direct > 0) return direct;
+export function resolveCarNumber(snap: CarSnapshot): string {
+  if (typeof snap.carNumber === "string" && snap.carNumber) return snap.carNumber;
 
   const byId = numbersByEntryId.get(snap.entryId);
-  if (byId !== undefined && byId > 0) return byId;
+  if (byId) return byId;
 
   const byTeam = numbersByTeamName.get(snap.teamName);
-  if (byTeam !== undefined && byTeam > 0) return byTeam;
+  if (byTeam) return byTeam;
 
-  return 0;
+  return "";
 }
 
 export function formatCarNumber(snap: CarSnapshot): string {
-  const n = resolveCarNumber(snap);
-  return n > 0 ? String(n) : "";
+  return resolveCarNumber(snap);
 }
 
 export function enrichSnapshots(snapshots: CarSnapshot[]): CarSnapshot[] {
   return snapshots.map((snap) => {
     const carNumber = resolveCarNumber(snap);
-    return carNumber > 0 ? { ...snap, carNumber } : snap;
+    return carNumber ? { ...snap, carNumber } : snap;
   });
 }

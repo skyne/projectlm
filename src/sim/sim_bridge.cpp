@@ -1,28 +1,23 @@
 #include "sim_bridge.hpp"
+#include "class_rules.hpp"
+#include "commands.hpp"
 #include "config_loader.hpp"
 #include "part_compatibility.hpp"
 #include "race_config.hpp"
 #include <algorithm>
-#include <cctype>
-
-namespace {
-std::string ToLower(std::string value) {
-  for (char &ch : value) {
-    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-  }
-  return value;
-}
-
-bool IsPitRequestCommand(const std::string &command) {
-  const std::string normalized = ToLower(command);
-  return normalized == "pit" || normalized == "request_pit" ||
-         normalized == "requestpit";
-}
-} // namespace
+#include <unordered_map>
 
 std::vector<SimEvent> *g_raceEventOut = nullptr;
 
 void SetRaceEventOut(std::vector<SimEvent> *events) { g_raceEventOut = events; }
+
+void SimBridge::loadTeamConfig(const std::string &staffConfigPath) {
+  const std::string path =
+      staffConfigPath.empty() ? "configs/team_config.txt" : staffConfigPath;
+  if (!LoadTeamConfig(path, teamConfig_))
+    teamConfig_ = TeamConfig{};
+  session_.staff = teamConfig_.staffModifiers();
+}
 
 bool SimBridge::initFromRaceConfig(const std::string &raceConfigPath) {
   raceConfigPath_ = raceConfigPath;
@@ -30,6 +25,8 @@ bool SimBridge::initFromRaceConfig(const std::string &raceConfigPath) {
   RaceConfig config;
   if (!LoadRaceConfig(raceConfigPath, config))
     return false;
+
+  classRulesPath_ = config.classRulesPath;
 
   PartCatalog catalog;
   if (!LoadPartCatalog(config.partCatalogPath, catalog))
@@ -46,13 +43,15 @@ bool SimBridge::initFromRaceConfig(const std::string &raceConfigPath) {
   RaceSession session;
   session.physics = physics;
   session.targetLaps = config.targetLaps;
+  session.targetDurationSeconds = config.targetDurationSeconds;
 
   if (!LoadTrack(config.trackConfigPath, session.track))
     return false;
   trackConfigPath_ = config.trackConfigPath;
 
   if (!config.entriesPath.empty()) {
-    if (!LoadEntriesFromConfig(session, config.entriesPath, catalog, assembly))
+    if (!LoadEntriesFromConfig(session, config.entriesPath, catalog, assembly,
+                               config.classRulesPath, config.driverConfigPath))
       return false;
   } else {
     CarConfig car;
@@ -66,12 +65,21 @@ bool SimBridge::initFromRaceConfig(const std::string &raceConfigPath) {
 
     CompileCarArchitecture(car, catalog, assembly);
 
+    const auto classRules = LoadClassRules(config.classRulesPath);
     RaceClass raceClass;
-    raceClass.id = "solo";
-    raceClass.displayName = "Solo";
+    raceClass.id = "Hypercar";
+    auto ruleIt = classRules.find("Hypercar");
+    if (ruleIt != classRules.end()) {
+      raceClass.displayName = ruleIt->second.displayName;
+      ApplyClassBoP(car, ruleIt->second);
+    } else {
+      raceClass.displayName = "Solo";
+    }
     AddCar(session, std::move(car), std::move(raceClass), "Solo Entry", 1);
   }
 
+  loadTeamConfig(config.staffConfigPath);
+  session.staff = teamConfig_.staffModifiers();
   return initSession(session);
 }
 
@@ -82,7 +90,6 @@ bool SimBridge::initSession(const RaceSession &session) {
   session_ = session;
   pendingEvents_.clear();
   pendingCommands_.clear();
-  pitStates_.assign(session_.cars.size(), PitState{});
   raceCompleteEmitted_ = false;
   return true;
 }
@@ -98,90 +105,75 @@ bool SimBridge::restartRace() {
     return false;
 
   session_.elapsedRaceTime = 0.0;
+  session_.trafficEventCooldowns.clear();
+  session_.fcyActive = false;
+  session_.fcyEndTime = 0.0;
+  session_.nextFcyScheduleTime = 0.0;
   for (Car &car : session_.cars)
     car.resetForRestart();
 
   pendingEvents_.clear();
   pendingCommands_.clear();
-  pitStates_.assign(session_.cars.size(), PitState{});
   raceCompleteEmitted_ = false;
   return true;
 }
 
-void SimBridge::ensurePitStates() {
-  if (pitStates_.size() != session_.cars.size())
-    pitStates_.assign(session_.cars.size(), PitState{});
-}
-
-void SimBridge::submitCommand(const std::string &entryId,
+bool SimBridge::submitCommand(const std::string &entryId,
                               const std::string &command) {
   pendingCommands_.push_back({entryId, command});
+  return true;
 }
 
 void SimBridge::processCommands() {
-  ensurePitStates();
+  for (const PendingCommand &pending : pendingCommands_) {
+    const SimCommand cmd = ParseSimCommand(pending.command);
+    if (cmd.type == SimCommandType::Unknown) {
+      SimEvent ack;
+      ack.type = SimEventType::CommandAck;
+      ack.entryId = pending.entryId;
+      ack.timestamp = session_.elapsedRaceTime;
+      ack.message = "Unknown command: " + pending.command;
+      pendingEvents_.push_back(std::move(ack));
+      continue;
+    }
 
-  for (const PendingCommand &command : pendingCommands_) {
-    for (size_t i = 0; i < session_.cars.size(); ++i) {
-      if (session_.cars[i].entryId() != command.entryId)
+    bool applied = false;
+    for (Car &car : session_.cars) {
+      if (car.entryId() != pending.entryId)
         continue;
-
-      if (IsPitRequestCommand(command.command) && !session_.cars[i].isRetired() &&
-          !pitStates_[i].inPit) {
-        pitStates_[i].pendingEnter = true;
+      if (car.isRetired()) {
+        SimEvent ack;
+        ack.type = SimEventType::CommandAck;
+        ack.entryId = pending.entryId;
+        ack.timestamp = session_.elapsedRaceTime;
+        ack.message = "Car retired — command rejected";
+        pendingEvents_.push_back(std::move(ack));
+        applied = true;
+        break;
       }
+
+      car.applyCommand(cmd);
+      SimEvent ack;
+      ack.type = SimEventType::CommandAck;
+      ack.entryId = pending.entryId;
+      ack.timestamp = session_.elapsedRaceTime;
+      ack.message = "Command accepted: " + pending.command;
+      pendingEvents_.push_back(std::move(ack));
+      applied = true;
       break;
+    }
+
+    if (!applied) {
+      SimEvent ack;
+      ack.type = SimEventType::CommandAck;
+      ack.entryId = pending.entryId;
+      ack.timestamp = session_.elapsedRaceTime;
+      ack.message = "Entry not found: " + pending.entryId;
+      pendingEvents_.push_back(std::move(ack));
     }
   }
 
   pendingCommands_.clear();
-}
-
-void SimBridge::processPitStubs(double deltaTime) {
-  ensurePitStates();
-
-  for (size_t i = 0; i < session_.cars.size(); ++i) {
-    Car &car = session_.cars[i];
-    PitState &pit = pitStates_[i];
-
-    if (car.isRetired())
-      continue;
-
-    if (pit.pendingEnter && !pit.inPit) {
-      pit.inPit = true;
-      pit.pendingEnter = false;
-      pit.pitElapsed = 0.0;
-
-      SimEvent event;
-      event.type = SimEventType::PitEnter;
-      event.entryId = car.entryId();
-      event.lap = car.state().currentLap;
-      event.sectorIndex = static_cast<int>(car.state().currentTrackNodeIndex);
-      event.timestamp = session_.elapsedRaceTime;
-      event.message = car.teamName() + " entered pit lane";
-      pendingEvents_.push_back(std::move(event));
-      continue;
-    }
-
-    if (!pit.inPit)
-      continue;
-
-    pit.pitElapsed += deltaTime;
-    if (pit.pitElapsed < 5.0)
-      continue;
-
-    pit.inPit = false;
-    pit.pitElapsed = 0.0;
-
-    SimEvent event;
-    event.type = SimEventType::PitExit;
-    event.entryId = car.entryId();
-    event.lap = car.state().currentLap;
-    event.sectorIndex = static_cast<int>(car.state().currentTrackNodeIndex);
-    event.timestamp = session_.elapsedRaceTime;
-    event.message = car.teamName() + " exited pit lane";
-    pendingEvents_.push_back(std::move(event));
-  }
 }
 
 void SimBridge::tick(double deltaTime) {
@@ -193,8 +185,6 @@ void SimBridge::tick(double deltaTime) {
   SetRaceEventOut(&pendingEvents_);
   TickRace(session_, deltaTime);
   SetRaceEventOut(nullptr);
-
-  processPitStubs(deltaTime);
 
   if (!raceCompleteEmitted_ && IsRaceComplete(session_)) {
     raceCompleteEmitted_ = true;
@@ -217,22 +207,15 @@ std::vector<CarSnapshot> SimBridge::getSnapshots() const {
       GetLeaderboard(const_cast<RaceSession &>(session_));
   const Car *leader = board.empty() ? nullptr : board.front();
   const double lapLength = session_.track.lapLength();
+  std::unordered_map<std::string, int> classRank;
 
   for (size_t rank = 0; rank < board.size(); ++rank) {
     const Car &car = *board[rank];
-    bool inPit = false;
-    for (size_t i = 0; i < session_.cars.size(); ++i) {
-      if (session_.cars[i].entryId() != car.entryId())
-        continue;
-      if (i < pitStates_.size())
-        inPit = pitStates_[i].inPit;
-      break;
-    }
-
     CarSnapshot snap =
-        car.snapshot(session_.track, static_cast<int>(rank + 1), inPit);
+        car.snapshot(session_.track, static_cast<int>(rank + 1));
     if (leader != nullptr)
       snap.gapToLeader = ComputeGapToLeader(car, *leader, lapLength);
+    snap.classPosition = ++classRank[car.raceClass().id];
     snapshots.push_back(std::move(snap));
   }
 

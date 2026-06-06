@@ -1,0 +1,24 @@
+# Aston Martin Valkyrie AMR-LMH — Cosworth RA 6.5L NA V12 (only non-hybrid Hypercar, 2026 Le Mans)
+car_name=Aston Martin Valkyrie AMR-LMH
+engine_layout=V12
+fuel_type=Gasoline
+cylinders=12
+bore=0.098
+stroke=0.072
+max_rpm=8750
+peak_torque_nm=750
+peak_torque_rpm=7000
+base_vibration=1.15
+
+chassis_type=LMHMultimaticBuilt
+front_aero_type=HighDownforceSplitter
+rear_aero_type=HighDownforceWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PullrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=LeMans110L
+brake_system=BremboHypercar
+transmission=XtracP1359
+hybrid_system=None
+

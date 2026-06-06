@@ -3,6 +3,7 @@
 
 #include "car_entity.hpp"
 #include "race.hpp"
+#include "team_config.hpp"
 #include "track_sampler.hpp"
 #include <string>
 #include <vector>
@@ -13,7 +14,11 @@ enum class SimEventType {
   PitEnter,
   PitExit,
   Retirement,
-  RaceComplete
+  RaceComplete,
+  Overtake,
+  Collision,
+  Blocked,
+  CommandAck
 };
 
 struct SimEvent {
@@ -38,13 +43,17 @@ public:
   std::vector<SimEvent> drainEvents();
   TrackGeometry getTrackGeometry() const;
   bool isRaceComplete() const;
+  double getRaceTime() const { return session_.elapsedRaceTime; }
 
-  void submitCommand(const std::string &entryId, const std::string &command);
+  bool submitCommand(const std::string &entryId, const std::string &command);
+  const TeamConfig &teamConfig() const { return teamConfig_; }
 
 private:
   RaceSession session_;
+  TeamConfig teamConfig_;
   std::string raceConfigPath_;
   std::string trackConfigPath_;
+  std::string classRulesPath_;
   std::vector<SimEvent> pendingEvents_;
   bool raceCompleteEmitted_ = false;
 
@@ -54,16 +63,8 @@ private:
   };
   std::vector<PendingCommand> pendingCommands_;
 
-  struct PitState {
-    bool inPit = false;
-    bool pendingEnter = false;
-    double pitElapsed = 0.0;
-  };
-  std::vector<PitState> pitStates_;
-
   void processCommands();
-  void processPitStubs(double deltaTime);
-  void ensurePitStates();
+  void loadTeamConfig(const std::string &staffConfigPath = "");
 };
 
 extern std::vector<SimEvent> *g_raceEventOut;

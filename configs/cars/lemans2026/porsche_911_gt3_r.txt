@@ -1,0 +1,24 @@
+# Porsche 911 GT3 R (992) — 4.2L NA flat-six (2026 Le Mans LMGT3)
+car_name=Porsche 911 GT3 R
+engine_layout=Flat6
+fuel_type=Gasoline
+cylinders=6
+bore=0.105
+stroke=0.082
+max_rpm=9250
+peak_torque_nm=470
+peak_torque_rpm=6000
+base_vibration=0.8
+
+chassis_type=GT3Spaceframe
+front_aero_type=HighDownforceSplitter
+rear_aero_type=HighDownforceWing
+cooling_pack=EnduranceHeavyDuty
+wheel_package=GT3Front20Rear21
+suspension_layout=DoubleWishboneGT3
+starting_tire_compound=Medium
+fuel_system=StandardTank
+brake_system=CarbonCeramic
+transmission=XtracP529
+hybrid_system=None
+

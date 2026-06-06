@@ -1,4 +1,4 @@
-# Web viewer default — multiclass grid on La Sarthe
+# Web viewer default — 2026 Le Mans 24H grid (62 official + 6 reserve Hypercar) on La Sarthe
 
 part_catalog=configs/part_catalog.txt
 physics_config=configs/physics_config.txt
@@ -11,3 +11,4 @@ sim_timestep=0.1
 telemetry_output=
 
 entries=configs/entries.txt
+driver_config=configs/drivers/lemans2026_drivers.txt

@@ -36,7 +36,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SimHost = void 0;
 const path = __importStar(require("path"));
 const adapters_1 = require("./adapters");
+const meta_state_1 = require("./meta_state");
+const race_builder_1 = require("./game/race_builder");
+const track_loader_1 = require("./game/track_loader");
+const catalog_1 = require("./game/catalog");
 const config_parser_1 = require("./config_parser");
+const ai_strategy_1 = require("./game/ai_strategy");
 const mock_session_1 = require("./mock_session");
 const DEFAULT_RACE_CONFIG = "configs/race_config_web.txt";
 function resolveRepoRoot(explicit) {
@@ -59,11 +64,23 @@ function loadSession(repoRoot) {
 }
 class SimHost {
     constructor(options = {}) {
+        this.entries = [];
+        this.trackName = "Unknown";
+        this.simTimestep = 0.1;
         this.raceTime = 0;
         this.timeScale = 1;
-        this.paused = false;
+        this.paused = true;
         this.tickTimer = null;
+        this.sessionExtra = {
+            targetDurationSeconds: 0,
+            raceFormat: "",
+            roundNumber: 0,
+        };
+        this.runtimePlayerEntryId = "entry-1";
+        this.activeRoundNumber = 0;
+        this.aiStrategy = new ai_strategy_1.AiStrategyManager();
         this.repoRoot = resolveRepoRoot(options.repoRoot);
+        this.meta = new meta_state_1.MetaStateManager(this.repoRoot);
         const rel = options.raceConfigPath ?? DEFAULT_RACE_CONFIG;
         this.raceConfigPath = path.isAbsolute(rel)
             ? rel
@@ -72,36 +89,169 @@ class SimHost {
         this.bindingSource = loaded.source;
         this.session = loaded.session;
         this.parsedConfig = (0, config_parser_1.parseRaceConfig)(this.repoRoot, this.raceConfigPath);
-        const configForSim = path.isAbsolute(rel)
-            ? path.relative(this.repoRoot, this.raceConfigPath)
-            : rel;
+        this.initSimFromCurrentConfig();
+        console.log(`[sim_host] ${this.bindingSource} — ${this.trackName} (${this.entries.length} entries, paused until start_round)`);
+    }
+    initSimFromCurrentConfig() {
+        const configForSim = this.configPathForSim();
         const prevCwd = process.cwd();
         process.chdir(this.repoRoot);
         const initOk = this.session.initFromRaceConfig(configForSim);
         process.chdir(prevCwd);
-        if (!initOk) {
-            throw new Error(`Failed to init sim from ${this.raceConfigPath}`);
-        }
+        if (!initOk)
+            return false;
         this.simTimestep = this.parsedConfig.simTimestep;
         this.trackName = (0, config_parser_1.loadTrackName)(this.repoRoot, this.parsedConfig.trackConfigPath);
+        this.refreshEntriesFromConfig();
+        this.raceTime = 0;
+        this.aiStrategy.reset();
+        return true;
+    }
+    refreshEntriesFromConfig() {
         if (this.parsedConfig.entriesPath) {
             this.entries = (0, config_parser_1.parseEntries)(this.repoRoot, this.parsedConfig.entriesPath);
         }
         else {
             this.entries = [
-                { entryId: "solo-1", teamName: "Solo Entry", carNumber: 1, classId: "solo" },
+                { entryId: "solo-1", teamName: "Solo Entry", carNumber: "1", classId: "solo" },
             ];
         }
-        console.log(`[sim_host] ${this.bindingSource} — ${this.trackName} (${this.entries.length} entries, timestep ${this.simTimestep}s)`);
     }
     getSessionInit() {
+        const meta = this.getMetaState();
+        const round = meta.calendar.find((e) => e.round === meta.currentRound);
         return {
             trackName: this.trackName,
             targetLaps: this.parsedConfig.targetLaps,
+            targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
+            raceFormat: this.sessionExtra.raceFormat || round?.format || "",
+            roundNumber: this.sessionExtra.roundNumber || meta.currentRound,
             simTimestep: this.simTimestep,
             entries: this.entries,
             carNumberByEntryId: Object.fromEntries(this.entries.map((entry) => [entry.entryId, entry.carNumber])),
+            playerEntryId: this.runtimePlayerEntryId,
+            paused: this.paused,
         };
+    }
+    /** Meta/season lives entirely in server TS — sim only receives staff for pit modifiers. */
+    getMetaState() {
+        return this.meta.getState();
+    }
+    startRound() {
+        const built = (0, race_builder_1.buildRaceForRound)(this.repoRoot, this.meta.getState());
+        if (!built) {
+            console.warn("[sim_host] No calendar event for current round");
+            return "No calendar event for the current round";
+        }
+        this.raceConfigPath = path.join(this.repoRoot, built.raceConfigPath);
+        this.parsedConfig = (0, config_parser_1.parseRaceConfig)(this.repoRoot, this.raceConfigPath);
+        this.sessionExtra = {
+            targetDurationSeconds: built.targetDurationSeconds,
+            raceFormat: built.raceFormat,
+            roundNumber: built.roundNumber,
+        };
+        this.trackName = built.trackName;
+        if (!this.initSimFromCurrentConfig()) {
+            return "Failed to load race — check car builds in the Garage";
+        }
+        this.entries = built.entries.map((e) => ({
+            entryId: e.entryId,
+            teamName: e.teamName,
+            carNumber: e.carNumber,
+            classId: e.classId,
+        }));
+        this.runtimePlayerEntryId = built.playerEntryId;
+        this.activeRoundNumber = built.roundNumber;
+        this.meta.clearLastCompletedRound();
+        this.aiStrategy.reset();
+        this.paused = true;
+        if (this.timeScale === 0)
+            this.timeScale = 1;
+        this.ensureTickLoop();
+        console.log(`[sim_host] Round ${built.roundNumber} — ${built.trackName} ${built.raceFormat} (${this.entries.length} cars, paused until resume)`);
+        return null;
+    }
+    submitCommand(entryId, command) {
+        if (!this.session.submitCommand)
+            return "submitCommand unavailable";
+        if (entryId !== this.runtimePlayerEntryId) {
+            return "You can only send commands to your car";
+        }
+        this.session.submitCommand(entryId, command);
+        return null;
+    }
+    hireStaff(role, name, skill) {
+        return this.meta.hireStaff(role, name, skill);
+    }
+    investRd(partId, points) {
+        return this.meta.investRd(partId, points);
+    }
+    completeRound(position, classId) {
+        return this.meta.completeRound(position, classId);
+    }
+    signSponsor(offerId) {
+        return this.meta.signSponsor(offerId);
+    }
+    dropSponsor(offerId) {
+        return this.meta.dropSponsor(offerId);
+    }
+    createTeam(payload) {
+        return this.meta.createTeam(payload);
+    }
+    saveTeamCreationDraft(draft) {
+        return this.meta.saveTeamCreationDraft(draft);
+    }
+    saveCarBuild(build) {
+        return this.meta.saveCarBuild(build);
+    }
+    buyCar(payload) {
+        return this.meta.buyCar(payload);
+    }
+    setActiveCar(carId) {
+        return this.meta.setActiveCar(carId);
+    }
+    setPlayerEntry(carId) {
+        return this.meta.setPlayerEntry(carId);
+    }
+    removeCar(carId) {
+        return this.meta.removeCar(carId);
+    }
+    saveDriverRoster(roster, assignments) {
+        return this.meta.saveDriverRoster(roster, assignments);
+    }
+    refreshDriverMarket() {
+        return this.meta.refreshDriverMarket();
+    }
+    signDriverContract(listingId) {
+        return this.meta.signDriverContract(listingId);
+    }
+    saveTeamColors(colors) {
+        return this.meta.saveTeamColors(colors);
+    }
+    setWeekendTireCompound(compound) {
+        return this.meta.setWeekendTireCompound(compound);
+    }
+    validateFleetForRace() {
+        return this.meta.validateFleetForRace();
+    }
+    newGame() {
+        const meta = this.meta.resetNewGame();
+        const prevCwd = process.cwd();
+        process.chdir(this.repoRoot);
+        this.session.initFromRaceConfig(this.configPathForSim());
+        process.chdir(prevCwd);
+        this.parsedConfig = (0, config_parser_1.parseRaceConfig)(this.repoRoot, this.raceConfigPath);
+        this.refreshEntriesFromConfig();
+        this.raceTime = 0;
+        this.aiStrategy.reset();
+        this.paused = true;
+        if (this.timeScale === 0)
+            this.timeScale = 1;
+        this.restartTickLoop();
+        return meta;
+    }
+    getGameCatalog() {
+        return (0, catalog_1.loadGameCatalog)(this.repoRoot);
     }
     getRaceTime() {
         return this.session.getRaceTime?.() ?? this.raceTime;
@@ -116,6 +266,9 @@ class SimHost {
         if (mapLabels.length === 0)
             return geometry;
         return { ...geometry, mapLabels };
+    }
+    getTrackPreview(trackId) {
+        return (0, track_loader_1.loadTrackGeometryById)(this.repoRoot, trackId);
     }
     setTimeScale(scale) {
         this.timeScale = Math.max(0, scale);
@@ -144,6 +297,7 @@ class SimHost {
         }
     }
     restartRace() {
+        this.meta.reopenRound(this.activeRoundNumber);
         const prevCwd = process.cwd();
         process.chdir(this.repoRoot);
         const ok = this.session.restartRace?.() ??
@@ -152,6 +306,7 @@ class SimHost {
         if (!ok)
             return false;
         this.raceTime = 0;
+        this.aiStrategy.reset();
         this.paused = false;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -169,18 +324,13 @@ class SimHost {
         this.parsedConfig = (0, config_parser_1.parseRaceConfig)(this.repoRoot, this.raceConfigPath);
         this.simTimestep = this.parsedConfig.simTimestep;
         this.trackName = (0, config_parser_1.loadTrackName)(this.repoRoot, this.parsedConfig.trackConfigPath);
-        if (this.parsedConfig.entriesPath) {
-            this.entries = (0, config_parser_1.parseEntries)(this.repoRoot, this.parsedConfig.entriesPath);
-        }
-        else {
-            this.entries = [
-                { entryId: "solo-1", teamName: "Solo Entry", carNumber: 1, classId: "solo" },
-            ];
-        }
+        this.refreshEntriesFromConfig();
         this.raceTime = 0;
-        this.paused = false;
+        this.aiStrategy.reset();
+        this.paused = true;
         if (this.timeScale === 0)
             this.timeScale = 1;
+        this.meta.reload();
         this.restartTickLoop();
         return true;
     }
@@ -190,13 +340,10 @@ class SimHost {
         return snapshots.map((snap) => {
             const fromEntry = numbersByEntryId.get(snap.entryId) ??
                 numbersByTeamName.get(snap.teamName) ??
-                0;
-            const carNumber = fromEntry > 0
-                ? fromEntry
-                : Number(snap.carNumber) > 0
-                    ? Number(snap.carNumber)
-                    : 0;
-            return { ...snap, carNumber };
+                "";
+            const carNumber = fromEntry ||
+                (typeof snap.carNumber === "string" && snap.carNumber ? snap.carNumber : "");
+            return carNumber ? { ...snap, carNumber } : snap;
         });
     }
     configPathForSim() {
@@ -213,17 +360,33 @@ class SimHost {
         this.stop();
         this.ensureTickLoop();
     }
+    runAiStrategy() {
+        if (!this.session.submitCommand)
+            return;
+        const snapshots = this.session.getSnapshots();
+        this.aiStrategy.tick(snapshots, this.runtimePlayerEntryId, {
+            raceTime: this.getRaceTime(),
+            targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
+        }, (entryId, command) => this.session.submitCommand(entryId, command));
+    }
     step() {
         if (this.paused || this.timeScale === 0)
             return;
         if (this.session.isRaceComplete())
             return;
-        const delta = this.simTimestep * this.timeScale;
-        this.session.tick(delta);
-        this.raceTime += delta;
+        // Always integrate physics at sim_timestep — large steps overheat engines and
+        // spike vibration damage when time compression multiplies delta in one tick.
+        const frameDelta = this.simTimestep * this.timeScale;
+        let remaining = frameDelta;
+        while (remaining > 1e-9) {
+            const dt = Math.min(this.simTimestep, remaining);
+            this.session.tick(dt);
+            remaining -= dt;
+        }
+        this.raceTime += frameDelta;
+        this.runAiStrategy();
         const snapshots = this.enrichSnapshots(this.session.getSnapshots());
-        const raceTime = this.session.getRaceTime?.() ?? this.raceTime;
-        this.onTick?.(raceTime, snapshots);
+        const raceTime = this.getRaceTime();
         const rawEvents = this.session.drainEvents();
         const events = rawEvents.map((e) => typeof e.type === "string" && e.type.includes("_")
             ? (0, adapters_1.normalizeEvent)(e)
@@ -238,9 +401,10 @@ class SimHost {
                     classId: s.classId,
                     position: s.racePosition,
                 })));
-                this.stop();
+                this.paused = true;
             }
         }
+        this.onTick?.(raceTime, snapshots);
     }
 }
 exports.SimHost = SimHost;

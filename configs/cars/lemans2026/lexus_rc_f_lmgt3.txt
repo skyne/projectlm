@@ -1,0 +1,24 @@
+# Lexus RC F LMGT3 — 2UR-GSE 5.0L NA V8 (2026 Le Mans LMGT3)
+car_name=Lexus RC F LMGT3
+engine_layout=V8
+fuel_type=Gasoline
+cylinders=8
+bore=0.094
+stroke=0.090
+max_rpm=7600
+peak_torque_nm=570
+peak_torque_rpm=6000
+base_vibration=0.92
+
+chassis_type=GT3Spaceframe
+front_aero_type=HighDownforceSplitter
+rear_aero_type=HighDownforceWing
+cooling_pack=EnduranceHeavyDuty
+wheel_package=GT3Front20Rear21
+suspension_layout=DoubleWishboneGT3
+starting_tire_compound=Medium
+fuel_system=StandardTank
+brake_system=CarbonCeramic
+transmission=XtracP529
+hybrid_system=None
+

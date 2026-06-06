@@ -1,0 +1,24 @@
+# Ferrari 296 LMGT3 — F163CE 3.0L 120° twin-turbo V6 (2026 Le Mans LMGT3)
+car_name=Ferrari 296 LMGT3
+engine_layout=V6
+fuel_type=Gasoline
+cylinders=6
+bore=0.088
+stroke=0.082
+max_rpm=8500
+peak_torque_nm=570
+peak_torque_rpm=5800
+base_vibration=0.85
+
+chassis_type=GT3Oreca
+front_aero_type=HighDownforceSplitter
+rear_aero_type=HighDownforceWing
+cooling_pack=EnduranceHeavyDuty
+wheel_package=GT3Front20Rear21
+suspension_layout=DoubleWishboneGT3
+starting_tire_compound=Medium
+fuel_system=StandardTank
+brake_system=CarbonCeramic
+transmission=XtracP529
+hybrid_system=None
+

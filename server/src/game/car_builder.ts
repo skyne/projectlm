@@ -1,0 +1,313 @@
+import * as fs from "fs";
+import * as path from "path";
+import type {
+  CarBuildPayload,
+  EngineBuildPayload,
+  FleetCarPayload,
+  MetaStatePayload,
+} from "../ws_protocol";
+import { defaultBuildForClass, loadGameCatalog, parseEngineFromTemplate, defaultWheelPackageForClass, defaultSuspensionForClass } from "./catalog";
+import { validateEngineBuild } from "./engine_model";
+import { loadCarPlatforms } from "./car_marketplace";
+import { activeFleetCar } from "./fleet";
+import {
+  loadAssemblyRules,
+  validateAssemblyCompatibility,
+} from "./part_compatibility";
+import { sanitizeCarConfigFile } from "./class_legality";
+import {
+  resolveWheelSetup,
+  validateSuspensionSetup,
+  validateWheelSetup,
+} from "./chassis_setup";
+
+const PLAYER_CAR_REL = "configs/runtime/player_car.txt";
+
+function parseTemplateSuspension(repoRoot: string, templatePath: string): string[] {
+  const abs = path.join(repoRoot, templatePath);
+  if (!fs.existsSync(abs)) return [];
+  const suspensionKeys = new Set([
+    "front_spring_stiffness",
+    "rear_spring_stiffness",
+    "ride_height",
+  ]);
+  const lines: string[] = [];
+  for (const line of fs.readFileSync(abs, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const key = trimmed.split("=")[0]?.trim();
+    if (key && suspensionKeys.has(key)) lines.push(trimmed);
+  }
+  return lines;
+}
+
+function engineToConfigLines(engine: EngineBuildPayload): string[] {
+  const lines = [
+    `engine_layout=${engine.engine_layout}`,
+    `fuel_type=${engine.fuel_type}`,
+    `cylinders=${engine.cylinders}`,
+    `bore=${engine.bore}`,
+    `stroke=${engine.stroke}`,
+    `max_rpm=${engine.max_rpm}`,
+    `peak_torque_nm=${engine.peak_torque_nm}`,
+    `peak_torque_rpm=${engine.peak_torque_rpm}`,
+    `base_vibration=${engine.base_vibration}`,
+  ];
+  if (engine.aspiration) lines.push(`aspiration=${engine.aspiration}`);
+  if (engine.drivetrain) lines.push(`drivetrain=${engine.drivetrain}`);
+  if (engine.generator_kw) lines.push(`generator_kw=${engine.generator_kw}`);
+  return lines;
+}
+
+function resolveEngine(
+  repoRoot: string,
+  classId: string,
+  build: CarBuildPayload,
+  platformTemplatePath?: string,
+): EngineBuildPayload | null {
+  if (build.engine) return build.engine;
+  const templatePath =
+    platformTemplatePath || loadClassTemplatePath(repoRoot, classId);
+  return parseEngineFromTemplate(repoRoot, templatePath);
+}
+
+function loadClassTemplatePath(repoRoot: string, classId: string): string {
+  const catalog = loadGameCatalog(repoRoot);
+  return catalog.classes.find((c) => c.id === classId)?.templateCarPath ?? "";
+}
+
+export function validateCarBuild(
+  repoRoot: string,
+  classId: string,
+  build: CarBuildPayload,
+  unlockedParts: string[],
+): string | null {
+  const catalog = loadGameCatalog(repoRoot);
+  const classInfo = catalog.classes.find((c) => c.id === classId);
+  if (!classInfo) return "Unknown class";
+
+  const rulesPath = path.join(repoRoot, "configs/class_rules.txt");
+  const legal: Record<string, Set<string>> = {};
+  let currentClass = "";
+
+  for (const line of fs.readFileSync(rulesPath, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("class=")) {
+      currentClass = trimmed.slice("class=".length).trim();
+    } else if (currentClass === classId && trimmed.includes("=")) {
+      const eq = trimmed.indexOf("=");
+      const key = trimmed.slice(0, eq).trim();
+      const val = trimmed.slice(eq + 1).trim();
+      if (key.startsWith("legal_")) {
+        legal[key] = new Set(val.split(",").map((s) => s.trim()));
+      }
+    }
+  }
+
+  const checks: Array<[string, string, string]> = [
+    ["legal_chassis", build.chassis_type, "chassis"],
+    ["legal_front_aero", build.front_aero_type, "front_aero"],
+    ["legal_rear_aero", build.rear_aero_type, "rear_aero"],
+    [
+      "legal_cooling",
+      build.cooling_pack === "Custom" || build.cooling ? "Custom" : build.cooling_pack,
+      "cooling",
+    ],
+    ["legal_wheel_package", build.wheel_package, "wheel_package"],
+    ["legal_suspension", build.front_suspension_layout ?? build.suspension_layout, "suspension"],
+    ["legal_suspension", build.rear_suspension_layout ?? build.suspension_layout, "suspension"],
+    ["legal_brakes", build.brake_system, "brake"],
+    ["legal_transmission", build.transmission, "transmission"],
+    ["legal_hybrid", build.hybrid_system, "hybrid"],
+  ];
+
+  for (const [ruleKey, partType, prefix] of checks) {
+    const allowed = legal[ruleKey];
+    if (allowed && !allowed.has(partType)) {
+      return `${partType} is not legal in ${classId}`;
+    }
+    const fullId = `${prefix}.${partType}`;
+    const rdLocked =
+      (prefix === "brake" &&
+        partType === "CarbonCeramic" &&
+        !unlockedParts.includes("brake.CarbonCeramic"));
+    if (rdLocked) return `${partType} requires R&D unlock`;
+  }
+
+  const assemblyErr = validateAssemblyCompatibility(
+    build,
+    loadAssemblyRules(repoRoot),
+  );
+  if (assemblyErr) return assemblyErr;
+
+  const wheelErr = validateWheelSetup(
+    resolveWheelSetup(build, classId),
+    classId,
+  );
+  if (wheelErr) return wheelErr;
+
+  const legalSusp = legal["legal_suspension"];
+  const suspErr = validateSuspensionSetup(
+    build,
+    legalSusp ? legalSusp : undefined,
+  );
+  if (suspErr) return suspErr;
+
+  const engine = resolveEngine(repoRoot, classId, build);
+  if (!engine) return "Engine configuration is required";
+  const engineErr = validateEngineBuild(engine);
+  if (engineErr) return engineErr;
+
+  return null;
+}
+
+function defaultWheelPackage(classId: string): string {
+  return defaultWheelPackageForClass(classId);
+}
+
+function defaultSuspensionLayout(classId: string): string {
+  return defaultSuspensionForClass(classId);
+}
+
+function writeCarConfigFile(
+  repoRoot: string,
+  relPath: string,
+  teamName: string,
+  classId: string,
+  build: CarBuildPayload,
+  platformTemplatePath?: string,
+  startingTireCompound = "Medium",
+): string {
+  const engine = resolveEngine(repoRoot, classId, build, platformTemplatePath);
+  if (!engine) throw new Error("Engine configuration is required");
+
+  const abs = path.join(repoRoot, relPath);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+
+  const lines = [
+    `# ${teamName} — ${classId}`,
+    `car_name=${build.carName}`,
+    ...engineToConfigLines(engine),
+    `chassis_type=${build.chassis_type}`,
+    `front_aero_type=${build.front_aero_type}`,
+    `rear_aero_type=${build.rear_aero_type}`,
+    `cooling_pack=${build.cooling_pack}`,
+    ...(build.cooling
+      ? [
+          `engine_radiator_size=${build.cooling.engine_radiator ?? 0.65}`,
+          `oil_cooler_size=${build.cooling.oil_cooler ?? 0.55}`,
+          `charge_air_cooler_size=${build.cooling.charge_air_cooler ?? 0.5}`,
+          `gearbox_cooler_size=${build.cooling.gearbox_cooler ?? 0.4}`,
+        ]
+      : []),
+    ...(build.duct_airflow != null ? [`duct_airflow=${build.duct_airflow}`] : []),
+    `wheel_package=${build.wheel_package}`,
+    `suspension_layout=${build.front_suspension_layout ?? build.suspension_layout}`,
+    ...(build.front_suspension_layout
+      ? [`front_suspension_layout=${build.front_suspension_layout}`]
+      : []),
+    ...(build.rear_suspension_layout
+      ? [`rear_suspension_layout=${build.rear_suspension_layout}`]
+      : []),
+    ...(build.front_wheel_diameter_in != null
+      ? [`front_wheel_diameter_in=${build.front_wheel_diameter_in}`]
+      : []),
+    ...(build.rear_wheel_diameter_in != null
+      ? [`rear_wheel_diameter_in=${build.rear_wheel_diameter_in}`]
+      : []),
+    ...(build.front_tire_width_mm != null
+      ? [`front_tire_width_mm=${build.front_tire_width_mm}`]
+      : []),
+    ...(build.rear_tire_width_mm != null
+      ? [`rear_tire_width_mm=${build.rear_tire_width_mm}`]
+      : []),
+    `starting_tire_compound=${startingTireCompound}`,
+    `fuel_system=${build.fuel_system}`,
+    `brake_system=${build.brake_system}`,
+    `transmission=${build.transmission}`,
+    `hybrid_system=${build.hybrid_system}`,
+  ];
+
+  fs.writeFileSync(abs, lines.join("\n") + "\n");
+  sanitizeCarConfigFile(repoRoot, relPath, classId);
+  return relPath;
+}
+
+export function writeFleetCarConfig(
+  repoRoot: string,
+  teamName: string,
+  car: FleetCarPayload,
+  platformTemplatePath?: string,
+  startingTireCompound = "Medium",
+): string {
+  return writeCarConfigFile(
+    repoRoot,
+    car.carConfigPath,
+    teamName,
+    car.classId,
+    car.build,
+    platformTemplatePath,
+    startingTireCompound,
+  );
+}
+
+export function writeAllFleetConfigs(
+  repoRoot: string,
+  meta: MetaStatePayload,
+  platforms?: Map<string, string>,
+): void {
+  const compound = meta.weekendTireCompound ?? "Medium";
+  for (const car of meta.fleet ?? []) {
+    const platformPath = car.platformId
+      ? platforms?.get(car.platformId)
+      : undefined;
+    writeFleetCarConfig(
+      repoRoot,
+      meta.teamName,
+      car,
+      platformPath,
+      compound,
+    );
+  }
+}
+
+export function writePlayerCarConfig(
+  repoRoot: string,
+  meta: MetaStatePayload,
+): string {
+  const active = activeFleetCar(meta);
+  if (active) {
+    const platformPath = active.platformId
+      ? (loadCarPlatforms(repoRoot).find((p) => p.id === active.platformId)
+          ?.templatePath ?? undefined)
+      : undefined;
+    writeFleetCarConfig(
+      repoRoot,
+      meta.teamName,
+      active,
+      platformPath,
+      meta.weekendTireCompound ?? "Medium",
+    );
+    return active.carConfigPath;
+  }
+
+  const classId = meta.playerClassId ?? "Hypercar";
+  const build =
+    meta.carBuild ??
+    (defaultBuildForClass(repoRoot, classId) as CarBuildPayload | null);
+  if (!build) throw new Error("No car build available");
+
+  return writeCarConfigFile(
+    repoRoot,
+    PLAYER_CAR_REL,
+    meta.teamName,
+    classId,
+    build,
+    undefined,
+    meta.weekendTireCompound ?? "Medium",
+  );
+}
+
+export function playerCarPath(): string {
+  return PLAYER_CAR_REL;
+}
