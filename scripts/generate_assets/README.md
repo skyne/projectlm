@@ -12,7 +12,16 @@ pip install -r requirements.txt
 cp ../../.env.example ../../.env   # add GEMINI_API_KEY
 ```
 
-## Generate MVP set
+## Generate assembly layers (composable car)
+
+Each part is a **full 21:9 overlay** aligned to the bare `LMDhDallara` chassis — stack layers to build a car.
+
+```bash
+python generate.py --set assembly
+python compose_preview.py   # writes output/assembly_preview.png
+```
+
+## Generate MVP set (misc assets)
 
 ```bash
 python generate.py --set mvp

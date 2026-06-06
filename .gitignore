@@ -82,5 +82,8 @@ bindings/node/build/
 .env
 .env.local
 scripts/generate_assets/.venv/
-scripts/generate_assets/output/_scratch/
+scripts/generate_assets/output/
 scripts/generate_assets/__pycache__/
+
+# macOS
+.DS_Store

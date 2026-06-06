@@ -22,6 +22,7 @@ from register_catalog import register_asset
 ROOT = Path(__file__).resolve().parents[2]
 STYLE_GUIDE = ROOT / "configs" / "asset_style_guide.txt"
 PROMPTS_PATH = Path(__file__).parent / "prompts.yaml"
+PART_DEFS_PATH = Path(__file__).parent / "part_defs.yaml"
 SCRATCH_DIR = Path(__file__).parent / "output" / "_scratch"
 PUBLIC_ASSETS = ROOT / "viewer" / "public" / "assets"
 
@@ -33,12 +34,34 @@ def load_style() -> str:
     return STYLE_GUIDE.read_text(encoding="utf-8").strip()
 
 
+def load_part_defs() -> dict:
+    if not PART_DEFS_PATH.exists():
+        return {}
+    return yaml.safe_load(PART_DEFS_PATH.read_text(encoding="utf-8")) or {}
+
+
+def resolve_part_desc(job: dict, part_defs: dict) -> str:
+    category = job["category"]
+    part_id = job["part_id"]
+    bucket = part_defs.get(category, {})
+    entry = bucket.get(part_id, {})
+    if job.get("layer_type") == "chassis_base":
+        return entry.get("bare", entry.get("part", f"{part_id} chassis"))
+    return entry.get("part", f"{part_id} component")
+
+
 def load_jobs(set_name: str) -> list[dict]:
     data = yaml.safe_load(PROMPTS_PATH.read_text(encoding="utf-8"))
     jobs = data.get(set_name, [])
     if not jobs:
         raise SystemExit(f"No jobs in prompts.yaml set '{set_name}'")
-    return jobs
+    part_defs = load_part_defs()
+    resolved: list[dict] = []
+    for job in jobs:
+        j = dict(job)
+        j["part_desc"] = resolve_part_desc(j, part_defs)
+        resolved.append(j)
+    return resolved
 
 
 def extract_image_bytes_gemini(response) -> bytes:
@@ -48,14 +71,52 @@ def extract_image_bytes_gemini(response) -> bytes:
     raise RuntimeError("No image in Gemini response")
 
 
-def generate_gemini(client, model: str, prompt: str, scratch_path: Path) -> Path:
+def load_reference_image(chassis_id: str) -> bytes | None:
+    catalog_path = ROOT / "configs" / "visual_catalog.json"
+    if not catalog_path.exists():
+        return None
+    import json
+
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    entry = catalog.get("chassis", {}).get(chassis_id)
+    if not entry:
+        return None
+    path = ROOT / "viewer" / "public" / entry["layer"]
+    if not path.exists():
+        return None
+    return path.read_bytes()
+
+
+def generate_gemini(
+    client,
+    model: str,
+    prompt: str,
+    scratch_path: Path,
+    *,
+    aspect_ratio: str | None = None,
+    reference_bytes: bytes | None = None,
+) -> Path:
     from google.genai import types
 
-    print(f"  → Gemini ({model})…")
+    image_config = None
+    if aspect_ratio:
+        image_config = types.ImageConfig(aspect_ratio=aspect_ratio)
+
+    ref_note = ", +chassis ref" if reference_bytes else ""
+    print(f"  → Gemini ({model}{f', {aspect_ratio}' if aspect_ratio else ''}{ref_note})…")
+
+    contents: list = []
+    if reference_bytes:
+        contents.append(types.Part.from_bytes(data=reference_bytes, mime_type="image/png"))
+    contents.append(prompt)
+
     response = client.models.generate_content(
         model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+        contents=contents,
+        config=types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=image_config,
+        ),
     )
     raw = extract_image_bytes_gemini(response)
     scratch_path.parent.mkdir(parents=True, exist_ok=True)
@@ -111,11 +172,20 @@ def generate_one(
     height: int,
     gemini_client=None,
     gemini_model: str = "",
+    aspect_ratio: str | None = None,
+    reference_bytes: bytes | None = None,
 ) -> Path:
     if backend == "gemini":
         if gemini_client is None:
             raise RuntimeError("Gemini client not configured")
-        return generate_gemini(gemini_client, gemini_model, prompt, scratch_path)
+        return generate_gemini(
+            gemini_client,
+            gemini_model,
+            prompt,
+            scratch_path,
+            aspect_ratio=aspect_ratio,
+            reference_bytes=reference_bytes,
+        )
     if backend == "pollinations":
         return generate_pollinations(prompt, scratch_path, width=width, height=height)
     raise ValueError(f"Unknown backend: {backend}")
@@ -140,12 +210,28 @@ def run_job(
     part_id = job["part_id"]
     width = int(job.get("width", 1024))
     height = int(job.get("height", 512))
-    prompt = job["prompt"].format(style=style)
+    aspect_ratio = job.get("aspect_ratio")
+    stretch = bool(job.get("stretch", False))
+    norm_mode = job.get("normalize", "sprite" if job.get("layer_type") == "sprite" else "fit")
+    remove_bg = bool(
+        job.get(
+            "remove_background",
+            category in {"chassis", "front_aero", "rear_aero", "wheel_package", "hybrid_system"},
+        )
+    )
+    prompt = job["prompt"].format(style=style, part_desc=job.get("part_desc", ""))
 
     print(f"\n[{job_id}] {width}×{height}")
     if dry_run:
         print(prompt[:200] + "…")
         return
+
+    reference_bytes = None
+    ref_chassis = job.get("reference_chassis")
+    if ref_chassis and job.get("layer_type") != "chassis_base":
+        reference_bytes = load_reference_image(ref_chassis)
+        if reference_bytes:
+            print(f"  ref: chassis/{ref_chassis}")
 
     scratch = SCRATCH_DIR / f"{job_id}.raw.png"
     generate_one(
@@ -156,6 +242,8 @@ def run_job(
         height=height,
         gemini_client=gemini_client,
         gemini_model=gemini_model,
+        aspect_ratio=aspect_ratio,
+        reference_bytes=reference_bytes,
     )
 
     out_dir = PUBLIC_ASSETS / category
@@ -164,17 +252,30 @@ def run_job(
         out_dir / f"{part_id}.png",
         width=width,
         height=height,
-        remove_near_black_bg=category in {"chassis", "front_aero", "rear_aero", "wheel_package"},
+        remove_background=remove_bg,
+        stretch=stretch,
+        mode=norm_mode,
     )
     rel = asset_rel_path(category, part_id, digest)
     print(f"  ✓ {rel}")
 
     if register:
-        extra = {}
+        extra: dict = {}
+        if job.get("layer_type"):
+            extra["layerType"] = job["layer_type"]
+        if job.get("slot"):
+            extra["slot"] = job["slot"]
+        if job.get("socket"):
+            extra["socket"] = job["socket"]
+        if job.get("z") is not None:
+            extra["z"] = int(job["z"])
+        if job.get("compatible_chassis"):
+            extra["compatibleChassis"] = job["compatible_chassis"]
         if category == "chassis":
-            extra = {"classId": "Hypercar", "anchor": {"x": width // 2, "y": int(height * 0.55)}}
-        if category in {"front_aero", "rear_aero"}:
-            extra = {"z": 20 if category == "front_aero" else 30}
+            extra.setdefault("classId", "Hypercar")
+            extra.setdefault("anchor", {"x": width // 2, "y": int(height * 0.55)})
+            extra.setdefault("layerType", "chassis_base")
+            extra.setdefault("z", 10)
         register_asset(
             category=category,
             part_id=part_id,

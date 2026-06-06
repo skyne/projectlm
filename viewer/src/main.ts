@@ -4,6 +4,7 @@ import { EventLog } from "./components/EventLog";
 import { PlaybackControls } from "./components/PlaybackControls";
 import { Timetable } from "./components/Timetable";
 import { HeaderNav } from "./components/HeaderNav";
+import { CarPreview } from "./components/CarPreview";
 import { ViewerClient } from "./ws/client";
 import { enrichSnapshots, setEntryNumbersFromSession } from "./entryNumbers";
 import type { CarSnapshot } from "./ws/protocol";
@@ -13,6 +14,7 @@ const mapPanel = document.getElementById("map-panel")!;
 const timetableContainer = document.getElementById("timetable-container")!;
 
 const headerNav = new HeaderNav(document.getElementById("header-nav")!);
+const carPreview = new CarPreview(document.getElementById("car-preview-container")!);
 const track = new SvgTrack(document.getElementById("track-container")!);
 const timetable = new Timetable(timetableContainer);
 const leaderboard = new Leaderboard(document.getElementById("leaderboard-container")!);
