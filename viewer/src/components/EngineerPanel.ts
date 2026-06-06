@@ -69,6 +69,15 @@ export class EngineerPanel {
     this.root.classList.toggle("hidden", !active);
   }
 
+  setInteractionEnabled(enabled: boolean): void {
+    this.askBtn.disabled = !enabled || this.loading;
+    this.questionInput.disabled = !enabled;
+    this.applyBtn.disabled = !enabled;
+    this.root.querySelector<HTMLButtonElement>(".engineer-refresh-status")!.disabled =
+      !enabled;
+    this.root.classList.toggle("spectator-readonly", !enabled);
+  }
+
   setLoading(loading: boolean): void {
     this.loading = loading;
     this.askBtn.disabled = loading;

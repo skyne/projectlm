@@ -26,6 +26,7 @@ export interface BuiltRace {
   roundNumber: number;
   entries: GeneratedEntry[];
   playerEntryId: string;
+  managedEntryIds: string[];
 }
 
 function writeStaffConfig(
@@ -76,9 +77,16 @@ export function buildRaceForRound(
     includeReserves: round.trackId === "lemans_la_sarthe",
   });
 
+  const managedEntryIds = entries
+    .filter((e) => e.teamName === meta.teamName && e.fleetCarId)
+    .map((e) => e.entryId);
+
   const playerFleetEntry = entries.find((e) => e.fleetCarId === playerCarId);
   const resolvedPlayerEntryId =
-    playerFleetEntry?.entryId ?? entries.find((e) => e.isPlayer)?.entryId ?? meta.playerEntryId;
+    playerFleetEntry?.entryId ??
+    managedEntryIds[0] ??
+    entries.find((e) => e.isPlayer)?.entryId ??
+    meta.playerEntryId;
 
   const entriesPath = writeEntriesFile(
     repoRoot,
@@ -154,5 +162,6 @@ export function buildRaceForRound(
     roundNumber: round.round,
     entries,
     playerEntryId: resolvedPlayerEntryId,
+    managedEntryIds,
   };
 }

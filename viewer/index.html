@@ -18,9 +18,11 @@
         </div>
         <div id="header-nav"></div>
         <div class="header-status-wrap">
+          <div id="session-roster-container" class="header-roster-slot"></div>
           <span class="header-endurance-tag">24H · 6H · 12H</span>
           <span id="race-lap-counter" class="race-lap-counter hidden">Lap —</span>
           <span id="status" class="status">Connecting…</span>
+          <button type="button" id="change-identity-btn" class="change-identity-btn hidden" title="Change display name or role">Identity</button>
         </div>
       </header>
       <main class="layout">
@@ -45,6 +47,7 @@
             <span class="sidebar-brand-label">Race Control</span>
           </div>
           <div id="race-controls-container"></div>
+          <div id="pitwall-container"></div>
           <div id="engineer-container"></div>
           <div id="event-log-container"></div>
           <div id="playback-container"></div>
@@ -52,6 +55,7 @@
       </main>
     </div>
     <div id="team-wizard-overlay"></div>
+    <div id="join-session-overlay"></div>
     <div id="pit-stop-modal"></div>
     <div id="post-race-overlay" class="post-race-overlay hidden"></div>
     <script type="module" src="/src/main.ts"></script>

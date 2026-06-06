@@ -5618,3 +5618,189 @@ body {
 .buy-quantity-field {
   margin: 0.75rem 0 0.35rem;
 }
+
+/* Multiplayer session roster (header) */
+.header-roster-slot {
+  max-width: 280px;
+}
+
+.session-roster-header.hidden {
+  display: none;
+}
+
+.session-roster-mode {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-cyan, #5eead4);
+  margin-bottom: 0.25rem;
+}
+
+.session-roster-mode.hidden {
+  display: none;
+}
+
+/* Join session overlay */
+.join-session-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.join-session-overlay.hidden {
+  display: none;
+}
+
+.join-session-card {
+  width: min(420px, calc(100vw - 2rem));
+  background: var(--panel-bg, #12151c);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 1.25rem 1.35rem 1.35rem;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+.join-session-header h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+}
+
+.join-session-subtitle {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.join-session-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.join-session-field input,
+.join-session-field select {
+  font-size: 0.95rem;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+}
+
+.join-session-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.join-session-error {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: #f87171;
+}
+
+.join-session-error.hidden {
+  display: none;
+}
+
+.join-session-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.change-identity-btn {
+  font-size: 0.68rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+}
+
+.change-identity-btn.hidden {
+  display: none;
+}
+
+.change-identity-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.session-roster-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.session-roster-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.session-roster-name {
+  font-weight: 600;
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-roster-role {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+}
+
+.roster-role-host {
+  background: rgba(212, 168, 67, 0.25);
+  color: #e8c56a;
+}
+
+.roster-role-player {
+  background: rgba(80, 160, 255, 0.2);
+  color: #7eb8ff;
+}
+
+.roster-role-spectator {
+  background: rgba(160, 160, 160, 0.2);
+  color: #bbb;
+}
+
+.panel.spectator-readonly,
+.pitwall.spectator-readonly,
+.race-controls.spectator-readonly,
+.engineer-panel.spectator-readonly {
+  opacity: 0.72;
+}
+
+.panel.spectator-readonly input,
+.panel.spectator-readonly select,
+.panel.spectator-readonly button {
+  pointer-events: none;
+}

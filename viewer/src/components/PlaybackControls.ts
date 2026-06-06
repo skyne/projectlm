@@ -129,11 +129,25 @@ export class PlaybackControls {
     this.slider.disabled = true;
   }
 
+  setTimeScale(scale: number): void {
+    this.slider.value = String(scale);
+    this.scaleLabel.textContent = `${scale.toFixed(1)}×`;
+    if (scale === 0) this.setPaused(true);
+  }
+
   resetSession(): void {
     this.slider.disabled = false;
-    this.slider.value = "1";
-    this.scaleLabel.textContent = "1.0×";
+    this.setTimeScale(1);
     this.setRaceTime(0);
     this.remainingRow.classList.remove("time-low");
+  }
+
+  setControlsEnabled(enabled: boolean): void {
+    this.slider.disabled = !enabled;
+    this.pauseBtn.disabled = !enabled || this.paused;
+    this.resumeBtn.disabled = !enabled || !this.paused;
+    this.root.querySelector<HTMLButtonElement>(".btn-restart")!.disabled = !enabled;
+    this.root.querySelector<HTMLButtonElement>(".btn-reload")!.disabled = !enabled;
+    this.root.classList.toggle("spectator-readonly", !enabled);
   }
 }

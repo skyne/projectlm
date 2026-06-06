@@ -296,15 +296,19 @@ export class AiStrategyManager {
 
   tick(
     snapshots: CarSnapshot[],
-    playerEntryId: string,
+    managedEntryIds: string[] | Set<string>,
     ctx: AiStrategyContext,
     submitCommand: (entryId: string, command: string) => boolean,
     getPlan?: (entryId: string) => AiStintPlan | undefined,
   ): AiPitDecision[] {
     const queued: AiPitDecision[] = [];
+    const managed =
+      managedEntryIds instanceof Set
+        ? managedEntryIds
+        : new Set(managedEntryIds);
 
     for (const snap of snapshots) {
-      if (snap.entryId === playerEntryId) continue;
+      if (managed.has(snap.entryId)) continue;
       if (snap.retired || snap.inPit) continue;
 
       const plan = getPlan?.(snap.entryId);

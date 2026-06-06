@@ -29,6 +29,7 @@ export class SeasonCalendar {
   private selectedRound: number | null = null;
   private previewByTrack = new Map<string, TrackGeometryPayload>();
   private pendingTrackId: string | null = null;
+  private hostControlsEnabled = true;
 
   constructor(container: HTMLElement, handlers: SeasonCalendarHandlers) {
     this.handlers = handlers;
@@ -72,6 +73,12 @@ export class SeasonCalendar {
     this.renderDetail();
     const event = this.getSelectedEvent();
     if (event) this.ensurePreview(event.trackId);
+  }
+
+  setInteractionEnabled(enabled: boolean): void {
+    this.hostControlsEnabled = enabled;
+    const startBtn = this.detailEl.querySelector<HTMLButtonElement>(".season-cal-start-btn");
+    if (startBtn) startBtn.disabled = !enabled;
   }
 
   setTrackPreview(trackId: string, geometry: TrackGeometryPayload): void {
@@ -193,5 +200,8 @@ export class SeasonCalendar {
 
     const startBtn = this.detailEl.querySelector(".season-cal-start-btn");
     startBtn?.addEventListener("click", () => this.handlers.onStartRace?.());
+    if (startBtn && !this.hostControlsEnabled) {
+      (startBtn as HTMLButtonElement).disabled = true;
+    }
   }
 }

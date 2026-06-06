@@ -73,6 +73,15 @@ export class RaceControls {
     this.root.classList.toggle("hidden", !active);
   }
 
+  setInteractionEnabled(enabled: boolean): void {
+    this.pitBtn.disabled = !enabled;
+    this.cancelPitBtn.disabled = !enabled;
+    for (const btn of this.modeButtons) {
+      btn.disabled = !enabled;
+    }
+    this.root.classList.toggle("spectator-readonly", !enabled);
+  }
+
   updateSnapshot(snap: CarSnapshot | null): void {
     this.latestSnap = snap;
     if (!snap) {

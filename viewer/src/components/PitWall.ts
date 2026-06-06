@@ -232,6 +232,24 @@ export class PitWall {
     return this.entrySelect.value || this.playerEntryId;
   }
 
+  setInteractionEnabled(enabled: boolean): void {
+    this.entrySelect.disabled = !enabled;
+    this.fuelInput.disabled = !enabled;
+    this.compoundSelect.disabled = !enabled;
+    this.modeSelect.disabled = !enabled;
+    for (const cb of this.tireChecks) {
+      (cb as HTMLInputElement).disabled = !enabled;
+    }
+    this.repairEngine.disabled = !enabled;
+    this.repairBody.disabled = !enabled;
+    this.driverChange.disabled = !enabled;
+    this.root.querySelector<HTMLButtonElement>("#pit-request")!.disabled = !enabled;
+    this.root.querySelector<HTMLButtonElement>("#pit-cancel")!.disabled = !enabled;
+    this.setupMoreDfBtn.disabled = !enabled;
+    this.setupLessDragBtn.disabled = !enabled;
+    this.root.classList.toggle("spectator-readonly", !enabled);
+  }
+
   private buildPitCommand(): string {
     const tires: string[] = [];
     for (const cb of this.tireChecks) {

@@ -26,9 +26,11 @@ export class RaceHub {
   private roundInfoEl: HTMLElement;
   private pointsEl: HTMLElement;
   private startBtn: HTMLButtonElement;
+  private garageBtn: HTMLButtonElement;
   private handlers: RaceHubHandlers;
   private latestMeta: MetaStatePayload | null = null;
   private sessionInfo: SessionInitPayload | null = null;
+  private hostControlsEnabled = true;
 
   constructor(container: HTMLElement, handlers: RaceHubHandlers) {
     this.handlers = handlers;
@@ -95,6 +97,7 @@ export class RaceHub {
     this.roundInfoEl = this.root.querySelector(".round-info")!;
     this.pointsEl = this.root.querySelector(".championship-points")!;
     this.startBtn = this.root.querySelector(".start-race-btn")!;
+    this.garageBtn = this.root.querySelector(".garage-link-btn")!;
 
     this.startBtn.addEventListener("click", () => {
       this.handlers.onStartRace();
@@ -113,6 +116,20 @@ export class RaceHub {
   setSessionInfo(info: SessionInitPayload | null): void {
     this.sessionInfo = info;
     this.renderRoundInfo();
+  }
+
+  setInteractionEnabled(enabled: boolean): void {
+    this.hostControlsEnabled = enabled;
+    this.syncHostControls();
+  }
+
+  private syncHostControls(): void {
+    const meta = this.latestMeta;
+    const current = meta?.calendar.find((e) => e.round === meta.currentRound);
+    const blocked =
+      !meta?.setupComplete || !current || current.completed || !this.hostControlsEnabled;
+    this.startBtn.disabled = blocked;
+    this.garageBtn.disabled = !this.hostControlsEnabled;
   }
 
   update(meta: MetaStatePayload): void {
@@ -175,9 +192,7 @@ export class RaceHub {
     }
 
     this.renderRoundInfo();
-    const current = meta.calendar.find((e) => e.round === meta.currentRound);
-    this.startBtn.disabled =
-      !meta.setupComplete || !current || current.completed;
+    this.syncHostControls();
   }
 
   private renderRoundInfo(): void {

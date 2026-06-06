@@ -14,6 +14,7 @@ function parseClientMessage(raw) {
         if (msg.protocol !== exports.PROTOCOL_VERSION)
             return null;
         const allowed = [
+            "join_session",
             "set_time_scale",
             "pause",
             "resume",
@@ -40,6 +41,9 @@ function parseClientMessage(raw) {
             "new_game",
             "get_track_preview",
             "set_weekend_tire_compound",
+            "ask_engineer",
+            "get_engineer_status",
+            "ask_garage_engineer",
         ];
         if (!allowed.includes(msg.type))
             return null;
