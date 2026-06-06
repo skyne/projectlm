@@ -68,7 +68,9 @@ function nextDriverIndex(snap) {
     const active = snap.activeDriverIndex ?? 0;
     return (active + 1) % roster.length;
 }
-function pickCompound(stint, profile) {
+function pickCompound(stint, profile, plan) {
+    if (plan?.compound)
+        return plan.compound;
     if (stint === 0)
         return "medium";
     if (profile.targetStintSeconds <= 2200) {
@@ -98,18 +100,21 @@ function buildPitCommand(options) {
     }
     return parts.join("|");
 }
-function desiredDriverMode(snap) {
+function desiredDriverMode(snap, plan) {
     const health = snap.engineHealth ?? 100;
     const coolant = snap.coolantTempC ?? 70;
     if (health <= ENGINE_HEALTH_CONSERVE || coolant >= COOLANT_CONSERVE_C) {
         return "conserve";
     }
+    if (plan?.driverMode)
+        return plan.driverMode;
     return "normal";
 }
-function fuelLow(snap, profile) {
+function fuelLow(snap, profile, plan) {
     const tank = tankLiters(snap);
+    const lowFrac = plan?.fuelStopFraction ?? profile.fuelLowFraction;
     return (snap.fuel <= tank * profile.fuelCriticalFraction ||
-        snap.fuel <= tank * profile.fuelLowFraction);
+        snap.fuel <= tank * lowFrac);
 }
 function fuelCritical(snap, profile) {
     const tank = tankLiters(snap);
@@ -126,9 +131,10 @@ function needsRegulatoryDriverSwap(snap) {
     const stamina = snap.driverStamina ?? 100;
     return stamina <= DRIVER_STAMINA_THRESHOLD;
 }
-function needsScheduledStop(snap, profile) {
+function needsScheduledStop(snap, profile, plan) {
+    const target = plan?.targetStintSeconds ?? profile.targetStintSeconds;
     const stint = snap.driverStintSeconds ?? 0;
-    return stint >= profile.targetStintSeconds * 0.95;
+    return stint >= target * 0.95;
 }
 function trafficWindowOpen(snap) {
     const gap = snap.gapToLeader;
@@ -136,7 +142,8 @@ function trafficWindowOpen(snap) {
         return true;
     return gap >= TRAFFIC_WINDOW_GAP_SEC || gap <= 0.5;
 }
-function evaluateAiPitStop(snap, state, ctx) {
+function evaluateAiPitStop(snap, state, ctx, plan) {
+    void ctx;
     if (snap.retired || snap.inPit || snap.pitQueued)
         return null;
     if (snap.lap < 2)
@@ -145,12 +152,15 @@ function evaluateAiPitStop(snap, state, ctx) {
         return null;
     const profile = profileFor(snap.classId);
     const tank = tankLiters(snap);
-    const lowFuel = fuelLow(snap, profile);
+    const lowFuel = fuelLow(snap, profile, plan);
     const criticalFuel = fuelCritical(snap, profile);
     const tireWear = maxWheelWear(snap);
     const tiresWorn = tireWear >= profile.tireWearThreshold;
-    const needsDriver = needsRegulatoryDriverSwap(snap);
-    const scheduledStop = needsScheduledStop(snap, profile);
+    const scheduledStop = needsScheduledStop(snap, profile, plan);
+    const planDriverSwap = plan?.driverChangeNextStop === true &&
+        scheduledStop &&
+        (snap.driverRoster?.length ?? 0) >= 2;
+    const needsDriver = needsRegulatoryDriverSwap(snap) || planDriverSwap;
     const repairEngine = (snap.engineHealth ?? 100) <= ENGINE_REPAIR_HEALTH;
     const mustStop = criticalFuel ||
         lowFuel ||
@@ -185,6 +195,8 @@ function evaluateAiPitStop(snap, state, ctx) {
         reasons.push("engine");
     if (scheduledStop && !lowFuel)
         reasons.push("stint");
+    if (plan?.notes && scheduledStop)
+        reasons.push("plan");
     return {
         entryId: snap.entryId,
         command: buildPitCommand({
@@ -218,27 +230,31 @@ class AiStrategyManager {
         }
         return state;
     }
-    tick(snapshots, playerEntryId, ctx, submitCommand) {
+    tick(snapshots, playerEntryId, ctx, submitCommand, getPlan) {
         const queued = [];
         for (const snap of snapshots) {
             if (snap.entryId === playerEntryId)
                 continue;
             if (snap.retired || snap.inPit)
                 continue;
+            const plan = getPlan?.(snap.entryId);
             const state = this.stateFor(snap.entryId);
-            const mode = desiredDriverMode(snap);
+            if (plan) {
+                state.tireCompound = plan.compound;
+            }
+            const mode = desiredDriverMode(snap, plan);
             if (mode !== state.driverMode) {
                 if (submitCommand(snap.entryId, `driver_mode=${mode}`)) {
                     state.driverMode = mode;
                 }
             }
-            const decision = evaluateAiPitStop(snap, state, ctx);
+            const decision = evaluateAiPitStop(snap, state, ctx, plan);
             if (!decision)
                 continue;
             if (submitCommand(decision.entryId, decision.command)) {
                 state.lastPitLap = snap.lap;
                 state.pitsCompleted += 1;
-                state.tireCompound = pickCompound(state.pitsCompleted, profileFor(snap.classId));
+                state.tireCompound = pickCompound(state.pitsCompleted, profileFor(snap.classId), getPlan?.(snap.entryId));
                 queued.push(decision);
             }
         }

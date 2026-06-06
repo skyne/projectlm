@@ -479,6 +479,14 @@ What can player tune mid-race?
 
 option B with a mix of D, staff should give suggetsions, how good these should depend on the staff quality and experience, also drivers should give feedback on the car
 
+**Dev viewer status (2026):** Implemented in `feature/suspension-setup` worktree:
+
+- **Garage:** per-axle ride height, springs, ARB, dampers; alignment (camber/toe) and final drive
+- **Race weekend:** per-track setup sheet in Race Hub (merged onto garage build at session start, not saved to garage)
+- **Mid-race:** pit modal + quick setup buttons (wing, brake bias, suspension deltas); engineer skill gates command magnitude
+- **Live telemetry:** wing, bias, ride heights, springs, ARB, camber on pit wall readout
+- **AI grid:** track presets applied to AI car configs at race build
+
 ### 🔶 YOUR INPUT: Driver model
 - **A)** Abstract — car always hits `maxSafeSpeed` for sector (current)
 - **B)** Driver stat affects consistency, mistake rate, traffic passing

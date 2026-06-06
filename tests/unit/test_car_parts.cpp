@@ -93,3 +93,55 @@ TEST_CASE("ApplyClassBoP Hypercar faster than LMP2 on power", "[unit][car][bop]"
   REQUIRE(hypercar.peakHorsepower > lmp2.peakHorsepower);
   REQUIRE(lmp2.peakHorsepower >= rules.at("LMGT3").powerCapHP * 0.85);
 }
+
+TEST_CASE("Suspension setup overrides compile and pit deltas clamp",
+          "[unit][car][suspension]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  REQUIRE(LoadPartCatalog(ConfigPath("part_catalog.txt"), catalog));
+  REQUIRE(LoadAssemblyConfig(ConfigPath("physics_config.txt"), assembly));
+
+  CarConfig car;
+  car.frontSpringStiffness = 150000.0;
+  car.rearSpringStiffness = 160000.0;
+  car.frontRideHeightM = 0.035;
+  car.rearRideHeightM = 0.045;
+  car.frontArbStiffness = 1.1;
+  car.rearArbStiffness = 0.95;
+  car.frontDamperBump = 10;
+  car.frontDamperRebound = 6;
+  car.hasCustomFrontSpring = true;
+  car.hasCustomRearSpring = true;
+  car.hasCustomFrontRideHeight = true;
+  car.hasCustomRearRideHeight = true;
+  car.hasCustomFrontArb = true;
+  car.hasCustomRearArb = true;
+  car.hasCustomDampers = true;
+  car.hasCustomSuspensionSetup = true;
+
+  CompileCarArchitecture(car, catalog, assembly);
+
+  REQUIRE(car.frontSpringStiffness == Catch::Approx(150000.0));
+  REQUIRE(car.rearSpringStiffness == Catch::Approx(160000.0));
+  REQUIRE(car.frontRideHeightM == Catch::Approx(0.035));
+  REQUIRE(car.rearRideHeightM == Catch::Approx(0.045));
+  REQUIRE(car.rideHeight == Catch::Approx(0.040));
+  REQUIRE(car.frontArbStiffness == Catch::Approx(1.1));
+  REQUIRE(car.rearArbStiffness == Catch::Approx(0.95));
+  REQUIRE(car.frontDamperBump == 10);
+  REQUIRE(car.frontDamperRebound == 6);
+
+  const double balanceBefore = car.tyreBalanceFactor;
+  REQUIRE(car.rollStiffnessFactor > car.suspensionRollStiffnessBase);
+
+  SuspensionSetupDelta delta;
+  delta.frontRideHeightDelta = -0.020;
+  delta.rearArbDelta = 0.60;
+  ApplySuspensionSetupDelta(car, delta);
+
+  REQUIRE(car.frontRideHeightM == Catch::Approx(0.020));
+  REQUIRE(car.rearArbStiffness == Catch::Approx(1.5));
+  REQUIRE(car.rideHeight == Catch::Approx((0.020 + 0.045) * 0.5));
+  REQUIRE(car.tyreBalanceFactor != Catch::Approx(balanceBefore));
+  REQUIRE(car.rollStiffnessFactor > car.suspensionRollStiffnessBase * 1.2);
+}

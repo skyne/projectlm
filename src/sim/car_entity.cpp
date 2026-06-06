@@ -63,6 +63,8 @@ Car::Car(std::string entryId, std::string teamName, RaceClass raceClass,
   state_.fuelRemaining = config_.fuelTankCapacity;
   state_.hybridDeployRemainingMJ = config_.hybridStintDeployBudgetMJ;
   state_.batteryChargeMJ = config_.hybridStintDeployBudgetMJ;
+  wingAngleDelta_ = config_.startingWingDelta;
+  brakeBias_ = config_.startingBrakeBias;
   placeOnGrid(gridPosition);
 }
 
@@ -138,7 +140,7 @@ void Car::applyCommand(const SimCommand &command) {
     if (command.swapToDriverIndex >= 0)
       driver_.swapDriver(command.swapToDriverIndex);
     break;
-  case SimCommandType::SetupChange:
+  case SimCommandType::SetupChange: {
     if (!pit_.inPit && !pit_.pendingEnter) {
       setupFeedback_ = "Setup changes only in pit lane";
       setupFeedbackTimer_ = 6.0;
@@ -146,16 +148,22 @@ void Car::applyCommand(const SimCommand &command) {
     }
     wingAngleDelta_ = std::clamp(wingAngleDelta_ + command.wingAngleDelta, -0.25, 0.25);
     brakeBias_ = std::clamp(brakeBias_ + command.brakeBiasDelta, 0.40, 0.60);
-    config_.rideHeight =
-        std::clamp(config_.rideHeight + command.rideHeightDelta, 0.02, 0.12);
+    SuspensionSetupDelta suspensionDelta = command.suspension;
+    if (std::abs(command.rideHeightDelta) > 1e-9 &&
+        !suspensionDelta.hasAnyChange()) {
+      suspensionDelta.frontRideHeightDelta = command.rideHeightDelta;
+      suspensionDelta.rearRideHeightDelta = command.rideHeightDelta;
+    }
+    ApplySuspensionSetupDelta(config_, suspensionDelta);
     config_.totalDownforceCl =
         std::max(0.1, config_.totalDownforceCl + command.wingAngleDelta * 0.08);
     config_.totalDragCd =
         std::max(0.05, config_.totalDragCd + command.wingAngleDelta * 0.02);
-    setupFeedback_ = driver_.setupFeedbackForChange(command.wingAngleDelta,
-                                                    command.brakeBiasDelta);
+    setupFeedback_ = driver_.setupFeedbackForChange(
+        command.wingAngleDelta, command.brakeBiasDelta, suspensionDelta);
     setupFeedbackTimer_ = 8.0;
     break;
+  }
   default:
     break;
   }
@@ -565,6 +573,14 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const 
   snap.setupFeedback = setupFeedback_;
   snap.wingAngle = wingAngleDelta_;
   snap.brakeBias = brakeBias_;
+  snap.frontRideHeightMm = config_.frontRideHeightM * 1000.0;
+  snap.rearRideHeightMm = config_.rearRideHeightM * 1000.0;
+  snap.frontSpringNm = config_.frontSpringStiffness;
+  snap.rearSpringNm = config_.rearSpringStiffness;
+  snap.frontArbStiffness = config_.frontArbStiffness;
+  snap.rearArbStiffness = config_.rearArbStiffness;
+  snap.frontCamberDeg = config_.frontCamberDeg;
+  snap.rearCamberDeg = config_.rearCamberDeg;
   snap.serviceabilityFactor = config_.serviceabilityFactor;
   snap.driverChangeFactor = config_.driverChangeFactor;
   snap.pitCount = pitCount_;

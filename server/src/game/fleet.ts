@@ -4,6 +4,7 @@ import type {
   EngineBuildPayload,
   FleetCarPayload,
   MetaStatePayload,
+  PartOptionPayload,
 } from "../ws_protocol";
 import {
   buildFromPlatform,
@@ -13,7 +14,12 @@ import {
   platformById,
   privateerSlotCost,
 } from "./car_marketplace";
-import { defaultBuildForClass, defaultWheelPackageForClass, defaultSuspensionForClass } from "./catalog";
+import {
+  defaultBuildForClass,
+  defaultWheelPackageForClass,
+  defaultSuspensionForClass,
+  loadGameCatalog,
+} from "./catalog";
 import { allDriverIndices } from "./driver_catalog";
 import { normalizeCarBuild } from "./chassis_setup";
 import type { CarPlatform } from "./car_marketplace";
@@ -173,6 +179,7 @@ function inferClassId(chassis: string): string {
 function rawToBuild(
   raw: Record<string, string>,
   carName: string,
+  partsBySlot?: Record<string, PartOptionPayload[]>,
 ): CarBuildPayload {
   const classId = inferClassId(raw.chassis_type ?? "LMDhDallara");
   const build: CarBuildPayload = {
@@ -198,6 +205,44 @@ function rawToBuild(
       : undefined,
     rear_tire_width_mm: raw.rear_tire_width_mm
       ? parseFloat(raw.rear_tire_width_mm)
+      : undefined,
+    front_ride_height_mm: raw.front_ride_height_mm
+      ? parseFloat(raw.front_ride_height_mm)
+      : raw.front_ride_height_m
+        ? parseFloat(raw.front_ride_height_m) * 1000
+        : undefined,
+    rear_ride_height_mm: raw.rear_ride_height_mm
+      ? parseFloat(raw.rear_ride_height_mm)
+      : raw.rear_ride_height_m
+        ? parseFloat(raw.rear_ride_height_m) * 1000
+        : undefined,
+    front_spring_nm: raw.front_spring_nm
+      ? parseFloat(raw.front_spring_nm)
+      : raw.front_spring_stiffness
+        ? parseFloat(raw.front_spring_stiffness)
+        : undefined,
+    rear_spring_nm: raw.rear_spring_nm
+      ? parseFloat(raw.rear_spring_nm)
+      : raw.rear_spring_stiffness
+        ? parseFloat(raw.rear_spring_stiffness)
+        : undefined,
+    front_arb_stiffness: raw.front_arb_stiffness
+      ? parseFloat(raw.front_arb_stiffness)
+      : undefined,
+    rear_arb_stiffness: raw.rear_arb_stiffness
+      ? parseFloat(raw.rear_arb_stiffness)
+      : undefined,
+    front_damper_bump: raw.front_damper_bump
+      ? parseInt(raw.front_damper_bump, 10)
+      : undefined,
+    front_damper_rebound: raw.front_damper_rebound
+      ? parseInt(raw.front_damper_rebound, 10)
+      : undefined,
+    rear_damper_bump: raw.rear_damper_bump
+      ? parseInt(raw.rear_damper_bump, 10)
+      : undefined,
+    rear_damper_rebound: raw.rear_damper_rebound
+      ? parseInt(raw.rear_damper_rebound, 10)
       : undefined,
     fuel_system: raw.fuel_system ?? "StandardTank",
     brake_system: raw.brake_system ?? "StandardCaliper",
@@ -230,7 +275,7 @@ function rawToBuild(
   if (raw.duct_airflow) {
     build.duct_airflow = parseFloat(raw.duct_airflow);
   }
-  return normalizeCarBuild(build, classId);
+  return normalizeCarBuild(build, classId, partsBySlot);
 }
 
 export function buyCarUnitCost(
@@ -274,8 +319,13 @@ export function createFleetCar(
   if (payload.acquisition === "privateer" && payload.platformId) {
     const platform = platformById(repoRoot, payload.platformId);
     if (!platform) return null;
+    const catalog = loadGameCatalog(repoRoot);
     const raw = buildFromPlatform(repoRoot, platform, teamName);
-    build = rawToBuild(raw, raw.carName ?? `${teamName} ${platform.displayName}`);
+    build = rawToBuild(
+      raw,
+      raw.carName ?? `${teamName} ${platform.displayName}`,
+      catalog.partsBySlot,
+    );
     manufacturerId = platform.manufacturerId;
     platformId = platform.id;
   } else {
@@ -286,11 +336,13 @@ export function createFleetCar(
         existing.manufacturerId ??
         teamName.toLowerCase().replace(/\s+/g, "_").slice(0, 24);
     } else {
+      const catalog = loadGameCatalog(repoRoot);
       const raw = defaultBuildForClass(repoRoot, payload.classId);
       if (!raw) return null;
       build = rawToBuild(
         raw,
         raw.carName ?? `${teamName} ${payload.classId}`,
+        catalog.partsBySlot,
       );
       manufacturerId = teamName.toLowerCase().replace(/\s+/g, "_").slice(0, 24);
     }

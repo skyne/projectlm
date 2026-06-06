@@ -85,6 +85,14 @@ export interface CarSnapshot {
   setupFeedback?: string;
   wingAngle?: number;
   brakeBias?: number;
+  frontRideHeightMm?: number;
+  rearRideHeightMm?: number;
+  frontSpringNm?: number;
+  rearSpringNm?: number;
+  frontArbStiffness?: number;
+  rearArbStiffness?: number;
+  frontCamberDeg?: number;
+  rearCamberDeg?: number;
   serviceabilityFactor?: number;
   driverChangeFactor?: number;
   pitCount?: number;

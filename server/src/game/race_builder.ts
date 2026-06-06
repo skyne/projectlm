@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { MetaStatePayload } from "../ws_protocol";
+import { materializeAiGridConfigs } from "./track_ai_setup";
 import { regulationForRound } from "./regulations";
 import { generateGrid, writeEntriesFile, type GeneratedEntry } from "./grid_generator";
 import { writeAllFleetConfigs } from "./car_builder";
@@ -56,7 +57,8 @@ export function buildRaceForRound(
   const platformMap = new Map(
     loadCarPlatforms(repoRoot).map((p) => [p.id, p.templatePath]),
   );
-  writeAllFleetConfigs(repoRoot, meta, platformMap);
+  const trackPreset = meta.trackSetupPresets?.[round.trackId] ?? null;
+  writeAllFleetConfigs(repoRoot, meta, platformMap, trackPreset);
 
   const trackConfigPath = trackJsonPath(round.trackId);
   const durationSec = formatToDurationSeconds(round.format);
@@ -75,6 +77,18 @@ export function buildRaceForRound(
     seasonYear: meta.seasonYear,
     includeReserves: round.trackId === "lemans_la_sarthe",
   });
+
+  for (const entry of entries) {
+    if (entry.isPlayer) continue;
+    const rel = `configs/runtime/ai/grid_${entry.grid}_${path.basename(entry.carConfigPath)}`;
+    const src = path.join(repoRoot, entry.carConfigPath);
+    const dest = path.join(repoRoot, rel);
+    if (!fs.existsSync(src)) continue;
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+    entry.carConfigPath = rel;
+  }
+  materializeAiGridConfigs(repoRoot, entries, round.trackId);
 
   const playerFleetEntry = entries.find((e) => e.fleetCarId === playerCarId);
   const resolvedPlayerEntryId =

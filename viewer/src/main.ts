@@ -69,11 +69,22 @@ const raceControls = new RaceControls(document.getElementById("race-controls-con
   onDriverMode: (entryId, mode) => client.submitCommand(entryId, `driver_mode=${mode}`),
   onPitNow: () => pitModal.open(raceControls.getPlayerSnapshot()),
   onCancelPit: (entryId) => client.submitCommand(entryId, "cancel_pit"),
+  onSetupChange: (entryId, command) => {
+    client.submitCommand(entryId, command);
+    raceControls.setStatus(`Setup: ${command}`);
+  },
 });
 
 const engineerPanel = new EngineerPanel(document.getElementById("engineer-container")!, {
   onAsk: (entryId, question) => client.askEngineer(entryId, question),
   onApplyCommand: (entryId, command) => {
+    const lower = command.toLowerCase();
+    if (lower.startsWith("pit|")) {
+      pitModal.applySuggestedCommand(command);
+      pitModal.open(raceControls.getPlayerSnapshot());
+      raceControls.setStatus("Engineer pit plan loaded — review and confirm");
+      return;
+    }
     client.submitCommand(entryId, command);
     raceControls.setStatus(`Engineer command sent: ${command}`);
   },
@@ -97,6 +108,7 @@ const raceHub = new RaceHub(seasonPanel, {
   onStartRace: () => startRound(),
   onOpenGarage: () => setMainView("garage"),
   onSetWeekendCompound: (compound) => client.setWeekendTireCompound(compound),
+  onSaveTrackSetup: (trackId, preset) => client.saveTrackSetup(trackId, preset),
 });
 
 const seasonCalendar = new SeasonCalendar(calendarPanel, {
@@ -226,6 +238,9 @@ function applySessionInit(payload: SessionInitPayload): void {
 function applyMetaState(meta: MetaStatePayload): void {
   const wasIncomplete = latestMeta != null && !latestMeta.setupComplete;
   latestMeta = meta;
+  const engineerSkill =
+    meta.staff?.find((s) => s.role === "engineer")?.skill ?? 75;
+  pitModal.setEngineerSkill(engineerSkill);
   teamHQ.update(meta);
   raceHub.update(meta);
   seasonCalendar.update(meta);

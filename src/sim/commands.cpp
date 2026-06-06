@@ -58,6 +58,30 @@ void ParseRepairList(const std::string &value, std::vector<std::string> &out) {
   }
 }
 
+void ParseSuspensionKey(const std::string &key, const std::string &val,
+                        SuspensionSetupDelta &delta) {
+  if (key == "front_ride_height")
+    delta.frontRideHeightDelta = std::stod(val);
+  else if (key == "rear_ride_height")
+    delta.rearRideHeightDelta = std::stod(val);
+  else if (key == "front_spring")
+    delta.frontSpringDelta = std::stod(val);
+  else if (key == "rear_spring")
+    delta.rearSpringDelta = std::stod(val);
+  else if (key == "front_arb")
+    delta.frontArbDelta = std::stod(val);
+  else if (key == "rear_arb")
+    delta.rearArbDelta = std::stod(val);
+  else if (key == "front_damper_bump")
+    delta.frontDamperBumpDelta = std::stoi(val);
+  else if (key == "front_damper_rebound")
+    delta.frontDamperReboundDelta = std::stoi(val);
+  else if (key == "rear_damper_bump")
+    delta.rearDamperBumpDelta = std::stoi(val);
+  else if (key == "rear_damper_rebound")
+    delta.rearDamperReboundDelta = std::stoi(val);
+}
+
 } // namespace
 
 SimCommand ParseSimCommand(const std::string &raw) {
@@ -116,8 +140,12 @@ SimCommand ParseSimCommand(const std::string &raw) {
         cmd.pit.wingAngleDelta = std::stod(val);
       else if (key == "brake_bias")
         cmd.pit.brakeBiasDelta = std::stod(val);
-      else if (key == "ride_height")
+      else if (key == "ride_height") {
         cmd.pit.rideHeightDelta = std::stod(val);
+        cmd.pit.suspension.frontRideHeightDelta = cmd.pit.rideHeightDelta;
+        cmd.pit.suspension.rearRideHeightDelta = cmd.pit.rideHeightDelta;
+      } else
+        ParseSuspensionKey(key, val, cmd.pit.suspension);
     }
     return cmd;
   }
@@ -146,8 +174,12 @@ SimCommand ParseSimCommand(const std::string &raw) {
         cmd.wingAngleDelta = std::stod(val);
       else if (key == "brake_bias")
         cmd.brakeBiasDelta = std::stod(val);
-      else if (key == "ride_height")
+      else if (key == "ride_height") {
         cmd.rideHeightDelta = std::stod(val);
+        cmd.suspension.frontRideHeightDelta = cmd.rideHeightDelta;
+        cmd.suspension.rearRideHeightDelta = cmd.rideHeightDelta;
+      } else
+        ParseSuspensionKey(key, val, cmd.suspension);
     }
     return cmd;
   }

@@ -1,6 +1,7 @@
 #ifndef DRIVER_HPP
 #define DRIVER_HPP
 
+#include "car_parts.hpp"
 #include <cstdint>
 #include <random>
 #include <string>
@@ -66,7 +67,9 @@ struct DriverState {
   double modeThrottleMultiplier() const;
   double modeWearMultiplier() const;
   double modeFuelMultiplier() const;
-  std::string setupFeedbackForChange(double wingDelta, double brakeDelta) const;
+  std::string setupFeedbackForChange(double wingDelta, double brakeDelta,
+                                     const SuspensionSetupDelta &suspension =
+                                         SuspensionSetupDelta{}) const;
   bool rollMistake(double deltaTime, double raceTime, bool underAttack);
 };
 

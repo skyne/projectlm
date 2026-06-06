@@ -1,3 +1,10 @@
+import {
+  appendSetupParts,
+  hasSetupDelta,
+  PIT_SETUP_SEC,
+  type PitSetupDelta,
+} from "./setupCommands";
+
 /** Mirrors src/sim/pit_stop.cpp constants and duration logic. */
 export const PIT_LANE_FRACTION = 0.06;
 export const PIT_LANE_SPEED_KMH = 60;
@@ -6,6 +13,7 @@ export const PIT_TIRE_SEC = 2.8;
 export const PIT_REPAIR_ENGINE_SEC = 12;
 export const PIT_REPAIR_BODY_SEC = 8;
 export const PIT_DRIVER_CHANGE_SEC = 15;
+export { PIT_SETUP_SEC, type PitSetupDelta };
 
 let trackLapLengthM = 7000;
 
@@ -26,9 +34,11 @@ export interface PitEstimateOptions {
   repairEngine?: boolean;
   repairBody?: boolean;
   driverChange?: boolean;
+  setup?: PitSetupDelta;
   serviceabilityFactor?: number;
   driverChangeFactor?: number;
   mechanicSkill?: number;
+  engineerSkill?: number;
   lapLengthM?: number;
 }
 
@@ -39,12 +49,15 @@ export function estimatePitServiceSeconds(options: PitEstimateOptions): number {
     repairEngine = false,
     repairBody = false,
     driverChange = false,
+    setup,
     serviceabilityFactor = 1,
     driverChangeFactor = 1,
     mechanicSkill = 75,
+    engineerSkill = 75,
   } = options;
 
   const mechanicFactor = 1 - (mechanicSkill / 100 - 0.5) * 0.25;
+  const engineerFactor = 1 - (engineerSkill / 100 - 0.5) * 0.2;
   const pitWorkScale = 1 / Math.max(0.5, serviceabilityFactor);
   const driverSwapScale = 1 / Math.max(0.5, driverChangeFactor);
 
@@ -61,6 +74,9 @@ export function estimatePitServiceSeconds(options: PitEstimateOptions): number {
   }
   if (driverChange) {
     total += PIT_DRIVER_CHANGE_SEC * mechanicFactor * driverSwapScale;
+  }
+  if (setup && hasSetupDelta(setup)) {
+    total += PIT_SETUP_SEC * engineerFactor;
   }
   return Math.max(5, total);
 }
@@ -89,6 +105,7 @@ export interface PitStopOptions {
   repairs: string[];
   driverChange: boolean;
   driverIndex?: number;
+  setup?: PitSetupDelta;
 }
 
 export function buildPitCommand(options: PitStopOptions): string {
@@ -105,5 +122,6 @@ export function buildPitCommand(options: PitStopOptions): string {
       parts.push(`driver_index=${options.driverIndex}`);
     }
   }
+  if (options.setup) appendSetupParts(parts, options.setup);
   return parts.join("|");
 }

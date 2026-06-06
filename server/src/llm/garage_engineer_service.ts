@@ -21,19 +21,24 @@ const GARAGE_SYSTEM = `You are a WEC car development engineer helping design a l
 Analyze the build JSON, performance summary, and available parts. Suggest 1-2 focused changes.
 Use exact partType IDs from the catalog (the token before the parenthesis).
 
+You may also suggest numeric suspension tuning in the changes block:
+front_ride_height_mm, rear_ride_height_mm, front_spring_nm, rear_spring_nm,
+front_arb_stiffness, rear_arb_stiffness, front_camber_deg, rear_camber_deg,
+front_toe_deg, rear_toe_deg, final_drive_ratio (3.0–4.2).
+
 End with a JSON block:
 
 \`\`\`json
 {
   "changes": {
     "rear_aero_type": "ExactPartTypeId",
-    "brake_system": "ExactPartTypeId"
+    "front_spring_nm": 145000
   },
   "rationale": "one sentence"
 }
 \`\`\`
 
-Valid change keys: chassis_type, front_aero_type, rear_aero_type, cooling_pack, wheel_package, suspension_layout, fuel_system, brake_system, transmission, hybrid_system.
+Valid change keys: chassis_type, front_aero_type, rear_aero_type, cooling_pack, wheel_package, suspension_layout, fuel_system, brake_system, transmission, hybrid_system, plus the numeric suspension keys above.
 Skip [R&D LOCKED] parts. Empty changes {} if no change needed.`;
 
 function sanitizeChanges(
@@ -121,6 +126,7 @@ function fallbackGarageAdvice(
   compiled?: Record<string, number>,
   question?: string,
   unlockedParts: string[] = [],
+  trackHint?: string,
 ): GarageAdvice {
   const lines: string[] = [];
   const suggestedChanges = suggestFallbackChange(
@@ -145,6 +151,21 @@ function fallbackGarageAdvice(
   } else {
     lines.push(
       `Current ${classId} build "${build.carName}" looks balanced. Run a test session before major changes.`,
+    );
+  }
+
+  const hint = (trackHint ?? "").toLowerCase();
+  if (hint.includes("monza") || hint.includes("lemans") || hint.includes("mulsanne")) {
+    lines.push(
+      "Low-drag track — consider softer rear ARB and lower wing baseline on the weekend sheet; stiffer front springs help straight-line stability.",
+    );
+  } else if (hint.includes("spa") || hint.includes("fuji")) {
+    lines.push(
+      "High-speed corners — add front ARB stiffness and a touch more rear ride height for rotation without snap oversteer.",
+    );
+  } else if (hint.includes("bahrain")) {
+    lines.push(
+      "Tyre thermal track — rear-biased spring rates and moderate camber (-2.5° front / -1.8° rear) help manage rear deg.",
     );
   }
 
@@ -185,6 +206,7 @@ export class GarageEngineerService {
         options.compiled,
         options.question,
         options.unlockedParts,
+        options.trackHint,
       );
     }
 
@@ -260,6 +282,7 @@ export class GarageEngineerService {
         options.compiled,
         options.question,
         options.unlockedParts,
+        options.trackHint,
       );
       fb.text = `${fb.text} (LLM error: ${err instanceof Error ? err.message : String(err)})`;
       return fb;

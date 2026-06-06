@@ -42,6 +42,7 @@ const track_loader_1 = require("./game/track_loader");
 const catalog_1 = require("./game/catalog");
 const config_parser_1 = require("./config_parser");
 const ai_strategy_1 = require("./game/ai_strategy");
+const ai_stint_guide_1 = require("./llm/ai_stint_guide");
 const mock_session_1 = require("./mock_session");
 const DEFAULT_RACE_CONFIG = "configs/race_config_web.txt";
 function resolveRepoRoot(explicit) {
@@ -79,6 +80,7 @@ class SimHost {
         this.runtimePlayerEntryId = "entry-1";
         this.activeRoundNumber = 0;
         this.aiStrategy = new ai_strategy_1.AiStrategyManager();
+        this.aiStintGuide = new ai_stint_guide_1.AiStintGuide();
         this.repoRoot = resolveRepoRoot(options.repoRoot);
         this.meta = new meta_state_1.MetaStateManager(this.repoRoot);
         const rel = options.raceConfigPath ?? DEFAULT_RACE_CONFIG;
@@ -105,6 +107,7 @@ class SimHost {
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
         this.aiStrategy.reset();
+        this.aiStintGuide.reset();
         return true;
     }
     refreshEntriesFromConfig() {
@@ -164,6 +167,7 @@ class SimHost {
         this.activeRoundNumber = built.roundNumber;
         this.meta.clearLastCompletedRound();
         this.aiStrategy.reset();
+        this.aiStintGuide.reset();
         this.paused = true;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -231,6 +235,9 @@ class SimHost {
     setWeekendTireCompound(compound) {
         return this.meta.setWeekendTireCompound(compound);
     }
+    saveTrackSetupPreset(trackId, preset) {
+        return this.meta.saveTrackSetupPreset(trackId, preset);
+    }
     validateFleetForRace() {
         return this.meta.validateFleetForRace();
     }
@@ -244,6 +251,7 @@ class SimHost {
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
         this.aiStrategy.reset();
+        this.aiStintGuide.reset();
         this.paused = true;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -307,6 +315,7 @@ class SimHost {
             return false;
         this.raceTime = 0;
         this.aiStrategy.reset();
+        this.aiStintGuide.reset();
         this.paused = false;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -327,6 +336,7 @@ class SimHost {
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
         this.aiStrategy.reset();
+        this.aiStintGuide.reset();
         this.paused = true;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -364,10 +374,16 @@ class SimHost {
         if (!this.session.submitCommand)
             return;
         const snapshots = this.session.getSnapshots();
-        this.aiStrategy.tick(snapshots, this.runtimePlayerEntryId, {
+        const ctx = {
             raceTime: this.getRaceTime(),
             targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
-        }, (entryId, command) => this.session.submitCommand(entryId, command));
+        };
+        this.aiStintGuide.observe(snapshots, this.runtimePlayerEntryId, {
+            trackName: this.trackName,
+            targetDurationSeconds: ctx.targetDurationSeconds,
+            raceTimeSec: ctx.raceTime,
+        });
+        this.aiStrategy.tick(snapshots, this.runtimePlayerEntryId, ctx, (entryId, command) => this.session.submitCommand(entryId, command), (entryId) => this.aiStintGuide.getPlan(entryId));
     }
     step() {
         if (this.paused || this.timeScale === 0)
