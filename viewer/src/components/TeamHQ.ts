@@ -245,18 +245,15 @@ export class TeamHQ {
         const li = document.createElement("li");
         li.className = "fleet-car-row";
         const isActive = car.id === meta.activeCarId;
-        const isPlayer = car.id === (meta.playerCarId ?? meta.activeCarId);
 
         li.innerHTML = `
           <div class="fleet-car-info">
             <span class="fleet-car-number">#${car.carNumber}</span>
             <span class="fleet-car-name">${escapeHtml(car.build.carName)}</span>
             ${isActive ? '<span class="fleet-badge-active">Editing</span>' : ""}
-            ${isPlayer ? '<span class="fleet-badge-player">You drive</span>' : ""}
           </div>
           <div class="fleet-car-actions">
             <button type="button" class="secondary-btn fleet-edit-btn">Edit</button>
-            <button type="button" class="secondary-btn fleet-drive-btn">Drive</button>
             <button type="button" class="secondary-btn fleet-remove-btn">Sell</button>
           </div>
         `;
@@ -264,9 +261,6 @@ export class TeamHQ {
         li.querySelector(".fleet-edit-btn")!.addEventListener("click", () => {
           this.handlers.onSetActiveCar?.(car.id);
           this.handlers.onOpenGarage?.();
-        });
-        li.querySelector(".fleet-drive-btn")!.addEventListener("click", () => {
-          this.handlers.onSetPlayerEntry?.(car.id);
         });
         li.querySelector(".fleet-remove-btn")!.addEventListener("click", () => {
           if (fleet.length <= 1) return;

@@ -77,8 +77,14 @@ function buildRaceForRound(repoRoot, meta) {
         seasonYear: meta.seasonYear,
         includeReserves: round.trackId === "lemans_la_sarthe",
     });
+    const managedEntryIds = entries
+        .filter((e) => e.teamName === meta.teamName && e.fleetCarId)
+        .map((e) => e.entryId);
     const playerFleetEntry = entries.find((e) => e.fleetCarId === playerCarId);
-    const resolvedPlayerEntryId = playerFleetEntry?.entryId ?? entries.find((e) => e.isPlayer)?.entryId ?? meta.playerEntryId;
+    const resolvedPlayerEntryId = playerFleetEntry?.entryId ??
+        managedEntryIds[0] ??
+        entries.find((e) => e.isPlayer)?.entryId ??
+        meta.playerEntryId;
     const entriesPath = (0, grid_generator_1.writeEntriesFile)(repoRoot, "configs/runtime/entries.txt", entries);
     const staffConfigPath = writeStaffConfig(repoRoot, "configs/runtime/staff.txt", meta);
     const playerFleetCarIds = new Set(entries
@@ -141,6 +147,7 @@ function buildRaceForRound(repoRoot, meta) {
         roundNumber: round.round,
         entries,
         playerEntryId: resolvedPlayerEntryId,
+        managedEntryIds,
         weatherContext: {
             trackId: round.trackId,
             month: raceMonth,

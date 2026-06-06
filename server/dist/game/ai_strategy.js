@@ -230,10 +230,13 @@ class AiStrategyManager {
         }
         return state;
     }
-    tick(snapshots, playerEntryId, ctx, submitCommand, getPlan) {
+    tick(snapshots, managedEntryIds, ctx, submitCommand, getPlan) {
         const queued = [];
+        const managed = managedEntryIds instanceof Set
+            ? managedEntryIds
+            : new Set(managedEntryIds);
         for (const snap of snapshots) {
-            if (snap.entryId === playerEntryId)
+            if (managed.has(snap.entryId))
                 continue;
             if (snap.retired || snap.inPit)
                 continue;

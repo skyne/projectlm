@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
+import { ClientSessionManager } from "./client_sessions";
 import { computeRaceFinances } from "./game/economy";
 import { EngineerService } from "./llm/engineer_service";
 import { GarageEngineerService } from "./llm/garage_engineer_service";
@@ -10,12 +11,14 @@ import {
   type AskGarageEngineerPayload,
   type BuyCarPayload,
   type CarBuildPayload,
+  type ClientAssignmentPayload,
   type CreateTeamPayload,
   type TeamCreationDraftPayload,
   type EventsPayload,
   type CompleteRoundPayload,
   type DropSponsorPayload,
   type HireStaffPayload,
+  type JoinSessionPayload,
   type RaceCompletePayload,
   type RdInvestPayload,
   type SignSponsorPayload,
@@ -39,22 +42,62 @@ function broadcast(clients: Set<WebSocket>, data: unknown): void {
   }
 }
 
+function sendJoinRequired(ws: WebSocket): void {
+  ws.send(
+    JSON.stringify(
+      serverMessage("error", {
+        message: "Send join_session before other commands",
+        code: "join_required",
+      }),
+    ),
+  );
+}
+
+function sendForbidden(ws: WebSocket): void {
+  ws.send(
+    JSON.stringify(
+      serverMessage("error", {
+        message: "Not permitted for your role",
+        code: "forbidden",
+      }),
+    ),
+  );
+}
+
 function main(): void {
   const host = new SimHost();
   const engineer = new EngineerService();
   const garageEngineer = new GarageEngineerService();
+  const sessions = new ClientSessionManager();
   const wss = new WebSocketServer({ port: PORT });
   const clients = new Set<WebSocket>();
   let trackSent = false;
 
   console.log(`[server] WebSocket listening on ws://localhost:${PORT}`);
 
-  wss.on("connection", (ws) => {
-    clients.add(ws);
-    console.log(`[server] Client connected (${clients.size} total)`);
+  function broadcastRoster(): void {
+    broadcast(clients, serverMessage("roster_update", sessions.roster()));
+  }
 
+  function deliverAssignment(
+    ws: WebSocket,
+    assignment: ClientAssignmentPayload,
+  ): void {
+    ws.send(JSON.stringify(serverMessage("client_assignment", assignment)));
+    broadcastRoster();
+  }
+
+  function sendBootstrap(ws: WebSocket): SessionInitPayload {
     const sessionInit: SessionInitPayload = host.getSessionInit();
     ws.send(JSON.stringify(serverMessage("session_init", sessionInit)));
+    if (sessionInit.raceActive) {
+      const catchUp: TickPayload = {
+        raceTime: host.getRaceTime(),
+        snapshots: host.getSnapshots(),
+        raceControl: host.getRaceControl(),
+      };
+      ws.send(JSON.stringify(serverMessage("tick", catchUp)));
+    }
     ws.send(JSON.stringify(serverMessage("meta_state", host.getMetaState())));
     ws.send(JSON.stringify(serverMessage("game_catalog", host.getGameCatalog())));
     void engineer.getStatus().then((status) => {
@@ -70,15 +113,60 @@ function main(): void {
       ws.send(JSON.stringify(serverMessage("track_geometry", geometry)));
     }
 
+    return sessionInit;
+  }
+
+  function afterSessionChange(): void {
+    sessions.syncEntryIds(host.getSessionInit());
+    broadcastRoster();
+  }
+
+  wss.on("connection", (ws) => {
+    clients.add(ws);
+    sessions.attach(ws);
+    console.log(`[server] Client connected (${clients.size} total)`);
+
+    const sessionInit = sendBootstrap(ws);
+    sessions.scheduleAutoJoin(ws, sessionInit, (assignment) => {
+      deliverAssignment(ws, assignment);
+    });
+
     ws.on("message", async (data) => {
       const raw = data.toString();
       const msg = parseClientMessage(raw);
       if (!msg) {
         ws.send(
           JSON.stringify(
-            serverMessage("error", { message: "Invalid client message" }),
+            serverMessage("error", {
+              message: "Invalid client message",
+              code: "invalid_message",
+            }),
           ),
         );
+        return;
+      }
+
+      if (msg.type === "join_session") {
+        const payload = msg.payload as JoinSessionPayload;
+        const result = sessions.join(ws, payload, host.getSessionInit());
+        if ("error" in result) {
+          ws.send(JSON.stringify(serverMessage("error", { message: result.error })));
+          return;
+        }
+        deliverAssignment(ws, result);
+        console.log(
+          `[server] ${result.displayName} joined as ${result.role} (${result.clientId})`,
+        );
+        return;
+      }
+
+      if (!sessions.isJoined(ws)) {
+        sendJoinRequired(ws);
+        return;
+      }
+
+      if (!sessions.can(ws, msg.type)) {
+        sendForbidden(ws);
         return;
       }
 
@@ -104,6 +192,7 @@ function main(): void {
             raceControl: host.getRaceControl(),
           };
           broadcast(clients, serverMessage("tick", payload));
+          afterSessionChange();
           console.log("[server] Race restarted");
         }
       } else if (msg.type === "reload_definitions") {
@@ -128,11 +217,36 @@ function main(): void {
             raceControl: host.getRaceControl(),
           };
           broadcast(clients, serverMessage("tick", payload));
+          afterSessionChange();
           console.log("[server] Reloaded definitions");
         }
       } else if (msg.type === "submit_command") {
         const payload = msg.payload as SubmitCommandPayload;
-        const commandError = host.submitCommand(payload.entryId, payload.command);
+        const clientSession = sessions.get(ws);
+        if (
+          clientSession &&
+          !sessions.canSubmitForEntry(ws, payload.entryId)
+        ) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", {
+                message: "Not authorized for this car",
+                code: "forbidden",
+              }),
+            ),
+          );
+          return;
+        }
+        const commandError = host.submitCommand(
+          payload.entryId,
+          payload.command,
+          clientSession
+            ? {
+                displayName: clientSession.displayName,
+                clientId: clientSession.clientId,
+              }
+            : undefined,
+        );
         if (commandError) {
           ws.send(
             JSON.stringify(serverMessage("error", { message: commandError })),
@@ -188,18 +302,19 @@ function main(): void {
                 JSON.stringify(serverMessage("error", { message: startErr })),
               );
             } else {
-          broadcast(clients, serverMessage("session_init", host.getSessionInit()));
-          broadcast(
-            clients,
-            serverMessage("track_geometry", host.getTrackGeometry()),
-          );
-          const payload: TickPayload = {
-            raceTime: host.getRaceTime(),
-            snapshots: host.getSnapshots(),
-            raceControl: host.getRaceControl(),
-          };
-          broadcast(clients, serverMessage("tick", payload));
-          console.log("[server] Round started");
+              broadcast(clients, serverMessage("session_init", host.getSessionInit()));
+              broadcast(
+                clients,
+                serverMessage("track_geometry", host.getTrackGeometry()),
+              );
+              const payload: TickPayload = {
+                raceTime: host.getRaceTime(),
+                snapshots: host.getSnapshots(),
+                raceControl: host.getRaceControl(),
+              };
+              broadcast(clients, serverMessage("tick", payload));
+              afterSessionChange();
+              console.log("[server] Round started");
             }
           }
         }
@@ -390,6 +505,7 @@ function main(): void {
         const meta = host.newGame();
         broadcast(clients, serverMessage("meta_state", meta));
         broadcast(clients, serverMessage("session_init", host.getSessionInit()));
+        afterSessionChange();
         console.log("[server] New game started");
       } else if (msg.type === "set_weekend_tire_compound") {
         const compound = String(
@@ -407,8 +523,16 @@ function main(): void {
     });
 
     ws.on("close", () => {
+      const session = sessions.detach(ws);
       clients.delete(ws);
-      console.log(`[server] Client disconnected (${clients.size} total)`);
+      if (session) {
+        broadcastRoster();
+        console.log(
+          `[server] ${session.displayName} disconnected (${clients.size} total)`,
+        );
+      } else {
+        console.log(`[server] Client disconnected (${clients.size} total)`);
+      }
     });
   });
 
@@ -427,8 +551,20 @@ function main(): void {
     },
     (raceTime, results) => {
       const meta = host.getMetaState();
-      const player = meta.playerEntryId;
-      const playerResult = results.find((r) => r.entryId === player);
+      const session = host.getSessionInit();
+      const managedIds =
+        session.managedEntryIds?.length
+          ? session.managedEntryIds
+          : [session.playerEntryId ?? meta.playerEntryId];
+      const managedResults = results.filter((r) =>
+        managedIds.includes(r.entryId),
+      );
+      const playerResult =
+        managedResults.length > 0
+          ? managedResults.reduce((best, r) =>
+              r.position < best.position ? r : best,
+            )
+          : undefined;
       const event = meta.calendar.find((e) => e.round === meta.currentRound);
       const scoring =
         event?.eventType !== "test" && event?.format !== "test";

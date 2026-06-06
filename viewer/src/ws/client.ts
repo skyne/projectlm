@@ -3,6 +3,9 @@ import {
   PROTOCOL_VERSION,
   type BuyCarPayload,
   type CarBuildPayload,
+  type ClientAssignmentPayload,
+  type ClientMessageType,
+  type ClientRole,
   type CreateTeamPayload,
   type TeamCreationDraftPayload,
   type DriverProfilePayload,
@@ -14,6 +17,7 @@ import {
   type GameCatalogPayload,
   type MetaStatePayload,
   type RaceCompletePayload,
+  type RosterUpdatePayload,
   type ServerMessage,
   type SessionInitPayload,
   type TickPayload,
@@ -23,9 +27,59 @@ import {
 
 export type ConnectionState = "connecting" | "open" | "closed";
 
+const PLAYER_ID_KEY = "projectlm-player-id";
+const DISPLAY_NAME_KEY = "projectlm-display-name";
+const PREFERRED_ROLE_KEY = "projectlm-preferred-role";
+const CLIENT_ID_KEY = "projectlm-client-id";
+
+export interface JoinSessionOptions {
+  displayName: string;
+  requestedRole?: ClientRole;
+}
+
+function getOrCreatePlayerId(): string {
+  let id = localStorage.getItem(PLAYER_ID_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(PLAYER_ID_KEY, id);
+  }
+  return id;
+}
+
+function getDisplayName(): string {
+  return localStorage.getItem(DISPLAY_NAME_KEY) ?? "";
+}
+
+function getPreferredRole(): ClientRole {
+  const role = localStorage.getItem(PREFERRED_ROLE_KEY);
+  if (role === "host" || role === "player" || role === "spectator") return role;
+  return "player";
+}
+
+export function hasSavedDisplayName(): boolean {
+  const name = getDisplayName().trim();
+  return name.length >= 2 && name.length <= 24;
+}
+
+export function saveJoinPreferences(opts: JoinSessionOptions): void {
+  localStorage.setItem(DISPLAY_NAME_KEY, opts.displayName.trim());
+  if (opts.requestedRole) {
+    localStorage.setItem(PREFERRED_ROLE_KEY, opts.requestedRole);
+  }
+}
+
+export function loadJoinPreferences(): JoinSessionOptions {
+  return {
+    displayName: getDisplayName(),
+    requestedRole: getPreferredRole(),
+  };
+}
+
 export interface ViewerHandlers {
   onStateChange?: (state: ConnectionState) => void;
   onSessionInit?: (payload: SessionInitPayload) => void;
+  onClientAssignment?: (payload: ClientAssignmentPayload) => void;
+  onRosterUpdate?: (payload: RosterUpdatePayload) => void;
   onTrackGeometry?: (payload: TrackGeometryPayload) => void;
   onTrackPreview?: (payload: TrackPreviewPayload) => void;
   onTick?: (payload: TickPayload) => void;
@@ -37,6 +91,7 @@ export interface ViewerHandlers {
   onEngineerStatus?: (payload: EngineerStatusPayload) => void;
   onGarageAdvice?: (payload: GarageAdvicePayload) => void;
   onError?: (message: string) => void;
+  onJoinRejected?: (message: string) => void;
 }
 
 function wsUrl(): string {
@@ -48,21 +103,51 @@ export class ViewerClient {
   private ws: WebSocket | null = null;
   private handlers: ViewerHandlers;
   private reconnectTimer: number | null = null;
+  private permissions = new Set<string>();
+  private role: ClientRole | null = null;
+  private pendingJoin: JoinSessionOptions | null = null;
+  private joined = false;
 
   constructor(handlers: ViewerHandlers) {
     this.handlers = handlers;
   }
 
-  connect(): void {
+  get clientRole(): ClientRole | null {
+    return this.role;
+  }
+
+  isSpectator(): boolean {
+    return this.role === "spectator";
+  }
+
+  canSend(type: ClientMessageType): boolean {
+    if (this.permissions.size === 0) return true;
+    return this.permissions.has(type);
+  }
+
+  connect(join?: JoinSessionOptions): void {
+    if (join) {
+      saveJoinPreferences(join);
+      this.pendingJoin = join;
+    } else if (!this.pendingJoin && hasSavedDisplayName()) {
+      this.pendingJoin = loadJoinPreferences();
+    }
+
+    if (!this.pendingJoin) return;
+
     this.setState("connecting");
     this.ws = new WebSocket(wsUrl());
 
     this.ws.onopen = () => {
       this.setState("open");
+      this.sendJoinSession(this.pendingJoin!);
     };
 
     this.ws.onclose = () => {
       this.setState("closed");
+      this.permissions.clear();
+      this.role = null;
+      this.joined = false;
       this.scheduleReconnect();
     };
 
@@ -78,6 +163,18 @@ export class ViewerClient {
         switch (msg.type) {
           case "session_init":
             this.handlers.onSessionInit?.(msg.payload as SessionInitPayload);
+            break;
+          case "client_assignment": {
+            const payload = msg.payload as ClientAssignmentPayload;
+            this.role = payload.role;
+            this.joined = true;
+            this.permissions = new Set(payload.permissions);
+            localStorage.setItem(CLIENT_ID_KEY, payload.clientId);
+            this.handlers.onClientAssignment?.(payload);
+            break;
+          }
+          case "roster_update":
+            this.handlers.onRosterUpdate?.(msg.payload as RosterUpdatePayload);
             break;
           case "track_geometry":
             this.handlers.onTrackGeometry?.(msg.payload as TrackGeometryPayload);
@@ -109,9 +206,15 @@ export class ViewerClient {
           case "garage_advice":
             this.handlers.onGarageAdvice?.(msg.payload as GarageAdvicePayload);
             break;
-          case "error":
-            this.handlers.onError?.((msg.payload as { message: string }).message);
+          case "error": {
+            const err = msg.payload as { message: string; code?: string };
+            if (err.code === "join_required" || err.message.includes("join")) {
+              this.handlers.onJoinRejected?.(err.message);
+            } else {
+              this.handlers.onError?.(err.message);
+            }
             break;
+          }
         }
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
@@ -119,6 +222,39 @@ export class ViewerClient {
         this.handlers.onError?.(`Failed to parse server message: ${detail}`);
       }
     };
+  }
+
+  reconnectAs(join: JoinSessionOptions): void {
+    this.disconnect();
+    saveJoinPreferences(join);
+    this.pendingJoin = join;
+    this.connect(join);
+  }
+
+  disconnect(): void {
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.ws?.close();
+    this.ws = null;
+    this.joined = false;
+    this.role = null;
+    this.permissions.clear();
+  }
+
+  private sendJoinSession(opts: JoinSessionOptions): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.ws.send(
+      JSON.stringify(
+        clientMessage("join_session", {
+          displayName: opts.displayName,
+          playerId: getOrCreatePlayerId(),
+          requestedRole: opts.requestedRole ?? "player",
+          reconnectClientId: localStorage.getItem(CLIENT_ID_KEY) ?? undefined,
+        }),
+      ),
+    );
   }
 
   setTimeScale(timeScale: number): void {
@@ -246,7 +382,15 @@ export class ViewerClient {
     this.send(clientMessage("ask_garage_engineer", payload));
   }
 
-  private send(msg: unknown): void {
+  private send(msg: ReturnType<typeof clientMessage>): void {
+    if (
+      msg.type !== "join_session" &&
+      this.permissions.size > 0 &&
+      !this.permissions.has(msg.type)
+    ) {
+      console.warn(`[ws] blocked ${msg.type} — insufficient permissions`);
+      return;
+    }
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
@@ -257,10 +401,18 @@ export class ViewerClient {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer !== null) return;
+    if (this.reconnectTimer !== null || !this.pendingJoin) return;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
     }, 2000);
   }
 }
+
+export {
+  getDisplayName,
+  getOrCreatePlayerId,
+  getPreferredRole,
+  DISPLAY_NAME_KEY,
+  PREFERRED_ROLE_KEY,
+};

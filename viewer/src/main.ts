@@ -14,14 +14,25 @@ import { RaceControls } from "./components/RaceControls";
 import { EngineerPanel } from "./components/EngineerPanel";
 import { TelemetryPanel } from "./components/TelemetryPanel";
 import { PitStopModal } from "./components/PitStopModal";
+import { PitWall } from "./components/PitWall";
+import { SessionRoster } from "./components/SessionRoster";
+import { JoinSessionModal } from "./components/JoinSessionModal";
 import { DriverCenter } from "./components/DriverCenter";
 import { WeatherRadar } from "./components/WeatherRadar";
 import { WeatherForecastPanel } from "./components/WeatherForecastPanel";
-import { ViewerClient } from "./ws/client";
+import {
+  ViewerClient,
+  hasSavedDisplayName,
+  loadJoinPreferences,
+  type JoinSessionOptions,
+} from "./ws/client";
+import type { ClientRole, RosterUpdatePayload } from "./ws/protocol";
 import { enrichSnapshots, setEntryNumbersFromSession } from "./entryNumbers";
 import { resolveRetireReason } from "./utils/retireReason";
 import { setTrackLapLengthMeters } from "./utils/pitCommands";
 import type { CarSnapshot, GameCatalogPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent } from "./ws/protocol";
+
+const RACE_MAIN_VIEW_KEY = "projectlm-race-main-view";
 
 const statusEl = document.getElementById("status")!;
 const seasonPanel = document.getElementById("race-hub-container")!;
@@ -50,8 +61,41 @@ const weatherRadar = new WeatherRadar(document.getElementById("weather-radar-con
 const weatherForecast = new WeatherForecastPanel(
   document.getElementById("weather-forecast-container")!,
 );
+const sessionRoster = new SessionRoster(
+  document.getElementById("session-roster-container")!,
+);
+const joinModal = new JoinSessionModal(
+  document.getElementById("join-session-overlay")!,
+);
+
+function beginJoin(opts: JoinSessionOptions): void {
+  joinModal.hide();
+  client.connect(opts);
+}
+
+joinModal.onSubmit((opts) => beginJoin(opts));
+
+const changeIdentityBtn = document.getElementById("change-identity-btn")!;
+changeIdentityBtn.addEventListener("click", () => {
+  client.disconnect();
+  joinModal.show(loadJoinPreferences());
+  statusEl.textContent = "Choose a display name";
+  statusEl.className = "status status-connecting";
+  changeIdentityBtn.classList.add("hidden");
+});
+
+function applyClientRole(role: ClientRole): void {
+  const canControl = role === "host" || role === "player";
+  playback.setControlsEnabled(canControl);
+  raceControls.setInteractionEnabled(canControl);
+  pitWall.setInteractionEnabled(canControl);
+  engineerPanel.setInteractionEnabled(canControl);
+  raceHub.setInteractionEnabled(role === "host");
+  seasonCalendar.setInteractionEnabled(role === "host");
+}
 
 let playerEntryId = "entry-1";
+let managedEntryIds: string[] = [];
 let raceStarted = false;
 let pendingRaceStart = false;
 let latestSession: SessionInitPayload | null = null;
@@ -69,6 +113,16 @@ const pitModal = new PitStopModal(document.getElementById("pit-stop-modal")!, {
     client.submitCommand(entryId, "cancel_pit");
     raceControls.setStatus("Pit cancelled");
   },
+});
+
+const pitWall = new PitWall(document.getElementById("pitwall-container")!, {
+  onSubmitPit: (entryId, command) => {
+    client.submitCommand(entryId, command);
+    raceControls.setStatus("Pit queued — enter at start/finish");
+  },
+  onDriverMode: (entryId, mode) => client.submitCommand(entryId, `driver_mode=${mode}`),
+  onSetupChange: (entryId, wingDelta) =>
+    client.submitCommand(entryId, `wing_delta=${wingDelta}`),
 });
 
 const raceControls = new RaceControls(document.getElementById("race-controls-container")!, {
@@ -215,6 +269,10 @@ function applySessionInit(payload: SessionInitPayload): void {
   latestSession = payload;
   setEntryNumbersFromSession(payload);
   playerEntryId = payload.playerEntryId ?? "entry-1";
+  managedEntryIds =
+    payload.managedEntryIds?.length
+      ? payload.managedEntryIds
+      : [playerEntryId];
   track.setPlayerEntry(playerEntryId);
   telemetryTrack.setPlayerEntry(playerEntryId);
   telemetryPanel.setPlayerEntry(playerEntryId);
@@ -224,6 +282,10 @@ function applySessionInit(payload: SessionInitPayload): void {
   compactLeaderboard.setPlayerEntry(playerEntryId);
   eventLog.setPlayerEntry(playerEntryId);
   eventLog.setEntryNames(payload.entries ?? []);
+  pitWall.setPlayerEntry(playerEntryId);
+  pitWall.setEntries(
+    (payload.entries ?? []).filter((e) => managedEntryIds.includes(e.entryId)),
+  );
   raceHub.setSessionInfo(payload);
   playback.setTargetDuration(payload.targetDurationSeconds ?? null);
   telemetryPanel.setEntries(payload.entries ?? []);
@@ -278,6 +340,10 @@ function setMainView(view: MainView): void {
   telemetryPanel.setVisible(view === "telemetry");
   headerNav.setActive(view);
 
+  if (raceStarted && isRaceView(view)) {
+    sessionStorage.setItem(RACE_MAIN_VIEW_KEY, view);
+  }
+
   document.getElementById("live-badge")?.classList.toggle("hidden", !raceStarted || !isRaceView(view));
 
   const showSidebar = raceStarted && isRaceView(view);
@@ -300,12 +366,34 @@ function applySessionPlayback(payload: SessionInitPayload): void {
   syncPlaybackPaused(payload.paused ?? true);
 }
 
-function beginRaceSession(startPaused = true): void {
+function restoreRaceMainView(): MainView {
+  const stored = sessionStorage.getItem(RACE_MAIN_VIEW_KEY);
+  if (stored === "map" || stored === "timing" || stored === "telemetry") {
+    return stored;
+  }
+  return "map";
+}
+
+interface BeginRaceReconnectOptions {
+  timeScale?: number;
+  raceTime?: number;
+}
+
+function beginRaceSession(startPaused = true, reconnect?: BeginRaceReconnectOptions): void {
   clearRetirementTracking();
   raceStarted = true;
   headerNav.setRaceActive(true);
-  playback.resetSession();
-  playback.setPaused(startPaused);
+
+  if (reconnect) {
+    const scale = reconnect.timeScale ?? 1;
+    playback.setTimeScale(scale);
+    if (reconnect.raceTime != null) playback.setRaceTime(reconnect.raceTime);
+    playback.setPaused(startPaused || scale === 0);
+  } else {
+    playback.resetSession();
+    playback.setPaused(startPaused);
+  }
+
   raceControls.setRaceActive(true);
   engineerPanel.setRaceActive(true);
   document.getElementById("race-lap-counter")?.classList.remove("hidden");
@@ -359,6 +447,7 @@ function updateFromTick(
   updateWeather(raceControl, raceTime);
   const playerSnap = normalized.find((s) => s.entryId === playerEntryId) ?? null;
   raceControls.updateSnapshot(playerSnap);
+  pitWall.updateSnapshots(normalized);
   updateLapCounter(playerSnap);
   eventLog.append(detectRetirements(normalized, raceTime));
 }
@@ -397,6 +486,17 @@ const client = new ViewerClient({
       state === "open" ? "Connected" : state === "connecting" ? "Connecting…" : "Disconnected";
     statusEl.className = `status status-${state}`;
   },
+  onClientAssignment: (payload) => {
+    applyClientRole(payload.role);
+    statusEl.textContent = `${payload.displayName} · ${payload.role}`;
+    statusEl.className = "status status-open";
+    changeIdentityBtn.classList.remove("hidden");
+  },
+  onRosterUpdate: (payload: RosterUpdatePayload) => {
+    sessionRoster.update(payload);
+    const names = payload.clients.map((c) => c.displayName).join(", ");
+    if (names) statusEl.title = `Connected: ${names}`;
+  },
   onSessionInit: (payload) => {
     applySessionInit(payload);
     if (pendingRaceStart) {
@@ -409,10 +509,17 @@ const client = new ViewerClient({
       telemetryPanel.reset();
       syncPlaybackPaused(payload.paused ?? true);
       setMainView("map");
+    } else if (payload.raceActive && !payload.raceComplete) {
+      beginRaceSession(payload.paused ?? true, {
+        timeScale: payload.timeScale,
+        raceTime: payload.raceTime,
+      });
+      setMainView(restoreRaceMainView());
     } else {
+      endRaceSession();
       eventLog.clear();
       applySessionPlayback(payload);
-      if (!raceStarted && !teamWizard.isVisible()) setMainView("season");
+      if (!teamWizard.isVisible()) setMainView("season");
     }
   },
   onTrackGeometry: (geometry) => {
@@ -478,6 +585,12 @@ const client = new ViewerClient({
     ]);
     postRace.show(payload, playerEntryId);
   },
+  onJoinRejected: (message) => {
+    joinModal.show(loadJoinPreferences());
+    joinModal.setError(message);
+    statusEl.textContent = "Join failed";
+    statusEl.className = "status status-error";
+  },
   onError: (message) => {
     statusEl.textContent = message;
     statusEl.className = "status status-error";
@@ -514,4 +627,11 @@ const playback = new PlaybackControls(document.getElementById("playback-containe
 });
 
 setMainView("season");
-client.connect();
+
+if (hasSavedDisplayName()) {
+  beginJoin(loadJoinPreferences());
+} else {
+  statusEl.textContent = "Choose a display name";
+  statusEl.className = "status status-connecting";
+  joinModal.show({ requestedRole: "host" });
+}

@@ -153,8 +153,17 @@ export interface SessionInitPayload {
   }>;
   carNumberByEntryId: Record<string, string>;
   playerEntryId?: string;
+  managedEntryIds?: string[];
   paused?: boolean;
   weatherContext?: WeatherContextPayload;
+  /** True when a race weekend session is in progress (live or paused). */
+  raceActive: boolean;
+  /** True when the race has finished but the weekend session may still be open. */
+  raceComplete?: boolean;
+  /** Elapsed race time in seconds when reconnecting mid-race. */
+  raceTime?: number;
+  /** Server-side time compression when reconnecting mid-race. */
+  timeScale?: number;
 }
 
 export interface DriverSnapshotPayload {
@@ -633,6 +642,44 @@ export interface GarageAdvicePayload {
   latencyMs?: number;
 }
 
+export type ClientRole = "host" | "player" | "spectator";
+export type SessionMode = "solo" | "coop" | "competitive" | "spectator_only";
+
+export interface JoinSessionPayload {
+  displayName: string;
+  playerId?: string;
+  requestedRole?: ClientRole;
+  joinCode?: string;
+  reconnectClientId?: string;
+}
+
+export interface ClientAssignmentPayload {
+  clientId: string;
+  displayName: string;
+  playerId?: string;
+  role: ClientRole;
+  entryIds: string[];
+  permissions: ClientMessageType[];
+  sessionMode: SessionMode;
+}
+
+export interface RosterClientPayload {
+  clientId: string;
+  displayName: string;
+  role: ClientRole;
+  entryIds: string[];
+}
+
+export interface RosterUpdatePayload {
+  clients: RosterClientPayload[];
+  sessionMode?: SessionMode;
+}
+
+export interface ErrorPayload {
+  message: string;
+  code?: "join_required" | "forbidden" | "invalid_message";
+}
+
 export type ServerMessageType =
   | "session_init"
   | "track_geometry"
@@ -645,9 +692,12 @@ export type ServerMessageType =
   | "engineer_advice"
   | "engineer_status"
   | "garage_advice"
+  | "client_assignment"
+  | "roster_update"
   | "error";
 
 export type ClientMessageType =
+  | "join_session"
   | "set_time_scale"
   | "pause"
   | "resume"
@@ -702,6 +752,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     const msg = JSON.parse(raw) as ClientMessage;
     if (msg.protocol !== PROTOCOL_VERSION) return null;
     const allowed: ClientMessageType[] = [
+      "join_session",
       "set_time_scale",
       "pause",
       "resume",

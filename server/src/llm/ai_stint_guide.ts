@@ -35,11 +35,15 @@ export class AiStintGuide {
 
   observe(
     snapshots: CarSnapshot[],
-    playerEntryId: string,
+    managedEntryIds: string[] | Set<string>,
     ctx: StintGuideContext,
   ): void {
+    const managed =
+      managedEntryIds instanceof Set
+        ? managedEntryIds
+        : new Set(managedEntryIds);
     const aiSnaps = snapshots.filter(
-      (s) => s.entryId !== playerEntryId && !s.retired,
+      (s) => !managed.has(s.entryId) && !s.retired,
     );
 
     if (!this.raceStarted && ctx.raceTimeSec >= 0 && aiSnaps.length > 0) {

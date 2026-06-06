@@ -139,9 +139,7 @@ function mergePlayerFleet(
         classId: fleetCar.classId,
         grid: entry.grid,
         carNumber: fleetCar.carNumber,
-        isPlayer:
-          fleetCar.id === options.playerCarId ||
-          entryId === options.playerEntryId,
+        isPlayer: true,
         fleetCarId: fleetCar.id,
       };
     }
@@ -182,9 +180,7 @@ function mergePlayerFleet(
         classId: fleetCar.classId,
         grid,
         carNumber: fleetCar.carNumber,
-        isPlayer:
-          fleetCar.id === options.playerCarId ||
-          entryId === options.playerEntryId,
+        isPlayer: true,
         fleetCarId: fleetCar.id,
       });
       grid++;

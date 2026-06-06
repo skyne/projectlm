@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const ws_1 = require("ws");
+const client_sessions_1 = require("./client_sessions");
 const economy_1 = require("./game/economy");
 const engineer_service_1 = require("./llm/engineer_service");
 const garage_engineer_service_1 = require("./llm/garage_engineer_service");
@@ -15,19 +16,45 @@ function broadcast(clients, data) {
         }
     }
 }
+function sendJoinRequired(ws) {
+    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", {
+        message: "Send join_session before other commands",
+        code: "join_required",
+    })));
+}
+function sendForbidden(ws) {
+    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", {
+        message: "Not permitted for your role",
+        code: "forbidden",
+    })));
+}
 function main() {
     const host = new sim_host_1.SimHost();
     const engineer = new engineer_service_1.EngineerService();
     const garageEngineer = new garage_engineer_service_1.GarageEngineerService();
+    const sessions = new client_sessions_1.ClientSessionManager();
     const wss = new ws_1.WebSocketServer({ port: PORT });
     const clients = new Set();
     let trackSent = false;
     console.log(`[server] WebSocket listening on ws://localhost:${PORT}`);
-    wss.on("connection", (ws) => {
-        clients.add(ws);
-        console.log(`[server] Client connected (${clients.size} total)`);
+    function broadcastRoster() {
+        broadcast(clients, (0, ws_protocol_1.serverMessage)("roster_update", sessions.roster()));
+    }
+    function deliverAssignment(ws, assignment) {
+        ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("client_assignment", assignment)));
+        broadcastRoster();
+    }
+    function sendBootstrap(ws) {
         const sessionInit = host.getSessionInit();
         ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("session_init", sessionInit)));
+        if (sessionInit.raceActive) {
+            const catchUp = {
+                raceTime: host.getRaceTime(),
+                snapshots: host.getSnapshots(),
+                raceControl: host.getRaceControl(),
+            };
+            ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("tick", catchUp)));
+        }
         ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("meta_state", host.getMetaState())));
         ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("game_catalog", host.getGameCatalog())));
         void engineer.getStatus().then((status) => {
@@ -42,11 +69,47 @@ function main() {
             const geometry = host.getTrackGeometry();
             ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("track_geometry", geometry)));
         }
+        return sessionInit;
+    }
+    function afterSessionChange() {
+        sessions.syncEntryIds(host.getSessionInit());
+        broadcastRoster();
+    }
+    wss.on("connection", (ws) => {
+        clients.add(ws);
+        sessions.attach(ws);
+        console.log(`[server] Client connected (${clients.size} total)`);
+        const sessionInit = sendBootstrap(ws);
+        sessions.scheduleAutoJoin(ws, sessionInit, (assignment) => {
+            deliverAssignment(ws, assignment);
+        });
         ws.on("message", async (data) => {
             const raw = data.toString();
             const msg = (0, ws_protocol_1.parseClientMessage)(raw);
             if (!msg) {
-                ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: "Invalid client message" })));
+                ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", {
+                    message: "Invalid client message",
+                    code: "invalid_message",
+                })));
+                return;
+            }
+            if (msg.type === "join_session") {
+                const payload = msg.payload;
+                const result = sessions.join(ws, payload, host.getSessionInit());
+                if ("error" in result) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                    return;
+                }
+                deliverAssignment(ws, result);
+                console.log(`[server] ${result.displayName} joined as ${result.role} (${result.clientId})`);
+                return;
+            }
+            if (!sessions.isJoined(ws)) {
+                sendJoinRequired(ws);
+                return;
+            }
+            if (!sessions.can(ws, msg.type)) {
+                sendForbidden(ws);
                 return;
             }
             if (msg.type === "set_time_scale") {
@@ -71,6 +134,7 @@ function main() {
                         raceControl: host.getRaceControl(),
                     };
                     broadcast(clients, (0, ws_protocol_1.serverMessage)("tick", payload));
+                    afterSessionChange();
                     console.log("[server] Race restarted");
                 }
             }
@@ -90,12 +154,27 @@ function main() {
                         raceControl: host.getRaceControl(),
                     };
                     broadcast(clients, (0, ws_protocol_1.serverMessage)("tick", payload));
+                    afterSessionChange();
                     console.log("[server] Reloaded definitions");
                 }
             }
             else if (msg.type === "submit_command") {
                 const payload = msg.payload;
-                const commandError = host.submitCommand(payload.entryId, payload.command);
+                const clientSession = sessions.get(ws);
+                if (clientSession &&
+                    !sessions.canSubmitForEntry(ws, payload.entryId)) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", {
+                        message: "Not authorized for this car",
+                        code: "forbidden",
+                    })));
+                    return;
+                }
+                const commandError = host.submitCommand(payload.entryId, payload.command, clientSession
+                    ? {
+                        displayName: clientSession.displayName,
+                        clientId: clientSession.clientId,
+                    }
+                    : undefined);
                 if (commandError) {
                     ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: commandError })));
                 }
@@ -160,6 +239,7 @@ function main() {
                                 raceControl: host.getRaceControl(),
                             };
                             broadcast(clients, (0, ws_protocol_1.serverMessage)("tick", payload));
+                            afterSessionChange();
                             console.log("[server] Round started");
                         }
                     }
@@ -335,6 +415,7 @@ function main() {
                 const meta = host.newGame();
                 broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", meta));
                 broadcast(clients, (0, ws_protocol_1.serverMessage)("session_init", host.getSessionInit()));
+                afterSessionChange();
                 console.log("[server] New game started");
             }
             else if (msg.type === "set_weekend_tire_compound") {
@@ -349,8 +430,15 @@ function main() {
             }
         });
         ws.on("close", () => {
+            const session = sessions.detach(ws);
             clients.delete(ws);
-            console.log(`[server] Client disconnected (${clients.size} total)`);
+            if (session) {
+                broadcastRoster();
+                console.log(`[server] ${session.displayName} disconnected (${clients.size} total)`);
+            }
+            else {
+                console.log(`[server] Client disconnected (${clients.size} total)`);
+            }
         });
     });
     host.start((raceTime, snapshots) => {
@@ -365,8 +453,14 @@ function main() {
         broadcast(clients, (0, ws_protocol_1.serverMessage)("events", payload));
     }, (raceTime, results) => {
         const meta = host.getMetaState();
-        const player = meta.playerEntryId;
-        const playerResult = results.find((r) => r.entryId === player);
+        const session = host.getSessionInit();
+        const managedIds = session.managedEntryIds?.length
+            ? session.managedEntryIds
+            : [session.playerEntryId ?? meta.playerEntryId];
+        const managedResults = results.filter((r) => managedIds.includes(r.entryId));
+        const playerResult = managedResults.length > 0
+            ? managedResults.reduce((best, r) => r.position < best.position ? r : best)
+            : undefined;
         const event = meta.calendar.find((e) => e.round === meta.currentRound);
         const scoring = event?.eventType !== "test" && event?.format !== "test";
         const finances = playerResult && event

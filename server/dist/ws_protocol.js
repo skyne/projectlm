@@ -14,6 +14,7 @@ function parseClientMessage(raw) {
         if (msg.protocol !== exports.PROTOCOL_VERSION)
             return null;
         const allowed = [
+            "join_session",
             "set_time_scale",
             "pause",
             "resume",

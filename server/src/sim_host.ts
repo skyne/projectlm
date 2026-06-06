@@ -15,7 +15,7 @@ import {
 import { AiStrategyManager } from "./game/ai_strategy";
 import { AiStintGuide } from "./llm/ai_stint_guide";
 import { MockSimSession } from "./mock_session";
-import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceControlPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload } from "./ws_protocol";
+import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload } from "./ws_protocol";
 
 export interface SimSessionLike {
   initFromRaceConfig(configPath: string): boolean;
@@ -85,6 +85,7 @@ export class SimHost {
   private raceTime = 0;
   private timeScale = 1;
   private paused = true;
+  private inRaceSession = false;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private sessionExtra: SessionInitExtra = {
     targetDurationSeconds: 0,
@@ -92,6 +93,7 @@ export class SimHost {
     roundNumber: 0,
   };
   private runtimePlayerEntryId = "entry-1";
+  private runtimeManagedEntryIds: string[] = ["entry-1"];
   private activeRoundNumber = 0;
   private readonly aiStrategy = new AiStrategyManager();
   private readonly aiStintGuide = new AiStintGuide();
@@ -159,10 +161,10 @@ export class SimHost {
     }
   }
 
-  getSessionInit() {
+  getSessionInit(): SessionInitPayload {
     const meta = this.getMetaState();
     const round = meta.calendar.find((e) => e.round === meta.currentRound);
-    return {
+    const init: SessionInitPayload = {
       trackName: this.trackName,
       targetLaps: this.parsedConfig.targetLaps,
       targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
@@ -174,9 +176,17 @@ export class SimHost {
         this.entries.map((entry) => [entry.entryId, entry.carNumber]),
       ),
       playerEntryId: this.runtimePlayerEntryId,
+      managedEntryIds: this.runtimeManagedEntryIds,
       paused: this.paused,
       weatherContext: this.sessionExtra.weatherContext,
+      raceActive: this.inRaceSession,
     };
+    if (this.inRaceSession) {
+      init.raceComplete = this.session.isRaceComplete();
+      init.raceTime = this.getRaceTime();
+      init.timeScale = this.timeScale;
+    }
+    return init;
   }
 
   /** Meta/season lives entirely in server TS — sim only receives staff for pit modifiers. */
@@ -212,12 +222,14 @@ export class SimHost {
       classId: e.classId,
     }));
 
+    this.runtimeManagedEntryIds = built.managedEntryIds;
     this.runtimePlayerEntryId = built.playerEntryId;
     this.activeRoundNumber = built.roundNumber;
     this.meta.clearLastCompletedRound();
     this.aiStrategy.reset();
     this.aiStintGuide.reset();
 
+    this.inRaceSession = true;
     this.paused = true;
     if (this.timeScale === 0) this.timeScale = 1;
     this.ensureTickLoop();
@@ -227,13 +239,39 @@ export class SimHost {
     return null;
   }
 
-  submitCommand(entryId: string, command: string): string | null {
+  private commandAttribution = new Map<
+    string,
+    { displayName: string; clientId: string }
+  >();
+
+  submitCommand(
+    entryId: string,
+    command: string,
+    attribution?: { displayName: string; clientId: string },
+  ): string | null {
     if (!this.session.submitCommand) return "submitCommand unavailable";
-    if (entryId !== this.runtimePlayerEntryId) {
-      return "You can only send commands to your car";
+    if (!this.runtimeManagedEntryIds.includes(entryId)) {
+      return "You can only send commands to your team's cars";
+    }
+    if (attribution) {
+      this.commandAttribution.set(entryId, attribution);
     }
     this.session.submitCommand(entryId, command);
     return null;
+  }
+
+  private applyCommandAttribution(events: SimEvent[]): SimEvent[] {
+    return events.map((event) => {
+      if (event.type !== "CommandAck" || !event.entryId) return event;
+      const attribution = this.commandAttribution.get(event.entryId);
+      if (!attribution) return event;
+      this.commandAttribution.delete(event.entryId);
+      const base = event.message ?? "";
+      return {
+        ...event,
+        message: `${attribution.displayName}: ${base}`,
+      };
+    });
   }
 
   hireStaff(role: string, name: string, skill: number): MetaStatePayload {
@@ -326,6 +364,7 @@ export class SimHost {
     this.session.initFromRaceConfig(this.configPathForSim());
     process.chdir(prevCwd);
 
+    this.inRaceSession = false;
     this.parsedConfig = parseRaceConfig(this.repoRoot, this.raceConfigPath);
     this.refreshEntriesFromConfig();
     this.raceTime = 0;
@@ -343,6 +382,10 @@ export class SimHost {
 
   getRaceTime(): number {
     return this.session.getRaceTime?.() ?? this.raceTime;
+  }
+
+  getTimeScale(): number {
+    return this.timeScale;
   }
 
   getSnapshots(): CarSnapshot[] {
@@ -434,6 +477,7 @@ export class SimHost {
 
     if (!ok) return false;
 
+    this.inRaceSession = false;
     this.parsedConfig = parseRaceConfig(this.repoRoot, this.raceConfigPath);
     this.simTimestep = this.parsedConfig.simTimestep;
     this.trackName = loadTrackName(
@@ -494,14 +538,14 @@ export class SimHost {
       raceTime: this.getRaceTime(),
       targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
     };
-    this.aiStintGuide.observe(snapshots, this.runtimePlayerEntryId, {
+    this.aiStintGuide.observe(snapshots, this.runtimeManagedEntryIds, {
       trackName: this.trackName,
       targetDurationSeconds: ctx.targetDurationSeconds,
       raceTimeSec: ctx.raceTime,
     });
     this.aiStrategy.tick(
       snapshots,
-      this.runtimePlayerEntryId,
+      this.runtimeManagedEntryIds,
       ctx,
       (entryId, command) => this.session.submitCommand!(entryId, command),
       (entryId) => this.aiStintGuide.getPlan(entryId),
@@ -529,10 +573,12 @@ export class SimHost {
     const raceTime = this.getRaceTime();
 
     const rawEvents = this.session.drainEvents();
-    const events: SimEvent[] = rawEvents.map((e) =>
-      typeof e.type === "string" && e.type.includes("_")
-        ? normalizeEvent(e)
-        : (e as SimEvent),
+    const events: SimEvent[] = this.applyCommandAttribution(
+      rawEvents.map((e) =>
+        typeof e.type === "string" && e.type.includes("_")
+          ? normalizeEvent(e)
+          : (e as SimEvent),
+      ),
     );
 
     if (events.length > 0) {
