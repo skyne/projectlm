@@ -15,6 +15,7 @@ const PIT_LANE_SPEED_MS = 60 / 3.6;
 const PIT_FUEL_SEC_PER_L = 0.038;
 const PIT_TIRE_SEC = 2.8;
 const PIT_REPAIR_ENGINE_SEC = 12;
+const PIT_REPAIR_BODY_SEC = 8;
 const PIT_DRIVER_CHANGE_SEC = 15;
 const PIT_SETUP_SEC = 6;
 const DEFAULT_LAP_LENGTH_M = 13600;
@@ -53,6 +54,8 @@ function estimateServiceSec(s, services, fuelLiters, tyreCount) {
     t += tyreCount * PIT_TIRE_SEC * mech * pitScale;
     if (services.engine)
         t += PIT_REPAIR_ENGINE_SEC * mech * pitScale;
+    if (services.body)
+        t += PIT_REPAIR_BODY_SEC * 4 * mech * pitScale;
     if (services.driver)
         t += PIT_DRIVER_CHANGE_SEC * mech * driverScale;
     if (services.setup)
@@ -152,8 +155,13 @@ function buildParts(s, ctx, services, driverIndex) {
     else {
         parts.push("tires=");
     }
+    const repairs = [];
     if (services.engine)
-        parts.push("repairs=engine");
+        repairs.push("engine");
+    if (services.body)
+        repairs.push("body");
+    if (repairs.length)
+        parts.push(`repairs=${repairs.join(",")}`);
     if (services.driver && driverIndex >= 0) {
         parts.push("driver_change=true", `driver_index=${driverIndex}`);
     }
@@ -174,6 +182,8 @@ function serviceLabel(services) {
         bits.push("driver");
     if (services.engine)
         bits.push("engine");
+    if (services.body)
+        bits.push("body");
     return bits.join("+") || "stop";
 }
 /** Decide bundled pit stop (or defer). */
@@ -202,7 +212,7 @@ function planPitStop(s, ctx, fuelAtLastPit) {
         limp ||
         flatWheels.length > 0 ||
         (ctx.wet >= tyre_grip_1.WET_TYRE_THRESHOLD && weatherTyres);
-    const anyNow = fuelNow || tyresNow || driverNow || engine;
+    const anyNow = fuelNow || tyresNow || driverNow || engine || limp;
     const bundleSoon = (fuelSoon && (driverSoon || tyresSoon)) ||
         (driverSoon && tyresSoon) ||
         (fuelSoon && driverSoon);
@@ -215,6 +225,7 @@ function planPitStop(s, ctx, fuelAtLastPit) {
             tyres: true,
             driver: false,
             engine: false,
+            body: false,
         };
         const parts = buildParts(s, ctx, services, -1);
         return {
@@ -248,6 +259,7 @@ function planPitStop(s, ctx, fuelAtLastPit) {
         tyres: tyresNow || tyresSoon,
         driver: driverNow || driverSoon,
         engine,
+        body: limp,
     };
     if (fuelNow &&
         !bundleServices.tyres &&
@@ -277,19 +289,20 @@ function planPitStop(s, ctx, fuelAtLastPit) {
         bundleServices.tyres,
         bundleServices.driver,
         bundleServices.engine,
+        bundleServices.body,
     ].filter(Boolean).length;
     let splitServiceOnly = 0;
     if (bundleServices.fuel) {
-        splitServiceOnly += estimateServiceSec(s, { fuel: true, tyres: false, driver: false, engine: false, setup: false }, fuelL, 0);
+        splitServiceOnly += estimateServiceSec(s, { fuel: true, tyres: false, driver: false, engine: false, body: false, setup: false }, fuelL, 0);
     }
     if (bundleServices.tyres) {
-        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: true, driver: false, engine: false, setup: false }, 0, 4);
+        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: true, driver: false, engine: false, body: false, setup: false }, 0, 4);
     }
     if (bundleServices.driver) {
-        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: false, driver: true, engine: false, setup: false }, 0, 0);
+        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: false, driver: true, engine: false, body: false, setup: false }, 0, 0);
     }
     if (bundleServices.engine) {
-        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: false, driver: false, engine: true, setup: false }, 0, 0);
+        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: false, driver: false, engine: true, body: false, setup: false }, 0, 0);
     }
     const travel = pitLaneTravelSec(s);
     const splitTotal = splitStops * travel + splitServiceOnly + Math.max(0, splitStops - 1) * lapSec;
