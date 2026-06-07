@@ -1,0 +1,17 @@
+# Headless 24h Le Mans damage benchmark — stock grid, PitBot fuel/tyre strategy
+part_catalog=configs/part_catalog.txt
+physics_config=configs/physics_config.txt
+track_config=tracks/lemans_la_sarthe.json
+car_config=configs/car_config.txt
+
+target_laps=0
+target_duration_hours=24
+sim_timestep=0.1
+
+telemetry_output=
+
+entries=configs/entries.txt
+driver_config=configs/drivers/lemans2026_drivers.txt
+class_rules=configs/class_rules.txt
+session_mode=race
+weather_profile=changeable

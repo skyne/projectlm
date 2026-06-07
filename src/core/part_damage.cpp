@@ -150,7 +150,8 @@ int WheelIndexForSuspPart(DamagePart part) {
 void BuildCarDamageProfiles(const CarConfig &car, const PartCatalog &catalog,
                             CarDamageProfiles &out) {
   const ChassisPart chassis = GetChassisStats(car.chassisChoice, catalog);
-  const double chassisRel = std::max(0.5, chassis.structuralRigidity);
+  // Stock WEC endurance: gradual wear should not breach 85% over 24h alone.
+  const double chassisRel = std::max(0.85, chassis.structuralRigidity) * 1.35;
   const TransmissionPart trans =
       GetTransmissionStats(car.transmissionChoice, catalog);
   const double transRel = 0.95 + (trans.gearCount >= 7 ? 0.05 : 0.0);
@@ -239,32 +240,34 @@ void ApplyCollisionDamage(PartDamageState &state, const CarDamageProfiles &profi
   const int *sideWheels = side == CollisionSide::Left ? leftWheels : rightWheels;
   const int sideCount = 2;
 
+  const double scale = impact >= 11.0 ? 1.0 : 0.55;
+
   if (impact < 7.0) {
     const int w = side == CollisionSide::Left ? 0 : (side == CollisionSide::Right ? 1 : 0);
-    hit(BodyPartForWheel(w), 4.0 + impact * 0.8);
+    hit(BodyPartForWheel(w), (3.0 + impact * 0.55) * scale);
     return;
   }
 
   if (impact < 10.0) {
     for (int i = 0; i < sideCount; ++i) {
       const int w = (side == CollisionSide::Unknown) ? i : sideWheels[i];
-      hit(BodyPartForWheel(w), 6.0 + impact * 0.9);
-      hit(SuspPartForWheel(w), 4.0 + impact * 0.5);
+      hit(BodyPartForWheel(w), (4.5 + impact * 0.65) * scale);
+      hit(SuspPartForWheel(w), (2.5 + impact * 0.35) * scale);
     }
     if (impact > 8.0)
-      hit(DamagePart::AeroFront, impact * 0.6);
+      hit(DamagePart::AeroFront, impact * 0.35 * scale);
     return;
   }
 
   for (int i = 0; i < sideCount; ++i) {
     const int w = (side == CollisionSide::Unknown) ? i : sideWheels[i];
-    hit(BodyPartForWheel(w), 10.0 + impact * 1.1);
-    hit(SuspPartForWheel(w), 8.0 + impact * 1.0);
+    hit(BodyPartForWheel(w), (7.0 + impact * 0.85) * scale);
+    hit(SuspPartForWheel(w), (5.5 + impact * 0.75) * scale);
   }
-  hit(DamagePart::AeroRear, impact * 0.9);
-  hit(DamagePart::Engine, impact * 0.35);
+  hit(DamagePart::AeroRear, impact * 0.65 * scale);
+  hit(DamagePart::Engine, impact * 0.22 * scale);
   if (hasHybrid)
-    hit(DamagePart::Hybrid, impact * 0.25);
+    hit(DamagePart::Hybrid, impact * 0.18 * scale);
 }
 
 
@@ -289,11 +292,11 @@ void ApplyHiddenFaultBleed(PartDamageState &state, double deltaTime) {
   for (HiddenFault &fault : state.hiddenFaults) {
     if (fault.revealed)
       continue;
-    fault.severity = std::min(100.0, fault.severity + 0.4 * deltaTime);
+    fault.severity = std::min(100.0, fault.severity + 0.06 * deltaTime);
     const int idx = DamagePartIndex(fault.linkedPart);
     if (idx >= 0 && idx < kPartCount) {
       state.health[idx] = std::max(
-          0.0, state.health[idx] - 0.15 * deltaTime * (fault.severity / 100.0));
+          0.0, state.health[idx] - 0.025 * deltaTime * (fault.severity / 100.0));
     }
   }
 }
@@ -338,9 +341,9 @@ LimpMode EvaluateLimpMode(const PartDamageState &state, const CarConfig &car,
                           const TyreDeflationStateArr &tyres, double batteryMJ) {
   const double structural = ComputeStructuralSeverity(state, tyres);
   const int irrepCorners = CountIrreparableCorners(state);
-  if (structural >= 85.0 || irrepCorners >= 3)
+  if (structural >= 92.0 || irrepCorners >= 3)
     return LimpMode::Immobilized;
-  if (structural >= 55.0)
+  if (structural >= 68.0)
     return LimpMode::BarelyDriveable;
 
   const double engineH = PartHealth(state, DamagePart::Engine);
@@ -381,7 +384,7 @@ void TickTyreDeflationRisk(SimulationState &state, const CarConfig &car,
     const double wearExcess = (state.tireWear[i] - punctureWearThreshold) / 0.12;
     const double roll = std::fmod(
         std::sin((state.elapsedRaceTime + i * 17.3) * 0.31) * 43758.5453, 1.0);
-    if (roll < wearExcess * 0.00008 * deltaTime) {
+    if (roll < wearExcess * 0.000025 * deltaTime) {
       state.tyreDeflation.state[i] = TyreDeflationState::Soft;
       state.tyreDeflation.progress[i] = 0.2;
     }

@@ -3,9 +3,10 @@
 
 namespace {
 void MaybeRollHiddenFault(PartDamageState &damage, double impact, uint32_t salt) {
-  if (impact < 8.0) return;
+  // Target: <5% of stock grid cars develop a hidden fault per 24h race.
+  if (impact < 11.0) return;
   const double roll = std::fmod(std::sin(salt * 0.173) * 43758.5453, 1.0);
-  if (roll > 0.08 + impact * 0.004) return;
+  if (roll > 0.004 + impact * 0.00022) return;
   HiddenFault fault;
   fault.kind = impact > 12.0 ? HiddenFaultKind::CoolingHoseLeak
                              : HiddenFaultKind::HairlineCrack;

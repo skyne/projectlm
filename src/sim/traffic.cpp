@@ -133,9 +133,9 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
 
       if (gap < combinedLength * 0.85 &&
           lateralSep < widthOverlap) {
-        if (relativeSpeed > 6.0) {
+        if (relativeSpeed > 8.5) {
           const double impact =
-              std::min(12.0, (relativeSpeed - 4.0) * 1.2);
+              std::min(10.0, (relativeSpeed - 6.5) * 0.75);
           selfMod.collisionDamage = std::max(selfMod.collisionDamage, impact);
           selfMod.collision = true;
           TryEmitEvent(eventsOut, eventCooldowns, TrafficEvent::Type::Collision,
