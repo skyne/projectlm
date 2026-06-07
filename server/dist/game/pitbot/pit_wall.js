@@ -188,6 +188,7 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
             tyreTread: st.tyreTread,
             setupWing: setupWing(s),
             setupBias: setupBias(s),
+            pitAggression: ctx.rivalPitAggression?.(s.teamName) ?? 1,
         }, st.fuelAtLastPit);
         if (plan?.pitNow) {
             const cmd = `pit|${plan.parts.join("|")}`;

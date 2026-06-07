@@ -1642,6 +1642,96 @@ body.mock-sim-active #app {
   color: var(--text-muted);
 }
 
+.rival-standings-section {
+  margin-top: 1.25rem;
+}
+
+.rival-standings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.rival-class-panel {
+  padding: 0.65rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.rival-class-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.rival-standings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.rival-standing-empty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 0.25rem 0;
+}
+
+.rival-standing-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.15rem 0.75rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.rival-standing-name {
+  font-weight: 600;
+}
+
+.rival-standing-pts {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.rival-standing-meta {
+  grid-column: 1 / -1;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.rival-market-note {
+  margin: 0.65rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.driver-standings-section {
+  margin-top: 1.25rem;
+}
+
+.driver-standings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.rival-standing-player {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.rival-standing-player .rival-standing-name {
+  color: var(--accent);
+}
+
 .calendar-grid {
   list-style: none;
   margin: 0;
@@ -2297,6 +2387,42 @@ body.mock-sim-active #app {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.post-race-championship-panel {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.post-race-championship-panel .mm-section-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+}
+
+.post-race-team-pts,
+.post-race-rival-lead,
+.post-race-rival-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.post-race-driver-pts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.post-race-driver-chip {
+  font-size: 0.8rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
 }
 
 .post-race-finances-panel .mm-section-title {

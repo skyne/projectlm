@@ -654,6 +654,14 @@ function main(): void {
         updatedMeta = host.completeRound(
           playerResult.position,
           playerResult.classId,
+          results.map((r) => ({
+            entryId: r.entryId,
+            teamName: r.teamName,
+            carNumber: r.carNumber,
+            classId: r.classId,
+            position: r.position,
+            driverName: r.driverName,
+          })),
         );
       } else if (!isRaceSession) {
         updatedMeta = host.completeWeekendSession(weekendSessionType, results);

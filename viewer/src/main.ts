@@ -581,6 +581,9 @@ function syncCarPreview(entryId?: string): void {
 function applyMetaState(meta: MetaStatePayload): void {
   const wasIncomplete = latestMeta != null && !latestMeta.setupComplete;
   latestMeta = meta;
+  if (postRace.isVisible()) {
+    postRace.refreshChampionship(meta);
+  }
   syncCarPreview(raceStarted ? commandEntryId : undefined);
   const engineerSkill =
     meta.staff?.find((s) => s.role === "engineer")?.skill ?? 75;

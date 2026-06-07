@@ -13,6 +13,7 @@ import {
   type ParsedEntry,
 } from "./config_parser";
 import { PitBotManager } from "./game/pitbot/pitbot_manager";
+import { rivalModifiersForTeam } from "./game/ai_rival_season";
 import { MockSimSession } from "./mock_session";
 import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload, WeekendSessionType } from "./ws_protocol";
 import { collectQualifyingResults } from "./game/weekend_sessions";
@@ -110,6 +111,7 @@ export class SimHost {
       classId: string;
       position: number;
       bestLapTime: number;
+      driverName?: string;
     }>,
     weekendSessionType: WeekendSessionType,
   ) => void;
@@ -362,8 +364,12 @@ export class SimHost {
     return this.meta.investRd(partId, points);
   }
 
-  completeRound(position: number, classId: string): MetaStatePayload {
-    return this.meta.completeRound(position, classId);
+  completeRound(
+    position: number,
+    classId: string,
+    raceResults?: import("./game/ai_rival_season").RaceResultForSeason[],
+  ): MetaStatePayload {
+    return this.meta.completeRound(position, classId, raceResults);
   }
 
   signSponsor(offerId: string): MetaStatePayload | { error: string } {
@@ -636,12 +642,15 @@ export class SimHost {
     if (!this.session.submitCommand) return;
     const snapshots = this.session.getSnapshots();
     const raceControl = this.getRaceControl();
+    const rivalSeason = this.meta.getState().aiRivalSeason;
     this.pitBot.tick(
       snapshots,
       this.runtimeManagedEntryIds,
       {
         trackWetness: raceControl?.trackWetness,
         weekendSessionType: this.sessionExtra.weekendSessionType,
+        rivalPitAggression: (teamName) =>
+          rivalModifiersForTeam(teamName, rivalSeason).pitAggression,
       },
       (entryId, command) => this.session.submitCommand!(entryId, command),
     );
@@ -688,6 +697,7 @@ export class SimHost {
             classId: s.classId,
             position: s.racePosition,
             bestLapTime: s.bestLapTime ?? 0,
+            driverName: s.driverName,
           })),
           this.getWeekendSessionType(),
         );

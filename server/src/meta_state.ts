@@ -8,6 +8,8 @@ import type {
   StartRoundPayload,
   TeamCreationDraftPayload,
   TeamCreationWizardStep,
+  AiRivalSeasonPayload,
+  DriverMarketListingPayload,
 } from "./ws_protocol";
 import { GameStateStore } from "./game_state";
 import { loadCarPlatforms } from "./game/car_marketplace";
@@ -51,6 +53,16 @@ import {
   marketSeedForRound,
   MAX_DRIVER_ROSTER,
 } from "./game/driver_market";
+import {
+  applyPlayerTeamRoundResult,
+  initAiRivalSeason,
+  initDriverStandings,
+  resolveAiDriverMarketBids,
+  resolveAiSeasonTick,
+  resolveDriverChampionshipTick,
+  syncPlayerDriversToStandings,
+  type RaceResultForSeason,
+} from "./game/ai_rival_season";
 import {
   computeRaceFinances,
   MAX_SPONSOR_SLOTS,
@@ -258,6 +270,9 @@ export class MetaStateManager {
   private readonly store: GameStateStore;
   /** Round completed by the most recent finish; cleared on start_round or reopen. */
   private lastCompletedRound: number | null = null;
+  /** Snapshots taken before off-week AI resolution — restored on reopenRound. */
+  private preRoundAiRivalSeason: AiRivalSeasonPayload | null = null;
+  private preRoundDriverMarket: DriverMarketListingPayload[] | null = null;
 
   constructor(private readonly repoRoot: string) {
     this.store = new GameStateStore(repoRoot);
@@ -277,17 +292,92 @@ export class MetaStateManager {
   }
 
   getState(): MetaStatePayload {
-    if (this.ensureDriverMarketChanged()) {
-      this.store.save(this.state);
-    }
+    let changed = false;
+    if (this.ensureDriverMarketChanged()) changed = true;
+    const before = this.state.aiRivalSeason?.teams.length ?? 0;
+    this.ensureAiRivalSeason();
+    if ((this.state.aiRivalSeason?.teams.length ?? 0) !== before) changed = true;
+    if (changed) this.store.save(this.state);
     return structuredClone(this.state);
   }
 
   private persist(): MetaStatePayload {
     syncLegacyFields(this.state);
+    this.ensureAiRivalSeason();
     this.ensureDriverMarketChanged();
     this.store.save(this.state);
     return structuredClone(this.state);
+  }
+
+  private ensureAiRivalSeason(): void {
+    if (!this.state.setupComplete) return;
+    if (
+      !this.state.aiRivalSeason ||
+      this.state.aiRivalSeason.seasonYear !== this.state.seasonYear
+    ) {
+      this.state.aiRivalSeason = initAiRivalSeason(
+        this.repoRoot,
+        this.state.teamName,
+        this.state.seasonYear,
+      );
+    }
+    if (!this.state.aiRivalSeason.drivers?.length) {
+      this.state.aiRivalSeason.drivers = initDriverStandings(
+        this.repoRoot,
+        this.state.teamName,
+        this.state.driverRoster ?? [],
+        this.state.fleet ?? [],
+      );
+    }
+    syncPlayerDriversToStandings(
+      this.state.aiRivalSeason,
+      this.state.teamName,
+      this.state.driverRoster ?? [],
+      this.state.fleet ?? [],
+    );
+  }
+
+  private resolveAiOffWeek(
+    raceResults: RaceResultForSeason[] | undefined,
+    eventFormat: string,
+    scoring: boolean,
+    completingRound: number,
+  ): void {
+    this.ensureAiRivalSeason();
+    const season = this.state.aiRivalSeason!;
+    if (raceResults?.length) {
+      resolveAiSeasonTick(season, {
+        playerTeamName: this.state.teamName,
+        raceResults,
+        eventFormat,
+        scoring,
+      });
+      resolveDriverChampionshipTick(season, {
+        repoRoot: this.repoRoot,
+        raceResults,
+        scoring,
+        playerTeamName: this.state.teamName,
+        playerRoster: this.state.driverRoster ?? [],
+        playerFleet: this.state.fleet ?? [],
+      });
+    }
+
+    const refreshCount = this.state.driverMarketRefreshCount ?? 0;
+    const seed = marketSeedForRound(
+      this.state.teamName,
+      completingRound,
+      refreshCount + 1000,
+    );
+    const resolved = resolveAiDriverMarketBids(
+      this.repoRoot,
+      season,
+      this.state.driverMarket ?? [],
+      seed,
+    );
+    this.state.driverMarket = resolved.market;
+    if (resolved.signedIds.length > 0) {
+      console.log(`[ai_rivals] ${resolved.note}`);
+    }
   }
 
   private regenerateDriverMarket(): void {
@@ -453,11 +543,26 @@ export class MetaStateManager {
     this.state.currentRound = round;
     this.state.weekendProgress = undefined;
     this.lastCompletedRound = null;
-    this.regenerateDriverMarket();
+
+    if (this.preRoundAiRivalSeason) {
+      this.state.aiRivalSeason = structuredClone(this.preRoundAiRivalSeason);
+      this.preRoundAiRivalSeason = null;
+    }
+    if (this.preRoundDriverMarket) {
+      this.state.driverMarket = structuredClone(this.preRoundDriverMarket);
+      this.preRoundDriverMarket = null;
+    } else {
+      this.regenerateDriverMarket();
+    }
+
     return this.persist();
   }
 
-  completeRound(position: number, classId: string): MetaStatePayload {
+  completeRound(
+    position: number,
+    classId: string,
+    raceResults?: RaceResultForSeason[],
+  ): MetaStatePayload {
     const completingRound = this.state.currentRound;
     const event = this.state.calendar.find(
       (e) => e.round === completingRound,
@@ -490,7 +595,19 @@ export class MetaStateManager {
       this.state.currentRound = nextRound;
     }
     this.lastCompletedRound = completingRound;
+    this.ensureAiRivalSeason();
+    if (scoring) {
+      applyPlayerTeamRoundResult(
+        this.state.aiRivalSeason!,
+        this.state.teamName,
+        classId,
+        finances.championshipPoints,
+      );
+    }
     this.regenerateDriverMarket();
+    this.preRoundAiRivalSeason = structuredClone(this.state.aiRivalSeason!);
+    this.preRoundDriverMarket = structuredClone(this.state.driverMarket ?? []);
+    this.resolveAiOffWeek(raceResults, event.format, scoring, completingRound);
     return this.persist();
   }
 
@@ -603,6 +720,17 @@ export class MetaStateManager {
     writeAllFleetConfigs(this.repoRoot, this.state, platformTemplateMap(this.repoRoot));
     writePlayerCarConfig(this.repoRoot, this.state);
     this.state.driverMarketRefreshCount = 0;
+    this.state.aiRivalSeason = initAiRivalSeason(
+      this.repoRoot,
+      name,
+      this.state.seasonYear,
+    );
+    syncPlayerDriversToStandings(
+      this.state.aiRivalSeason,
+      name,
+      this.state.driverRoster,
+      this.state.fleet,
+    );
     this.regenerateDriverMarket();
     return this.persist();
   }
@@ -883,6 +1011,14 @@ export class MetaStateManager {
       if (!indices.includes(newIdx)) indices.push(newIdx);
       car.assignedDriverIndices = [...indices].sort((a, b) => a - b);
     }
+
+    this.ensureAiRivalSeason();
+    syncPlayerDriversToStandings(
+      this.state.aiRivalSeason!,
+      this.state.teamName,
+      this.state.driverRoster,
+      this.state.fleet ?? [],
+    );
 
     return this.persist();
   }

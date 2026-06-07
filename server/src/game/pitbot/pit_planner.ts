@@ -66,6 +66,8 @@ export interface PitPlannerContext {
   tyreTread: TyreTread;
   setupWing?: number;
   setupBias?: number;
+  /** >1 pits earlier; <1 stretches stints (rival season form). */
+  pitAggression?: number;
 }
 
 export interface PitServiceFlags {
@@ -238,12 +240,27 @@ function serviceLabel(services: PitServiceFlags): string {
   return bits.join("+") || "stop";
 }
 
+/** Scale fuel pit windows — higher aggression pits earlier. */
+export function scaledFuelThresholds(pitAggression = 1): {
+  low: number;
+  critical: number;
+} {
+  const agg = Math.max(0.85, Math.min(1.15, pitAggression));
+  return {
+    low: Math.min(0.35, FUEL_THRESHOLD * agg),
+    critical: Math.min(0.2, FUEL_CRITICAL * agg),
+  };
+}
+
 /** Decide bundled pit stop (or defer). */
 export function planPitStop(
   s: PlannerSnap,
   ctx: PitPlannerContext,
   fuelAtLastPit: number,
 ): PitStopPlan | null {
+  const { low: fuelLow, critical: fuelCrit } = scaledFuelThresholds(
+    ctx.pitAggression,
+  );
   const fuelPct = s.fuel / tankCapacity(s);
   const weatherTyres = needsWeatherTyreSwap(ctx.tyreTread, ctx.wet);
   const driver =
@@ -253,11 +270,11 @@ export function planPitStop(
   const engine = (s.engineHealth ?? 100) <= ENGINE_REPAIR_HEALTH;
   const worn = tyresWorn(s);
 
-  const lapsFuelLow = lapsUntilFuelBelow(s, FUEL_THRESHOLD, ctx.sincePit, fuelAtLastPit);
-  const lapsFuelCrit = lapsUntilFuelBelow(s, FUEL_CRITICAL, ctx.sincePit, fuelAtLastPit);
+  const lapsFuelLow = lapsUntilFuelBelow(s, fuelLow, ctx.sincePit, fuelAtLastPit);
+  const lapsFuelCrit = lapsUntilFuelBelow(s, fuelCrit, ctx.sincePit, fuelAtLastPit);
   const lapsTyres = lapsUntilTyreWorn(s);
 
-  const fuelNow = fuelPct < FUEL_THRESHOLD;
+  const fuelNow = fuelPct < fuelLow;
   const fuelSoon = lapsFuelLow <= BUNDLE_LOOKAHEAD_LAPS;
   const tyresNow = weatherTyres || worn;
   const tyresSoon = weatherTyres || lapsTyres <= BUNDLE_LOOKAHEAD_LAPS;
@@ -265,7 +282,7 @@ export function planPitStop(
   const driverSoon = driver.needed || driver.lapsUntil <= BUNDLE_LOOKAHEAD_LAPS;
 
   const critical =
-    fuelPct < FUEL_CRITICAL ||
+    fuelPct < fuelCrit ||
     driver.urgent ||
     engine ||
     (ctx.wet >= WET_TYRE_THRESHOLD && weatherTyres);
@@ -298,7 +315,7 @@ export function planPitStop(
 
   if (!anyNow && !bundleSoon && !critical) return null;
 
-  const minLaps = driver.urgent || fuelPct < FUEL_CRITICAL ? 1 : MIN_LAPS_BETWEEN_STOPS;
+  const minLaps = driver.urgent || fuelPct < fuelCrit ? 1 : MIN_LAPS_BETWEEN_STOPS;
   if (ctx.sincePit < minLaps && !critical) return null;
 
   if (!critical && !driver.urgent && ctx.sincePit < MIN_LAPS_BETWEEN_STOPS + 2) {
