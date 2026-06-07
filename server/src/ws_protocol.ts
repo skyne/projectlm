@@ -30,6 +30,7 @@ export interface CarSnapshot {
   tireWearFR?: number;
   tireWearRL?: number;
   tireWearRR?: number;
+  tireCompound?: string;
   tireTempC?: number;
   tireTempFL?: number;
   tireTempFR?: number;
@@ -76,6 +77,8 @@ export interface CarSnapshot {
   overtaking?: boolean;
   blocked?: boolean;
   pitRemainingSec?: number;
+  /** Meters along pit lane spline when {@link inPit} is true. */
+  pitLaneDistance?: number;
   setupFeedback?: string;
   wingAngle?: number;
   brakeBias?: number;
@@ -90,6 +93,7 @@ export interface CarSnapshot {
   serviceabilityFactor?: number;
   driverChangeFactor?: number;
   pitCount?: number;
+  totalPitSeconds?: number;
   fuelTankCapacity?: number;
   driverStintSeconds?: number;
   maxDriverStintSeconds?: number;
@@ -163,8 +167,12 @@ export interface WeekendProgressPayload {
   qualiResults?: QualifyingResultPayload[];
 }
 
+export type SimBackend = "native" | "mock";
+
 export interface SessionInitPayload {
   trackName: string;
+  /** Native C++ physics vs TypeScript mock fallback. */
+  simBackend?: SimBackend;
   targetLaps: number;
   targetDurationSeconds?: number;
   raceFormat?: string;
@@ -177,6 +185,7 @@ export interface SessionInitPayload {
     teamName: string;
     carNumber: string;
     classId: string;
+    fleetCarId?: string;
   }>;
   carNumberByEntryId: Record<string, string>;
   playerEntryId?: string;
@@ -824,6 +833,7 @@ export type ClientMessageType =
   | "rd_invest"
   | "complete_round"
   | "start_round"
+  | "continue_weekend_session"
   | "create_team"
   | "save_team_creation_draft"
   | "save_car_build"
@@ -881,6 +891,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       "rd_invest",
       "complete_round",
       "start_round",
+      "continue_weekend_session",
       "create_team",
       "save_team_creation_draft",
       "save_car_build",

@@ -1,13 +1,31 @@
-import type { CarSnapshot } from "../ws/protocol";
-import { sortByTiming } from "../utils/weekendSessions";
+import type { CarSnapshot, WeekendSessionType } from "../ws/protocol";
+import {
+  isTimingSession,
+  sessionShortLabel,
+  sessionStandingsTitle,
+  sessionTimingTitle,
+} from "../utils/weekendSessions";
 import { formatCarNumber } from "../entryNumbers";
-import { formatGap, formatLapTime } from "../utils/formatTime";
+import { orderLeaderboardBoard } from "../utils/leaderboardBoard";
+import { formatGapCompact, formatLapTime } from "../utils/formatTime";
 import { formatTyreTemp, formatTyreWear, tyreTempBand } from "../utils/formatTyre";
-import { escapeHtml } from "../utils/mmUi";
+import { tyreCompoundIconHtml } from "../utils/tyreCompound";
 import { resolveRetireReason } from "../utils/retireReason";
 
 type GapMode = "leader" | "ahead";
 type GapScope = "overall" | "class";
+
+interface CompactLbRow {
+  root: HTMLDivElement;
+  pos: HTMLSpanElement;
+  num: HTMLSpanElement;
+  team: HTMLSpanElement;
+  badge: HTMLSpanElement;
+  status: HTMLSpanElement;
+  lap: HTMLSpanElement;
+  gap: HTMLSpanElement;
+  extras: HTMLSpanElement;
+}
 
 export class CompactLeaderboard {
   readonly root: HTMLElement;
@@ -18,9 +36,15 @@ export class CompactLeaderboard {
   private showFuel = true;
   private showTyre = true;
   private playerEntryId = "entry-1";
+  private managedEntryIds = new Set<string>();
+  private selectedEntryId = "";
   private lapLength = 13000;
   private timingMode = false;
+  private sessionType?: WeekendSessionType;
   private snapshots: CarSnapshot[] = [];
+  private rowByEntryId = new Map<string, CompactLbRow>();
+  private lastBoardOrder: string[] = [];
+  private badgeEl!: HTMLElement;
 
   constructor(container: HTMLElement) {
     this.root = document.createElement("aside");
@@ -55,6 +79,7 @@ export class CompactLeaderboard {
     `;
     container.appendChild(this.root);
     this.listEl = this.root.querySelector(".compact-lb-list")!;
+    this.badgeEl = this.root.querySelector(".compact-lb-header .mm-badge")!;
 
     this.root.querySelectorAll(".compact-lb-btn-group").forEach((group) => {
       group.addEventListener("click", (ev) => {
@@ -89,21 +114,48 @@ export class CompactLeaderboard {
     this.playerEntryId = entryId;
   }
 
+  setManagedEntryIds(entryIds: string[]): void {
+    this.managedEntryIds = new Set(entryIds);
+    this.render();
+  }
+
+  setSelectedEntry(entryId: string): void {
+    this.selectedEntryId = entryId;
+    this.render();
+  }
+
   setLapLength(meters: number): void {
     if (meters > 0) this.lapLength = meters;
   }
 
   setTimingMode(enabled: boolean): void {
     this.timingMode = enabled;
-    const title = this.root.querySelector(".compact-lb-title");
-    if (title) title.textContent = enabled ? "Timing" : "Standings";
-    const toggles = this.root.querySelector(".compact-lb-toggles");
-    toggles?.classList.toggle("hidden", enabled);
+    this.applySessionHeader();
     this.render();
+  }
+
+  setSessionType(sessionType?: WeekendSessionType): void {
+    this.sessionType = sessionType;
+    this.timingMode = isTimingSession(sessionType);
+    this.applySessionHeader();
+    this.render();
+  }
+
+  private applySessionHeader(): void {
+    const title = this.root.querySelector(".compact-lb-title");
+    if (title) {
+      title.textContent = this.timingMode
+        ? sessionTimingTitle(this.sessionType)
+        : sessionStandingsTitle(this.sessionType);
+    }
+    this.badgeEl.textContent = sessionShortLabel(this.sessionType);
+    const toggles = this.root.querySelector(".compact-lb-toggles");
+    toggles?.classList.toggle("hidden", this.timingMode);
   }
 
   update(snapshots: CarSnapshot[]): void {
     this.snapshots = snapshots;
+    if (this.root.classList.contains("hidden")) return;
     this.render();
   }
 
@@ -116,24 +168,12 @@ export class CompactLeaderboard {
   }
 
   private orderedBoard(): CarSnapshot[] {
-    if (this.timingMode) {
-      const sorted = sortByTiming(this.snapshots);
-      if (this.gapScope === "class") {
-        const player = sorted.find((s) => s.entryId === this.playerEntryId);
-        const classId = player?.classId;
-        return classId ? sorted.filter((s) => s.classId === classId) : sorted;
-      }
-      return sorted;
-    }
-    if (this.gapScope === "class") {
-      const player = this.snapshots.find((s) => s.entryId === this.playerEntryId);
-      const classId = player?.classId;
-      const pool = classId
-        ? this.snapshots.filter((s) => s.classId === classId)
-        : [...this.snapshots];
-      return pool.sort((a, b) => (a.classPosition ?? a.racePosition) - (b.classPosition ?? b.racePosition));
-    }
-    return [...this.snapshots].sort((a, b) => a.racePosition - b.racePosition);
+    return orderLeaderboardBoard(this.snapshots, {
+      timingMode: this.timingMode,
+      gapScope: this.gapScope,
+      playerEntryId: this.selectedEntryId || this.playerEntryId,
+      managedEntryIds: [...this.managedEntryIds],
+    });
   }
 
   private gapForCar(car: CarSnapshot, board: CarSnapshot[]): string {
@@ -141,7 +181,11 @@ export class CompactLeaderboard {
     if (idx <= 0) return "—";
 
     if (this.gapMode === "ahead") {
-      return formatGap(this.computeTimeGap(car, board[idx - 1]));
+      const ahead = board[idx - 1];
+      return formatGapCompact(
+        this.computeTimeGap(car, ahead),
+        Math.max(0, ahead.lap - car.lap),
+      );
     }
 
     const leader = board[0];
@@ -149,36 +193,144 @@ export class CompactLeaderboard {
     if (this.timingMode && car.gapToLeader > 0) {
       return `+${car.gapToLeader.toFixed(3)}`;
     }
+    const lapDiff = Math.max(0, leader.lap - car.lap);
     if (this.gapScope === "overall" && car.gapToLeader > 0) {
-      return formatGap(car.gapToLeader);
+      return formatGapCompact(car.gapToLeader, lapDiff);
     }
-    return formatGap(this.computeTimeGap(car, leader));
+    return formatGapCompact(this.computeTimeGap(car, leader), lapDiff);
   }
 
   private render(): void {
-    this.listEl.replaceChildren();
     const board = this.orderedBoard();
     if (board.length === 0) {
+      this.rowByEntryId.clear();
+      this.lastBoardOrder = [];
+      this.listEl.replaceChildren();
       this.listEl.innerHTML = `<p class="compact-lb-empty">Waiting for timing…</p>`;
       return;
     }
 
+    const order = board.map((s) => s.entryId);
+    const orderChanged =
+      order.length !== this.lastBoardOrder.length ||
+      order.some((id, i) => id !== this.lastBoardOrder[i]);
+
+    const seen = new Set<string>();
     for (let i = 0; i < board.length; i++) {
       const snap = board[i];
-      const row = document.createElement("div");
-      row.className = "compact-lb-row";
-      if (snap.entryId === this.playerEntryId) row.classList.add("is-player");
-      if (snap.retired) row.classList.add("is-retired");
-      if (snap.inGarage) row.classList.add("in-garage");
-      else if (snap.inPit) row.classList.add("in-pit");
+      seen.add(snap.entryId);
+      const row = this.ensureRow(snap.entryId);
+      this.paintRow(row, snap, board, i);
+      if (orderChanged) this.listEl.appendChild(row.root);
+    }
 
-      const pos = this.timingMode
-        ? i + 1
-        : this.gapScope === "class"
-          ? (snap.classPosition ?? snap.racePosition)
-          : snap.racePosition;
-      const num = formatCarNumber(snap);
-      const gap = this.gapForCar(snap, board);
+    if (orderChanged) this.lastBoardOrder = order;
+
+    for (const [entryId, row] of this.rowByEntryId) {
+      if (seen.has(entryId)) continue;
+      row.root.remove();
+      this.rowByEntryId.delete(entryId);
+    }
+  }
+
+  private ensureRow(entryId: string): CompactLbRow {
+    let row = this.rowByEntryId.get(entryId);
+    if (row) return row;
+
+    const root = document.createElement("div");
+    root.className = "compact-lb-row";
+    root.dataset.entryId = entryId;
+
+    const pos = document.createElement("span");
+    pos.className = "compact-lb-pos";
+
+    const num = document.createElement("span");
+    num.className = "compact-lb-num";
+
+    const team = document.createElement("span");
+    team.className = "compact-lb-team";
+
+    const detail = document.createElement("span");
+    detail.className = "compact-lb-detail";
+
+    const badge = document.createElement("span");
+    badge.className = "compact-lb-class-badge class-badge";
+
+    const status = document.createElement("span");
+    status.className = "compact-lb-status";
+
+    const lap = document.createElement("span");
+    lap.className = "compact-lb-lap";
+
+    const gap = document.createElement("span");
+    gap.className = "compact-lb-gap";
+
+    detail.append(badge, status, lap, gap);
+
+    const extras = document.createElement("span");
+    extras.className = "compact-lb-extras";
+
+    root.append(pos, num, team, detail, extras);
+    row = { root, pos, num, team, badge, status, lap, gap, extras };
+    this.rowByEntryId.set(entryId, row);
+    return row;
+  }
+
+  private paintRow(
+    row: CompactLbRow,
+    snap: CarSnapshot,
+    board: CarSnapshot[],
+    index: number,
+  ): void {
+    row.root.classList.toggle("is-player", this.managedEntryIds.has(snap.entryId));
+    row.root.classList.toggle("is-selected", snap.entryId === this.selectedEntryId);
+    row.root.classList.toggle("is-retired", snap.retired);
+    row.root.classList.toggle("in-garage", snap.inGarage === true);
+    row.root.classList.toggle("in-pit", !snap.inGarage && snap.inPit);
+
+    const pos = this.timingMode
+      ? index + 1
+      : this.gapScope === "class"
+        ? (snap.classPosition ?? snap.racePosition)
+        : snap.racePosition;
+    const num = formatCarNumber(snap);
+    const gap = this.gapForCar(snap, board);
+
+    row.pos.textContent = String(pos);
+    row.num.textContent = num || "—";
+    row.team.textContent = snap.teamName;
+    row.team.title = snap.teamName;
+
+    row.badge.className = `compact-lb-class-badge class-badge class-${snap.classId}`;
+    row.badge.textContent = snap.classId.slice(0, 3);
+
+    if (snap.retired) {
+      row.status.className = "compact-lb-status status-retired";
+      row.status.textContent = "OUT";
+      row.status.title = resolveRetireReason(snap);
+      row.status.hidden = false;
+    } else if (snap.inGarage) {
+      row.status.className = "compact-lb-status";
+      row.status.textContent = "GAR";
+      row.status.title = "";
+      row.status.hidden = false;
+    } else if (snap.inPit) {
+      row.status.className = "compact-lb-status";
+      row.status.textContent = "PIT";
+      row.status.title = "";
+      row.status.hidden = false;
+    } else {
+      row.status.hidden = true;
+    }
+
+    row.lap.textContent = this.timingMode ? formatBestLap(snap.bestLapTime) : `L${snap.lap}`;
+    row.gap.textContent = gap;
+
+    const extras: string[] = [];
+    if (this.showFuel) {
+      extras.push(`<span class="compact-lb-meta" title="Fuel">${snap.fuel.toFixed(0)}L</span>`);
+    }
+    if (this.showEnergy) {
       const energy =
         snap.hybridDeployMJ != null &&
         snap.hybridDeployMJ >= 0 &&
@@ -187,39 +339,20 @@ export class CompactLeaderboard {
           : snap.hybridDeployMJ != null && snap.hybridDeployMJ >= 0
             ? `${snap.hybridDeployMJ.toFixed(0)} MJ`
             : "—";
-
-      const extras: string[] = [];
-      if (this.showFuel) extras.push(`<span class="compact-lb-meta" title="Fuel">${snap.fuel.toFixed(0)}L</span>`);
-      if (this.showEnergy) extras.push(`<span class="compact-lb-meta" title="Hybrid deploy">${energy}</span>`);
-      if (this.showTyre) {
-        const tempBand = tyreTempBand(snap.tireTempC);
-        extras.push(
-          `<span class="compact-lb-meta tyre-meta tyre-${tempBand}" title="Tyre temp / wear">${formatTyreTemp(snap.tireTempC)} · ${formatTyreWear(snap.tireWear)}</span>`,
-        );
-      }
-
-      const statusCol = snap.retired
-        ? `<span class="compact-lb-status-col"><span class="compact-lb-status status-retired" title="${escapeHtml(resolveRetireReason(snap))}">OUT</span></span>`
-        : snap.inGarage
-          ? `<span class="compact-lb-status-col"><span class="compact-lb-status">GAR</span></span>`
-          : snap.inPit
-            ? `<span class="compact-lb-status-col"><span class="compact-lb-status">PIT</span></span>`
-            : `<span class="compact-lb-status-col"></span>`;
-
-      row.innerHTML = `
-        <span class="compact-lb-pos">${pos}</span>
-        <span class="compact-lb-num">${num || "—"}</span>
-        <span class="compact-lb-team">
-          <span class="class-badge class-${escapeHtml(snap.classId)}">${escapeHtml(snap.classId.slice(0, 3))}</span>
-          ${escapeHtml(snap.teamName)}
-        </span>
-        ${statusCol}
-        <span class="compact-lb-lap">${this.timingMode ? formatBestLap(snap.bestLapTime) : `L${snap.lap}`}</span>
-        <span class="compact-lb-gap">${gap}</span>
-        ${extras.length ? `<span class="compact-lb-extras">${extras.join("")}</span>` : ""}
-      `;
-      this.listEl.appendChild(row);
+      extras.push(`<span class="compact-lb-meta" title="Hybrid deploy">${energy}</span>`);
     }
+    if (this.showTyre) {
+      const tempBand = tyreTempBand(snap.tireTempC);
+      extras.push(
+        `<span class="compact-lb-meta tyre-meta tyre-${tempBand}" title="Tyre compound / temp / wear">${tyreCompoundIconHtml(snap.tireCompound, { size: 16 })}${formatTyreTemp(snap.tireTempC)} · ${formatTyreWear(snap.tireWear)}</span>`,
+      );
+    }
+
+    const extrasHtml = extras.length ? extras.join("") : "";
+    if (row.extras.innerHTML !== extrasHtml) {
+      row.extras.innerHTML = extrasHtml;
+    }
+    row.extras.hidden = extras.length === 0;
   }
 }
 

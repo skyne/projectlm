@@ -4,7 +4,9 @@ import {
   estimateDriverChangeSeconds,
   estimatePitSeconds,
   type PitSetupDelta,
+  type PitTyreTread,
 } from "../utils/pitCommands";
+import { normalizeTyreCompound, tyreCompoundIconHtml } from "../utils/tyreCompound";
 import { formatSetupSummary } from "../utils/setupCommands";
 import { buildTyreTelemetryPanelHtml, formatTyreTemp, formatTyreWear, wheelTempFromSnapshot, wheelWearFromSnapshot, worstWheelWear, hottestWheelTemp } from "../utils/formatTyre";
 import { escapeHtml } from "../utils/mmUi";
@@ -18,6 +20,8 @@ export class PitStopModal {
   readonly root: HTMLElement;
   private fuelInput!: HTMLInputElement;
   private compoundSelect!: HTMLSelectElement;
+  private compoundWrap!: HTMLElement;
+  private tyreTreadInputs!: NodeListOf<HTMLInputElement>;
   private tireChecks!: NodeListOf<HTMLInputElement>;
   private repairEngine!: HTMLInputElement;
   private repairBody!: HTMLInputElement;
@@ -50,7 +54,27 @@ export class PitStopModal {
           <label class="mm-field">Fuel (litres)
             <input type="number" class="pit-modal-fuel" min="0" max="140" step="5" value="40" />
           </label>
-          <label class="mm-field">Tyre compound
+          <div class="mm-field pit-tyre-tread-field">
+            <span>Tyre type</span>
+            <div class="pit-tyre-tread-options">
+              <label class="pit-tyre-tread-option">
+                <input type="radio" name="pit-tyre-tread" value="slick" checked />
+                ${tyreCompoundIconHtml("medium", { size: 22, title: "Slicks" })}
+                <span>Slicks</span>
+              </label>
+              <label class="pit-tyre-tread-option">
+                <input type="radio" name="pit-tyre-tread" value="intermediate" />
+                ${tyreCompoundIconHtml("intermediate", { size: 22, title: "Intermediate" })}
+                <span>Intermediate</span>
+              </label>
+              <label class="pit-tyre-tread-option">
+                <input type="radio" name="pit-tyre-tread" value="wet" />
+                ${tyreCompoundIconHtml("wet", { size: 22, title: "Full wet" })}
+                <span>Full wet</span>
+              </label>
+            </div>
+          </div>
+          <label class="mm-field pit-compound-wrap">Slick compound
             <select class="pit-modal-compound">
               <option value="soft">Soft</option>
               <option value="medium" selected>Medium</option>
@@ -173,6 +197,8 @@ export class PitStopModal {
 
     this.fuelInput = this.root.querySelector(".pit-modal-fuel")!;
     this.compoundSelect = this.root.querySelector(".pit-modal-compound")!;
+    this.compoundWrap = this.root.querySelector(".pit-compound-wrap")!;
+    this.tyreTreadInputs = this.root.querySelectorAll('input[name="pit-tyre-tread"]');
     this.tireChecks = this.root.querySelectorAll("[data-tire]");
     this.repairEngine = this.root.querySelector(".pit-modal-repair-engine")!;
     this.repairBody = this.root.querySelector(".pit-modal-repair-body")!;
@@ -186,6 +212,12 @@ export class PitStopModal {
 
     const refresh = () => this.updateEstimate();
     this.fuelInput.addEventListener("input", refresh);
+    for (const input of this.tyreTreadInputs) {
+      input.addEventListener("change", () => {
+        this.syncCompoundFieldState();
+        refresh();
+      });
+    }
     this.repairEngine.addEventListener("change", refresh);
     this.repairBody.addEventListener("change", refresh);
     for (const sel of this.root.querySelectorAll<HTMLSelectElement>(
@@ -247,12 +279,14 @@ export class PitStopModal {
       this.wearGridEl.innerHTML = buildTyreTelemetryPanelHtml(snap);
       this.wearGridEl.classList.remove("hidden");
       this.applyWearBasedTireSelection(wheelWear);
+      this.applyTyreStateFromSnapshot(snap);
       this.populateDriverSelect(snap);
     } else {
       this.carSummaryEl.textContent = "Your car";
       this.wearGridEl.classList.add("hidden");
       this.wearGridEl.innerHTML = "";
     }
+    this.syncCompoundFieldState();
     this.updateEstimate();
     this.root.classList.remove("hidden");
   }
@@ -343,6 +377,13 @@ export class PitStopModal {
       const val = segments[i].slice(eq + 1).trim();
       if (key === "fuel") this.fuelInput.value = val;
       else if (key === "compound") this.compoundSelect.value = val.toLowerCase();
+      else if (key === "tyre_tread" || key === "tire_tread") this.setTyreTread(val.toLowerCase());
+      else if (key === "wet_tyres" || key === "wet_tires")
+        this.setTyreTread(val === "1" || val.toLowerCase() === "true" ? "wet" : "slick");
+      else if (key === "intermediate_tyres" || key === "intermediate_tires")
+        this.setTyreTread(
+          val === "1" || val.toLowerCase() === "true" ? "intermediate" : "slick",
+        );
       else if (key === "wing") setSelect(".pit-setup-wing", val);
       else if (key === "brake_bias") setSelect(".pit-setup-brake", val);
       else if (key === "front_ride_height") setSelect(".pit-setup-front-rh", val);
@@ -359,8 +400,43 @@ export class PitStopModal {
         setSelect(".pit-setup-rear-rebound", val);
       }
     }
+    this.syncCompoundFieldState();
     this.readSetupFromForm();
     this.updateEstimate();
+  }
+
+  private selectedTyreTread(): PitTyreTread {
+    for (const input of this.tyreTreadInputs) {
+      if (input.checked) return input.value as PitTyreTread;
+    }
+    return "slick";
+  }
+
+  private setTyreTread(tread: string): void {
+    const normalized =
+      tread === "wet" || tread === "intermediate" || tread === "slick" ? tread : "slick";
+    for (const input of this.tyreTreadInputs) {
+      input.checked = input.value === normalized;
+    }
+    this.syncCompoundFieldState();
+  }
+
+  private syncCompoundFieldState(): void {
+    const slick = this.selectedTyreTread() === "slick";
+    this.compoundWrap.classList.toggle("is-muted", !slick);
+    this.compoundSelect.disabled = !slick;
+  }
+
+  private applyTyreStateFromSnapshot(snap: CarSnapshot): void {
+    const key = normalizeTyreCompound(snap.tireCompound);
+    if (key === "wet") this.setTyreTread("wet");
+    else if (key === "intermediate") this.setTyreTread("intermediate");
+    else {
+      this.setTyreTread("slick");
+      if (key === "soft" || key === "hard" || key === "medium") {
+        this.compoundSelect.value = key;
+      }
+    }
   }
 
   private populateDriverSelect(snap: CarSnapshot): void {
@@ -401,9 +477,11 @@ export class PitStopModal {
     const repairs: string[] = [];
     if (this.repairEngine.checked) repairs.push("engine");
     if (this.repairBody.checked) repairs.push("body");
+    const tread = this.selectedTyreTread();
     return buildPitCommand({
       fuel: Number(this.fuelInput.value) || 0,
-      compound: this.compoundSelect.value,
+      compound: tread === "slick" ? this.compoundSelect.value : "medium",
+      tyreTread: tread,
       tires,
       repairs,
       driverChange: this.driverChange.checked,

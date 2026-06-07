@@ -1,6 +1,24 @@
-import type { CarSnapshot, TrackGeometryPayload, TrackSectorGeometry } from "../ws/protocol";
-import { formatCarNumber } from "../entryNumbers";
+import type {
+  CarSnapshot,
+  RaceControlPayload,
+  TrackGeometryPayload,
+  TrackSectorGeometry,
+} from "../ws/protocol";
+import { formatMapCarLabel, formatCarNumber } from "../entryNumbers";
+import {
+  hasBakedTrackSurface,
+  trackSurfaceBackgroundUrl,
+} from "../utils/trackBackgroundAssets";
+import { trackGeometryEqual } from "../utils/trackGeometry";
+import {
+  applyTrackWeatherVisual,
+  resolveTrackWeatherVisual,
+} from "../utils/trackWeatherVisual";
+import { PIT_LANE_FRACTION } from "../utils/pitCommands";
 import { resolveTrackTheme, type TrackTheme } from "../utils/trackThemes";
+
+const PIT_BOX_FRACTION = 0.48;
+const PIT_LANE_BLEND = 0.34;
 
 export interface TrackLayerVisibility {
   sectors: boolean;
@@ -10,8 +28,8 @@ export interface TrackLayerVisibility {
 
 const CLASS_COLORS: Record<string, string> = {
   Hypercar: "#e10600",
-  LMGT3: "#005aff",
-  LMP2: "#00a651",
+  LMGT3: "#00a651",
+  LMP2: "#005aff",
   solo: "#95a5a6",
 };
 
@@ -120,6 +138,19 @@ export class SvgTrack {
     labels: true,
     pit: true,
   };
+  private renderedGeometry: TrackGeometryPayload | null = null;
+  private renderedThemeId: string | null = null;
+  private trackId?: string;
+  private wetSheenPath: SVGPathElement | null = null;
+  private asphaltWet = false;
+  private lastWetSheenOpacity = -1;
+  private lapLengthM = 7000;
+  private pitLanePath: {
+    points: SvgPoint[];
+    cumulative: number[];
+    totalLength: number;
+    boxDistance: number;
+  } | null = null;
 
   constructor(container: HTMLElement, options: SvgTrackOptions = {}) {
     this.zoomable = options.zoomable ?? false;
@@ -313,6 +344,48 @@ export class SvgTrack {
 
   setTheme(theme: TrackTheme): void {
     this.theme = theme;
+    this.applyBackgroundSurface();
+  }
+
+  setTrackId(trackId?: string): void {
+    this.trackId = trackId;
+    this.applyBackgroundSurface();
+  }
+
+  setTrackConditions(raceControl?: RaceControlPayload): void {
+    const host = this.backgroundHost();
+    if (host) applyTrackWeatherVisual(host, raceControl);
+    const v = resolveTrackWeatherVisual(raceControl);
+    const wetClass = v.wet > 0.5;
+    if (wetClass !== this.asphaltWet) {
+      this.asphaltWet = wetClass;
+      this.root.classList.toggle("track-asphalt-wet", wetClass);
+    }
+    if (this.wetSheenPath) {
+      const opacity = v.wet > 0.5 ? Math.min(1, (v.wet - 0.5) * 1.4) : 0;
+      if (opacity !== this.lastWetSheenOpacity) {
+        this.lastWetSheenOpacity = opacity;
+        this.wetSheenPath.setAttribute("opacity", String(opacity));
+      }
+    }
+  }
+
+  private backgroundHost(): HTMLElement | null {
+    const host =
+      this.root.closest(".track-map-stage") ??
+      this.root.closest(".telemetry-map-inner") ??
+      this.root.closest(".season-calendar-map");
+    return host instanceof HTMLElement ? host : null;
+  }
+
+  private applyBackgroundSurface(): void {
+    const host = this.backgroundHost();
+    if (!host) return;
+    host.style.setProperty(
+      "--track-bg-image",
+      `url("${trackSurfaceBackgroundUrl(this.trackId, this.theme)}")`,
+    );
+    host.style.setProperty("--track-surface-deep", this.theme.surfaceDeep);
   }
 
   setLayerVisibility(visibility: Partial<TrackLayerVisibility>): void {
@@ -328,7 +401,7 @@ export class SvgTrack {
     this.carPositions.clear();
   }
 
-  setGeometry(geometry: TrackGeometryPayload): void {
+  private wipeGeometry(): void {
     this.defs.replaceChildren();
     this.bgGroup.replaceChildren();
     this.sectorsGroup.replaceChildren();
@@ -336,12 +409,32 @@ export class SvgTrack {
     this.trackGroup.replaceChildren();
     this.labelsGroup.replaceChildren();
     this.clearCars();
+    this.wetSheenPath = null;
+    this.pitLanePath = null;
     this.fit = null;
     this.zoom = 1;
     this.panX = 0;
     this.panY = 0;
+  }
 
-    if (geometry.polyline.length === 0) return;
+  setGeometry(geometry: TrackGeometryPayload): void {
+    if (geometry.polyline.length === 0) {
+      this.wipeGeometry();
+      this.renderedGeometry = null;
+      this.renderedThemeId = null;
+      return;
+    }
+
+    if (
+      this.fit &&
+      this.renderedGeometry &&
+      this.renderedThemeId === this.theme.id &&
+      trackGeometryEqual(this.renderedGeometry, geometry)
+    ) {
+      return;
+    }
+
+    this.wipeGeometry();
 
     let minX = Infinity;
     let maxX = -Infinity;
@@ -416,8 +509,9 @@ export class SvgTrack {
     this.installDefs(viewBoxX, viewBoxY, viewWidth, viewHeight);
 
     const pathD = this.pointsToPath(svgPoints, true);
-    this.drawAtmosphere(viewBoxX, viewBoxY, viewWidth, viewHeight, svgPoints);
-    this.drawInfield(pathD, svgPoints);
+    if (!hasBakedTrackSurface(this.trackId)) {
+      this.drawInfield(pathD);
+    }
     this.drawSectorBands(svgPoints, geometry.sectors, cumulativeT, totalLength);
     this.drawTrackSurface(pathD, svgPoints);
 
@@ -469,6 +563,10 @@ export class SvgTrack {
     }
 
     this.setLayerVisibility(this.layerVisibility);
+    this.lapLengthM = geometry.lapLength > 0 ? geometry.lapLength : this.lapLengthM;
+    this.cachePitLanePath(svgPoints, cumulativeT, totalLength);
+    this.renderedGeometry = geometry;
+    this.renderedThemeId = this.theme.id;
   }
 
   updateCars(snapshots: CarSnapshot[]): void {
@@ -478,17 +576,10 @@ export class SvgTrack {
 
     for (const snap of snapshots) {
       seen.add(snap.entryId);
-      const base = this.worldToSvg(snap.position.x, snap.position.z);
-      const tangent = snap.tangent ?? { x: 1, y: 0, z: 0 };
-      const perpX = -tangent.z;
-      const perpZ = tangent.x;
-      const lateral = (snap.lateralOffset ?? 0) * 8;
-      const p = {
-        x: base.x + perpX * lateral,
-        y: base.y + perpZ * lateral,
-      };
-      const angle = (Math.atan2(tangent.z, tangent.x) * 180) / Math.PI;
-      const numberLabel = formatCarNumber(snap) || "?";
+      const { x, y, angle, onPitLane } = this.resolveCarMapPose(snap);
+      const p = { x, y };
+      const numberLabel = formatMapCarLabel(snap);
+      const carNumber = formatCarNumber(snap);
       const lengthPx = Math.max(12, (snap.carLengthM ?? 5) * 1.8);
       const widthPx = Math.max(7, (snap.carWidthM ?? 2) * 1.8);
       const isPlayer = snap.entryId === this.playerEntryId;
@@ -538,8 +629,25 @@ export class SvgTrack {
         "transform",
         `translate(${p.x}, ${p.y}) rotate(${angle})`,
       );
-      marker.group.classList.toggle("player-car", isPlayer);
-      marker.group.classList.toggle("team-car", isTeam && !isPlayer);
+
+      if (isPlayer !== marker.group.classList.contains("player-car")) {
+        marker.group.classList.toggle("player-car", isPlayer);
+      }
+      const teamCar = isTeam && !isPlayer;
+      if (teamCar !== marker.group.classList.contains("team-car")) {
+        marker.group.classList.toggle("team-car", teamCar);
+      }
+      if (!marker.group.classList.contains("car-number-visible")) {
+        marker.group.classList.add("car-number-visible");
+      }
+      const emphasis = isPlayer || isTeam;
+      if (emphasis !== marker.group.classList.contains("car-number-emphasis")) {
+        marker.group.classList.toggle("car-number-emphasis", emphasis);
+      }
+      marker.group.classList.toggle("pit-lane-car", onPitLane);
+      if (marker.group.dataset.classId !== snap.classId) {
+        marker.group.dataset.classId = snap.classId;
+      }
 
       const bodyPath = this.carBodyPath(lengthPx, widthPx);
       marker.body.setAttribute("d", bodyPath);
@@ -576,24 +684,26 @@ export class SvgTrack {
 
       marker.glow.setAttribute("stroke", color);
       if (isPlayer) {
-        marker.glow.setAttribute("stroke-width", "3");
-        marker.glow.setAttribute("opacity", "0.7");
-        marker.glow.setAttribute("filter", "url(#player-glow)");
+        marker.glow.setAttribute("stroke-width", "4");
+        marker.glow.setAttribute("opacity", "0.75");
       } else if (isTeam) {
         marker.glow.setAttribute("stroke-width", "2");
         marker.glow.setAttribute("opacity", "0.55");
-        marker.glow.removeAttribute("filter");
       } else {
         marker.glow.setAttribute("stroke-width", "0");
         marker.glow.setAttribute("opacity", "0");
-        marker.glow.removeAttribute("filter");
       }
 
       marker.label.textContent = numberLabel;
-      marker.label.setAttribute("font-size", isPlayer || isTeam ? "5.5" : "0");
-      marker.label.setAttribute("fill", isPlayer ? "#fff" : isTeam ? color : "transparent");
-      marker.title.textContent = `#${numberLabel} ${snap.teamName}${snap.inPit ? " (PIT)" : ""}${snap.overtaking ? " overtaking" : ""}`;
-      marker.group.style.opacity = snap.retired ? "0.35" : "1";
+      marker.label.setAttribute(
+        "fill",
+        isPlayer ? "#fff" : isTeam ? color : "rgba(240, 242, 245, 0.92)",
+      );
+      marker.title.textContent = `#${carNumber || "?"} ${snap.classId} · ${snap.teamName}${snap.inPit ? " (PIT)" : ""}${snap.overtaking ? " overtaking" : ""}`;
+      const retiredOpacity = snap.retired ? "0.35" : "1";
+      if (marker.group.style.opacity !== retiredOpacity) {
+        marker.group.style.opacity = retiredOpacity;
+      }
     }
 
     for (const [id, el] of this.carElements) {
@@ -607,23 +717,6 @@ export class SvgTrack {
 
   private installDefs(x: number, y: number, w: number, h: number): void {
     const t = this.theme;
-
-    const bgGrad = document.createElementNS("http://www.w3.org/2000/svg", "radialGradient");
-    bgGrad.setAttribute("id", "track-bg-gradient");
-    bgGrad.setAttribute("cx", "50%");
-    bgGrad.setAttribute("cy", "46%");
-    bgGrad.setAttribute("r", "82%");
-    for (const [offset, color] of [
-      ["0%", t.infieldLight],
-      ["45%", t.outfield],
-      ["100%", t.surfaceDeep],
-    ] as const) {
-      const stop = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-      stop.setAttribute("offset", offset);
-      stop.setAttribute("stop-color", color);
-      bgGrad.appendChild(stop);
-    }
-    this.defs.appendChild(bgGrad);
 
     const infieldGrad = document.createElementNS("http://www.w3.org/2000/svg", "radialGradient");
     infieldGrad.setAttribute("id", "track-infield-gradient");
@@ -661,25 +754,6 @@ export class SvgTrack {
     }
     this.defs.appendChild(asphaltGrad);
 
-    const sunGrad = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
-    sunGrad.setAttribute("id", "track-sunlight");
-    sunGrad.setAttribute("x1", "0%");
-    sunGrad.setAttribute("y1", "0%");
-    sunGrad.setAttribute("x2", "100%");
-    sunGrad.setAttribute("y2", "100%");
-    for (const [offset, color, opacity] of [
-      ["0%", "#ffffff", "0.14"],
-      ["35%", "#ffffff", "0.04"],
-      ["100%", "#000000", "0.12"],
-    ] as const) {
-      const stop = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-      stop.setAttribute("offset", offset);
-      stop.setAttribute("stop-color", color);
-      stop.setAttribute("stop-opacity", opacity);
-      sunGrad.appendChild(stop);
-    }
-    this.defs.appendChild(sunGrad);
-
     const kerbPattern = document.createElementNS("http://www.w3.org/2000/svg", "pattern");
     kerbPattern.setAttribute("id", "track-kerb-pattern");
     kerbPattern.setAttribute("patternUnits", "userSpaceOnUse");
@@ -697,78 +771,6 @@ export class SvgTrack {
     kerbB.setAttribute("fill", t.kerbAlt);
     kerbPattern.append(kerbA, kerbB);
     this.defs.appendChild(kerbPattern);
-
-    const terrainBlur = document.createElementNS("http://www.w3.org/2000/svg", "filter");
-    terrainBlur.setAttribute("id", "terrain-blur");
-    terrainBlur.setAttribute("x", "-40%");
-    terrainBlur.setAttribute("y", "-40%");
-    terrainBlur.setAttribute("width", "180%");
-    terrainBlur.setAttribute("height", "180%");
-    const terrainBlurOp = document.createElementNS("http://www.w3.org/2000/svg", "feGaussianBlur");
-    terrainBlurOp.setAttribute("stdDeviation", "22");
-    terrainBlur.appendChild(terrainBlurOp);
-    this.defs.appendChild(terrainBlur);
-
-    const noiseFilter = document.createElementNS("http://www.w3.org/2000/svg", "filter");
-    noiseFilter.setAttribute("id", "terrain-noise");
-    noiseFilter.setAttribute("x", "0%");
-    noiseFilter.setAttribute("y", "0%");
-    noiseFilter.setAttribute("width", "100%");
-    noiseFilter.setAttribute("height", "100%");
-    const turbulence = document.createElementNS("http://www.w3.org/2000/svg", "feTurbulence");
-    turbulence.setAttribute("type", "fractalNoise");
-    turbulence.setAttribute("baseFrequency", "0.45");
-    turbulence.setAttribute("numOctaves", "4");
-    turbulence.setAttribute("seed", "12");
-    turbulence.setAttribute("result", "noise");
-    noiseFilter.appendChild(turbulence);
-    const desaturate = document.createElementNS("http://www.w3.org/2000/svg", "feColorMatrix");
-    desaturate.setAttribute("type", "saturate");
-    desaturate.setAttribute("values", "0");
-    desaturate.setAttribute("in", "noise");
-    desaturate.setAttribute("result", "mono");
-    noiseFilter.appendChild(desaturate);
-    const blend = document.createElementNS("http://www.w3.org/2000/svg", "feBlend");
-    blend.setAttribute("in", "SourceGraphic");
-    blend.setAttribute("in2", "mono");
-    blend.setAttribute("mode", "multiply");
-    noiseFilter.appendChild(blend);
-    this.defs.appendChild(noiseFilter);
-
-    const trackGlow = document.createElementNS("http://www.w3.org/2000/svg", "filter");
-    trackGlow.setAttribute("id", "track-glow");
-    trackGlow.setAttribute("x", "-20%");
-    trackGlow.setAttribute("y", "-20%");
-    trackGlow.setAttribute("width", "140%");
-    trackGlow.setAttribute("height", "140%");
-    const glowBlur = document.createElementNS("http://www.w3.org/2000/svg", "feGaussianBlur");
-    glowBlur.setAttribute("stdDeviation", "1.2");
-    glowBlur.setAttribute("result", "blur");
-    trackGlow.appendChild(glowBlur);
-    const glowMerge = document.createElementNS("http://www.w3.org/2000/svg", "feMerge");
-    const glowNode = document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode");
-    glowNode.setAttribute("in", "blur");
-    glowMerge.appendChild(glowNode);
-    glowMerge.appendChild(document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode"));
-    trackGlow.appendChild(glowMerge);
-    this.defs.appendChild(trackGlow);
-
-    const vignetteGrad = document.createElementNS("http://www.w3.org/2000/svg", "radialGradient");
-    vignetteGrad.setAttribute("id", "track-vignette");
-    vignetteGrad.setAttribute("cx", "50%");
-    vignetteGrad.setAttribute("cy", "48%");
-    vignetteGrad.setAttribute("r", "68%");
-    for (const [offset, color, opacity] of [
-      ["60%", "transparent", "1"],
-      ["100%", t.surfaceDeep, "0.55"],
-    ] as const) {
-      const stop = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-      stop.setAttribute("offset", offset);
-      stop.setAttribute("stop-color", color);
-      stop.setAttribute("stop-opacity", opacity);
-      vignetteGrad.appendChild(stop);
-    }
-    this.defs.appendChild(vignetteGrad);
 
     const pitTarmacGrad = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
     pitTarmacGrad.setAttribute("id", "pit-tarmac-fill");
@@ -826,128 +828,19 @@ export class SvgTrack {
     }
     this.defs.appendChild(sfChecker);
 
-    const glowFilter = document.createElementNS("http://www.w3.org/2000/svg", "filter");
-    glowFilter.setAttribute("id", "player-glow");
-    glowFilter.setAttribute("x", "-50%");
-    glowFilter.setAttribute("y", "-50%");
-    glowFilter.setAttribute("width", "200%");
-    glowFilter.setAttribute("height", "200%");
-
-    const blur = document.createElementNS("http://www.w3.org/2000/svg", "feGaussianBlur");
-    blur.setAttribute("stdDeviation", "3");
-    blur.setAttribute("result", "blur");
-    glowFilter.appendChild(blur);
-
-    const merge = document.createElementNS("http://www.w3.org/2000/svg", "feMerge");
-    for (const node of ["blur", "SourceGraphic"]) {
-      const mergeNode = document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode");
-      if (node !== "SourceGraphic") mergeNode.setAttribute("in", node);
-      merge.appendChild(mergeNode);
-    }
-    glowFilter.appendChild(merge);
-    this.defs.appendChild(glowFilter);
-
     void x;
     void y;
     void w;
     void h;
   }
 
-  private drawAtmosphere(
-    viewX: number,
-    viewY: number,
-    viewW: number,
-    viewH: number,
-    svgPoints: SvgPoint[],
-  ): void {
-    const t = this.theme;
-    const cx =
-      svgPoints.reduce((sum, p) => sum + p.x, 0) / Math.max(svgPoints.length, 1);
-    const cy =
-      svgPoints.reduce((sum, p) => sum + p.y, 0) / Math.max(svgPoints.length, 1);
-
-    const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    bgRect.setAttribute("x", String(viewX));
-    bgRect.setAttribute("y", String(viewY));
-    bgRect.setAttribute("width", String(viewW));
-    bgRect.setAttribute("height", String(viewH));
-    bgRect.setAttribute("fill", "url(#track-bg-gradient)");
-    bgRect.setAttribute("filter", "url(#terrain-noise)");
-    bgRect.setAttribute("class", "track-bg");
-    this.bgGroup.appendChild(bgRect);
-
-    const patches: Array<{ dx: number; dy: number; rx: number; ry: number; fill: string; op: number }> = [
-      { dx: -viewW * 0.28, dy: -viewH * 0.2, rx: viewW * 0.34, ry: viewH * 0.28, fill: t.terrainPrimary, op: 0.55 },
-      { dx: viewW * 0.3, dy: viewH * 0.18, rx: viewW * 0.3, ry: viewH * 0.24, fill: t.terrainSecondary, op: 0.5 },
-      { dx: viewW * 0.08, dy: viewH * 0.32, rx: viewW * 0.22, ry: viewH * 0.18, fill: t.dirt, op: 0.35 },
-      { dx: -viewW * 0.12, dy: viewH * 0.28, rx: viewW * 0.18, ry: viewH * 0.14, fill: t.dirt, op: 0.28 },
-      { dx: viewW * 0.22, dy: -viewH * 0.26, rx: viewW * 0.26, ry: viewH * 0.2, fill: t.terrainPrimary, op: 0.42 },
-    ];
-    for (const patch of patches) {
-      const ellipse = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
-      ellipse.setAttribute("cx", String(cx + patch.dx));
-      ellipse.setAttribute("cy", String(cy + patch.dy));
-      ellipse.setAttribute("rx", String(patch.rx));
-      ellipse.setAttribute("ry", String(patch.ry));
-      ellipse.setAttribute("fill", patch.fill);
-      ellipse.setAttribute("opacity", String(patch.op));
-      ellipse.setAttribute("filter", "url(#terrain-blur)");
-      this.bgGroup.appendChild(ellipse);
-    }
-
-    const sun = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    sun.setAttribute("x", String(viewX));
-    sun.setAttribute("y", String(viewY));
-    sun.setAttribute("width", String(viewW));
-    sun.setAttribute("height", String(viewH));
-    sun.setAttribute("fill", "url(#track-sunlight)");
-    sun.setAttribute("pointer-events", "none");
-    this.bgGroup.appendChild(sun);
-
-    const vignette = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    vignette.setAttribute("x", String(viewX));
-    vignette.setAttribute("y", String(viewY));
-    vignette.setAttribute("width", String(viewW));
-    vignette.setAttribute("height", String(viewH));
-    vignette.setAttribute("fill", "url(#track-vignette)");
-    vignette.setAttribute("pointer-events", "none");
-    this.bgGroup.appendChild(vignette);
-  }
-
-  private drawInfield(pathD: string, svgPoints: SvgPoint[]): void {
-    const t = this.theme;
-
+  private drawInfield(pathD: string): void {
     const infield = document.createElementNS("http://www.w3.org/2000/svg", "path");
     infield.setAttribute("d", pathD);
     infield.setAttribute("fill", "url(#track-infield-gradient)");
     infield.setAttribute("stroke", "none");
     infield.setAttribute("class", "track-infield");
     this.bgGroup.appendChild(infield);
-
-    const cx =
-      svgPoints.reduce((sum, p) => sum + p.x, 0) / Math.max(svgPoints.length, 1);
-    const cy =
-      svgPoints.reduce((sum, p) => sum + p.y, 0) / Math.max(svgPoints.length, 1);
-
-    const mow = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
-    mow.setAttribute("cx", String(cx));
-    mow.setAttribute("cy", String(cy));
-    mow.setAttribute("rx", "28");
-    mow.setAttribute("ry", "18");
-    mow.setAttribute("fill", t.infieldLight);
-    mow.setAttribute("opacity", "0.22");
-    mow.setAttribute("filter", "url(#terrain-blur)");
-    this.bgGroup.appendChild(mow);
-
-    const dirtPatch = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
-    dirtPatch.setAttribute("cx", String(cx + 40));
-    dirtPatch.setAttribute("cy", String(cy - 25));
-    dirtPatch.setAttribute("rx", "22");
-    dirtPatch.setAttribute("ry", "14");
-    dirtPatch.setAttribute("fill", t.dirt);
-    dirtPatch.setAttribute("opacity", "0.3");
-    dirtPatch.setAttribute("filter", "url(#terrain-blur)");
-    this.bgGroup.appendChild(dirtPatch);
   }
 
   private drawTrackSurface(pathD: string, svgPoints: SvgPoint[]): void {
@@ -981,8 +874,19 @@ export class SvgTrack {
     asphalt.setAttribute("stroke-linejoin", "round");
     asphalt.setAttribute("stroke-linecap", "round");
     asphalt.setAttribute("class", "track-outline");
-    asphalt.setAttribute("filter", "url(#track-glow)");
     this.trackGroup.appendChild(asphalt);
+
+    const wetSheen = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    wetSheen.setAttribute("d", pathD);
+    wetSheen.setAttribute("fill", "none");
+    wetSheen.setAttribute("stroke", "rgba(130, 165, 195, 0.65)");
+    wetSheen.setAttribute("stroke-width", String(TRACK_ASPHALT_WIDTH - 0.5));
+    wetSheen.setAttribute("stroke-linejoin", "round");
+    wetSheen.setAttribute("stroke-linecap", "round");
+    wetSheen.setAttribute("class", "track-wet-sheen");
+    wetSheen.setAttribute("opacity", "0");
+    this.trackGroup.appendChild(wetSheen);
+    this.wetSheenPath = wetSheen;
 
     this.drawCornerKerbs(svgPoints);
 
@@ -1068,12 +972,12 @@ export class SvgTrack {
     cumulativeT: number[],
     totalLength: number,
   ): void {
-    const pitLen = totalLength * 0.06;
+    const pitLen = totalLength * PIT_LANE_FRACTION;
     if (pitLen <= 0) return;
 
     const layout = this.pitLayoutMetrics();
     const tw = TRACK_ASPHALT_WIDTH;
-    const blendFraction = 0.34;
+    const blendFraction = PIT_LANE_BLEND;
     const sampleStep = Math.max(2, pitLen / 72);
 
     const tarmacPath = this.buildBlendedPitPath(
@@ -1229,7 +1133,7 @@ export class SvgTrack {
     cumulative: number[],
     totalLength: number,
   ): void {
-    const pitLen = totalLength * 0.06;
+    const pitLen = totalLength * PIT_LANE_FRACTION;
     const sfDist = pitLen * 0.44;
     const frame = this.sampleTrackFrame(svgPoints, cumulative, sfDist, 0);
     if (!frame) return;
@@ -1282,6 +1186,134 @@ export class SvgTrack {
     }
 
     this.trackGroup.appendChild(startLine);
+  }
+
+  private cachePitLanePath(
+    svgPoints: SvgPoint[],
+    cumulativeT: number[],
+    totalLength: number,
+  ): void {
+    const pitLen = totalLength * PIT_LANE_FRACTION;
+    if (pitLen <= 0 || svgPoints.length < 2) {
+      this.pitLanePath = null;
+      return;
+    }
+
+    const layout = this.pitLayoutMetrics();
+    const sampleStep = Math.max(2, pitLen / 72);
+    const tarmacPath = this.buildBlendedPitPath(
+      svgPoints,
+      cumulativeT,
+      pitLen,
+      layout.tarmacCenterOffset,
+      PIT_LANE_BLEND,
+      sampleStep,
+    );
+    if (tarmacPath.points.length < 2) {
+      this.pitLanePath = null;
+      return;
+    }
+
+    this.pitLanePath = {
+      points: tarmacPath.points,
+      cumulative: tarmacPath.cumulative,
+      totalLength: pitLen,
+      boxDistance: pitLen * PIT_BOX_FRACTION,
+    };
+  }
+
+  private shouldRenderOnPitLane(snap: CarSnapshot): boolean {
+    if (snap.inPit) return true;
+    if (snap.pitQueued && snap.normalizedT < 0.02) return true;
+    return false;
+  }
+
+  private resolveCarMapPose(snap: CarSnapshot): {
+    x: number;
+    y: number;
+    angle: number;
+    onPitLane: boolean;
+  } {
+    if (this.shouldRenderOnPitLane(snap) && this.pitLanePath) {
+      const along = this.pitDistanceAlongSvg(snap);
+      const frame = this.samplePathFrame(
+        this.pitLanePath.points,
+        this.pitLanePath.cumulative,
+        along,
+      );
+      if (frame) {
+        return {
+          x: frame.x,
+          y: frame.y,
+          angle: this.frameAngleDeg(frame),
+          onPitLane: true,
+        };
+      }
+    }
+
+    const base = this.worldToSvg(snap.position.x, snap.position.z);
+    const tangent = snap.tangent ?? { x: 1, y: 0, z: 0 };
+    const perpX = -tangent.z;
+    const perpZ = tangent.x;
+    const lateral = (snap.lateralOffset ?? 0) * 8;
+    return {
+      x: base.x + perpX * lateral,
+      y: base.y + perpZ * lateral,
+      angle: (Math.atan2(tangent.z, tangent.x) * 180) / Math.PI,
+      onPitLane: false,
+    };
+  }
+
+  private pitDistanceAlongSvg(snap: CarSnapshot): number {
+    const path = this.pitLanePath;
+    if (!path) return 0;
+
+    if (snap.pitQueued && !snap.inPit) {
+      return 0;
+    }
+
+    const pitLenM = this.lapLengthM * PIT_LANE_FRACTION;
+    if (
+      snap.pitLaneDistance != null &&
+      snap.pitLaneDistance >= 0 &&
+      pitLenM > 0
+    ) {
+      const frac = Math.max(0, Math.min(1, snap.pitLaneDistance / pitLenM));
+      return frac * path.totalLength;
+    }
+
+    const base = this.worldToSvg(snap.position.x, snap.position.z);
+    return this.closestDistanceAlongPath(path, base);
+  }
+
+  private closestDistanceAlongPath(
+    path: { points: SvgPoint[]; cumulative: number[] },
+    point: SvgPoint,
+  ): number {
+    let bestDistSq = Infinity;
+    let bestAlong = 0;
+
+    for (let i = 0; i < path.points.length - 1; i++) {
+      const a = path.points[i];
+      const b = path.points[i + 1];
+      const abx = b.x - a.x;
+      const aby = b.y - a.y;
+      const lenSq = abx * abx + aby * aby || 1;
+      const t = Math.max(
+        0,
+        Math.min(1, ((point.x - a.x) * abx + (point.y - a.y) * aby) / lenSq),
+      );
+      const px = a.x + abx * t;
+      const py = a.y + aby * t;
+      const d2 = (point.x - px) ** 2 + (point.y - py) ** 2;
+      if (d2 >= bestDistSq) continue;
+      bestDistSq = d2;
+      const segStart = path.cumulative[i];
+      const segLen = (path.cumulative[i + 1] ?? segStart) - segStart;
+      bestAlong = segStart + segLen * t;
+    }
+
+    return bestAlong;
   }
 
   private pitLateralBlend(distance: number, pitLength: number, blendFraction: number): number {
@@ -1374,11 +1406,11 @@ export class SvgTrack {
   } {
     const tw = TRACK_ASPHALT_WIDTH;
     const halfTrack = tw / 2;
-    const edgeGap = tw * 0.32;
+    const edgeGap = tw * 0.52;
     const wallThickness = tw * 0.2;
     const tarmacWidth = tw * 0.92;
     const buildingDepth = tw * 0.95;
-    const buildingGap = tw * 0.14;
+    const buildingGap = tw * 0.22;
 
     const wallCenterOffset = halfTrack + edgeGap + wallThickness / 2;
     const tarmacInnerEdge = halfTrack + edgeGap + wallThickness;

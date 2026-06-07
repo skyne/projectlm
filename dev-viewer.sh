@@ -5,21 +5,25 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PROJECTLM_ROOT="$ROOT"
 PID_FILE="$ROOT/.dev-viewer.pid"
+NATIVE_DIR="$ROOT/bindings/node"
+NATIVE_NODE="$NATIVE_DIR/build/Release/projectlm_native.node"
 
 SERVER_PORT="${PORT:-8765}"
 VIEWER_PORT="${VIEWER_PORT:-5173}"
 SKIP_BUILD=false
 FORCE_PORTS=false
+FORCE_REBUILD=false
 
 usage() {
   cat <<EOF
 Usage: $(basename "$0") [options]
 
-Build the sim core, Node native addon, and npm deps; then start the WS server
+Ensure deps and the Node native addon are up to date, then start the WS server
 and Vite viewer. Open http://localhost:${VIEWER_PORT} when ready.
 
 Options:
-  --no-build    Skip make / make native / npm install (start servers only)
+  --no-build    Skip all build/install steps (start servers only)
+  --rebuild     Force a full native addon rebuild (node-gyp rebuild)
   --force       Stop processes on the target ports before starting
   -h, --help    Show this help
 
@@ -33,6 +37,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-build) SKIP_BUILD=true; shift ;;
+    --rebuild) FORCE_REBUILD=true; shift ;;
     --force) FORCE_PORTS=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
@@ -61,12 +66,21 @@ port_owner() {
 
 free_port() {
   local port="$1"
-  if command -v fuser >/dev/null 2>&1; then
-    fuser -k "${port}/tcp" >/dev/null 2>&1 || true
-  else
-    local pids
+  local pids
+  pids="$(lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "$pids" ]]; then
+    # Kill listener and parent (e.g. tsx watch respawns children if only the child dies).
+    for pid in $pids; do
+      local ppid
+      ppid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+      kill "$pid" 2>/dev/null || true
+      [[ -n "$ppid" && "$ppid" != "1" ]] && kill "$ppid" 2>/dev/null || true
+    done
+    sleep 0.4
     pids="$(lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
-    [[ -n "$pids" ]] && kill $pids 2>/dev/null || true
+    [[ -n "$pids" ]] && kill -9 $pids 2>/dev/null || true
+  elif command -v fuser >/dev/null 2>&1; then
+    fuser -k "${port}/tcp" >/dev/null 2>&1 || true
   fi
   sleep 0.2
 }
@@ -117,22 +131,68 @@ require_cmd() {
   fi
 }
 
-require_cmd make
+npm_needs_install() {
+  local dir="$1"
+  [[ ! -d "$dir/node_modules" ]] && return 0
+  local stamp="$dir/node_modules/.package-lock.json"
+  if [[ -f "$stamp" ]]; then
+    [[ "$dir/package-lock.json" -nt "$stamp" ]] && return 0
+    [[ "$dir/package.json" -nt "$stamp" ]] && return 0
+    return 1
+  fi
+  [[ "$dir/package.json" -nt "$dir/node_modules" ]] && return 0
+  [[ -f "$dir/package-lock.json" && "$dir/package-lock.json" -nt "$dir/node_modules" ]] && return 0
+  return 1
+}
+
+ensure_npm_deps() {
+  local dir="$1"
+  local label="$2"
+  shift 2
+  if npm_needs_install "$dir"; then
+    echo "==> Installing ${label} dependencies..."
+    npm install --prefix "$dir" "$@"
+  else
+    echo "==> ${label} dependencies up to date"
+  fi
+}
+
+native_needs_build() {
+  [[ ! -f "$NATIVE_NODE" ]] && return 0
+  find "$ROOT/src" "$NATIVE_DIR" \
+    \( -name '*.cpp' -o -name '*.hpp' -o -name 'binding.gyp' -o -name 'addon.cpp' \) \
+    -newer "$NATIVE_NODE" -print -quit | grep -q .
+}
+
+ensure_native_addon() {
+  # gypfile:true runs node-gyp rebuild on every npm install — skip scripts here.
+  ensure_npm_deps "$NATIVE_DIR" "native addon" --ignore-scripts
+
+  if [[ "$FORCE_REBUILD" == true ]]; then
+    echo "==> Rebuilding Node native addon (full rebuild)..."
+    npm run build --prefix "$NATIVE_DIR"
+    return
+  fi
+
+  if native_needs_build; then
+    echo "==> Building Node native addon (incremental)..."
+    if [[ ! -d "$NATIVE_DIR/build" ]]; then
+      npm run configure --prefix "$NATIVE_DIR"
+    fi
+    (cd "$NATIVE_DIR" && npx node-gyp build)
+  else
+    echo "==> Native addon up to date"
+  fi
+}
+
 require_cmd npm
 require_cmd node
 
 if [[ "$SKIP_BUILD" == false ]]; then
-  echo "==> Building C++ sim (make)..."
-  make -C "$ROOT"
-
-  echo "==> Building Node native addon (make native)..."
-  make -C "$ROOT" native
-
-  echo "==> Installing server dependencies..."
-  npm install --prefix "$ROOT/server"
-
-  echo "==> Installing viewer dependencies..."
-  npm install --prefix "$ROOT/viewer"
+  ensure_native_addon
+  # file:../bindings/node would also trigger a native rebuild without --ignore-scripts.
+  ensure_npm_deps "$ROOT/server" "server" --ignore-scripts
+  ensure_npm_deps "$ROOT/viewer" "viewer"
 else
   echo "==> Skipping build (--no-build)"
 fi

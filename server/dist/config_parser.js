@@ -34,6 +34,9 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseCarNumber = parseCarNumber;
+exports.legacyEntryIdFromGrid = legacyEntryIdFromGrid;
+exports.parseEntryFields = parseEntryFields;
+exports.formatEntryLine = formatEntryLine;
 exports.parseRaceConfig = parseRaceConfig;
 exports.parseEntries = parseEntries;
 exports.loadTrackName = loadTrackName;
@@ -45,6 +48,35 @@ function parseCarNumber(raw, fallbackGrid) {
     if (/^\d+$/.test(trimmed) && trimmed !== "0")
         return trimmed;
     return String(fallbackGrid);
+}
+/** Legacy id when entry_id column is absent — unique only for global grid slots. */
+function legacyEntryIdFromGrid(grid) {
+    return `entry-${grid}`;
+}
+/** Parse `entry=team,path,class,grid,car_number[,entry_id]` */
+function parseEntryFields(line) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.startsWith("entry=")) {
+        return null;
+    }
+    const parts = trimmed.slice("entry=".length).split(",");
+    if (parts.length < 4)
+        return null;
+    const grid = parseInt(parts[3].trim(), 10);
+    if (!Number.isFinite(grid) || grid <= 0)
+        return null;
+    const teamName = parts[0].trim();
+    const carConfigPath = parts[1].trim();
+    const classId = parts[2].trim();
+    if (!teamName || !carConfigPath || !classId)
+        return null;
+    const carNumber = parseCarNumber(parts[4], grid);
+    const explicitId = parts[5]?.trim();
+    const entryId = explicitId && explicitId.length > 0 ? explicitId : legacyEntryIdFromGrid(grid);
+    return { teamName, carConfigPath, classId, grid, carNumber, entryId };
+}
+function formatEntryLine(fields) {
+    return `entry=${fields.teamName},${fields.carConfigPath},${fields.classId},${fields.grid},${fields.carNumber},${fields.entryId}`;
 }
 function parseRaceConfig(repoRoot, configPath) {
     const abs = path.isAbsolute(configPath)
@@ -89,23 +121,14 @@ function parseEntries(repoRoot, entriesPath) {
     const abs = path.join(repoRoot, entriesPath);
     const rows = [];
     for (const line of fs.readFileSync(abs, "utf8").split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("#"))
+        const parsed = parseEntryFields(line);
+        if (!parsed)
             continue;
-        if (!trimmed.startsWith("entry="))
-            continue;
-        const parts = trimmed.slice("entry=".length).split(",");
-        if (parts.length < 4)
-            continue;
-        const grid = parseInt(parts[3].trim(), 10);
-        if (!Number.isFinite(grid) || grid <= 0)
-            continue;
-        const carNumber = parseCarNumber(parts[4], grid);
         rows.push({
-            entryId: `entry-${grid}`,
-            teamName: parts[0].trim(),
-            carNumber,
-            classId: parts[2].trim(),
+            entryId: parsed.entryId,
+            teamName: parsed.teamName,
+            carNumber: parsed.carNumber,
+            classId: parsed.classId,
         });
     }
     return rows;

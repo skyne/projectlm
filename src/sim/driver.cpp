@@ -50,6 +50,16 @@ void DriverState::setPressure(double level) {
   pressure = clamp01(level);
 }
 
+void DriverState::resetForRestart() {
+  activeIndex = 0;
+  mode = DriverMode::Normal;
+  hybridStrategy = HybridStrategy::Balanced;
+  stintTimeSeconds = 0.0;
+  fatigue = 0.0;
+  pressure = 0.0;
+  lastMistakeTime = -1000.0;
+}
+
 double DriverState::paceFactor(double trackWetness, bool isNight) const {
   const DriverProfile &d = active();
   const double dry = d.dryPace / 100.0;

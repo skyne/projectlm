@@ -41,9 +41,7 @@ const race_builder_1 = require("./game/race_builder");
 const track_loader_1 = require("./game/track_loader");
 const catalog_1 = require("./game/catalog");
 const config_parser_1 = require("./config_parser");
-const ai_open_session_1 = require("./game/ai_open_session");
-const ai_strategy_1 = require("./game/ai_strategy");
-const ai_stint_guide_1 = require("./llm/ai_stint_guide");
+const pitbot_manager_1 = require("./game/pitbot/pitbot_manager");
 const mock_session_1 = require("./mock_session");
 const weekend_sessions_1 = require("./game/weekend_sessions");
 const DEFAULT_RACE_CONFIG = "configs/race_config_web.txt";
@@ -74,6 +72,7 @@ class SimHost {
         this.timeScale = 1;
         this.paused = true;
         this.inRaceSession = false;
+        this.sessionStartInProgress = false;
         this.tickTimer = null;
         this.sessionExtra = {
             targetDurationSeconds: 0,
@@ -83,8 +82,7 @@ class SimHost {
         this.runtimePlayerEntryId = "entry-1";
         this.runtimeManagedEntryIds = ["entry-1"];
         this.activeRoundNumber = 0;
-        this.aiStrategy = new ai_strategy_1.AiStrategyManager();
-        this.aiStintGuide = new ai_stint_guide_1.AiStintGuide();
+        this.pitBot = new pitbot_manager_1.PitBotManager();
         this.commandAttribution = new Map();
         this.repoRoot = resolveRepoRoot(options.repoRoot);
         this.meta = new meta_state_1.MetaStateManager(this.repoRoot);
@@ -111,8 +109,7 @@ class SimHost {
         this.trackName = (0, config_parser_1.loadTrackName)(this.repoRoot, this.parsedConfig.trackConfigPath);
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
-        this.aiStrategy.reset();
-        this.aiStintGuide.reset();
+        this.pitBot.reset();
         return true;
     }
     refreshEntriesFromConfig() {
@@ -129,6 +126,7 @@ class SimHost {
         const meta = this.getMetaState();
         const round = meta.calendar.find((e) => e.round === meta.currentRound);
         const init = {
+            simBackend: this.bindingSource.includes("mock") ? "mock" : "native",
             trackName: this.trackName,
             targetLaps: this.parsedConfig.targetLaps,
             targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
@@ -155,7 +153,32 @@ class SimHost {
     getMetaState() {
         return this.meta.getState();
     }
+    /** Block starting a new weekend step while the current session is still on track. */
+    sessionStartBlockedReason() {
+        if (this.sessionStartInProgress) {
+            return "Session start already in progress";
+        }
+        if (this.inRaceSession && !this.session.isRaceComplete()) {
+            return "Current session still running — wait for session complete";
+        }
+        return null;
+    }
     startRound(prep) {
+        const blocked = this.sessionStartBlockedReason();
+        if (blocked)
+            return blocked;
+        this.sessionStartInProgress = true;
+        try {
+            if (this.inRaceSession) {
+                this.endSession();
+            }
+            return this.startRoundInner(prep);
+        }
+        finally {
+            this.sessionStartInProgress = false;
+        }
+    }
+    startRoundInner(prep) {
         const prepPayload = prep ?? {};
         const metaState = this.meta.getState();
         const round = metaState.calendar.find((e) => e.round === metaState.currentRound);
@@ -200,13 +223,13 @@ class SimHost {
             teamName: e.teamName,
             carNumber: e.carNumber,
             classId: e.classId,
+            fleetCarId: e.fleetCarId,
         }));
         this.runtimeManagedEntryIds = built.managedEntryIds;
         this.runtimePlayerEntryId = built.playerEntryId;
         this.activeRoundNumber = built.roundNumber;
         this.meta.clearLastCompletedRound();
-        this.aiStrategy.reset();
-        this.aiStintGuide.reset();
+        this.pitBot.reset();
         this.inRaceSession = true;
         this.paused = true;
         if (this.timeScale === 0)
@@ -275,8 +298,8 @@ class SimHost {
     saveTeamCreationDraft(draft) {
         return this.meta.saveTeamCreationDraft(draft);
     }
-    saveCarBuild(build) {
-        return this.meta.saveCarBuild(build);
+    saveCarBuild(build, carId) {
+        return this.meta.saveCarBuild(build, carId);
     }
     buyCar(payload) {
         return this.meta.buyCar(payload);
@@ -321,8 +344,7 @@ class SimHost {
         this.parsedConfig = (0, config_parser_1.parseRaceConfig)(this.repoRoot, this.raceConfigPath);
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
-        this.aiStrategy.reset();
-        this.aiStintGuide.reset();
+        this.pitBot.reset();
         this.paused = true;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -392,8 +414,7 @@ class SimHost {
             roundNumber: 0,
             weekendSessionType: undefined,
         };
-        this.aiStrategy.reset();
-        this.aiStintGuide.reset();
+        this.pitBot.reset();
         this.paused = true;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -413,8 +434,7 @@ class SimHost {
         if (!ok)
             return false;
         this.raceTime = 0;
-        this.aiStrategy.reset();
-        this.aiStintGuide.reset();
+        this.pitBot.reset();
         this.paused = false;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -435,8 +455,7 @@ class SimHost {
         this.trackName = (0, config_parser_1.loadTrackName)(this.repoRoot, this.parsedConfig.trackConfigPath);
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
-        this.aiStrategy.reset();
-        this.aiStintGuide.reset();
+        this.pitBot.reset();
         this.paused = true;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -446,13 +465,10 @@ class SimHost {
     }
     enrichSnapshots(snapshots) {
         const numbersByEntryId = new Map(this.entries.map((entry) => [entry.entryId, entry.carNumber]));
-        const numbersByTeamName = new Map(this.entries.map((entry) => [entry.teamName, entry.carNumber]));
         return snapshots.map((snap) => {
-            const fromEntry = numbersByEntryId.get(snap.entryId) ??
-                numbersByTeamName.get(snap.teamName) ??
-                "";
-            const carNumber = fromEntry ||
-                (typeof snap.carNumber === "string" && snap.carNumber ? snap.carNumber : "");
+            const fromSim = typeof snap.carNumber === "string" && snap.carNumber ? snap.carNumber : "";
+            const fromEntry = numbersByEntryId.get(snap.entryId) ?? "";
+            const carNumber = fromSim || fromEntry;
             return carNumber ? { ...snap, carNumber } : snap;
         });
     }
@@ -470,28 +486,15 @@ class SimHost {
         this.stop();
         this.ensureTickLoop();
     }
-    runAiStrategy() {
+    runPitBot() {
         if (!this.session.submitCommand)
             return;
         const snapshots = this.session.getSnapshots();
-        const ctx = {
-            raceTime: this.getRaceTime(),
-            targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
+        const raceControl = this.getRaceControl();
+        this.pitBot.tick(snapshots, this.runtimeManagedEntryIds, {
+            trackWetness: raceControl?.trackWetness,
             weekendSessionType: this.sessionExtra.weekendSessionType,
-        };
-        const managedSet = new Set(this.runtimeManagedEntryIds);
-        if (ctx.weekendSessionType && ctx.weekendSessionType !== "race") {
-            (0, ai_open_session_1.tickAiGarageRelease)(snapshots, managedSet, {
-                raceTime: ctx.raceTime,
-                weekendSessionType: ctx.weekendSessionType,
-            }, (entryId, command) => this.session.submitCommand(entryId, command));
-        }
-        this.aiStintGuide.observe(snapshots, this.runtimeManagedEntryIds, {
-            trackName: this.trackName,
-            targetDurationSeconds: ctx.targetDurationSeconds,
-            raceTimeSec: ctx.raceTime,
-        });
-        this.aiStrategy.tick(snapshots, this.runtimeManagedEntryIds, ctx, (entryId, command) => this.session.submitCommand(entryId, command), (entryId) => this.aiStintGuide.getPlan(entryId));
+        }, (entryId, command) => this.session.submitCommand(entryId, command));
     }
     step() {
         if (this.paused || this.timeScale === 0)
@@ -508,7 +511,7 @@ class SimHost {
             remaining -= dt;
         }
         this.raceTime += frameDelta;
-        this.runAiStrategy();
+        this.runPitBot();
         const snapshots = this.enrichSnapshots(this.session.getSnapshots());
         const raceTime = this.getRaceTime();
         const rawEvents = this.session.drainEvents();

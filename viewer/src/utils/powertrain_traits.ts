@@ -113,7 +113,7 @@ export const LAYOUTS: LayoutDef[] = [
 const FUEL_MOD: Record<FuelType, TraitModifiers & { fuelMassMult: number }> = {
   Gasoline: { massMult: 1, torqueMult: 1, revMult: 1, fuelBurnMult: 1, throttleMult: 1, thermalMult: 1, stressMult: 1, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 1, fuelMassMult: 1 },
   Diesel: { massMult: 1.22, torqueMult: 1.18, revMult: 0.82, fuelBurnMult: 0.78, throttleMult: 0.88, thermalMult: 1.2, stressMult: 1.05, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 1, fuelMassMult: 1.22 },
-  Hydrogen: { massMult: 0.88, torqueMult: 0.94, revMult: 1.06, fuelBurnMult: 1.35, throttleMult: 1.02, thermalMult: 0.85, stressMult: 1.12, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 0.94, fuelMassMult: 0.88 },
+  Hydrogen: { massMult: 0.88, torqueMult: 0.94, revMult: 1.06, fuelBurnMult: 1.35, throttleMult: 1.02, thermalMult: 0.85, stressMult: 1.02, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 0.94, fuelMassMult: 0.88 },
 };
 
 const ASPIRATION_MOD: Record<AspirationId, TraitModifiers & { specificTorqueMult: number }> = {

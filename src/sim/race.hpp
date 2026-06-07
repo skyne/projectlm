@@ -40,7 +40,7 @@ double ComputeTrackWetness(double raceTimeSeconds, double targetDurationSeconds)
 
 void AddCar(RaceSession &session, CarConfig car, RaceClass raceClass,
             const std::string &teamName, int gridPosition,
-            const std::string &carNumber = "");
+            const std::string &carNumber, const std::string &entryId);
 
 void TickRace(RaceSession &session, double deltaTime);
 
@@ -49,6 +49,9 @@ std::vector<Car *> GetLeaderboard(RaceSession &session);
 std::vector<Car *> GetTimingLeaderboard(RaceSession &session);
 
 void ApplyOpenSessionPlacement(RaceSession &session);
+
+/** Fit wet tyres on the grid when the track is already soaked. */
+void ApplyGridTyresForWeather(RaceSession &session);
 
 bool IsRaceComplete(const RaceSession &session);
 

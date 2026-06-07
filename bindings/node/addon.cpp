@@ -63,6 +63,7 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
   obj.Set("tireWearFR", snapshot.tireWearFR);
   obj.Set("tireWearRL", snapshot.tireWearRL);
   obj.Set("tireWearRR", snapshot.tireWearRR);
+  obj.Set("tireCompound", snapshot.tireCompound);
   obj.Set("tireTempC", snapshot.tireTempC);
   obj.Set("tireTempFL", snapshot.tireTempFL);
   obj.Set("tireTempFR", snapshot.tireTempFR);
@@ -145,6 +146,7 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
   obj.Set("overtaking", snapshot.overtaking);
   obj.Set("blocked", snapshot.blocked);
   obj.Set("pitRemainingSec", snapshot.pitRemainingSec);
+  obj.Set("pitLaneDistance", snapshot.pitLaneDistance);
   obj.Set("setupFeedback", snapshot.setupFeedback);
   obj.Set("wingAngle", snapshot.wingAngle);
   obj.Set("brakeBias", snapshot.brakeBias);
@@ -159,6 +161,7 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
   obj.Set("serviceabilityFactor", snapshot.serviceabilityFactor);
   obj.Set("driverChangeFactor", snapshot.driverChangeFactor);
   obj.Set("pitCount", snapshot.pitCount);
+  obj.Set("totalPitSeconds", snapshot.totalPitSeconds);
   obj.Set("fuelTankCapacity", snapshot.fuelTankCapacity);
   obj.Set("driverStintSeconds", snapshot.driverStintSeconds);
   obj.Set("maxDriverStintSeconds", snapshot.maxDriverStintSeconds);

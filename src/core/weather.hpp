@@ -20,6 +20,8 @@ struct WeatherState {
   double trackGripEvolution = 1.0;
   WeatherPhase phase = WeatherPhase::Dry;
   double forecastRainInSeconds = -1.0;
+  /** Sim time when the active shower should end; -1 if none. */
+  double rainEpisodeEndTime = -1.0;
   std::string profileId = "dry";
 };
 
@@ -66,10 +68,10 @@ BuildWeatherForecast(const WeatherState &start, const WeatherProfile &profile,
 
 const char *WeatherPhaseName(WeatherPhase phase);
 
-double CompoundCrossoverGrip(ETireCompound compound, bool wetTyres,
+double CompoundCrossoverGrip(ETireCompound compound, ETyreTread tread,
                              double trackWetness, double ambientTempC);
 
 double WeatherTireGripScale(const WeatherState &weather, ETireCompound compound,
-                            bool wetTyres);
+                            ETyreTread tread);
 
 #endif

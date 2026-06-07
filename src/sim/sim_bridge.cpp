@@ -77,12 +77,14 @@ bool SimBridge::initFromRaceConfig(const std::string &raceConfigPath) {
     } else {
       raceClass.displayName = "Solo";
     }
-    AddCar(session, std::move(car), std::move(raceClass), "Solo Entry", 1);
+    AddCar(session, std::move(car), std::move(raceClass), "Solo Entry", 1, "1",
+           "solo-1");
   }
 
   loadTeamConfig(config.staffConfigPath);
   session.staff = teamConfig_.staffModifiers();
   initWeatherOnSession(session, config);
+  ApplyGridTyresForWeather(session);
   ApplyOpenSessionPlacement(session);
   return initSession(session);
 }
@@ -116,6 +118,7 @@ bool SimBridge::restartRace() {
   resetWeatherState();
   for (Car &car : session_.cars)
     car.resetForRestart();
+  ApplyGridTyresForWeather(session_);
   if (session_.sessionMode != SessionMode::Race)
     ApplyOpenSessionPlacement(session_);
 

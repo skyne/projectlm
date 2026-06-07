@@ -9,6 +9,8 @@ export interface PlaybackHandlers {
   onReloadDefinitions: () => void;
 }
 
+const TIME_SCALE_PRESETS = [1, 2, 5, 10, 40] as const;
+
 function formatClock(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -30,6 +32,7 @@ export class PlaybackControls {
   private remainingLabel: HTMLElement;
   private targetDurationSeconds: number | null = null;
   private paused = false;
+  private presetButtons: HTMLButtonElement[] = [];
 
   constructor(container: HTMLElement, handlers: PlaybackHandlers) {
     this.root = document.createElement("section");
@@ -46,11 +49,19 @@ export class PlaybackControls {
           <div class="race-remaining-value"><span id="race-remaining">—</span></div>
         </div>
       </div>
-      <label class="scale-control">
-        <span>Time compression</span>
-        <input type="range" min="0" max="20" step="0.5" value="1" />
-        <span class="scale-value">1.0×</span>
-      </label>
+      <div class="scale-control">
+        <div class="scale-control-header">
+          <span>Time compression</span>
+          <span class="scale-value">1.0×</span>
+        </div>
+        <div class="scale-presets" role="group" aria-label="Time compression presets">
+          ${TIME_SCALE_PRESETS.map(
+            (p) =>
+              `<button type="button" class="scale-preset-btn secondary-btn${p === 1 ? " active" : ""}" data-scale="${p}">×${p}</button>`,
+          ).join("")}
+        </div>
+        <input type="range" min="0" max="100" step="0.5" value="1" aria-label="Time compression slider" />
+      </div>
       <div class="buttons playback-transport">
         <button type="button" class="btn-pause secondary-btn">⏸ Pause</button>
         <button type="button" class="btn-resume primary-btn">▶ Resume</button>
@@ -70,13 +81,25 @@ export class PlaybackControls {
     this.raceTimeLabel = this.root.querySelector("#race-time")!;
     this.remainingRow = this.root.querySelector(".race-remaining")!;
     this.remainingLabel = this.root.querySelector("#race-remaining")!;
+    this.presetButtons = [...this.root.querySelectorAll<HTMLButtonElement>(".scale-preset-btn")];
 
-    this.slider.addEventListener("input", () => {
-      const scale = parseFloat(this.slider.value);
+    const applyScale = (scale: number): void => {
+      this.slider.value = String(scale);
       this.scaleLabel.textContent = `${scale.toFixed(1)}×`;
+      this.syncPresetHighlight(scale);
       handlers.onTimeScale(scale);
       if (scale === 0) this.setPaused(true);
+    };
+
+    this.slider.addEventListener("input", () => {
+      applyScale(parseFloat(this.slider.value));
     });
+
+    for (const btn of this.presetButtons) {
+      btn.addEventListener("click", () => {
+        applyScale(Number(btn.dataset.scale));
+      });
+    }
 
     this.pauseBtn.addEventListener("click", () => {
       this.setPaused(true);
@@ -86,9 +109,7 @@ export class PlaybackControls {
     this.resumeBtn.addEventListener("click", () => {
       this.setPaused(false);
       if (parseFloat(this.slider.value) === 0) {
-        this.slider.value = "1";
-        this.scaleLabel.textContent = "1.0×";
-        handlers.onTimeScale(1);
+        applyScale(1);
       }
       handlers.onResume();
     });
@@ -133,16 +154,38 @@ export class PlaybackControls {
     this.pauseBtn.disabled = true;
     this.resumeBtn.disabled = true;
     this.slider.disabled = true;
+    this.setPresetsEnabled(false);
+  }
+
+  getTimeScale(): number {
+    return parseFloat(this.slider.value);
   }
 
   setTimeScale(scale: number): void {
-    this.slider.value = String(scale);
+    const max = parseFloat(this.slider.max);
+    const clamped = Math.min(Math.max(0, scale), max);
+    this.slider.value = String(clamped);
     this.scaleLabel.textContent = `${scale.toFixed(1)}×`;
+    this.syncPresetHighlight(clamped);
     if (scale === 0) this.setPaused(true);
+  }
+
+  private syncPresetHighlight(scale: number): void {
+    for (const btn of this.presetButtons) {
+      const preset = Number(btn.dataset.scale);
+      btn.classList.toggle("active", Math.abs(scale - preset) < 0.25);
+    }
+  }
+
+  private setPresetsEnabled(enabled: boolean): void {
+    for (const btn of this.presetButtons) {
+      btn.disabled = !enabled;
+    }
   }
 
   resetSession(): void {
     this.slider.disabled = false;
+    this.setPresetsEnabled(true);
     this.setTimeScale(1);
     this.setRaceTime(0);
     this.remainingRow.classList.remove("time-low");
@@ -150,6 +193,7 @@ export class PlaybackControls {
 
   setControlsEnabled(enabled: boolean): void {
     this.slider.disabled = !enabled;
+    this.setPresetsEnabled(enabled);
     this.pauseBtn.disabled = !enabled || this.paused;
     this.resumeBtn.disabled = !enabled || !this.paused;
     this.root.querySelector<HTMLButtonElement>(".btn-restart")!.disabled = !enabled;

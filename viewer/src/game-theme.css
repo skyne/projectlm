@@ -22,6 +22,28 @@ body {
     #060810;
 }
 
+/*
+ * Live race: backdrop-filter on the header/panels re-blurs the map every SVG
+ * repaint and can flash the dark page shell (#060810) for a frame (Chrome/Safari).
+ */
+body.race-live .header-wec,
+body.race-live .panel-wec {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+body.race-live .track-svg {
+  box-shadow: none;
+}
+
+body.race-live .track-map-stage {
+  transform: translateZ(0);
+}
+
+body.race-live .track-map-canvas-host .track-svg .cars-layer {
+  isolation: auto;
+}
+
 #app {
   position: relative;
   isolation: isolate;
@@ -462,6 +484,12 @@ body {
   box-shadow: inset 0 0 20px rgba(212, 168, 67, 0.06);
 }
 
+.compact-lb-row.is-selected {
+  box-shadow:
+    inset 0 0 0 1px rgba(212, 168, 67, 0.55),
+    inset 0 0 20px rgba(212, 168, 67, 0.08);
+}
+
 .compact-lb-btn.active {
   box-shadow: 0 0 8px rgba(212, 168, 67, 0.25);
 }
@@ -557,6 +585,18 @@ body {
 .timetable-table tr.is-player {
   background: linear-gradient(90deg, rgba(212, 168, 67, 0.14) 0%, transparent 100%);
   box-shadow: inset 3px 0 0 var(--wec-gold);
+}
+
+.timetable-table tr.is-selected {
+  background: linear-gradient(90deg, rgba(212, 168, 67, 0.22) 0%, rgba(212, 168, 67, 0.04) 100%);
+}
+
+.timetable-table .timing-personal {
+  text-shadow: 0 0 10px rgba(62, 207, 90, 0.35);
+}
+
+.timetable-table .timing-absolute {
+  text-shadow: 0 0 12px rgba(181, 108, 255, 0.45);
 }
 
 /* ── Car preview showcase ── */
@@ -1237,11 +1277,11 @@ body {
   box-shadow:
     inset 0 0 60px rgba(0, 0, 0, 0.25),
     inset 0 0 48px var(--track-bloom, rgba(80, 110, 80, 0.2));
-  background:
-    radial-gradient(ellipse 80% 60% at 50% 42%, var(--track-bloom, rgba(90, 130, 72, 0.32)) 0%, transparent 62%),
-    radial-gradient(ellipse 55% 45% at 22% 75%, color-mix(in srgb, var(--track-outfield, #3a5c38) 55%, transparent) 0%, transparent 70%),
-    radial-gradient(ellipse 50% 42% at 82% 28%, color-mix(in srgb, var(--track-infield, #5a7a48) 45%, transparent) 0%, transparent 68%),
-    linear-gradient(168deg, var(--track-surface, #2a4030) 0%, var(--track-surface-deep, #1a2818) 100%);
+  background-color: var(--track-surface-deep, #1a2818);
+  background-image: var(--track-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 .track-map-stage::after {
@@ -1253,6 +1293,72 @@ body {
   box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.2);
 }
 
+.track-map-atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.track-map-stage[data-time-phase="summer"] .track-map-atmosphere::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    165deg,
+    rgba(255, 210, 130, 0.1) 0%,
+    transparent 45%,
+    rgba(255, 180, 90, 0.04) 100%
+  );
+}
+
+.track-map-stage[data-time-phase="winter"] .track-map-atmosphere::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(190, 210, 235, 0.1) 0%,
+    transparent 55%,
+    rgba(120, 140, 170, 0.05) 100%
+  );
+}
+
+/* Tint only — alphas scale with live rain/wet vars so the baked bg stays visible. */
+.track-map-stage.track-map-rain .track-map-atmosphere {
+  background: linear-gradient(
+    180deg,
+    rgba(58, 72, 92, calc(var(--track-rain, 0) * 0.12)) 0%,
+    rgba(44, 56, 72, calc(var(--track-rain, 0) * 0.16)) 100%
+  );
+}
+
+.track-map-stage.track-map-rain .track-map-atmosphere::after {
+  content: "";
+  position: absolute;
+  inset: -20% 0;
+  opacity: calc(var(--track-rain, 0) * 0.45);
+  background: repeating-linear-gradient(
+    108deg,
+    transparent 0 8px,
+    rgba(190, 210, 235, 0.035) 8px 9px
+  );
+  animation: track-rain-drift 0.9s linear infinite;
+}
+
+.track-map-stage.track-map-wet .track-map-atmosphere {
+  box-shadow: inset 0 0 100px rgba(48, 62, 78, calc(var(--track-wet, 0) * 0.1));
+}
+
+@keyframes track-rain-drift {
+  from {
+    transform: translateY(-8%);
+  }
+  to {
+    transform: translateY(8%);
+  }
+}
+
 .track-map-canvas-host .track-svg .sector-label,
 .track-map-canvas-host .track-svg .map-label {
   fill: #c5cdd9;
@@ -1261,10 +1367,10 @@ body {
 
 .track-map-canvas-host {
   position: relative;
-  z-index: 1;
   width: 100%;
   height: 100%;
   min-height: 0;
+  contain: layout paint;
 }
 
 .track-map-canvas-host .track-svg {
@@ -1274,6 +1380,11 @@ body {
   border-radius: 0;
   box-shadow: none;
   cursor: grab;
+  background: transparent;
+}
+
+.track-map-canvas-host .track-svg .cars-layer {
+  isolation: isolate;
 }
 
 .track-map-canvas-host .track-svg.track-svg-dragging {
@@ -1297,6 +1408,7 @@ body {
 .track-map-overlays {
   position: absolute;
   inset: 0;
+  z-index: 2;
   pointer-events: none;
 }
 

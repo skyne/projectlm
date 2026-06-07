@@ -375,15 +375,18 @@ export class SessionPlayer {
     switch (msg.type) {
       case "session_init":
         this.state.sessionInit = msg.payload as SessionInitPayload;
+        if (!this.state.sessionInit?.raceComplete) {
+          this.state.raceComplete = null;
+        }
+        break;
+      case "meta_state":
+        this.state.metaState = msg.payload as MetaStatePayload;
         break;
       case "client_assignment":
         this.state.clientAssignment = msg.payload as ClientAssignmentPayload;
         break;
       case "roster_update":
         this.state.roster = msg.payload as RosterUpdatePayload;
-        break;
-      case "meta_state":
-        this.state.metaState = msg.payload as MetaStatePayload;
         break;
       case "game_catalog":
         this.state.gameCatalog = msg.payload as GameCatalogPayload;
@@ -405,7 +408,7 @@ export class SessionPlayer {
     }
   }
 
-  private async waitFor<T>(
+  async waitFor<T>(
     getter: () => T | null,
     timeoutMs: number,
     message: string,

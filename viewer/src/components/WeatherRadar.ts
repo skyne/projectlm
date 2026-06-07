@@ -1,4 +1,5 @@
 import type { RaceControlPayload } from "../ws/protocol";
+import { formatTrackWetnessRadar } from "../utils/trackWetnessDisplay";
 
 interface RainCell {
   angle: number;
@@ -106,7 +107,7 @@ export class WeatherRadar {
     this.ctx.stroke();
 
     const phase = rc.weatherPhase ?? "Dry";
-    this.label.textContent = `${phase} · echo intensity ${Math.round(rain * 100)}% · track ${Math.round(wet * 100)}% wet`;
+    this.label.textContent = `${phase} · echo intensity ${Math.round(rain * 100)}% · ${formatTrackWetnessRadar(wet)}`;
   }
 
   private ensureCells(rain: number, wet: number, raceTime: number): void {

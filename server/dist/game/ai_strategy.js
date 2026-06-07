@@ -2,6 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AiStrategyManager = void 0;
 exports.evaluateAiPitStop = evaluateAiPitStop;
+const tyre_grip_1 = require("../tyre_grip");
+const WET_TYRE_THRESHOLD = 0.38;
+const INTER_TYRE_THRESHOLD = 0.15;
+const DRY_TYRE_THRESHOLD = 0.12;
 const CLASS_PROFILES = {
     Hypercar: {
         fuelLowFraction: 0.28,
@@ -11,18 +15,19 @@ const CLASS_PROFILES = {
         minLapsBetweenStops: 5,
     },
     LMP2: {
-        fuelLowFraction: 0.27,
-        fuelCriticalFraction: 0.11,
+        // ~12-lap stints at Le Mans: box around 25–28% remaining on a 100L cell.
+        fuelLowFraction: 0.28,
+        fuelCriticalFraction: 0.14,
         tireWearThreshold: 0.74,
-        targetStintSeconds: 3000,
-        minLapsBetweenStops: 5,
+        targetStintSeconds: 3600,
+        minLapsBetweenStops: 9,
     },
     LMGT3: {
-        fuelLowFraction: 0.30,
-        fuelCriticalFraction: 0.13,
+        fuelLowFraction: 0.28,
+        fuelCriticalFraction: 0.14,
         tireWearThreshold: 0.68,
-        targetStintSeconds: 2100,
-        minLapsBetweenStops: 4,
+        targetStintSeconds: 3600,
+        minLapsBetweenStops: 8,
     },
 };
 const DEFAULT_PROFILE = {
@@ -33,9 +38,9 @@ const DEFAULT_PROFILE = {
     minLapsBetweenStops: 4,
 };
 const FALLBACK_TANK_LITERS = {
-    Hypercar: 90,
-    LMGT3: 120,
-    LMP2: 75,
+    Hypercar: 110,
+    LMGT3: 100,
+    LMP2: 100,
 };
 const ENGINE_HEALTH_CONSERVE = 90;
 const COOLANT_CONSERVE_C = 100;
@@ -84,10 +89,17 @@ function pickCompound(stint, profile, plan) {
         return "hard";
     return "medium";
 }
+function desiredTyreTread(trackWetness) {
+    if (trackWetness >= WET_TYRE_THRESHOLD)
+        return "wet";
+    if (trackWetness >= INTER_TYRE_THRESHOLD)
+        return "intermediate";
+    return "slick";
+}
 function buildPitCommand(options) {
     const parts = ["pit", `fuel=${Math.max(0, Math.round(options.fuelLiters))}`];
     if (options.changeTyres) {
-        parts.push(`compound=${options.compound}`, "tires=all");
+        parts.push(`compound=${options.compound}`, `tyre_tread=${options.tyreTread}`, "tires=all");
     }
     else {
         parts.push("tires=");
@@ -143,12 +155,16 @@ function trafficWindowOpen(snap) {
     return gap >= TRAFFIC_WINDOW_GAP_SEC || gap <= 0.5;
 }
 function evaluateAiPitStop(snap, state, ctx, plan) {
-    void ctx;
     if (snap.retired || snap.inPit || snap.pitQueued)
         return null;
-    if (snap.lap < 2)
-        return null;
     if (!Number.isFinite(snap.fuel) || snap.fuel < 0)
+        return null;
+    const trackWet = ctx.trackWetness ?? 0;
+    const targetTread = desiredTyreTread(trackWet);
+    const weatherTyreSwap = targetTread !== state.tyreTread &&
+        (trackWet >= INTER_TYRE_THRESHOLD ||
+            (trackWet < DRY_TYRE_THRESHOLD && state.tyreTread !== "slick"));
+    if (snap.lap < 2 && !weatherTyreSwap)
         return null;
     const profile = profileFor(snap.classId);
     const tank = tankLiters(snap);
@@ -166,8 +182,9 @@ function evaluateAiPitStop(snap, state, ctx, plan) {
         lowFuel ||
         needsDriver ||
         tiresWorn ||
-        (scheduledStop && snap.fuel <= tank * 0.55) ||
-        (repairEngine && (lowFuel || tiresWorn || scheduledStop || needsDriver));
+        weatherTyreSwap ||
+        (scheduledStop && snap.fuel <= tank * 0.32) ||
+        (repairEngine && (lowFuel || tiresWorn || scheduledStop || needsDriver || weatherTyreSwap));
     if (!mustStop)
         return null;
     const lapsSinceStop = snap.lap - state.lastPitLap;
@@ -177,18 +194,22 @@ function evaluateAiPitStop(snap, state, ctx, plan) {
         state.pitsCompleted > 0) {
         return null;
     }
-    if (!criticalFuel && !needsDriver && !trafficWindowOpen(snap)) {
+    // Low fuel still needs a full lap to reach the pit-entry window — do not defer for traffic.
+    if (!criticalFuel && !lowFuel && !needsDriver && !trafficWindowOpen(snap)) {
         return null;
     }
-    const fuelToAdd = lowFuel || scheduledStop ? Math.max(0, tank - snap.fuel) : 0;
-    const changeTyres = tiresWorn || scheduledStop;
+    const fuelToAdd = lowFuel || scheduledStop || weatherTyreSwap ? Math.max(0, tank - snap.fuel) : 0;
+    const changeTyres = tiresWorn || scheduledStop || weatherTyreSwap;
     const driverIndex = needsDriver ? nextDriverIndex(snap) : -1;
-    const compound = state.tireCompound;
+    const fitTread = weatherTyreSwap ? targetTread : state.tyreTread;
+    const compound = fitTread === "slick" ? state.tireCompound : "medium";
     const reasons = [];
     if (lowFuel || scheduledStop)
         reasons.push("fuel");
     if (changeTyres)
         reasons.push("tyres");
+    if (weatherTyreSwap)
+        reasons.push(fitTread);
     if (needsDriver)
         reasons.push("driver");
     if (repairEngine)
@@ -203,6 +224,7 @@ function evaluateAiPitStop(snap, state, ctx, plan) {
             fuelLiters: fuelToAdd,
             changeTyres,
             compound,
+            tyreTread: fitTread,
             driverChange: needsDriver && driverIndex >= 0,
             driverIndex,
             repairEngine,
@@ -224,6 +246,7 @@ class AiStrategyManager {
                 pitsCompleted: 0,
                 lastPitLap: 0,
                 tireCompound: "medium",
+                tyreTread: "slick",
                 driverMode: "normal",
             };
             this.states.set(entryId, state);
@@ -242,6 +265,12 @@ class AiStrategyManager {
                 continue;
             const plan = getPlan?.(snap.entryId);
             const state = this.stateFor(snap.entryId);
+            if (snap.tireCompound) {
+                state.tyreTread = (0, tyre_grip_1.normalizeTyreTread)(snap.tireCompound);
+            }
+            else if ((ctx.trackWetness ?? 0) < DRY_TYRE_THRESHOLD) {
+                state.tyreTread = "slick";
+            }
             if (plan) {
                 state.tireCompound = plan.compound;
             }
@@ -257,7 +286,14 @@ class AiStrategyManager {
             if (submitCommand(decision.entryId, decision.command)) {
                 state.lastPitLap = snap.lap;
                 state.pitsCompleted += 1;
-                state.tireCompound = pickCompound(state.pitsCompleted, profileFor(snap.classId), getPlan?.(snap.entryId));
+                const trackWet = ctx.trackWetness ?? 0;
+                state.tyreTread = desiredTyreTread(trackWet);
+                if (state.tyreTread === "slick") {
+                    state.tireCompound = pickCompound(state.pitsCompleted, profileFor(snap.classId), getPlan?.(snap.entryId));
+                }
+                else {
+                    state.tireCompound = "medium";
+                }
                 queued.push(decision);
             }
         }

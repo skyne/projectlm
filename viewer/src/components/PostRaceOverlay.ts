@@ -5,9 +5,12 @@ import type {
 } from "../ws/protocol";
 import {
   continueSessionButtonLabel,
-  nextSessionAfter,
-  resolveNextSession,
-  sessionCompleteTitle,
+  resolvePendingNextSession,
+  returnToHqButtonLabel,
+  sessionCompleteBadge,
+  sessionElapsedLabel,
+  sessionLabel,
+  sessionResultsTitle,
 } from "../utils/weekendSessions";
 
 export interface PostRaceHandlers {
@@ -63,6 +66,7 @@ export class PostRaceOverlay {
   readonly root: HTMLElement;
   private resultsBody: HTMLTableSectionElement;
   private timeEl: HTMLElement;
+  private timeLabelEl: HTMLElement;
   private titleEl: HTMLElement;
   private badgeEl: HTMLElement;
   private playerSummaryEl: HTMLElement;
@@ -86,7 +90,7 @@ export class PostRaceOverlay {
             <h2 class="post-race-title">Endurance Classification</h2>
           </div>
           <div class="post-race-time-block">
-            <span class="clock-block-label">Race time</span>
+            <span class="clock-block-label post-race-time-label">Race time</span>
             <span class="post-race-time endurance-time-display"></span>
           </div>
         </div>
@@ -116,6 +120,7 @@ export class PostRaceOverlay {
 
     this.resultsBody = this.root.querySelector("tbody")!;
     this.timeEl = this.root.querySelector(".post-race-time")!;
+    this.timeLabelEl = this.root.querySelector(".post-race-time-label")!;
     this.titleEl = this.root.querySelector(".post-race-title")!;
     this.badgeEl = this.root.querySelector(".post-race-badge")!;
     this.playerSummaryEl = this.root.querySelector(".post-race-player-summary")!;
@@ -157,13 +162,11 @@ export class PostRaceOverlay {
     const isPractice = sessionType === "practice";
     const isRace = sessionType === "race";
     const isTiming = isQuali || isPractice;
-    this.pendingNextSession =
-      payload.nextWeekendSession ??
-      nextSessionAfter(sessionType) ??
-      (meta ? resolveNextSession(meta) : null);
+    this.pendingNextSession = resolvePendingNextSession(payload, sessionType, meta);
 
-    this.badgeEl.textContent = isRace ? "Race Complete" : "Session Complete";
-    this.titleEl.textContent = sessionCompleteTitle(sessionType);
+    this.badgeEl.textContent = sessionCompleteBadge(sessionType);
+    this.titleEl.textContent = sessionResultsTitle(sessionType);
+    this.timeLabelEl.textContent = sessionElapsedLabel(sessionType);
 
     const weekendLabel = continueSessionButtonLabel(this.pendingNextSession);
     if (this.pendingNextSession) {
@@ -173,7 +176,7 @@ export class PostRaceOverlay {
     } else {
       this.weekendBtn.classList.add("hidden");
       this.continueBtn.classList.remove("hidden");
-      this.continueBtn.textContent = "Continue Championship";
+      this.continueBtn.textContent = returnToHqButtonLabel(sessionType);
     }
 
     this.timeEl.textContent = formatRaceTime(payload.raceTime);
@@ -246,13 +249,13 @@ export class PostRaceOverlay {
         `;
       } else if (isQuali) {
         this.playerSummaryEl.innerHTML = `
-          Your grid slot: <strong>P${displayPos}</strong>
+          ${escapeHtml(sessionLabel("qualifying"))} grid slot: <strong>P${displayPos}</strong>
           · Best lap <strong>${formatLapTime(playerResult.bestLapTime ?? 0)}</strong>
           · Class <span class="class-badge class-${escapeHtml(playerResult.classId)}">${escapeHtml(playerResult.classId)}</span>
         `;
       } else if (isPractice) {
         this.playerSummaryEl.innerHTML = `
-          Session time: <strong>${formatRaceTime(payload.raceTime)}</strong>
+          ${escapeHtml(sessionLabel("practice"))}: <strong>P${displayPos}</strong> by best lap
           · Best lap <strong>${formatLapTime(playerResult.bestLapTime ?? 0)}</strong>
           · Class <span class="class-badge class-${escapeHtml(playerResult.classId)}">${escapeHtml(playerResult.classId)}</span>
         `;

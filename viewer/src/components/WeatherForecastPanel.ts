@@ -1,10 +1,12 @@
 import type { RaceControlPayload } from "../ws/protocol";
+import { displayTrackWetnessPercent, trackWetnessBarPercent } from "../utils/trackWetnessDisplay";
 import { projectWeatherForecast } from "../utils/weatherForecast";
 import { phaseColor, phaseLabel } from "../utils/weatherPhase";
 
 export class WeatherForecastPanel {
   readonly root: HTMLElement;
   private list: HTMLElement;
+  private lastRenderKey = "";
 
   constructor(container: HTMLElement) {
     this.root = document.createElement("section");
@@ -28,14 +30,30 @@ export class WeatherForecastPanel {
       climateEl.classList.add("hidden");
     }
 
-    this.list.replaceChildren();
     if (!rc) {
+      if (this.lastRenderKey === "empty") return;
+      this.lastRenderKey = "empty";
+      this.list.replaceChildren();
       this.list.textContent = "Waiting for weather data…";
       return;
     }
 
     const steps =
       rc.forecast && rc.forecast.length > 0 ? rc.forecast : projectWeatherForecast(rc);
+    const renderKey = JSON.stringify({
+      label,
+      steps: steps.map((s) => [
+        s.offsetMinutes,
+        s.phase,
+        trackWetnessBarPercent(s.trackWetness),
+        Math.round(s.rainIntensity * 100),
+        Math.round(s.ambientTempC),
+      ]),
+    });
+    if (renderKey === this.lastRenderKey) return;
+    this.lastRenderKey = renderKey;
+
+    this.list.replaceChildren();
     for (const step of steps) {
       const row = document.createElement("div");
       row.className = "forecast-row";
@@ -51,9 +69,10 @@ export class WeatherForecastPanel {
 
       const barWrap = document.createElement("div");
       barWrap.className = "forecast-bar-wrap";
+      const wetPct = trackWetnessBarPercent(step.trackWetness);
       const wetBar = document.createElement("div");
       wetBar.className = "forecast-bar forecast-bar-wet";
-      wetBar.style.width = `${Math.round(step.trackWetness * 100)}%`;
+      wetBar.style.width = `${wetPct}%`;
       const rainBar = document.createElement("div");
       rainBar.className = "forecast-bar forecast-bar-rain";
       rainBar.style.width = `${Math.round(step.rainIntensity * 100)}%`;
@@ -61,7 +80,11 @@ export class WeatherForecastPanel {
 
       const meta = document.createElement("span");
       meta.className = "forecast-meta";
-      meta.textContent = `${Math.round(step.ambientTempC)}°C · ${Math.round(step.trackWetness * 100)}% wet`;
+      const wetMeta = displayTrackWetnessPercent(step.trackWetness);
+      meta.textContent =
+        wetMeta == null
+          ? `${Math.round(step.ambientTempC)}°C`
+          : `${Math.round(step.ambientTempC)}°C · ${wetMeta}% wet`;
 
       row.append(time, badge, barWrap, meta);
       this.list.appendChild(row);

@@ -317,8 +317,10 @@ export class ViewerClient {
     this.send(clientMessage("save_team_creation_draft", draft));
   }
 
-  saveCarBuild(build: CarBuildPayload): void {
-    this.send(clientMessage("save_car_build", build));
+  saveCarBuild(build: CarBuildPayload, carId?: string): void {
+    this.send(
+      clientMessage("save_car_build", carId ? { build, carId } : build),
+    );
   }
 
   buyCar(payload: BuyCarPayload): void {

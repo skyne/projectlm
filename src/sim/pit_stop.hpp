@@ -44,6 +44,8 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
                       SimulationState &state, DriverState &driver);
 
 bool ShouldEnterPitLane(const PitStopState &pit, double normalizedT,
-                        bool lapJustCompleted, int currentLap);
+                        bool lapJustCompleted, int currentLap,
+                        double fuelRemaining = -1.0,
+                        double fuelTankCapacity = 0.0);
 
 #endif

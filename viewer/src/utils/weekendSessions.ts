@@ -2,6 +2,7 @@ import type {
   CalendarEventPayload,
   CarSnapshot,
   MetaStatePayload,
+  RaceCompletePayload,
   WeekendSessionType,
 } from "../ws/protocol";
 
@@ -103,13 +104,78 @@ export function continueSessionButtonLabel(
   }
 }
 
-export function sessionCompleteTitle(sessionType: WeekendSessionType): string {
+/** Primary CTA when a weekend has no further sessions (race or test complete). */
+export function returnToHqButtonLabel(sessionType: WeekendSessionType): string {
+  return sessionType === "race" ? "Back to Headquarters" : "Continue Championship";
+}
+
+/** Resolve the next weekend step after a session ends (client-side). */
+export function resolvePendingNextSession(
+  payload: RaceCompletePayload,
+  sessionType: WeekendSessionType,
+  meta?: MetaStatePayload | null,
+): WeekendSessionType | null {
+  if (sessionType === "race") return null;
+  if (payload.nextWeekendSession !== undefined) {
+    return payload.nextWeekendSession;
+  }
+  return nextSessionAfter(sessionType) ?? (meta ? resolveNextSession(meta) : null);
+}
+
+export function sessionLabel(sessionType?: WeekendSessionType): string {
+  const step = WEEKEND_STEPS.find((s) => s.type === sessionType);
+  return step?.label ?? "Race";
+}
+
+export function sessionShortLabel(sessionType?: WeekendSessionType): string {
+  const step = WEEKEND_STEPS.find((s) => s.type === sessionType);
+  return step?.short ?? "Race";
+}
+
+/** Badge on the post-session results overlay. */
+export function sessionCompleteBadge(sessionType: WeekendSessionType): string {
+  return `${sessionLabel(sessionType)} Complete`;
+}
+
+/** Main heading on the post-session results overlay. */
+export function sessionResultsTitle(sessionType: WeekendSessionType): string {
   switch (sessionType) {
     case "practice":
-      return "Free Practice Complete";
+      return "Free Practice Results";
     case "qualifying":
-      return "Qualifying Complete";
+      return "Qualifying Classification";
     case "race":
       return "Endurance Classification";
   }
+}
+
+/** @deprecated Use sessionResultsTitle — kept for callers migrating gradually. */
+export function sessionCompleteTitle(sessionType: WeekendSessionType): string {
+  return sessionResultsTitle(sessionType);
+}
+
+export function sessionElapsedLabel(sessionType: WeekendSessionType): string {
+  return sessionType === "race" ? "Race time" : "Elapsed time";
+}
+
+/** Live timing panel title (timetable view + compact leaderboard). */
+export function sessionTimingTitle(sessionType?: WeekendSessionType): string {
+  if (sessionType === "practice") return "Free Practice Timing";
+  if (sessionType === "qualifying") return "Qualifying Timing";
+  return "Live Timing";
+}
+
+/** Standings column title during a race session. */
+export function sessionStandingsTitle(sessionType?: WeekendSessionType): string {
+  if (sessionType === "practice") return "Free Practice Standings";
+  if (sessionType === "qualifying") return "Qualifying Standings";
+  return "Race Standings";
+}
+
+export function sessionTelemetrySubtitle(sessionType?: WeekendSessionType): string {
+  return `${sessionLabel(sessionType)} · multi-car live data · strategy`;
+}
+
+export function sessionMapMetaPrefix(sessionType?: WeekendSessionType): string {
+  return sessionLabel(sessionType);
 }
