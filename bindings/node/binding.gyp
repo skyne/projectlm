@@ -7,6 +7,8 @@
         "../../src/core/car_parts.cpp",
         "../../src/core/cooling_layout.cpp",
         "../../src/core/powertrain_traits.cpp",
+        "../../src/core/part_damage.cpp",
+        "../../src/core/car_condition_io.cpp",
         "../../src/core/simulation.cpp",
         "../../src/core/track.cpp",
         "../../src/core/track_sampler.cpp",

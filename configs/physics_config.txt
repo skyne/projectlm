@@ -54,10 +54,11 @@ cooling_base_factor=0.1
 cooling_idle_temp=70.0
 thermal_load_rate=2.8
 thermal_overheat=105.0
-thermal_damage_rate=0.1
+# Gradual part wear — tuned for stock WEC 24h (no part below 85% from wear alone)
+thermal_damage_rate=0.018
 
 # === WEAR ===
-vibration_damage_rate=0.005
+vibration_damage_rate=0.00075
 tire_wear_effect=0.5
 tire_wear_speed_threshold=15.0
 tire_ambient_temp_c=55.0

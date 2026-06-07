@@ -1,0 +1,38 @@
+{
+  "durationHours": 24,
+  "raceTimeSec": 86400.00000054126,
+  "ticks": 864000,
+  "elapsedMs": 16175596,
+  "collisionEvents": 184,
+  "cars": 68,
+  "retired": 0,
+  "below85Wear": 45,
+  "limp": 0,
+  "flats": 0,
+  "hiddenFaultCars": 9,
+  "suspected": 0,
+  "irreparableParts": 0,
+  "worstByClass": {
+    "Hypercar": {
+      "entryId": "entry-64",
+      "part": "body_fr",
+      "health": 61.271860586621735
+    },
+    "LMP2": {
+      "entryId": "entry-28",
+      "part": "body_fr",
+      "health": 63.910473491311784
+    },
+    "LMGT3": {
+      "entryId": "entry-60",
+      "part": "engine",
+      "health": 78.17286864221553
+    }
+  },
+  "targets": {
+    "below85WearMax": 0,
+    "hiddenFaultCarsMaxPct": 5,
+    "limpFromWearOnly": false
+  },
+  "pass": false
+}

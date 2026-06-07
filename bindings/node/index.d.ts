@@ -105,6 +105,20 @@ export interface CarSnapshot {
   fuelTankCapacity?: number;
   driverStintSeconds?: number;
   maxDriverStintSeconds?: number;
+  partHealth?: Record<string, number>;
+  partIrreparable?: string[];
+  tyreDeflation?: Record<string, string>;
+  limpMode?: string;
+  limpReason?: string;
+  structuralSeverity?: number;
+  suspectedIssues?: boolean;
+  hiddenFaults?: Array<{
+    id: string;
+    kind: string;
+    linkedPart: string;
+    severity: number;
+    revealed: boolean;
+  }>;
 }
 
 export type SimEventType =

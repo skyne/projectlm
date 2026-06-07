@@ -1,6 +1,7 @@
 #include "pit_stop.hpp"
 #include "driver.hpp"
 #include "simulation.hpp"
+#include "part_damage.hpp"
 #include "track.hpp"
 #include <algorithm>
 #include <cmath>
@@ -33,10 +34,15 @@ double ComputePitServiceDuration(const PitStopPlan &plan, const CarConfig &car,
            mechanicFactor * pitWorkScale;
 
   for (const std::string &repair : plan.repairs) {
-    if (repair == "engine")
-      total += kRepairEngineSec * mechanicFactor * pitWorkScale;
-    else if (repair == "body" || repair == "bodywork")
-      total += kRepairBodySec * mechanicFactor * pitWorkScale;
+    const DamagePart part = DamagePartFromToken(repair);
+    if (part == DamagePart::Count)
+      continue;
+    const PartDamageRepairSpec spec = RepairSpecForPart(part);
+    if (repair == "body" || repair == "bodywork") {
+      total += kRepairBodySec * 4.0 * mechanicFactor * pitWorkScale;
+    } else {
+      total += spec.baseRepairSec * mechanicFactor * pitWorkScale;
+    }
   }
 
   if (plan.changeDriver)
@@ -102,6 +108,7 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
       if (wheelIdx >= 0) {
         state.tireWear[wheelIdx] = 0.0;
         state.tireTempC[wheelIdx] = 85.0;
+        ClearTyreDeflation(state, wheelIdx);
       }
     }
     static const PartCatalog kCatalog{};
@@ -109,12 +116,13 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
     ApplyTireCompoundStats(car, plan.tireCompound, kCatalog);
   }
 
+  static const PartCatalog kCatalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(car, kCatalog, profiles);
   for (const std::string &repair : plan.repairs) {
-    if (repair == "engine")
-      state.engineHealth = std::min(100.0, state.engineHealth + 25.0);
-    else if (repair == "body" || repair == "bodywork")
-      state.engineHealth = std::min(100.0, state.engineHealth + 10.0);
+    RepairPartToken(state.partDamage, repair, profiles);
   }
+  SyncDerivedEngineHealth(state, car);
 
   if (plan.changeDriver) {
     if (plan.swapToDriverIndex >= 0)

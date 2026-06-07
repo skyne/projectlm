@@ -43,6 +43,7 @@ const grid_generator_1 = require("./grid_generator");
 const car_builder_1 = require("./car_builder");
 const car_marketplace_1 = require("./car_marketplace");
 const fleet_1 = require("./fleet");
+const car_condition_1 = require("./car_condition");
 const driver_catalog_1 = require("./driver_catalog");
 const track_catalog_1 = require("./track_catalog");
 const track_climate_1 = require("./track_climate");
@@ -170,6 +171,16 @@ function buildRaceForRound(repoRoot, meta, options = {}) {
         `session_mode=${sessionType}`,
         ...(0, track_climate_1.formatWeatherConfigLines)(resolvedWeather, rngSeed),
     ].filter(Boolean);
+    const carConditionsPath = "configs/runtime/car_conditions.txt";
+    const absConditions = path.join(repoRoot, carConditionsPath);
+    (0, car_condition_1.writeCarConditionsFile)(absConditions, entries
+        .filter((e) => e.fleetCarId && e.teamName === meta.teamName)
+        .map((e) => ({
+        entryId: e.entryId,
+        condition: (meta.fleet ?? []).find((c) => c.id === e.fleetCarId)
+            ?.carCondition,
+    })));
+    lines.push(`car_conditions=${carConditionsPath}`);
     fs.writeFileSync(absRace, lines.join("\n") + "\n");
     return {
         raceConfigPath,

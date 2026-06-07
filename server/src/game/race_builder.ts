@@ -8,6 +8,7 @@ import { generateGrid, writeEntriesFile, type GeneratedEntry } from "./grid_gene
 import { writeAllFleetConfigs } from "./car_builder";
 import { loadCarPlatforms } from "./car_marketplace";
 import { validateFleetRegulations } from "./fleet";
+import { writeCarConditionsFile } from "./car_condition";
 import { exportRuntimeDrivers, resolveCarDriverRoster } from "./driver_catalog";
 import {
   formatToDurationSeconds,
@@ -228,6 +229,20 @@ export function buildRaceForRound(
     `session_mode=${sessionType}`,
     ...formatWeatherConfigLines(resolvedWeather, rngSeed),
   ].filter(Boolean);
+
+  const carConditionsPath = "configs/runtime/car_conditions.txt";
+  const absConditions = path.join(repoRoot, carConditionsPath);
+  writeCarConditionsFile(
+    absConditions,
+    entries
+      .filter((e) => e.fleetCarId && e.teamName === meta.teamName)
+      .map((e) => ({
+        entryId: e.entryId,
+        condition: (meta.fleet ?? []).find((c) => c.id === e.fleetCarId)
+          ?.carCondition,
+      })),
+  );
+  lines.push(`car_conditions=${carConditionsPath}`);
 
   fs.writeFileSync(absRace, lines.join("\n") + "\n");
 

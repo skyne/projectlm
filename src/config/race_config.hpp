@@ -38,6 +38,7 @@ struct RaceConfig {
   double wxBaseVisibilityKm = 10.0;
   double wxTrackSolarGainC = 10.0;
   /** race | practice | qualifying */
+  std::string carConditionsPath;
   std::string sessionMode = "race";
 };
 

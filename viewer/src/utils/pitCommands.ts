@@ -12,6 +12,25 @@ export const PIT_FUEL_SEC_PER_L = 0.038;
 export const PIT_TIRE_SEC = 2.8;
 export const PIT_REPAIR_ENGINE_SEC = 12;
 export const PIT_REPAIR_BODY_SEC = 8;
+/** Mirrors PartDamageRepairSpec in src/core/part_damage.cpp */
+export const PIT_REPAIR_PART_SEC: Record<string, number> = {
+  engine: 12,
+  gearbox: 10,
+  cooling: 8,
+  brakes: 6,
+  aero_front: 7,
+  aero_rear: 7,
+  body_fl: 8,
+  body_fr: 8,
+  body_rl: 8,
+  body_rr: 8,
+  susp_fl: 9,
+  susp_fr: 9,
+  susp_rl: 9,
+  susp_rr: 9,
+  body: 32,
+  bodywork: 32,
+};
 export const PIT_DRIVER_CHANGE_SEC = 15;
 export { PIT_SETUP_SEC, type PitSetupDelta };
 
@@ -33,6 +52,7 @@ export interface PitEstimateOptions {
   tireCount: number;
   repairEngine?: boolean;
   repairBody?: boolean;
+  repairParts?: string[];
   driverChange?: boolean;
   setup?: PitSetupDelta;
   serviceabilityFactor?: number;
@@ -48,6 +68,7 @@ export function estimatePitServiceSeconds(options: PitEstimateOptions): number {
     tireCount,
     repairEngine = false,
     repairBody = false,
+    repairParts = [],
     driverChange = false,
     setup,
     serviceabilityFactor = 1,
@@ -70,7 +91,11 @@ export function estimatePitServiceSeconds(options: PitEstimateOptions): number {
     total += PIT_REPAIR_ENGINE_SEC * mechanicFactor * pitWorkScale;
   }
   if (repairBody) {
-    total += PIT_REPAIR_BODY_SEC * mechanicFactor * pitWorkScale;
+    total += PIT_REPAIR_BODY_SEC * 4 * mechanicFactor * pitWorkScale;
+  }
+  for (const token of repairParts) {
+    const sec = PIT_REPAIR_PART_SEC[token.toLowerCase()];
+    if (sec) total += sec * mechanicFactor * pitWorkScale;
   }
   if (driverChange) {
     total += PIT_DRIVER_CHANGE_SEC * mechanicFactor * driverSwapScale;

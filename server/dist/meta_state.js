@@ -45,6 +45,7 @@ const weekend_sessions_1 = require("./game/weekend_sessions");
 const driver_catalog_1 = require("./game/driver_catalog");
 const driver_market_1 = require("./game/driver_market");
 const ai_rival_season_1 = require("./game/ai_rival_season");
+const car_condition_1 = require("./game/car_condition");
 const economy_1 = require("./game/economy");
 const track_catalog_1 = require("./game/track_catalog");
 const staff_1 = require("./game/staff");
@@ -373,6 +374,38 @@ class MetaStateManager {
             ? this.state.weekendProgress.completedSessions
             : [];
         return (0, weekend_sessions_1.canStartWeekendSession)(sessionType, completed);
+    }
+    persistSessionCarConditions(snapshots, entryToFleetCarId, sessionType) {
+        const fleet = [...(this.state.fleet ?? [])];
+        let changed = false;
+        for (const snap of snapshots) {
+            const carId = entryToFleetCarId.get(snap.entryId);
+            if (!carId)
+                continue;
+            const idx = fleet.findIndex((c) => c.id === carId);
+            if (idx < 0)
+                continue;
+            const condition = (0, car_condition_1.snapshotToCarCondition)(snap);
+            condition.updatedAtRound = this.state.currentRound;
+            condition.updatedAfterSession = sessionType;
+            fleet[idx] = { ...fleet[idx], carCondition: condition };
+            changed = true;
+        }
+        if (!changed)
+            return this.getState();
+        this.state.fleet = fleet;
+        return this.persist();
+    }
+    repairCarCondition(carId, options) {
+        const fleet = this.state.fleet ?? [];
+        const idx = fleet.findIndex((c) => c.id === carId);
+        if (idx < 0)
+            return { error: "Car not found in fleet" };
+        const car = fleet[idx];
+        const next = (0, car_condition_1.repairCarCondition)(car.carCondition, options);
+        fleet[idx] = { ...car, carCondition: next };
+        this.state.fleet = fleet;
+        return this.persist();
     }
     completeWeekendSession(sessionType, qualiResults) {
         const round = this.state.currentRound;

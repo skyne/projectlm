@@ -370,6 +370,7 @@ const teamHQ = new TeamHQ(teamContainer, {
   onSetActiveCar: (carId) => client.setActiveCar(carId),
   onSetPlayerEntry: (carId) => client.setPlayerEntry(carId),
   onRemoveCar: (carId) => client.removeCar(carId),
+  onRepairCarCondition: (carId, options) => client.repairCarCondition(carId, options),
   onSaveTeamColors: (colors) => {
     liverySavePending = true;
     client.saveTeamColors(colors);

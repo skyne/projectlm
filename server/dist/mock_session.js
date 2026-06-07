@@ -68,6 +68,8 @@ function parsePitCommand(command) {
     let driverChange = false;
     let driverIndex = -1;
     let repairEngine = false;
+    let repairBody = false;
+    const repairParts = [];
     for (const segment of command.split("|")) {
         const eq = segment.indexOf("=");
         if (eq === -1)
@@ -94,10 +96,23 @@ function parsePitCommand(command) {
             driverChange = val === "1" || val.toLowerCase() === "true";
         else if (key === "driver_index")
             driverIndex = parseInt(val, 10);
-        else if (key === "repairs" && val.toLowerCase().includes("engine"))
-            repairEngine = true;
+        else if (key === "repairs") {
+            for (const tok of val.split(",")) {
+                const t = tok.trim().toLowerCase();
+                if (!t)
+                    continue;
+                repairParts.push(t);
+                if (t === "engine")
+                    repairEngine = true;
+                if (t === "body" || t === "bodywork")
+                    repairBody = true;
+            }
+        }
+        else if (key === "tires" && val && val !== "all" && val !== "full") {
+            changeTyres = true;
+        }
     }
-    return { fuelLiters, changeTyres, compound, tyreTread, driverChange, driverIndex, repairEngine };
+    return { fuelLiters, changeTyres, compound, tyreTread, driverChange, driverIndex, repairEngine, repairBody, repairParts };
 }
 function sectorAtDistance(sectors, distance, lapLength) {
     if (sectors.length === 0)
@@ -162,6 +177,9 @@ function makeCarState(entry) {
         tireTempC: 88,
         coolantTempC: 82,
         engineHealth: 100,
+        partHealth: {},
+        tyreDeflation: {},
+        limpMode: "none",
         sectorIndex: 0,
         retired: false,
         retireReason: "",
@@ -254,6 +272,8 @@ function estimateMockPitServiceSeconds(plan) {
         total += 4 * 2.8;
     if (plan.repairEngine)
         total += 12;
+    if (plan.repairBody)
+        total += 8 * 4;
     return Math.max(5, total);
 }
 function pitLaneLengthM(lapLength) {
@@ -497,6 +517,12 @@ function parseRaceConfig(repoRoot, configPath) {
             config.resolvedProfile.wetRatePerSecond = parseFloat(val);
         else if (key === "weather_dry_rate")
             config.resolvedProfile.dryRatePerSecond = parseFloat(val);
+        else if (key === "weather_base_wind_ms")
+            config.resolvedProfile.baseWindSpeedMs = parseFloat(val);
+        else if (key === "weather_base_visibility_km")
+            config.resolvedProfile.baseVisibilityKm = parseFloat(val);
+        else if (key === "weather_track_solar_gain_c")
+            config.resolvedProfile.trackSolarGainC = parseFloat(val);
     }
     if (!config.weatherResolved) {
         config.resolvedProfile = (0, weather_model_1.weatherProfileForId)(config.weatherProfile);
@@ -545,14 +571,9 @@ class MockSimSession {
         this.rngSeed = cfg?.rngSeed ?? 20260306;
         this.rngState = this.rngSeed;
         const ambient = cfg?.ambientTempC ?? 0;
-        this.weather = (0, weather_model_1.initWeatherState)(this.weatherProfileId, 0, ambient);
-        if (cfg?.weatherResolved) {
-            const p = this.weatherProfileData;
-            this.weather.profileId = this.weatherProfileId;
-            this.weather.ambientTempC = ambient > 0 ? ambient : p.baseTempC;
-            this.weather.trackWetness = p.baseWetness;
-            this.weather.rainIntensity = this.weather.trackWetness * p.maxRainIntensity;
-        }
+        const profile = this.weatherProfileData;
+        const wetness = cfg?.weatherResolved ? profile.baseWetness : 0;
+        this.weather = (0, weather_model_1.initWeatherStateFromProfile)(profile, this.weatherProfileId, wetness, ambient, () => this.random());
         this.applyGridTyresForWeather();
     }
     tickWeather(deltaTime) {
@@ -721,6 +742,16 @@ class MockSimSession {
         if (plan.repairEngine) {
             car.engineHealth = Math.min(100, car.engineHealth + 25);
             car.coolantTempC = Math.min(car.coolantTempC, 88);
+            car.partHealth = { ...car.partHealth, engine: Math.min(100, (car.partHealth.engine ?? car.engineHealth) + 25) };
+        }
+        if (plan.repairBody) {
+            car.engineHealth = Math.min(100, car.engineHealth + 10);
+            for (const w of ["body_fl", "body_fr", "body_rl", "body_rr"]) {
+                car.partHealth[w] = Math.min(100, (car.partHealth[w] ?? 90) + 15);
+            }
+        }
+        if (plan.changeTyres) {
+            car.tyreDeflation = {};
         }
         car.pitCount += 1;
     }
@@ -840,7 +871,7 @@ class MockSimSession {
             }
             const throttleLoad = car.driverMode === "push" ? 1.05 : car.driverMode === "conserve" ? 0.9 : 1.0;
             const baseSpeed = CLASS_SPEED[car.classId] ?? 85;
-            const grip = (0, tyre_grip_1.tyreGripScale)(car.tyreTread, this.weather.trackWetness, this.weather.ambientTempC);
+            const grip = (0, tyre_grip_1.tyreGripScale)(car.tyreTread, this.weather.trackWetness, this.weather.ambientTempC, this.weather.trackTempC);
             car.speed = baseSpeed * throttleLoad * Math.max(0.15, grip);
             if (car.hybridBudgetMJ > 0) {
                 const deployScale = car.hybridStrategy === "deploy"
@@ -955,6 +986,10 @@ class MockSimSession {
                 hybridBudgetMJ: car.hybridBudgetMJ > 0 ? car.hybridBudgetMJ : undefined,
                 hybridStrategy: car.hybridBudgetMJ > 0 ? car.hybridStrategy : undefined,
                 engineHealth: car.engineHealth,
+                partHealth: Object.keys(car.partHealth).length ? car.partHealth : undefined,
+                tyreDeflation: Object.keys(car.tyreDeflation).length ? car.tyreDeflation : undefined,
+                limpMode: car.limpMode !== "none" ? car.limpMode : undefined,
+                structuralSeverity: undefined,
                 sectorIndex: car.sectorIndex,
                 racePosition: rank + 1,
                 classPosition: classRank[car.classId],
@@ -1090,8 +1125,12 @@ class MockSimSession {
             scActive: false,
             trackWetness: this.weather.trackWetness,
             ambientTempC: this.weather.ambientTempC,
+            trackTempC: this.weather.trackTempC,
             trackGripEvolution: this.weather.trackGripEvolution,
             rainIntensity: this.weather.rainIntensity,
+            windSpeedMs: this.weather.windSpeedMs,
+            windDirectionDeg: this.weather.windDirectionDeg,
+            visibilityKm: this.weather.visibilityKm,
             weatherPhase: this.weather.phase,
             forecastRainInSeconds: this.weather.forecastRainInSeconds,
             forecast,

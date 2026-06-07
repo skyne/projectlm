@@ -2,6 +2,7 @@
 #define SIMULATION_HPP
 
 #include "car_parts.hpp"
+#include "part_damage.hpp"
 #include "track.hpp"
 #include <algorithm>
 #include <string>
@@ -30,6 +31,8 @@ struct SimulationState {
   double fuelRemaining = -1.0;
   double tireWear[4] = {0.0, 0.0, 0.0, 0.0};
   double tireTempC[4] = {85.0, 85.0, 85.0, 85.0};
+  PartDamageState partDamage;
+  TyreDeflationStateArr tyreDeflation;
   double engineHealth = 100.0;
   double currentThermalLoad = 70.0;
   double brakeHeat = 0.0;
@@ -160,6 +163,7 @@ struct PhysicsConfig {
   double hybridMinDeploySpeedMs = 33.33;
   /** Scales regenMJ = regenRate * brake * dt * hybridRegenBaseScale. */
   double hybridRegenBaseScale = 0.38;
+  double punctureWearThreshold = 0.88;
 };
 
 void TickSimulation(const CarConfig &car, const TrackDefinition &track,

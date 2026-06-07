@@ -84,6 +84,7 @@ class SimHost {
         this.runtimePlayerEntryId = "entry-1";
         this.runtimeManagedEntryIds = ["entry-1"];
         this.activeRoundNumber = 0;
+        this.fleetEntryMap = new Map();
         this.pitBot = new pitbot_manager_1.PitBotManager();
         this.stintGuide = new ai_stint_guide_1.AiStintGuide();
         this.lastRaceComplete = null;
@@ -236,6 +237,9 @@ class SimHost {
             classId: e.classId,
             fleetCarId: e.fleetCarId,
         }));
+        this.fleetEntryMap = new Map(built.entries
+            .filter((e) => e.fleetCarId)
+            .map((e) => [e.entryId, e.fleetCarId]));
         this.runtimeManagedEntryIds = built.managedEntryIds;
         this.runtimePlayerEntryId = built.playerEntryId;
         this.activeRoundNumber = built.roundNumber;
@@ -258,7 +262,17 @@ class SimHost {
         const qualiResults = sessionType === "qualifying"
             ? (0, weekend_sessions_1.collectQualifyingResults)(results)
             : undefined;
+        this.persistFleetCarConditions(sessionType);
         return this.meta.completeWeekendSession(sessionType, qualiResults);
+    }
+    persistFleetCarConditions(sessionType) {
+        const snapshots = this.getSnapshots();
+        if (!snapshots.length || this.fleetEntryMap.size === 0)
+            return;
+        this.meta.persistSessionCarConditions(snapshots, this.fleetEntryMap, sessionType);
+    }
+    repairCarCondition(carId, options) {
+        return this.meta.repairCarCondition(carId, options);
     }
     getNextWeekendSessionAfter(sessionType) {
         return this.meta.getNextWeekendSessionAfter(sessionType);
@@ -297,6 +311,7 @@ class SimHost {
         return this.meta.investRd(partId, points);
     }
     completeRound(position, classId, raceResults) {
+        this.persistFleetCarConditions("race");
         return this.meta.completeRound(position, classId, raceResults);
     }
     signSponsor(offerId) {

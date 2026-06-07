@@ -10,6 +10,7 @@
 #include "track.hpp"
 #include "traffic.hpp"
 #include "weather.hpp"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -123,6 +124,21 @@ struct CarSnapshot {
   double fuelTankCapacity = 100.0;
   double driverStintSeconds = 0.0;
   double maxDriverStintSeconds = 0.0;
+  std::map<std::string, double> partHealth;
+  std::vector<std::string> partIrreparable;
+  std::map<std::string, std::string> tyreDeflation;
+  std::string limpMode = "none";
+  std::string limpReason;
+  double structuralSeverity = 0.0;
+  bool suspectedIssues = false;
+  struct HiddenFaultSnapshot {
+    std::string id;
+    std::string kind;
+    std::string linkedPart;
+    double severity = 0.0;
+    bool revealed = false;
+  };
+  std::vector<HiddenFaultSnapshot> hiddenFaults;
 };
 
 class Car {

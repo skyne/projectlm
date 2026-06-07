@@ -51,8 +51,20 @@ function tyreTreadFromFlags(options) {
         return "intermediate";
     return "slick";
 }
+function trackSurfaceGripFactor(trackTempC) {
+    if (trackTempC < 15)
+        return Math.min(1, Math.max(0.88, 0.92 + (trackTempC - 15) * 0.004));
+    if (trackTempC > 55)
+        return Math.min(1, Math.max(0.88, 1 - (trackTempC - 55) * 0.004));
+    const delta = Math.abs(trackTempC - 40);
+    if (delta <= 5)
+        return 1.02;
+    if (delta <= 15)
+        return 1.02 - (delta - 5) * 0.0015;
+    return 0.98;
+}
 /** Mirrors C++ CompoundCrossoverGrip + weather wetness penalty. */
-function tyreGripScale(tread, trackWetness, ambientTempC = 22) {
+function tyreGripScale(tread, trackWetness, ambientTempC = 22, trackTempC = ambientTempC) {
     const wet = Math.min(1, Math.max(0, trackWetness));
     const tempDelta = ambientTempC - 26;
     let crossover = 1;
@@ -80,10 +92,13 @@ function tyreGripScale(tread, trackWetness, ambientTempC = 22) {
         crossover = 0.96;
     }
     else {
-        crossover = Math.min(1.06, Math.max(0.88, 1 - Math.abs(tempDelta) * 0.008));
+        crossover =
+            Math.min(1.06, Math.max(0.88, 1 - Math.abs(tempDelta) * 0.008)) *
+                trackSurfaceGripFactor(trackTempC);
     }
     const wetPenalty = 1 - wet * 0.22;
-    return crossover * wetPenalty;
+    const tempPenalty = ambientTempC > 34 ? 1 - Math.min(0.1, (ambientTempC - 34) * 0.005) : 1;
+    return crossover * wetPenalty * tempPenalty;
 }
 function tyreCompoundId(compound, tread) {
     if (tread === "wet")

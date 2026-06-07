@@ -1,6 +1,7 @@
 import type {
   BuyCarPayload,
   CarAffiliation,
+  CarConditionPayload,
   GameCatalogPayload,
   MetaStatePayload,
   StaffMemberPayload,
@@ -39,6 +40,10 @@ export interface TeamHQHandlers {
   onRemoveCar?: (carId: string) => void;
   onSaveTeamColors?: (colors: { primary: string; secondary: string }) => void;
   onNewGame?: () => void;
+  onRepairCarCondition?: (
+    carId: string,
+    options?: { rebuild?: boolean; reveal?: boolean },
+  ) => void;
 }
 
 type HqTab = "fleet" | "livery" | "commercial" | "crew" | "rd" | "season";
@@ -56,6 +61,45 @@ const RD_UNLOCKS = [
   { partId: "tire.Soft", label: "Soft Tyres", cost: 15, desc: "Peak grip compound for qualifying and sprint stints" },
   { partId: "brake.CarbonCeramic", label: "Carbon Brakes", cost: 25, desc: "Higher thermal capacity for endurance traffic" },
 ] as const;
+
+const HIDDEN_FAULT_LABELS: Record<string, string> = {
+  cooling_hose_leak: "Cooling hose leak",
+  powertrain_seal_leak: "Powertrain seal leak",
+  hairline_crack: "Hairline crack",
+  wiring_chafe: "Wiring chafe",
+};
+
+function hasUnrevealedFaults(condition?: CarConditionPayload): boolean {
+  return (condition?.hiddenFaults ?? []).some((f) => !f.revealed);
+}
+
+function hasCarDamage(condition?: CarConditionPayload): boolean {
+  if (!condition) return false;
+  if (Object.keys(condition.partHealth ?? {}).length > 0) return true;
+  if ((condition.irreparable?.length ?? 0) > 0) return true;
+  return hasUnrevealedFaults(condition);
+}
+
+function formatCarCondition(condition?: CarConditionPayload): string {
+  if (!condition) return "";
+  const bits: string[] = [];
+  const worst = Object.entries(condition.partHealth ?? {})
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, 2)
+    .map(([p, h]) => `${p} ${h.toFixed(0)}%`);
+  bits.push(...worst);
+  if ((condition.irreparable?.length ?? 0) > 0) {
+    bits.push(`${condition.irreparable!.length} beyond pit repair`);
+  }
+  const unrevealed = (condition.hiddenFaults ?? []).filter((f) => !f.revealed).length;
+  if (unrevealed > 0) bits.push(`${unrevealed} suspected hidden fault${unrevealed > 1 ? "s" : ""}`);
+  for (const fault of (condition.hiddenFaults ?? []).filter((f) => f.revealed).slice(0, 2)) {
+    const label = HIDDEN_FAULT_LABELS[fault.kind] ?? fault.kind;
+    bits.push(`${label} (${fault.linkedPart})`);
+  }
+  if (!bits.length) return "";
+  return `<p class="fleet-car-condition">${bits.join(" · ")}</p>`;
+}
 
 export class TeamHQ {
   readonly root: HTMLElement;
@@ -363,8 +407,11 @@ export class TeamHQ {
             ${isPlayer ? '<span class="fleet-badge-player">Player</span>' : ""}
           </div>
           <span class="fleet-car-name">${escapeHtml(car.build.carName)}</span>
+          ${formatCarCondition(car.carCondition)}
           <div class="fleet-car-actions">
             <button type="button" class="secondary-btn fleet-edit-btn">Configure</button>
+            ${hasUnrevealedFaults(car.carCondition) ? '<button type="button" class="secondary-btn fleet-diagnose-btn">Tear down</button>' : ""}
+            ${hasCarDamage(car.carCondition) ? '<button type="button" class="secondary-btn fleet-repair-btn">Workshop repair</button>' : ""}
             <button type="button" class="secondary-btn fleet-remove-btn">Sell</button>
           </div>
         `;
@@ -376,6 +423,12 @@ export class TeamHQ {
             this.handlers.onSetActiveCar?.(car.id);
             this.handlers.onOpenGarage?.();
           }
+        });
+        li.querySelector(".fleet-diagnose-btn")?.addEventListener("click", () => {
+          this.handlers.onRepairCarCondition?.(car.id, { reveal: true });
+        });
+        li.querySelector(".fleet-repair-btn")?.addEventListener("click", () => {
+          this.handlers.onRepairCarCondition?.(car.id, { rebuild: true });
         });
         li.querySelector(".fleet-remove-btn")!.addEventListener("click", () => {
           if (fleet.length <= 1) return;

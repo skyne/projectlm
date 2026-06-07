@@ -165,6 +165,46 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
   obj.Set("fuelTankCapacity", snapshot.fuelTankCapacity);
   obj.Set("driverStintSeconds", snapshot.driverStintSeconds);
   obj.Set("maxDriverStintSeconds", snapshot.maxDriverStintSeconds);
+  if (!snapshot.partHealth.empty()) {
+    Napi::Object ph = Napi::Object::New(env);
+    for (const auto &kv : snapshot.partHealth)
+      ph.Set(kv.first, kv.second);
+    obj.Set("partHealth", ph);
+  }
+  if (!snapshot.partIrreparable.empty()) {
+    Napi::Array ir = Napi::Array::New(env, snapshot.partIrreparable.size());
+    for (size_t i = 0; i < snapshot.partIrreparable.size(); ++i)
+      ir.Set(static_cast<uint32_t>(i), snapshot.partIrreparable[i]);
+    obj.Set("partIrreparable", ir);
+  }
+  if (!snapshot.tyreDeflation.empty()) {
+    Napi::Object td = Napi::Object::New(env);
+    for (const auto &kv : snapshot.tyreDeflation)
+      td.Set(kv.first, kv.second);
+    obj.Set("tyreDeflation", td);
+  }
+  if (!snapshot.limpMode.empty() && snapshot.limpMode != "none")
+    obj.Set("limpMode", snapshot.limpMode);
+  if (!snapshot.limpReason.empty())
+    obj.Set("limpReason", snapshot.limpReason);
+  if (snapshot.structuralSeverity > 0.0)
+    obj.Set("structuralSeverity", snapshot.structuralSeverity);
+  if (snapshot.suspectedIssues)
+    obj.Set("suspectedIssues", true);
+  if (!snapshot.hiddenFaults.empty()) {
+    Napi::Array hf = Napi::Array::New(env, snapshot.hiddenFaults.size());
+    for (size_t i = 0; i < snapshot.hiddenFaults.size(); ++i) {
+      const auto &fault = snapshot.hiddenFaults[i];
+      Napi::Object fo = Napi::Object::New(env);
+      fo.Set("id", fault.id);
+      fo.Set("kind", fault.kind);
+      fo.Set("linkedPart", fault.linkedPart);
+      fo.Set("severity", fault.severity);
+      fo.Set("revealed", fault.revealed);
+      hf.Set(static_cast<uint32_t>(i), fo);
+    }
+    obj.Set("hiddenFaults", hf);
+  }
   return obj;
 }
 

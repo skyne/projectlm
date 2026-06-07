@@ -19,6 +19,7 @@ const PIT_LANE_SPEED_MS = 60 / 3.6;
 const PIT_FUEL_SEC_PER_L = 0.038;
 const PIT_TIRE_SEC = 2.8;
 const PIT_REPAIR_ENGINE_SEC = 12;
+const PIT_REPAIR_BODY_SEC = 8;
 const PIT_DRIVER_CHANGE_SEC = 15;
 const PIT_SETUP_SEC = 6;
 const DEFAULT_LAP_LENGTH_M = 13600;
@@ -79,6 +80,8 @@ function estimateServiceSec(s, services, fuelLiters, tyreCount) {
     t += tyreCount * PIT_TIRE_SEC * mech * pitScale;
     if (services.engine)
         t += PIT_REPAIR_ENGINE_SEC * mech * pitScale;
+    if (services.body)
+        t += PIT_REPAIR_BODY_SEC * 4 * mech * pitScale;
     if (services.driver)
         t += PIT_DRIVER_CHANGE_SEC * mech * driverScale;
     if (services.setup)
@@ -147,6 +150,16 @@ function driverSwapState(s, stintPlan) {
     }
     return { needed: false, urgent: false, lapsUntil: 99 };
 }
+function deflatedWheels(s) {
+    const td = s.tyreDeflation ?? {};
+    return Object.entries(td)
+        .filter(([, v]) => v === "flat" || v === "soft")
+        .map(([w]) => w.toUpperCase());
+}
+function needsLimpPit(s) {
+    const limp = s.limpMode ?? "none";
+    return limp === "barely_driveable" || limp === "hybrid_only" || limp === "immobilized";
+}
 function tyresWorn(s) {
     const wear = s.tireWear ?? 0;
     return wear >= profileFor(s.classId).tireWear;
@@ -186,13 +199,19 @@ function buildParts(s, ctx, services, driverIndex) {
     else
         parts.push("fuel=0");
     if (services.tyres) {
-        parts.push(`compound=${compound}`, `tyre_tread=${tread}`, "tires=all");
+        const wheels = services.tyreWheels?.length ? services.tyreWheels.join(",") : "all";
+        parts.push(`compound=${compound}`, `tyre_tread=${tread}`, `tires=${wheels}`);
     }
     else {
         parts.push("tires=");
     }
+    const repairs = [];
     if (services.engine)
-        parts.push("repairs=engine");
+        repairs.push("engine");
+    if (services.body)
+        repairs.push("body");
+    if (repairs.length)
+        parts.push(`repairs=${repairs.join(",")}`);
     if (services.driver && driverIndex >= 0) {
         parts.push("driver_change=true", `driver_index=${driverIndex}`);
     }
@@ -213,6 +232,8 @@ function serviceLabel(services) {
         bits.push("driver");
     if (services.engine)
         bits.push("engine");
+    if (services.body)
+        bits.push("body");
     return bits.join("+") || "stop";
 }
 /** Scale fuel pit windows — higher aggression pits earlier. */
@@ -241,7 +262,9 @@ function planPitStop(s, ctx, fuelAtLastPit) {
         ? driverSwapState(s, ctx.stintPlan)
         : { needed: false, urgent: false, lapsUntil: 99 };
     const engine = (s.engineHealth ?? 100) <= ENGINE_REPAIR_HEALTH;
-    const worn = tyresWorn(s);
+    const flatWheels = deflatedWheels(s);
+    const limp = needsLimpPit(s);
+    const worn = tyresWorn(s) || flatWheels.length > 0;
     // Lap 1: only emergency fuel / weather / engine — avoid routine bundling on out-lap.
     if (s.lap < 2 &&
         fuelPct >= fuelCrit &&
@@ -262,8 +285,10 @@ function planPitStop(s, ctx, fuelAtLastPit) {
     const critical = fuelPct < fuelCrit ||
         driver.urgent ||
         engine ||
+        limp ||
+        flatWheels.length > 0 ||
         (ctx.wet >= tyre_grip_1.WET_TYRE_THRESHOLD && weatherTyres);
-    const anyNow = fuelNow || tyresNow || driverNow || engine;
+    const anyNow = fuelNow || tyresNow || driverNow || engine || limp;
     const bundleSoon = (fuelSoon && (driverSoon || tyresSoon)) ||
         (driverSoon && tyresSoon) ||
         (fuelSoon && driverSoon);
@@ -276,6 +301,7 @@ function planPitStop(s, ctx, fuelAtLastPit) {
             tyres: true,
             driver: false,
             engine: false,
+            body: false,
         };
         const parts = buildParts(s, ctx, services, -1);
         return {
@@ -310,6 +336,7 @@ function planPitStop(s, ctx, fuelAtLastPit) {
         tyres: tyresNow || tyresSoon,
         driver: driverNow || driverSoon,
         engine,
+        body: limp,
     };
     if (fuelNow &&
         !bundleServices.tyres &&
@@ -328,30 +355,32 @@ function planPitStop(s, ctx, fuelAtLastPit) {
     if (!bundleServices.fuel &&
         !bundleServices.tyres &&
         !bundleServices.driver &&
-        !bundleServices.engine) {
+        !bundleServices.engine &&
+        !bundleServices.body) {
         return null;
     }
     const fuelL = bundleServices.fuel ? fuelToAdd(s) : 0;
-    const tyreN = bundleServices.tyres ? 4 : 0;
+    const tyreN = bundleServices.tyres ? (bundleServices.tyreWheels?.length || 4) : 0;
     const combinedSec = estimateStopSec(s, bundleServices, fuelL, tyreN);
     const splitStops = [
         bundleServices.fuel,
         bundleServices.tyres,
         bundleServices.driver,
         bundleServices.engine,
+        bundleServices.body,
     ].filter(Boolean).length;
     let splitServiceOnly = 0;
     if (bundleServices.fuel) {
-        splitServiceOnly += estimateServiceSec(s, { fuel: true, tyres: false, driver: false, engine: false, setup: false }, fuelL, 0);
+        splitServiceOnly += estimateServiceSec(s, { fuel: true, tyres: false, driver: false, engine: false, body: false, setup: false }, fuelL, 0);
     }
     if (bundleServices.tyres) {
-        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: true, driver: false, engine: false, setup: false }, 0, 4);
+        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: true, driver: false, engine: false, body: false, setup: false }, 0, 4);
     }
     if (bundleServices.driver) {
-        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: false, driver: true, engine: false, setup: false }, 0, 0);
+        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: false, driver: true, engine: false, body: false, setup: false }, 0, 0);
     }
     if (bundleServices.engine) {
-        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: false, driver: false, engine: true, setup: false }, 0, 0);
+        splitServiceOnly += estimateServiceSec(s, { fuel: false, tyres: false, driver: false, engine: true, body: false, setup: false }, 0, 0);
     }
     const travel = pitLaneTravelSec(s);
     const splitTotal = splitStops * travel + splitServiceOnly + Math.max(0, splitStops - 1) * lapSec;
@@ -374,6 +403,10 @@ function planPitStop(s, ctx, fuelAtLastPit) {
             bundleServices.driver = false;
             bundleServices.engine = false;
         }
+    }
+    if (flatWheels.length) {
+        bundleServices.tyres = true;
+        bundleServices.tyreWheels = flatWheels;
     }
     const driverIndex = bundleServices.driver ? nextDriverIndex(s) : -1;
     const parts = buildParts(s, ctx, bundleServices, driverIndex);

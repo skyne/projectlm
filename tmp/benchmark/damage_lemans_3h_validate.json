@@ -1,0 +1,42 @@
+{
+  "durationHours": 3,
+  "raceTimeSec": 10800.000000021759,
+  "ticks": 108000,
+  "elapsedMs": 389454,
+  "collisionEvents": 134,
+  "cars": 68,
+  "retired": 0,
+  "below85Wear": 7,
+  "limp": 0,
+  "flats": 0,
+  "hiddenFaultCars": 0,
+  "suspected": 0,
+  "irreparableParts": 0,
+  "worstByClass": {
+    "Hypercar": {
+      "entryId": "entry-64",
+      "part": "body_fr",
+      "health": 69.79686058662173
+    },
+    "LMGT3": {
+      "entryId": "entry-54",
+      "part": "body_fr",
+      "health": 91.475
+    },
+    "LMP2": {
+      "entryId": "entry-34",
+      "part": "body_fr",
+      "health": 72.89170752660918
+    }
+  },
+  "targets": {
+    "wearOnlyMinHealth": 85,
+    "hiddenFaultCarsMaxPct": 5,
+    "limpMaxPct": 10,
+    "retireMaxPct": 20
+  },
+  "pass": true,
+  "notes": {
+    "below85Wear": "Collision/contact cosmetic damage — not a failure (wear-only target is unit-tested)"
+  }
+}

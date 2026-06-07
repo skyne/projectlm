@@ -47,6 +47,7 @@ function parseClientMessage(raw) {
             "ask_engineer",
             "get_engineer_status",
             "ask_garage_engineer",
+            "repair_car_condition",
         ];
         if (!allowed.includes(msg.type))
             return null;

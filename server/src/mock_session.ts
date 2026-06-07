@@ -89,6 +89,9 @@ interface CarState {
   tireTempC: number;
   coolantTempC: number;
   engineHealth: number;
+  partHealth: Record<string, number>;
+  tyreDeflation: Record<string, "soft" | "flat">;
+  limpMode: string;
   sectorIndex: number;
   retired: boolean;
   retireReason: string;
@@ -152,6 +155,8 @@ function parsePitCommand(command: string): {
   driverChange: boolean;
   driverIndex: number;
   repairEngine: boolean;
+  repairBody: boolean;
+  repairParts: string[];
 } {
   let fuelLiters = 0;
   let changeTyres = false;
@@ -160,6 +165,8 @@ function parsePitCommand(command: string): {
   let driverChange = false;
   let driverIndex = -1;
   let repairEngine = false;
+  let repairBody = false;
+  const repairParts: string[] = [];
   for (const segment of command.split("|")) {
     const eq = segment.indexOf("=");
     if (eq === -1) continue;
@@ -180,10 +187,20 @@ function parsePitCommand(command: string): {
     else if (key === "driver_change" || key === "driver")
       driverChange = val === "1" || val.toLowerCase() === "true";
     else if (key === "driver_index") driverIndex = parseInt(val, 10);
-    else if (key === "repairs" && val.toLowerCase().includes("engine"))
-      repairEngine = true;
+    else if (key === "repairs") {
+      for (const tok of val.split(",")) {
+        const t = tok.trim().toLowerCase();
+        if (!t) continue;
+        repairParts.push(t);
+        if (t === "engine") repairEngine = true;
+        if (t === "body" || t === "bodywork") repairBody = true;
+      }
+    }
+    else if (key === "tires" && val && val !== "all" && val !== "full") {
+      changeTyres = true;
+    }
   }
-  return { fuelLiters, changeTyres, compound, tyreTread, driverChange, driverIndex, repairEngine };
+  return { fuelLiters, changeTyres, compound, tyreTread, driverChange, driverIndex, repairEngine, repairBody, repairParts };
 }
 
 function sectorAtDistance(
@@ -264,6 +281,9 @@ function makeCarState(
     tireTempC: 88,
     coolantTempC: 82,
     engineHealth: 100,
+    partHealth: {},
+    tyreDeflation: {},
+    limpMode: "none",
     sectorIndex: 0,
     retired: false,
     retireReason: "",
@@ -355,6 +375,7 @@ function estimateMockPitServiceSeconds(plan: ReturnType<typeof parsePitCommand>)
   if (plan.fuelLiters > 0) total += plan.fuelLiters * 0.038;
   if (plan.changeTyres) total += 4 * 2.8;
   if (plan.repairEngine) total += 12;
+  if (plan.repairBody) total += 8 * 4;
   return Math.max(5, total);
 }
 
@@ -865,6 +886,16 @@ export class MockSimSession {
     if (plan.repairEngine) {
       car.engineHealth = Math.min(100, car.engineHealth + 25);
       car.coolantTempC = Math.min(car.coolantTempC, 88);
+      car.partHealth = { ...car.partHealth, engine: Math.min(100, (car.partHealth.engine ?? car.engineHealth) + 25) };
+    }
+    if (plan.repairBody) {
+      car.engineHealth = Math.min(100, car.engineHealth + 10);
+      for (const w of ["body_fl", "body_fr", "body_rl", "body_rr"]) {
+        car.partHealth[w] = Math.min(100, (car.partHealth[w] ?? 90) + 15);
+      }
+    }
+    if (plan.changeTyres) {
+      car.tyreDeflation = {};
     }
     car.pitCount += 1;
   }
@@ -1134,6 +1165,10 @@ export class MockSimSession {
         hybridBudgetMJ: car.hybridBudgetMJ > 0 ? car.hybridBudgetMJ : undefined,
         hybridStrategy: car.hybridBudgetMJ > 0 ? car.hybridStrategy : undefined,
         engineHealth: car.engineHealth,
+        partHealth: Object.keys(car.partHealth).length ? car.partHealth : undefined,
+        tyreDeflation: Object.keys(car.tyreDeflation).length ? car.tyreDeflation : undefined,
+        limpMode: car.limpMode !== "none" ? car.limpMode : undefined,
+        structuralSeverity: undefined,
         sectorIndex: car.sectorIndex,
         racePosition: rank + 1,
         classPosition: classRank[car.classId],

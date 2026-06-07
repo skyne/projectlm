@@ -69,6 +69,11 @@ import {
   type RaceResultForSeason,
 } from "./game/ai_rival_season";
 import {
+  repairCarCondition,
+  snapshotToCarCondition,
+} from "./game/car_condition";
+import type { CarSnapshot } from "./ws_protocol";
+import {
   computeRaceFinances,
   MAX_SPONSOR_SLOTS,
   sponsorOfferById,
@@ -492,6 +497,44 @@ export class MetaStateManager {
         ? this.state.weekendProgress.completedSessions
         : [];
     return canStartWeekendSession(sessionType, completed);
+  }
+
+
+  persistSessionCarConditions(
+    snapshots: CarSnapshot[],
+    entryToFleetCarId: Map<string, string>,
+    sessionType: WeekendSessionType,
+  ): MetaStatePayload {
+    const fleet = [...(this.state.fleet ?? [])];
+    let changed = false;
+    for (const snap of snapshots) {
+      const carId = entryToFleetCarId.get(snap.entryId);
+      if (!carId) continue;
+      const idx = fleet.findIndex((c) => c.id === carId);
+      if (idx < 0) continue;
+      const condition = snapshotToCarCondition(snap);
+      condition.updatedAtRound = this.state.currentRound;
+      condition.updatedAfterSession = sessionType;
+      fleet[idx] = { ...fleet[idx], carCondition: condition };
+      changed = true;
+    }
+    if (!changed) return this.getState();
+    this.state.fleet = fleet;
+    return this.persist();
+  }
+
+  repairCarCondition(
+    carId: string,
+    options?: { parts?: string[]; rebuild?: boolean; reveal?: boolean },
+  ): MetaStatePayload | { error: string } {
+    const fleet = this.state.fleet ?? [];
+    const idx = fleet.findIndex((c) => c.id === carId);
+    if (idx < 0) return { error: "Car not found in fleet" };
+    const car = fleet[idx];
+    const next = repairCarCondition(car.carCondition, options);
+    fleet[idx] = { ...car, carCondition: next };
+    this.state.fleet = fleet;
+    return this.persist();
   }
 
   completeWeekendSession(

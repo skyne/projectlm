@@ -39,7 +39,7 @@ exports.ENGINEER_COMMAND_HELP = `Valid commands (setup changes apply in pit only
 - driver_mode=push | driver_mode=normal | driver_mode=conserve
 - hybrid_strategy=balanced | hybrid_strategy=deploy | hybrid_strategy=harvest | hybrid_strategy=hold
 - cancel_pit
-- pit|fuel=<liters>|compound=soft|medium|hard|tyre_tread=slick|intermediate|wet|tires=FL,FR,RL,RR|wing=<delta>|brake_bias=<delta>|front_ride_height=<m>|rear_ride_height=<m>|front_spring=<N/m>|rear_spring=<N/m>|front_arb=<mult>|rear_arb=<mult>|front_damper_bump=<clicks>|front_damper_rebound=<clicks>|rear_damper_bump=<clicks>|rear_damper_rebound=<clicks>
+- pit|fuel=<liters>|compound=soft|medium|hard|tyre_tread=slick|intermediate|wet|tires=FL,FR,RL,RR|repairs=engine,gearbox,cooling,brakes,aero_front,aero_rear,body_fl,...|wing=<delta>|brake_bias=<delta>|front_ride_height=<m>|rear_ride_height=<m>|front_spring=<N/m>|rear_spring=<N/m>|front_arb=<mult>|rear_arb=<mult>|front_damper_bump=<clicks>|front_damper_rebound=<clicks>|rear_damper_bump=<clicks>|rear_damper_rebound=<clicks>
 - tyre_tread=slick|intermediate|wet (grid only, before green flag; legacy: wet_tyres / intermediate_tyres)
 - setup|wing=<delta>|brake_bias=<delta>|front_ride_height=<m>|rear_ride_height=<m>|... (same setup keys, pit lane only)
 

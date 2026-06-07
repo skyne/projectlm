@@ -1,4 +1,5 @@
 #include "sim_bridge.hpp"
+#include "car_condition_io.hpp"
 #include "class_rules.hpp"
 #include "commands.hpp"
 #include "config_loader.hpp"
@@ -86,7 +87,10 @@ bool SimBridge::initFromRaceConfig(const std::string &raceConfigPath) {
   initWeatherOnSession(session, config);
   ApplyGridTyresForWeather(session);
   ApplyOpenSessionPlacement(session);
-  return initSession(session);
+  if (!initSession(session))
+    return false;
+  applyCarConditions(config.carConditionsPath);
+  return true;
 }
 
 bool SimBridge::initSession(const RaceSession &session) {
@@ -126,6 +130,21 @@ bool SimBridge::restartRace() {
   pendingCommands_.clear();
   raceCompleteEmitted_ = false;
   return true;
+}
+
+
+void SimBridge::applyCarConditions(const std::string &conditionsPath) {
+  if (conditionsPath.empty())
+    return;
+  std::unordered_map<std::string, std::string> byEntry;
+  if (!LoadCarConditionsFile(conditionsPath, byEntry))
+    return;
+  for (Car &car : session_.cars) {
+    auto it = byEntry.find(car.entryId());
+    if (it == byEntry.end())
+      continue;
+    ApplyCarConditionLine(car.state(), car.config(), it->second);
+  }
 }
 
 bool SimBridge::submitCommand(const std::string &entryId,

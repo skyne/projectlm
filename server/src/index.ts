@@ -372,6 +372,18 @@ function main(): void {
         } else {
           ws.send(JSON.stringify(serverMessage("meta_state", result)));
         }
+      } else if (msg.type === "repair_car_condition") {
+        const payload = msg.payload as import("./ws_protocol").RepairCarConditionPayload;
+        const result = host.repairCarCondition(payload.carId, {
+          parts: payload.parts,
+          rebuild: payload.rebuild,
+          reveal: payload.reveal,
+        });
+        if ("error" in result) {
+          ws.send(JSON.stringify(serverMessage("error", { message: result.error })));
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+        }
       } else if (msg.type === "save_car_build") {
         const raw = msg.payload as CarBuildPayload | { build: CarBuildPayload; carId?: string };
         const carId =

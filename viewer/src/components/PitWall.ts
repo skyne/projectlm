@@ -8,6 +8,10 @@ import {
 import { mmPanelHeader } from "../utils/mmUi";
 import { buildHybridChargeBarHtml, hybridStrategyHint, hybridStrategyLabel, type HybridStrategy } from "../utils/hybridStrategy";
 import { TeamCarPicker, type ManagedEntryOption } from "./TeamCarPicker";
+import {
+  buildSubsystemRepairHtml,
+  collectSubsystemRepairs,
+} from "../utils/pitRepairParts";
 
 export interface PitWallHandlers {
   onSubmitPit: (entryId: string, command: string) => void;
@@ -37,6 +41,7 @@ export class PitWall {
   private handlers: PitWallHandlers;
   private playerEntryId = "entry-1";
   private latestSnapshots: CarSnapshot[] = [];
+  private subsystemHost!: HTMLElement;
 
   constructor(container: HTMLElement, handlers: PitWallHandlers) {
     this.handlers = handlers;
@@ -68,6 +73,7 @@ export class PitWall {
           </div>
           <label><input type="checkbox" id="pit-repair-engine" /> Engine repair</label>
           <label><input type="checkbox" id="pit-repair-body" /> Bodywork repair</label>
+          <div id="pit-subsystem-host"></div>
           <label><input type="checkbox" id="pit-driver-change" /> <span id="pit-driver-change-label">Driver change</span></label>
           <p id="pit-estimate" class="pit-estimate"></p>
           <button type="button" id="pit-request" class="primary-btn">⛽ Request pit stop</button>
@@ -130,6 +136,8 @@ export class PitWall {
     this.carInfoEl = this.root.querySelector("#pit-car-info")!;
     this.setupMoreDfBtn = this.root.querySelector("#setup-more-df") as HTMLButtonElement;
     this.setupLessDragBtn = this.root.querySelector("#setup-less-drag") as HTMLButtonElement;
+    this.subsystemHost = this.root.querySelector("#pit-subsystem-host")!;
+    this.subsystemHost.addEventListener("change", () => this.updateEstimate());
 
     const refreshEstimate = () => this.updateEstimate();
     this.fuelInput.addEventListener("input", refreshEstimate);
@@ -206,6 +214,20 @@ export class PitWall {
       this.modeSelect.value = snap.driverMode;
     }
 
+    const deflated = Object.entries(snap.tyreDeflation ?? {}).filter(
+      ([, v]) => v === "flat" || v === "soft",
+    );
+    for (const cb of this.tireChecks) {
+      const wheel = cb.getAttribute("data-tire") ?? "";
+      const hit = deflated.some(([w]) => w.toUpperCase() === wheel);
+      (cb as HTMLInputElement).checked = hit || (cb as HTMLInputElement).checked;
+    }
+    if ((snap.engineHealth ?? 100) < 78) this.repairEngine.checked = true;
+    if (snap.limpMode && snap.limpMode !== "none") {
+      this.repairBody.checked = true;
+    }
+    this.subsystemHost.innerHTML = buildSubsystemRepairHtml(snap, "pit-subsystem-repairs");
+
     const hasHybrid =
       snap.hybridDeployMJ != null &&
       snap.hybridDeployMJ >= 0 &&
@@ -239,6 +261,8 @@ export class PitWall {
       · Stamina ${(snap.driverStamina ?? 100).toFixed(0)}%
       · Fuel ${snap.fuel.toFixed(0)}L
       · Engine ${snap.engineHealth.toFixed(0)}%
+      ${snap.limpMode && snap.limpMode !== "none" ? `<br/><span class="pit-state pit-limp">LIMP: ${escapeHtml(snap.limpMode)}</span>` : ""}
+      ${Object.keys(snap.partHealth ?? {}).length ? `<br/><span class="pit-damage">${Object.entries(snap.partHealth ?? {}).slice(0, 4).map(([p, h]) => `${escapeHtml(p)} ${h.toFixed(0)}%`).join(" · ")}</span>` : ""}
       · Wing ${(snap.wingAngle ?? 0).toFixed(2)} · Bias ${(snap.brakeBias ?? 0.5).toFixed(2)}
       ${
         hasHybrid
@@ -266,11 +290,13 @@ export class PitWall {
     if (driverLabel) {
       driverLabel.textContent = `Driver change (+${driverSec}s)`;
     }
+    const repairParts = collectSubsystemRepairs(this.subsystemHost);
     const sec = estimatePitSeconds({
       fuel: Number(this.fuelInput.value) || 0,
       tireCount: tires,
       repairEngine: this.repairEngine.checked,
       repairBody: this.repairBody.checked,
+      repairParts,
       driverChange: this.driverChange.checked,
       serviceabilityFactor: serviceability,
       driverChangeFactor,
@@ -310,6 +336,7 @@ export class PitWall {
     const repairs: string[] = [];
     if (this.repairEngine.checked) repairs.push("engine");
     if (this.repairBody.checked) repairs.push("body");
+    repairs.push(...collectSubsystemRepairs(this.subsystemHost));
     const parts = [
       "pit",
       `fuel=${this.fuelInput.value}`,
