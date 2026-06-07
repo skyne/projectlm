@@ -62,6 +62,9 @@ body {
     linear-gradient(180deg, #1a2332 0%, #101620 100%);
   flex-shrink: 0;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  position: relative;
+  z-index: 200;
+  overflow: visible;
 }
 
 .header-brand {
@@ -112,6 +115,7 @@ body {
   gap: 0.65rem;
   margin-left: auto;
   flex-wrap: wrap;
+  overflow: visible;
 }
 
 .header-endurance-tag {

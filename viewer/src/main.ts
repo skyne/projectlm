@@ -25,6 +25,8 @@ import { ConfirmModal } from "./components/ConfirmModal";
 import { DriverCenter } from "./components/DriverCenter";
 import { WeatherRadar } from "./components/WeatherRadar";
 import { WeatherForecastPanel } from "./components/WeatherForecastPanel";
+import { AudioControls } from "./components/AudioControls";
+import { GameAudio } from "./audio/GameAudio";
 import {
   ViewerClient,
   hasSavedDisplayName,
@@ -86,6 +88,39 @@ const confirmModal = new ConfirmModal(
   document.getElementById("confirm-modal-overlay")!,
 );
 
+const gameAudio = new GameAudio();
+new AudioControls(document.getElementById("audio-controls-container")!, gameAudio);
+gameAudio.setMusicTrack("menu");
+
+function syncAudioContext(paused = false): void {
+  if (raceStarted) {
+    gameAudio.setMusicTrack("race");
+    gameAudio.setRaceAmbience(true);
+    gameAudio.setRacePaused(paused);
+    return;
+  }
+  if (preSessionBriefing.isVisible()) {
+    gameAudio.setMusicTrack("briefing");
+    gameAudio.setRaceAmbience(false);
+    return;
+  }
+  gameAudio.setMusicTrack("menu");
+  gameAudio.setRaceAmbience(false);
+}
+
+function updateRacePassByAmbience(raceTime: number): void {
+  if (!raceStarted) return;
+  const carsOnTrack = latestSnapshots.filter(
+    (s) => !s.inPit && !s.inGarage && !s.retired,
+  ).length;
+  gameAudio.updateRacePassBy({
+    raceTime,
+    paused: racePlaybackPaused,
+    active: raceStarted,
+    carsOnTrack,
+  });
+}
+
 function beginJoin(opts: JoinSessionOptions): void {
   joinModal.hide();
   client.connect(opts);
@@ -117,6 +152,8 @@ let commandEntryId = "entry-1";
 let managedEntryIds: string[] = [];
 let latestSnapshots: CarSnapshot[] = [];
 let raceStarted = false;
+let racePlaybackPaused = true;
+let latestRaceTime = 0;
 let pendingRaceStart = false;
 let latestSession: SessionInitPayload | null = null;
 let latestMeta: MetaStatePayload | null = null;
@@ -205,8 +242,12 @@ const preSessionBriefing = new PreSessionBriefing(
       postRace.hide();
       pendingRaceStart = true;
       client.startRound({ ...prep, sessionType: "race" });
+      syncAudioContext();
     },
-    onCancel: () => preSessionBriefing.hide(),
+    onCancel: () => {
+      preSessionBriefing.hide();
+      syncAudioContext();
+    },
   },
 );
 
@@ -355,6 +396,7 @@ function selectCommandEntry(entryId: string): void {
   const snap = latestSnapshots.find((s) => s.entryId === entryId) ?? null;
   raceControls.updateSnapshot(snap);
   updateLapCounter(snap);
+  updateRacePassByAmbience(latestRaceTime);
 }
 
 function syncManagedEntryPickers(): void {
@@ -468,12 +510,18 @@ function setMainView(view: MainView): void {
   compactLeaderboard.setVisible(showRaceSidebar && view !== "telemetry");
   raceControls.setRaceActive(showRaceSidebar);
   engineerPanel.setRaceActive(showRaceSidebar);
+  syncAudioContext();
 }
 
 function syncPlaybackPaused(paused: boolean): void {
+  racePlaybackPaused = paused;
   playback.setPaused(paused);
   if (paused) client.pause();
   else client.resume();
+  if (raceStarted) {
+    syncAudioContext(paused);
+    if (!paused) updateRacePassByAmbience(latestRaceTime);
+  }
 }
 
 function applySessionPlayback(payload: SessionInitPayload): void {
@@ -513,6 +561,10 @@ function beginRaceSession(startPaused = true, reconnect?: BeginRaceReconnectOpti
   raceControls.setRaceActive(true);
   engineerPanel.setRaceActive(true);
   document.getElementById("race-lap-counter")?.classList.remove("hidden");
+  gameAudio.resetRaceSession();
+  racePlaybackPaused = startPaused;
+  syncAudioContext(startPaused);
+  updateRacePassByAmbience(latestRaceTime);
 }
 
 function endRaceSession(): void {
@@ -523,11 +575,13 @@ function endRaceSession(): void {
   engineerPanel.setRaceActive(false);
   pitModal.hide();
   document.getElementById("race-lap-counter")?.classList.add("hidden");
+  gameAudio.onSessionEnd();
 }
 
 function openPreSessionBriefing(): void {
   if (!latestMeta?.setupComplete || !latestMeta.fleet?.length) return;
   preSessionBriefing.open(latestMeta, gameCatalog);
+  syncAudioContext();
 }
 
 function startWeekendSession(sessionType: WeekendSessionType): void {
@@ -605,6 +659,7 @@ function updateFromTick(
   raceTime: number,
   raceControl?: RaceControlPayload,
 ): void {
+  latestRaceTime = raceTime;
   const normalized = normalizeSnapshots(snapshots);
   latestSnapshots = normalized;
   track.updateCars(normalized);
@@ -624,6 +679,8 @@ function updateFromTick(
   raceControls.updateSnapshot(selectedSnap);
   updateLapCounter(selectedSnap);
   eventLog.append(detectRetirements(normalized, raceTime));
+  gameAudio.maybePlayGreenFlag(raceTime, racePlaybackPaused);
+  updateRacePassByAmbience(raceTime);
 }
 
 function updateLapCounter(playerSnap: CarSnapshot | null): void {
@@ -721,6 +778,8 @@ const client = new ViewerClient({
     if (!raceStarted) return;
     for (const event of payload.events) {
       if (event.type === "Retirement" && event.entryId) retiredSeen.add(event.entryId);
+      if (event.type === "Overtake") gameAudio.onOvertake(event.timestamp);
+      gameAudio.handleSimEvent(event.type, event.entryId, managedEntryIds);
     }
     eventLog.append(payload.events);
   },
@@ -754,6 +813,7 @@ const client = new ViewerClient({
     engineerPanel.setEngineerStatus(payload.online, payload.model),
   onGarageAdvice: (payload) => carGarage.showGarageAdvice(payload),
   onRaceComplete: (payload) => {
+    gameAudio.onRaceComplete();
     endRaceSession();
     playback.setRaceTime(payload.raceTime);
     playback.markRaceComplete();
