@@ -206,6 +206,19 @@ export class PitWall {
       this.modeSelect.value = snap.driverMode;
     }
 
+    const deflated = Object.entries(snap.tyreDeflation ?? {}).filter(
+      ([, v]) => v === "flat" || v === "soft",
+    );
+    for (const cb of this.tireChecks) {
+      const wheel = cb.getAttribute("data-tire") ?? "";
+      const hit = deflated.some(([w]) => w.toUpperCase() === wheel);
+      (cb as HTMLInputElement).checked = hit || (cb as HTMLInputElement).checked;
+    }
+    if ((snap.engineHealth ?? 100) < 78) this.repairEngine.checked = true;
+    if (snap.limpMode && snap.limpMode !== "none") {
+      this.repairBody.checked = true;
+    }
+
     const hasHybrid =
       snap.hybridDeployMJ != null &&
       snap.hybridDeployMJ >= 0 &&
@@ -239,6 +252,8 @@ export class PitWall {
       · Stamina ${(snap.driverStamina ?? 100).toFixed(0)}%
       · Fuel ${snap.fuel.toFixed(0)}L
       · Engine ${snap.engineHealth.toFixed(0)}%
+      ${snap.limpMode && snap.limpMode !== "none" ? `<br/><span class="pit-state pit-limp">LIMP: ${escapeHtml(snap.limpMode)}</span>` : ""}
+      ${Object.keys(snap.partHealth ?? {}).length ? `<br/><span class="pit-damage">${Object.entries(snap.partHealth ?? {}).slice(0, 4).map(([p, h]) => `${escapeHtml(p)} ${h.toFixed(0)}%`).join(" · ")}</span>` : ""}
       · Wing ${(snap.wingAngle ?? 0).toFixed(2)} · Bias ${(snap.brakeBias ?? 0.5).toFixed(2)}
       ${
         hasHybrid

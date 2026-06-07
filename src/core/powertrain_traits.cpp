@@ -50,7 +50,7 @@ FuelTraits FuelFor(const std::string &fuel) {
   if (fuel == "Diesel")
     return {1.22, 1.18, 0.82, 0.78, 0.88, 1.2, 1.05};
   if (fuel == "Hydrogen")
-    return {0.88, 0.94, 1.06, 1.35, 1.02, 0.85, 1.12};
+    return {0.88, 0.94, 1.06, 1.35, 1.02, 0.85, 1.02};
   return {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
 }
 

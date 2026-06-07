@@ -123,6 +123,43 @@ Run after protocol or auth changes:
 ./scripts/session-player.sh reconnect-e2e --pretty
 ```
 
+## Full weekend automation (practice → quali → race)
+
+**Co-op** (you host in browser, agent drives pit wall):
+
+```bash
+./scripts/session-player.sh weekend --name "PitBot" --role player
+```
+
+Default `--advance host`: **you** click **Continue to Qualifying / Race** in the post-session overlay after each step. PitBot waits for `session_init` and only drives cars — it does **not** send `continue_weekend_session`, so double-starting the sim is avoided.
+
+**Solo** (agent is host — auto-advances between sessions):
+
+```bash
+./scripts/session-player.sh weekend --name "PitBot" --role host
+# or explicitly: --advance auto
+```
+
+**Advance one step manually** (player permission):
+
+```bash
+./scripts/session-player.sh continue-weekend --name "PitBot" --role player --pretty
+```
+
+The orchestrator (`tools/session-player/src/weekend_orchestrator.ts`):
+
+1. Waits for host to start each session (`--advance host`) or calls `start_round` / `continue_weekend_session` itself (`--advance auto`)
+2. Releases cars from garage (`release`) in open sessions
+3. Runs fuel-aware pit strategy per session type
+4. Waits for `race_complete.nextWeekendSession` and loops until the race finishes
+
+**Practice/qualifying** results are sorted by **best lap** per class. **Race** targets **class wins** in Hypercar and LMGT3.
+
+| Symptom | Fix |
+|---------|-----|
+| Sim breaks after clicking Continue | Ensure PitBot uses default `--advance host`; only click Continue **once** per session |
+| Viewer stuck on post-race overlay | Refresh viewer — `session_init` now auto-switches to map when a session starts |
+
 ## Typical agent loop during a live race
 
 ```bash

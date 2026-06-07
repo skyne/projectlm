@@ -237,6 +237,8 @@ std::map<std::string, ClassRule> LoadClassRules(const std::string &filename) {
       current.aeroBalanceModifier = std::stod(value);
     else if (key == "drag_modifier")
       current.dragModifier = std::stod(value);
+    else if (key == "fuel_burn_modifier")
+      current.fuelBurnModifier = std::stod(value);
     else if (key == "max_driver_stint_hours")
       current.maxDriverStintSeconds = std::stod(value) * 3600.0;
     else if (key == "max_driver_stint_seconds")

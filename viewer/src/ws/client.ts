@@ -321,8 +321,10 @@ export class ViewerClient {
     this.send(clientMessage("repair_car_condition", { carId, ...options }));
   }
 
-  saveCarBuild(build: CarBuildPayload): void {
-    this.send(clientMessage("save_car_build", build));
+  saveCarBuild(build: CarBuildPayload, carId?: string): void {
+    this.send(
+      clientMessage("save_car_build", carId ? { build, carId } : build),
+    );
   }
 
   buyCar(payload: BuyCarPayload): void {

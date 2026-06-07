@@ -31,6 +31,15 @@ ETireCompound ParseCompound(const std::string &value) {
   return ETireCompound::Medium;
 }
 
+ETyreTread ParseTyreTread(const std::string &value) {
+  const std::string v = ToLower(value);
+  if (v == "wet" || v == "full_wet" || v == "wets")
+    return ETyreTread::Wet;
+  if (v == "intermediate" || v == "inter" || v == "inters")
+    return ETyreTread::Intermediate;
+  return ETyreTread::Slick;
+}
+
 void ParseTireList(const std::string &value, std::vector<std::string> &out) {
   out.clear();
   const std::string v = ToLower(value);
@@ -119,6 +128,31 @@ SimCommand ParseSimCommand(const std::string &raw) {
     cmd.tireCompound = ParseCompound(Trim(trimmed.substr(18)));
     return cmd;
   }
+  if (lower.rfind("tyre_tread=", 0) == 0 || lower.rfind("tire_tread=", 0) == 0) {
+    cmd.type = SimCommandType::WetTyresFit;
+    const size_t eq = trimmed.find('=');
+    const std::string val = eq == std::string::npos ? "" : Trim(trimmed.substr(eq + 1));
+    cmd.tyreTread = ParseTyreTread(val);
+    return cmd;
+  }
+  if (lower.rfind("intermediate_tyres=", 0) == 0 ||
+      lower.rfind("intermediate_tires=", 0) == 0) {
+    cmd.type = SimCommandType::WetTyresFit;
+    const size_t eq = trimmed.find('=');
+    const std::string val = eq == std::string::npos ? "" : Trim(trimmed.substr(eq + 1));
+    cmd.tyreTread =
+        val == "1" || ToLower(val) == "true" ? ETyreTread::Intermediate
+                                             : ETyreTread::Slick;
+    return cmd;
+  }
+  if (lower.rfind("wet_tyres=", 0) == 0 || lower.rfind("wet_tires=", 0) == 0) {
+    cmd.type = SimCommandType::WetTyresFit;
+    const size_t eq = trimmed.find('=');
+    const std::string val = eq == std::string::npos ? "" : Trim(trimmed.substr(eq + 1));
+    cmd.tyreTread =
+        val == "1" || ToLower(val) == "true" ? ETyreTread::Wet : ETyreTread::Slick;
+    return cmd;
+  }
 
   if (lower.rfind("hybrid_strategy=", 0) == 0) {
     cmd.type = SimCommandType::HybridStrategy;
@@ -153,6 +187,16 @@ SimCommand ParseSimCommand(const std::string &raw) {
         ParseTireList(val, cmd.pit.tiresToChange);
       else if (key == "compound")
         cmd.pit.tireCompound = ParseCompound(val);
+      else if (key == "tyre_tread" || key == "tire_tread")
+        cmd.pit.tyreTread = ParseTyreTread(val);
+      else if (key == "intermediate_tyres" || key == "intermediate_tires")
+        cmd.pit.tyreTread =
+            val == "1" || ToLower(val) == "true" ? ETyreTread::Intermediate
+                                                 : ETyreTread::Slick;
+      else if (key == "wet_tyres" || key == "wet_tires")
+        cmd.pit.tyreTread =
+            val == "1" || ToLower(val) == "true" ? ETyreTread::Wet
+                                                 : ETyreTread::Slick;
       else if (key == "repairs")
         ParseRepairList(val, cmd.pit.repairs);
       else if (key == "driver_change" || key == "driver")

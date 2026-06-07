@@ -141,6 +141,38 @@ TEST_CASE("Wide front tyres heat and wear front axle more", "[unit][sim]") {
   REQUIRE(wideState.tireWear[rl] == Catch::Approx(baselineState.tireWear[rl]).margin(0.002));
 }
 
+TEST_CASE("Pit rejoin speed accelerates past first-gear ceiling",
+          "[unit][sim][pit]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  CarConfig car;
+  PhysicsConfig physics;
+  TrackDefinition track;
+  LoadGoldenCar(catalog, assembly, car, physics, track);
+
+  car.gearCount = 6;
+  car.gearRatios[0] = 4.5;
+  car.gearRatios[1] = 2.5;
+  car.engine.maxRPM = 6000;
+  car.finalDriveRatio = 3.5;
+  car.gearShiftSpeeds[0] = 18.0;
+  CompileCarArchitecture(car, catalog, assembly);
+
+  SimulationState state;
+  const double pitExitSpeed = (60.0 / 3.6) * 0.85;
+  state.currentSpeed = pitExitSpeed;
+  state.currentGearIndex = 0;
+  state.throttleBlend = 1.0;
+  state.fuelRemaining = car.fuelTankCapacity;
+
+  SyncGearForSpeed(car, state);
+
+  for (int i = 0; i < 300; ++i)
+    TickSimulation(car, track, state, 0.1, physics);
+
+  REQUIRE(state.currentSpeed > pitExitSpeed + 8.0);
+}
+
 TEST_CASE("Out of fuel car coasts to stop", "[unit][sim]") {
   PartCatalog catalog;
   AssemblyConfig assembly;
@@ -157,4 +189,43 @@ TEST_CASE("Out of fuel car coasts to stop", "[unit][sim]") {
     TickSimulation(car, track, state, 0.1, physics);
 
   REQUIRE(state.currentSpeed < 1.0);
+}
+
+TEST_CASE("Engine wear scales linearly with stress not squared",
+          "[unit][sim]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  CarConfig car;
+  PhysicsConfig physics;
+  TrackDefinition track;
+  LoadGoldenCar(catalog, assembly, car, physics, track);
+
+  car.engine.fuelType = "Gasoline";
+  CompileCarArchitecture(car, catalog, assembly);
+
+  SimulationState gasState;
+  gasState.currentSpeed = 75.0;
+  gasState.currentRPM = static_cast<double>(car.engine.maxRPM) * 0.92;
+  gasState.fuelRemaining = car.fuelTankCapacity;
+  const double dt = 0.1;
+  const int ticks = 400;
+  for (int i = 0; i < ticks; ++i)
+    TickSimulation(car, track, gasState, dt, physics);
+  const double gasWear = 100.0 - gasState.engineHealth;
+
+  car.engine.fuelType = "Hydrogen";
+  CompileCarArchitecture(car, catalog, assembly);
+
+  SimulationState h2State;
+  h2State.currentSpeed = 75.0;
+  h2State.currentRPM = static_cast<double>(car.engine.maxRPM) * 0.92;
+  h2State.fuelRemaining = car.fuelTankCapacity;
+  for (int i = 0; i < ticks; ++i)
+    TickSimulation(car, track, h2State, dt, physics);
+  const double h2Wear = 100.0 - h2State.engineHealth;
+
+  REQUIRE(gasWear > 0.05);
+  const double ratio = h2Wear / gasWear;
+  REQUIRE(ratio > 0.95);
+  REQUIRE(ratio < 1.12);
 }

@@ -150,6 +150,36 @@ static double RevLimiterTorqueFactor(double kinematicRPM, int maxRPM) {
   return std::max(0.0, 1.0 - overshoot * 30.0);
 }
 
+void SyncGearForSpeed(const CarConfig &car, SimulationState &state) {
+  const int maxGear = std::max(1, std::min(car.gearCount, 8));
+  const double drivenWheelRadius = DrivenWheelRadius(car);
+  const double finalDrive =
+      car.finalDriveRatio > 0.0 ? car.finalDriveRatio : 3.5;
+
+  const int desiredGear = SelectGearIndex(car, state.currentSpeed);
+  int gear = std::clamp(state.currentGearIndex, 0, maxGear - 1);
+
+  if (desiredGear > gear) {
+    gear = desiredGear;
+  } else if (desiredGear < gear) {
+    const double maxInDesired = MaxSpeedForGear(
+        car.engine.maxRPM,
+        car.gearRatios[std::clamp(desiredGear, 0, 7)], drivenWheelRadius,
+        finalDrive);
+    if (state.currentSpeed < maxInDesired - 0.2)
+      gear = desiredGear;
+  }
+
+  const double maxInGear = MaxSpeedForGear(
+      car.engine.maxRPM, car.gearRatios[std::clamp(gear, 0, 7)],
+      drivenWheelRadius, finalDrive);
+  if (state.currentSpeed >= maxInGear - 0.2 && gear < maxGear - 1)
+    ++gear;
+
+  state.currentGearIndex = gear;
+  state.shiftCooldownSec = 0.0;
+}
+
 void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                     SimulationState &state, double deltaTime,
                     const PhysicsConfig &p, TelemetryLog *telemetry,
@@ -260,6 +290,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       (1.0 - state.effectiveGripTireWear() * p.tireWearEffect);
   effectiveTireFriction *=
       state.effectiveGripTireTempFactor(kTireOptimalC, kTireOverheatC);
+  effectiveTireFriction *= std::max(0.15, mods.weatherGripScale);
   double tireGripForce = netVerticalForce * effectiveTireFriction;
 
   const double maxCorneringSpeedBase =
@@ -350,12 +381,6 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
   } else {
     state.brakeHeat = std::max(0.0, state.brakeHeat - deltaTime * 0.35);
 
-    const int desiredGear = SelectGearIndex(car, state.currentSpeed);
-    if (desiredGear != state.currentGearIndex && state.shiftCooldownSec <= 0.0) {
-      state.currentGearIndex = desiredGear;
-      state.shiftCooldownSec = car.shiftDelaySec;
-    }
-
     if (state.shiftCooldownSec > 0.0)
       state.shiftCooldownSec =
           std::max(0.0, state.shiftCooldownSec - deltaTime);
@@ -373,6 +398,28 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       gearRatio = car.gearRatios[std::clamp(state.currentGearIndex, 0, 7)];
       kinematicRPM = KinematicRPM(state.currentSpeed, gearRatio,
                                   drivenWheelRadius, finalDrive);
+    }
+
+    const int desiredGear = SelectGearIndex(car, state.currentSpeed);
+    if (desiredGear > state.currentGearIndex && state.shiftCooldownSec <= 0.0) {
+      state.currentGearIndex = desiredGear;
+      state.shiftCooldownSec = car.shiftDelaySec;
+      gearRatio = car.gearRatios[std::clamp(state.currentGearIndex, 0, 7)];
+      kinematicRPM = KinematicRPM(state.currentSpeed, gearRatio,
+                                  drivenWheelRadius, finalDrive);
+    } else if (desiredGear < state.currentGearIndex &&
+               state.shiftCooldownSec <= 0.0) {
+      const double maxInDesired = MaxSpeedForGear(
+          car.engine.maxRPM,
+          car.gearRatios[std::clamp(desiredGear, 0, 7)], drivenWheelRadius,
+          finalDrive);
+      if (state.currentSpeed < maxInDesired - 0.2) {
+        state.currentGearIndex = desiredGear;
+        state.shiftCooldownSec = car.shiftDelaySec;
+        gearRatio = car.gearRatios[std::clamp(state.currentGearIndex, 0, 7)];
+        kinematicRPM = KinematicRPM(state.currentSpeed, gearRatio,
+                                    drivenWheelRadius, finalDrive);
+      }
     }
 
     state.currentRPM = std::clamp(kinematicRPM, p.minRPM, maxEngineRPM);
@@ -449,7 +496,8 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
 
     const double maxSpeedInGear = MaxSpeedForGear(
         car.engine.maxRPM, gearRatio, drivenWheelRadius, finalDrive);
-    if (state.currentSpeed >= maxSpeedInGear - 0.2 && engineForce > 0.0)
+    if (state.currentSpeed >= maxSpeedInGear - 0.2 && engineForce > 0.0 &&
+        state.currentGearIndex >= maxGear - 1)
       engineForce = 0.0;
 
     if (onStraight && car.hybridDeployPowerKW > 0.0 &&
@@ -574,7 +622,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
   BuildCarDamageProfiles(car, kDamageCatalog, damageProfiles);
 
   double currentVibrationStrain =
-      car.vibrationIndex * car.engineStressMult *
+      car.vibrationIndex *
       (state.currentRPM / std::max(1.0, static_cast<double>(car.engine.maxRPM)));
   SyncDerivedEngineHealth(state, car);
   const double healthFactor =

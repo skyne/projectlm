@@ -26,6 +26,7 @@ export interface CarSnapshot {
   tireWearFR?: number;
   tireWearRL?: number;
   tireWearRR?: number;
+  tireCompound?: string;
   tireTempC?: number;
   tireTempFL?: number;
   tireTempFR?: number;
@@ -85,6 +86,7 @@ export interface CarSnapshot {
   overtaking?: boolean;
   blocked?: boolean;
   pitRemainingSec?: number;
+  pitLaneDistance?: number;
   setupFeedback?: string;
   wingAngle?: number;
   brakeBias?: number;
@@ -99,6 +101,7 @@ export interface CarSnapshot {
   serviceabilityFactor?: number;
   driverChangeFactor?: number;
   pitCount?: number;
+  totalPitSeconds?: number;
   fuelTankCapacity?: number;
   driverStintSeconds?: number;
   maxDriverStintSeconds?: number;

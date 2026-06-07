@@ -1,4 +1,5 @@
-import type { CarSnapshot } from "../ws/protocol";
+import type { CarSnapshot, WeekendSessionType } from "../ws/protocol";
+import { sessionLabel, sessionShortLabel, sessionTelemetrySubtitle } from "../utils/weekendSessions";
 import { mmPanelHeader } from "../utils/mmUi";
 import { buildTelemetryCardHtml } from "../utils/telemetryCard";
 import { FuelTracker } from "../utils/fuelTracker";
@@ -40,6 +41,9 @@ export class TelemetryPanel {
   private playerEntryId = "entry-1";
   private fuelTracker = new FuelTracker();
   private visible = false;
+  private titleEl!: HTMLElement;
+  private subtitleEl!: HTMLElement;
+  private badgeEl!: HTMLElement;
 
   constructor(container: HTMLElement, handlers: TelemetryPanelHandlers) {
     this.handlers = handlers;
@@ -66,6 +70,9 @@ export class TelemetryPanel {
 
     this.mapContainer = this.root.querySelector("#telemetry-map-host")!;
     this.columnsWrap = this.root.querySelector(".telemetry-columns")!;
+    this.titleEl = this.root.querySelector(".mm-panel-title")!;
+    this.subtitleEl = this.root.querySelector(".mm-panel-subtitle")!;
+    this.badgeEl = this.root.querySelector(".mm-badge")!;
 
     this.root.querySelector(".telemetry-map-fit-btn")!.addEventListener("click", () => {
       this.handlers.onFitTeamMap?.();
@@ -79,6 +86,12 @@ export class TelemetryPanel {
     this.visible = visible;
     this.root.classList.toggle("hidden", !visible);
     if (visible) this.handlers.onFitTeamMap?.();
+  }
+
+  setSessionType(sessionType?: WeekendSessionType): void {
+    this.titleEl.textContent = `${sessionLabel(sessionType)} Telemetry`;
+    this.subtitleEl.textContent = sessionTelemetrySubtitle(sessionType);
+    this.badgeEl.textContent = sessionShortLabel(sessionType);
   }
 
   setPlayerEntry(entryId: string): void {

@@ -15,6 +15,7 @@ enum class SimCommandType {
   DriverSwap,
   CancelPit,
   StartingCompound,
+  WetTyresFit,
   ReleaseGarage
 };
 
@@ -22,6 +23,7 @@ struct PitStopPlan {
   double fuelLiters = 0.0;
   std::vector<std::string> tiresToChange;
   ETireCompound tireCompound = ETireCompound::Medium;
+  ETyreTread tyreTread = ETyreTread::Slick;
   std::vector<std::string> repairs;
   bool changeDriver = false;
   int swapToDriverIndex = -1;
@@ -38,6 +40,7 @@ struct SimCommand {
   DriverMode driverMode = DriverMode::Normal;
   HybridStrategy hybridStrategy = HybridStrategy::Balanced;
   ETireCompound tireCompound = ETireCompound::Medium;
+  ETyreTread tyreTread = ETyreTread::Slick;
   double wingAngleDelta = 0.0;
   double brakeBiasDelta = 0.0;
   /** Legacy: equal delta applied to both axles. */

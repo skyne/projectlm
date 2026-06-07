@@ -90,12 +90,20 @@ void ApplyOpenSessionPlacement(RaceSession &session) {
     car.placeInGarageHold(session.track);
 }
 
+void ApplyGridTyresForWeather(RaceSession &session) {
+  if (session.trackWetness < 0.15)
+    return;
+  for (Car &car : session.cars) {
+    car.config().tyreTread =
+        session.trackWetness >= 0.35 ? ETyreTread::Wet : ETyreTread::Intermediate;
+  }
+}
+
 void AddCar(RaceSession &session, CarConfig car, RaceClass raceClass,
             const std::string &teamName, int gridPosition,
-            const std::string &carNumber) {
-  session.cars.emplace_back(MakeEntryId(gridPosition), teamName,
-                            std::move(raceClass), std::move(car), gridPosition,
-                            carNumber);
+            const std::string &carNumber, const std::string &entryId) {
+  session.cars.emplace_back(entryId, teamName, std::move(raceClass),
+                            std::move(car), gridPosition, carNumber);
 }
 
 static void EmitRaceEvent(SimEventType type, const Car &car, int lap,
@@ -249,7 +257,8 @@ void TickRace(RaceSession &session, double deltaTime) {
 
     const CarTickResult result = car.tick(
         session.track, session.physics, deltaTime, session.elapsedRaceTime,
-        nullptr, traffic, session.trackWetness, night);
+        nullptr, traffic, session.trackWetness, night,
+        session.weather.ambientTempC);
 
     if (result.lapCompleted && car.pit().pendingEnter) {
       if (car.processPitEntry(0.0, true)) {
@@ -347,7 +356,8 @@ static bool IsValidCarNumber(const std::string &number) {
 
 static bool ParseEntryLine(const std::string &line, std::string &teamName,
                            std::string &carConfigPath, std::string &classId,
-                           int &gridPosition, std::string &carNumber) {
+                           int &gridPosition, std::string &carNumber,
+                           std::string &entryId) {
   if (line.empty() || line[0] == '#')
     return false;
 
@@ -373,10 +383,15 @@ static bool ParseEntryLine(const std::string &line, std::string &teamName,
   carConfigPath = Trim(carPath);
   classId = Trim(cls);
   gridPosition = std::stoi(Trim(gridStr));
-  if (std::getline(fields, numberStr))
+  if (std::getline(fields, numberStr, ','))
     carNumber = Trim(numberStr);
   else
     carNumber = std::to_string(gridPosition);
+  std::string idStr;
+  if (std::getline(fields, idStr, ',') && !Trim(idStr).empty())
+    entryId = Trim(idStr);
+  else
+    entryId = MakeEntryId(gridPosition);
   return !teamName.empty() && !carConfigPath.empty() && !classId.empty() &&
          IsValidCarNumber(carNumber);
 }
@@ -404,8 +419,9 @@ bool LoadEntriesFromConfig(RaceSession &session, const std::string &filename,
     std::string teamName, carConfigPath, classId;
     int gridPosition = 0;
     std::string carNumber;
+    std::string entryId;
     if (!ParseEntryLine(line, teamName, carConfigPath, classId, gridPosition,
-                        carNumber))
+                        carNumber, entryId))
       continue;
 
     CarConfig car;
@@ -449,7 +465,7 @@ bool LoadEntriesFromConfig(RaceSession &session, const std::string &filename,
     }
 
     AddCar(session, std::move(car), std::move(raceClass), teamName,
-           gridPosition, carNumber);
+           gridPosition, carNumber, entryId);
     Car &added = session.cars.back();
     if (!driverCatalog.empty()) {
       const uint32_t seed = static_cast<uint32_t>(

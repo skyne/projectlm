@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolveTrackWeather } from "./game/track_climate";
 import {
   advanceWeatherDeterministic,
   buildWeatherForecast,
@@ -7,6 +8,16 @@ import {
   tickWeatherState,
   weatherProfileForId,
 } from "./weather_model";
+
+function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 test("scheduled rain starts when forecast countdown reaches zero", () => {
   const weather = initWeatherState("changeable", 0.05, 21);
@@ -63,3 +74,59 @@ test("tickWeatherState delivers rain after forecast elapses", () => {
   assert.equal(weather.phase, "LightRain");
   assert.ok(weather.trackWetness > 0.05);
 });
+
+test("rain showers end and track can dry out during a long session", () => {
+  let changeableSeed = -1;
+  for (let seed = 1; seed <= 50; seed++) {
+    if (resolveTrackWeather("lemans_la_sarthe", 6, seed).archetype === "changeable") {
+      changeableSeed = seed;
+      break;
+    }
+  }
+  assert.ok(changeableSeed > 0);
+
+  const resolved = resolveTrackWeather("lemans_la_sarthe", 6, changeableSeed);
+  const profile = resolved.profile;
+  const weather = initWeatherState("lemans_la_sarthe:6", 0, profile.baseTempC);
+  weather.trackWetness = profile.baseWetness;
+  const rnd = mulberry32(changeableSeed);
+  const dt = 0.1;
+  const duration = 24 * 3600;
+
+  let dryingPhases = 0;
+  for (let t = 0; t < duration; t += dt) {
+    const prev = weather.phase;
+    tickWeatherState(weather, profile, t, dt, rnd);
+    if (weather.phase === "Drying" && prev !== "Drying") dryingPhases += 1;
+  }
+
+  assert.ok(dryingPhases > 0, "expected at least one drying phase after showers");
+  assert.ok(weather.trackWetness < 0.85, "24h Le Mans should not always end fully soaked");
+});
+
+test("dry archetype Le Mans usually finishes with modest wetness", () => {
+  let drySeed = -1;
+  for (let seed = 1; seed <= 100; seed++) {
+    if (resolveTrackWeather("lemans_la_sarthe", 6, seed).archetype === "dry") {
+      drySeed = seed;
+      break;
+    }
+  }
+  assert.ok(drySeed > 0);
+
+  const resolved = resolveTrackWeather("lemans_la_sarthe", 6, drySeed);
+  const profile = resolved.profile;
+  const weather = initWeatherState("lemans_la_sarthe:6", 0, profile.baseTempC);
+  weather.trackWetness = profile.baseWetness;
+  const rnd = mulberry32(drySeed);
+  const dt = 0.1;
+  const duration = 24 * 3600;
+
+  for (let t = 0; t < duration; t += dt) {
+    tickWeatherState(weather, profile, t, dt, rnd);
+  }
+
+  assert.ok(weather.trackWetness < 0.35);
+  assert.ok(["Dry", "Cloudy", "Drying"].includes(weather.phase));
+});
+

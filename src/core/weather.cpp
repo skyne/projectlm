@@ -3,13 +3,15 @@
 #include <cmath>
 
 static void ResolveWeatherPhase(WeatherState &weather) {
+  if (weather.phase == WeatherPhase::Drying)
+    return;
   if (weather.trackWetness >= 0.55)
     weather.phase = WeatherPhase::HeavyRain;
   else if (weather.trackWetness >= 0.25 || weather.rainIntensity >= 0.1)
     weather.phase = WeatherPhase::LightRain;
-  else if (weather.trackWetness >= 0.08 && weather.phase != WeatherPhase::Drying)
+  else if (weather.trackWetness >= 0.08)
     weather.phase = WeatherPhase::Cloudy;
-  else if (weather.trackWetness < 0.08 && weather.phase != WeatherPhase::Drying)
+  else
     weather.phase = WeatherPhase::Dry;
 }
 
@@ -28,28 +30,38 @@ void AdvanceWeatherDeterministic(WeatherState &weather,
     weather.phase = WeatherPhase::LightRain;
     weather.rainIntensity = std::max(weather.rainIntensity, 0.2);
     weather.forecastRainInSeconds = -1.0;
+    if (weather.rainEpisodeEndTime < 0.0)
+      weather.rainEpisodeEndTime = elapsedRaceTime + 2400.0;
   }
 
   if (weather.phase == WeatherPhase::LightRain ||
       weather.phase == WeatherPhase::HeavyRain) {
-    weather.rainIntensity = std::min(
-        profile.maxRainIntensity,
-        weather.rainIntensity + profile.wetRatePerSecond * deltaTime * 4.0);
-    weather.trackWetness = std::min(
-        1.0, weather.trackWetness + profile.wetRatePerSecond * deltaTime *
-                                        (1.0 + weather.rainIntensity));
-    if (weather.trackWetness >= 0.55)
-      weather.phase = WeatherPhase::HeavyRain;
-  } else if (weather.phase == WeatherPhase::Drying ||
+    if (weather.rainEpisodeEndTime > 0.0 &&
+        elapsedRaceTime >= weather.rainEpisodeEndTime) {
+      weather.phase = WeatherPhase::Drying;
+      weather.rainEpisodeEndTime = -1.0;
+    } else {
+      weather.rainIntensity = std::min(
+          profile.maxRainIntensity,
+          weather.rainIntensity + profile.wetRatePerSecond * deltaTime * 2.5);
+      weather.trackWetness = std::min(
+          1.0, weather.trackWetness + profile.wetRatePerSecond * deltaTime *
+                                          (0.35 + weather.rainIntensity * 0.65));
+      if (weather.trackWetness >= 0.55)
+        weather.phase = WeatherPhase::HeavyRain;
+    }
+  }
+
+  if (weather.phase == WeatherPhase::Drying ||
              (weather.trackWetness > profile.baseWetness + 0.02 &&
               weather.rainIntensity < 0.08)) {
     weather.phase = WeatherPhase::Drying;
     weather.rainIntensity =
-        std::max(0.0, weather.rainIntensity - profile.dryRatePerSecond * deltaTime * 3.0);
+        std::max(0.0, weather.rainIntensity - profile.dryRatePerSecond * deltaTime * 5.0);
     weather.trackWetness =
         std::max(profile.baseWetness,
                  weather.trackWetness - profile.dryRatePerSecond * deltaTime *
-                                            (1.2 + elapsedRaceTime / 7200.0));
+                                            (2.5 + elapsedRaceTime / 5400.0));
     if (weather.trackWetness <= profile.baseWetness + 0.03 &&
         weather.rainIntensity <= 0.05) {
       weather.phase =
@@ -122,6 +134,7 @@ void InitWeatherStateFromProfile(WeatherState &weather,
   weather.rainIntensity = weather.trackWetness * profile.maxRainIntensity;
   weather.trackGripEvolution = 1.0;
   weather.forecastRainInSeconds = -1.0;
+  weather.rainEpisodeEndTime = -1.0;
 
   if (weather.trackWetness >= 0.55)
     weather.phase = WeatherPhase::HeavyRain;
@@ -150,6 +163,9 @@ void TickWeatherState(WeatherState &weather, const WeatherProfile &profile,
       weather.phase = WeatherPhase::LightRain;
       weather.rainIntensity = std::max(weather.rainIntensity, 0.2);
       weather.forecastRainInSeconds = -1.0;
+      const double minSec = profile.maxRainIntensity > 0.72 ? 1800.0 : 900.0;
+      const double spanSec = profile.maxRainIntensity > 0.72 ? 5400.0 : 2700.0;
+      weather.rainEpisodeEndTime = elapsedRaceTime + minSec + unit(rng) * spanSec;
     } else if (weather.trackWetness <= profile.baseWetness + 0.001 &&
                unit(rng) < rainRollChance * 0.5 &&
                weather.forecastRainInSeconds < 0.0) {
@@ -206,15 +222,28 @@ const char *WeatherPhaseName(WeatherPhase phase) {
   return "Dry";
 }
 
-double CompoundCrossoverGrip(ETireCompound compound, bool wetTyres,
+double CompoundCrossoverGrip(ETireCompound compound, ETyreTread tread,
                              double trackWetness, double ambientTempC) {
   const double wet = std::clamp(trackWetness, 0.0, 1.0);
   const double tempDelta = ambientTempC - 26.0;
 
-  if (wetTyres) {
+  if (tread == ETyreTread::Wet) {
     const double dryPenalty = wet < 0.2 ? 0.78 : 1.0;
-    const double wetBonus = 0.95 + wet * 0.25;
+    const double wetBonus =
+        wet < 0.35 ? 0.88 + wet * 0.35 : 0.95 + wet * 0.25;
     return dryPenalty * wetBonus;
+  }
+
+  if (tread == ETyreTread::Intermediate) {
+    if (wet < 0.1)
+      return 0.84;
+    if (wet < 0.22)
+      return 0.92 + (wet - 0.1) * 0.8;
+    if (wet < 0.5)
+      return 1.02;
+    if (wet < 0.65)
+      return 1.02 - (wet - 0.5) * 0.9;
+    return 0.72;
   }
 
   if (wet >= 0.45) {
@@ -250,9 +279,9 @@ double CompoundCrossoverGrip(ETireCompound compound, bool wetTyres,
 }
 
 double WeatherTireGripScale(const WeatherState &weather, ETireCompound compound,
-                            bool wetTyres) {
+                            ETyreTread tread) {
   const double crossover =
-      CompoundCrossoverGrip(compound, wetTyres, weather.trackWetness,
+      CompoundCrossoverGrip(compound, tread, weather.trackWetness,
                             weather.ambientTempC);
   const double wetPenalty = 1.0 - weather.trackWetness * 0.22;
   const double tempPenalty =

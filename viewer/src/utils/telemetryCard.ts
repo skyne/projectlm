@@ -3,6 +3,7 @@ import { escapeHtml } from "./mmUi";
 import {
   buildTyreTelemetryPanelHtml,
 } from "./formatTyre";
+import { tyreCompoundIconHtml, tyreCompoundLabel } from "./tyreCompound";
 import {
   COOLANT_OVERHEAT_C,
   coolantStatusLabel,
@@ -201,11 +202,20 @@ export function buildTelemetryCardHtml(
 
   const lapLabel = `${snap.lap} · P${snap.racePosition}${snap.classPosition != null ? ` · C${snap.classPosition}` : ""}`;
 
+  const compoundBadge = tyreCompoundIconHtml(snap.tireCompound, {
+    size: compact ? 18 : 22,
+    title: `${tyreCompoundLabel(snap.tireCompound)} compound`,
+  });
+
   const tyrePanel = hideTyres
     ? ""
     : `
     <div class="telemetry-row tyre-row tyre-grid-row${compact ? " telemetry-tyre-row-compact" : ""}">
-      ${compact ? "" : "<span>Tyres</span>"}
+      ${
+        compact
+          ? `<span class="telemetry-tyre-label">${compoundBadge}</span>`
+          : `<span class="telemetry-tyre-label">Tyres ${compoundBadge}</span>`
+      }
       <div class="tyre-grid-wrap">
         ${buildTyreTelemetryPanelHtml(snap, { compact, showSummary: !compact })}
       </div>

@@ -15,6 +15,8 @@ struct ClassRule {
   double maxWeightKg = 0.0;
   double aeroBalanceModifier = 1.0;
   double dragModifier = 1.0;
+  /** Scales compiled fuelBurnRate after architecture build (1.0 = unchanged). */
+  double fuelBurnModifier = 1.0;
   double maxDriverStintSeconds = 0.0;
   std::string templateCarPath;
   std::vector<std::string> legalChassis;

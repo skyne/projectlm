@@ -30,6 +30,7 @@ import {
   type SaveTeamColorsPayload,
   type SaveTrackSetupPayload,
   type SessionInitPayload,
+  type StartRoundPayload,
   type GetTrackPreviewPayload,
   type SubmitCommandPayload,
   type TickPayload,
@@ -300,7 +301,11 @@ function main(): void {
         } else {
           broadcast(clients, serverMessage("meta_state", result));
         }
-      } else if (msg.type === "start_round") {
+      } else if (
+        msg.type === "start_round" ||
+        msg.type === "continue_weekend_session"
+      ) {
+        const prep = (msg.payload ?? {}) as StartRoundPayload;
         if (!host.getMetaState().setupComplete) {
           ws.send(
             JSON.stringify(
@@ -314,9 +319,7 @@ function main(): void {
               JSON.stringify(serverMessage("error", { message: fleetErr })),
             );
           } else {
-            const startErr = host.startRound(
-              msg.payload as import("./ws_protocol").StartRoundPayload,
-            );
+            const startErr = host.startRound(prep);
             if (startErr) {
               ws.send(
                 JSON.stringify(serverMessage("error", { message: startErr })),
@@ -334,7 +337,11 @@ function main(): void {
               };
               broadcast(clients, serverMessage("tick", payload));
               afterSessionChange();
-              console.log("[server] Round started");
+              const label =
+                msg.type === "continue_weekend_session"
+                  ? `Weekend session (${host.getWeekendSessionType()})`
+                  : "Round";
+              console.log(`[server] ${label} started`);
             }
           }
         }
@@ -371,8 +378,16 @@ function main(): void {
           broadcast(clients, serverMessage("meta_state", result));
         }
       } else if (msg.type === "save_car_build") {
-        const payload = msg.payload as CarBuildPayload;
-        const result = host.saveCarBuild(payload);
+        const raw = msg.payload as CarBuildPayload | { build: CarBuildPayload; carId?: string };
+        const carId =
+          raw && typeof raw === "object" && "build" in raw && raw.build
+            ? raw.carId
+            : undefined;
+        const build =
+          raw && typeof raw === "object" && "build" in raw && raw.build
+            ? raw.build
+            : (raw as CarBuildPayload);
+        const result = host.saveCarBuild(build, carId);
         if ("error" in result) {
           ws.send(
             JSON.stringify(serverMessage("error", { message: result.error })),

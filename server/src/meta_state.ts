@@ -766,9 +766,16 @@ export class MetaStateManager {
     return this.persist();
   }
 
-  saveCarBuild(build: CarBuildPayload): MetaStatePayload | { error: string } {
-    const active = activeFleetCar(this.state);
+  saveCarBuild(
+    build: CarBuildPayload,
+    carId?: string,
+  ): MetaStatePayload | { error: string } {
+    const fleet = this.state.fleet ?? [];
+    const active = carId
+      ? fleet.find((c) => c.id === carId) ?? null
+      : activeFleetCar(this.state);
     if (!active) return { error: "No active car in your fleet" };
+    if (carId) this.state.activeCarId = carId;
 
     const err = validateCarBuild(
       this.repoRoot,

@@ -1,9 +1,27 @@
 #include "car_entity.hpp"
 #include "part_damage.hpp"
+
+namespace {
+void MaybeRollHiddenFault(PartDamageState &damage, double impact, uint32_t salt) {
+  if (impact < 8.0) return;
+  const double roll = std::fmod(std::sin(salt * 0.173) * 43758.5453, 1.0);
+  if (roll > 0.08 + impact * 0.004) return;
+  HiddenFault fault;
+  fault.kind = impact > 12.0 ? HiddenFaultKind::CoolingHoseLeak
+                             : HiddenFaultKind::HairlineCrack;
+  fault.linkedPart = fault.kind == HiddenFaultKind::CoolingHoseLeak
+                         ? DamagePart::Cooling
+                         : DamagePart::SuspFL;
+  fault.severity = 20.0 + impact * 2.0;
+  fault.revealed = false;
+  damage.hiddenFaults.push_back(fault);
+}
+} // namespace
 #include "car_parts.hpp"
 #include "driver.hpp"
 #include "track.hpp"
 #include "traffic.hpp"
+#include "weather.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -157,9 +175,8 @@ void Car::resetForRestart() {
   mistakePenaltyDuration_ = 0.0;
   mistakePenaltyPeak_ = 0.0;
   pitCount_ = 0;
-  driver_ = MakeDefaultDrivers(
-      teamName_, static_cast<int>(driver_.roster.size()),
-      static_cast<uint32_t>(std::hash<std::string>{}(entryId_) & 0xFFFFFFFFu));
+  totalPitSeconds_ = 0.0;
+  driver_.resetForRestart();
   garageHold_ = false;
   placeOnGrid(gridPosition_);
 }
@@ -200,6 +217,22 @@ void Car::applyCommand(const SimCommand &command) {
     setupFeedbackTimer_ = 6.0;
     break;
   }
+  case SimCommandType::WetTyresFit: {
+    if (state_.elapsedRaceTime > 0.5 || state_.currentDistance > 5.0) {
+      setupFeedback_ = "Tyre choice locked after green flag";
+      setupFeedbackTimer_ = 6.0;
+      break;
+    }
+    config_.tyreTread = command.tyreTread;
+    if (command.tyreTread == ETyreTread::Wet)
+      setupFeedback_ = "Wet tyres fitted";
+    else if (command.tyreTread == ETyreTread::Intermediate)
+      setupFeedback_ = "Intermediate tyres fitted";
+    else
+      setupFeedback_ = "Slick tyres fitted";
+    setupFeedbackTimer_ = 6.0;
+    break;
+  }
   case SimCommandType::SetupChange: {
     if (!pit_.inPit && !pit_.pendingEnter) {
       setupFeedback_ = "Setup changes only in pit lane";
@@ -230,7 +263,8 @@ void Car::applyCommand(const SimCommand &command) {
 }
 
 bool Car::processPitEntry(double normalizedT, bool lapJustCompleted) {
-  if (!ShouldEnterPitLane(pit_, normalizedT, lapJustCompleted, state_.currentLap))
+  if (!ShouldEnterPitLane(pit_, normalizedT, lapJustCompleted, state_.currentLap,
+                          state_.fuelRemaining, config_.fuelTankCapacity))
     return false;
   pit_.inPit = true;
   pit_.pendingEnter = false;
@@ -249,6 +283,8 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
                              const StaffModifiers &staff) {
   if (!pit_.inPit)
     return false;
+
+  totalPitSeconds_ += deltaTime;
 
   const PitLaneDefinition &lane = track.pitLane;
   if (!lane.valid()) {
@@ -319,6 +355,7 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
 
     state_.currentDistance = lane.mergeTrackDistance;
     state_.currentSpeed = speedLimit * 0.85;
+    SyncGearForSpeed(config_, state_);
     pit_.inPit = false;
     pit_.phase = PitPhase::None;
     pit_.pitElapsed = 0.0;
@@ -349,7 +386,8 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
                       double deltaTime, double raceTime,
                       TelemetryLog *telemetry,
                       const TrafficModifiers *traffic,
-                      double trackWetness, bool isNight) {
+                      double trackWetness, bool isNight,
+                      double ambientTempC) {
   CarTickResult result;
   if (retired_ || track.sectors.empty() || pit_.inPit)
     return result;
@@ -372,6 +410,14 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
     mods.hybridRegenScale = 0.0;
   }
 
+  {
+    WeatherState weather;
+    weather.trackWetness = trackWetness;
+    weather.ambientTempC = ambientTempC;
+    mods.weatherGripScale =
+        WeatherTireGripScale(weather, config_.tireChoice, config_.tyreTread);
+  }
+
   if (traffic != nullptr) {
     driver_.setPressure(traffic->pressureLevel);
     applyTrafficVisuals(*traffic, deltaTime);
@@ -392,6 +438,8 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
         for (int w : CollisionPunctureWheels(traffic->collisionDamage, side))
           ApplyTyrePuncture(state_, w, true);
         SyncDerivedEngineHealth(state_, config_);
+        MaybeRollHiddenFault(state_.partDamage, traffic->collisionDamage,
+                             static_cast<uint32_t>(entryId_.length() + state_.currentLap));
         collisionCooldown_ = 3.0;
         setupFeedback_ = "Contact — check bodywork";
         setupFeedbackTimer_ = 6.0;
@@ -622,6 +670,7 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const 
   snap.tireWearRL = state_.tireWear[static_cast<int>(WheelIndex::RL)];
   snap.tireWearRR = state_.tireWear[static_cast<int>(WheelIndex::RR)];
   snap.tireWear = state_.maxTireWear();
+  snap.tireCompound = TireCompoundId(config_.tireChoice, config_.tyreTread);
   snap.tireTempFL = state_.tireTempC[static_cast<int>(WheelIndex::FL)];
   snap.tireTempFR = state_.tireTempC[static_cast<int>(WheelIndex::FR)];
   snap.tireTempRL = state_.tireTempC[static_cast<int>(WheelIndex::RL)];
@@ -716,6 +765,7 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const 
   snap.blocked = blockedVisual_;
   snap.pitRemainingSec =
       pit_.inPit ? EstimatePitRemainingSec(pit_, track) : 0.0;
+  snap.pitLaneDistance = pit_.inPit ? pit_.pitLaneDistance : 0.0;
   snap.setupFeedback = setupFeedback_;
   snap.wingAngle = wingAngleDelta_;
   snap.brakeBias = brakeBias_;
@@ -730,6 +780,7 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const 
   snap.serviceabilityFactor = config_.serviceabilityFactor;
   snap.driverChangeFactor = config_.driverChangeFactor;
   snap.pitCount = pitCount_;
+  snap.totalPitSeconds = totalPitSeconds_;
   snap.fuelTankCapacity = config_.fuelTankCapacity;
   snap.driverStintSeconds = driver_.stintTimeSeconds;
   snap.maxDriverStintSeconds = maxDriverStintSeconds_;

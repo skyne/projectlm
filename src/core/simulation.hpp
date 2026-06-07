@@ -98,6 +98,7 @@ struct SimulationModifiers {
   double mistakePenalty = 0.0;
   double hybridDeployScale = 1.0;
   double hybridRegenScale = 1.0;
+  double weatherGripScale = 1.0;
 };
 
 void AddTireWear(SimulationState &state, const double weights[4],
@@ -164,5 +165,8 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                     const PhysicsConfig &physics,
                     TelemetryLog *telemetry = nullptr,
                     const SimulationModifiers &mods = SimulationModifiers{});
+
+/** Align gear with rejoin speed after pit exit (avoids 1st-gear ceiling trap). */
+void SyncGearForSpeed(const CarConfig &car, SimulationState &state);
 
 #endif

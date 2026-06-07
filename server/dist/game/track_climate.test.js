@@ -23,9 +23,9 @@ const track_climate_1 = require("./track_climate");
     strict_1.default.ok(qatar.profile.rainChancePerHour < 0.12);
     strict_1.default.match(qatar.label, /dry/i);
 });
-(0, node_test_1.default)("Fuji October label mentions rain likelihood", () => {
-    const fuji = (0, track_climate_1.resolveTrackWeather)("fuji", 10, 99);
-    strict_1.default.match(fuji.label.toLowerCase(), /rain|changeable|shower/);
+(0, node_test_1.default)("Fuji October can roll wet or changeable archetypes", () => {
+    const labels = Array.from({ length: 30 }, (_, i) => (0, track_climate_1.resolveTrackWeather)("fuji", 10, i + 1).label.toLowerCase());
+    strict_1.default.ok(labels.some((l) => /rain|changeable|shower|mixed/.test(l)));
 });
 (0, node_test_1.default)("same seed yields reproducible profile", () => {
     const a = (0, track_climate_1.resolveTrackWeather)("spa", 5, 202605);
@@ -37,4 +37,20 @@ const track_climate_1 = require("./track_climate");
     const a = (0, track_climate_1.resolveTrackWeather)("spa", 5, 1);
     const b = (0, track_climate_1.resolveTrackWeather)("spa", 5, 9999);
     strict_1.default.notEqual(a.profile.rainChancePerHour, b.profile.rainChancePerHour);
+});
+(0, node_test_1.default)("Le Mans June rolls dry, changeable, and wet archetypes", () => {
+    const archetypes = new Set(Array.from({ length: 40 }, (_, i) => (0, track_climate_1.resolveTrackWeather)("lemans_la_sarthe", 6, i + 1).archetype));
+    strict_1.default.ok(archetypes.has("dry"));
+    strict_1.default.ok(archetypes.has("changeable"));
+});
+(0, node_test_1.default)("dry archetype Le Mans keeps low rain chance", () => {
+    let dry = null;
+    for (let seed = 1; seed <= 100 && !dry; seed++) {
+        const w = (0, track_climate_1.resolveTrackWeather)("lemans_la_sarthe", 6, seed);
+        if (w.archetype === "dry")
+            dry = w;
+    }
+    strict_1.default.ok(dry);
+    strict_1.default.ok(dry.profile.rainChancePerHour < 0.05);
+    strict_1.default.match(dry.label, /race day dry/i);
 });

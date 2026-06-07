@@ -57,6 +57,7 @@ struct CarSnapshot {
   double tireWearFR = 0.0;
   double tireWearRL = 0.0;
   double tireWearRR = 0.0;
+  std::string tireCompound = "medium";
   double tireTempC = 85.0;
   double tireTempFL = 85.0;
   double tireTempFR = 85.0;
@@ -103,6 +104,7 @@ struct CarSnapshot {
   bool overtaking = false;
   bool blocked = false;
   double pitRemainingSec = 0.0;
+  double pitLaneDistance = 0.0;
   std::string setupFeedback;
   double wingAngle = 0.0;
   double brakeBias = 0.5;
@@ -117,6 +119,7 @@ struct CarSnapshot {
   double serviceabilityFactor = 1.0;
   double driverChangeFactor = 1.0;
   int pitCount = 0;
+  double totalPitSeconds = 0.0;
   double fuelTankCapacity = 100.0;
   double driverStintSeconds = 0.0;
   double maxDriverStintSeconds = 0.0;
@@ -173,7 +176,8 @@ public:
                      double deltaTime, double raceTime,
                      TelemetryLog *telemetry = nullptr,
                      const TrafficModifiers *traffic = nullptr,
-                     double trackWetness = 0.0, bool isNight = false);
+                     double trackWetness = 0.0, bool isNight = false,
+                     double ambientTempC = 22.0);
 
   bool processPitEntry(double normalizedT, bool lapJustCompleted);
   bool processPitLaneTick(const TrackDefinition &track, double deltaTime,
@@ -220,6 +224,7 @@ private:
   double mistakePenaltyDuration_ = 0.0;
   double mistakePenaltyPeak_ = 0.0;
   int pitCount_ = 0;
+  double totalPitSeconds_ = 0.0;
   double maxDriverStintSeconds_ = 0.0;
   bool garageHold_ = false;
 };

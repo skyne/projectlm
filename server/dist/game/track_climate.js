@@ -155,14 +155,54 @@ function climateForTrack(trackId) {
 function monthName(month) {
     return MONTH_NAMES[clampMonth(month) - 1] ?? "June";
 }
-function buildClimateLabel(trackId, month, rainWeight, biome) {
+function rollSessionArchetype(rainWeight, rnd) {
+    const wetChance = Math.min(0.15, 0.03 + rainWeight * 0.12);
+    const changeableChance = Math.min(0.45, 0.1 + rainWeight * 0.32);
+    const roll = rnd();
+    if (roll < wetChance)
+        return "wet";
+    if (roll < wetChance + changeableChance)
+        return "changeable";
+    return "dry";
+}
+function applyArchetypeToProfile(profile, archetype) {
+    if (archetype === "dry") {
+        return {
+            ...profile,
+            baseWetness: Math.max(0.01, profile.baseWetness * 0.25),
+            rainChancePerHour: profile.rainChancePerHour * 0.06,
+            maxRainIntensity: Math.min(profile.maxRainIntensity, 0.55),
+            dryRatePerSecond: profile.dryRatePerSecond * 1.6,
+        };
+    }
+    if (archetype === "wet") {
+        return {
+            ...profile,
+            baseWetness: Math.min(0.4, profile.baseWetness + 0.18),
+            rainChancePerHour: Math.min(0.55, profile.rainChancePerHour * 1.35),
+            maxRainIntensity: Math.min(0.98, profile.maxRainIntensity + 0.12),
+            wetRatePerSecond: profile.wetRatePerSecond * 1.15,
+            dryRatePerSecond: profile.dryRatePerSecond * 0.65,
+        };
+    }
+    return {
+        ...profile,
+        rainChancePerHour: profile.rainChancePerHour * 0.38,
+        dryRatePerSecond: profile.dryRatePerSecond * 1.25,
+    };
+}
+function buildClimateLabel(trackId, month, rainWeight, biome, archetype) {
     const place = (0, track_catalog_1.trackDisplayName)(trackId);
     const when = monthName(month);
-    if (biome === "arid") {
-        if (rainWeight <= 0.08)
+    if (archetype === "dry") {
+        if (biome === "arid")
             return `${when} at ${place} — desert dry`;
-        return `${when} at ${place} — mostly dry, rare showers`;
+        return `${when} at ${place} — race day dry`;
     }
+    if (archetype === "wet")
+        return `${when} at ${place} — wet race likely`;
+    if (biome === "arid")
+        return `${when} at ${place} — mostly dry, rare showers`;
     if (rainWeight >= 0.75)
         return `${when} at ${place} — rain likely`;
     if (rainWeight >= 0.55)
@@ -180,24 +220,27 @@ function resolveTrackWeather(trackId, month, rngSeed = 0) {
     const rnd = mulberry32(rngSeed || 1);
     const jitter = 0.88 + rnd() * 0.24;
     const tempJitter = (rnd() - 0.5) * 4;
-    const rainChancePerHour = Math.min(0.92, lerp(0.02, 0.78, rainWeight) * (0.75 + climate.volatility * 0.35) * jitter);
-    const baseWetness = Math.min(0.35, climate.baseWetnessBias + rainWeight * 0.18 + (rnd() - 0.5) * 0.02);
-    const maxRainIntensity = Math.min(0.98, lerp(0.45, 0.95, rainWeight + climate.volatility * 0.15));
-    const profile = {
+    const archetype = rollSessionArchetype(rainWeight, rnd);
+    const rainChancePerHour = Math.min(0.55, lerp(0.008, 0.38, rainWeight) * (0.7 + climate.volatility * 0.3) * jitter);
+    const baseWetness = Math.min(0.22, climate.baseWetnessBias + rainWeight * 0.1 + (rnd() - 0.5) * 0.015);
+    const maxRainIntensity = Math.min(0.95, lerp(0.35, 0.82, rainWeight + climate.volatility * 0.12));
+    const rawProfile = {
         baseTempC: baseTemp + tempJitter,
         tempDriftPerHour: lerp(-0.4, -2.2, rainWeight) * (climate.biome === "arid" ? 1.4 : 1),
         baseWetness,
         rainChancePerHour,
         maxRainIntensity,
-        wetRatePerSecond: 0.0015 * climate.wetRateFactor * (0.8 + rainWeight * 0.8),
-        dryRatePerSecond: 0.00008 * climate.dryRateFactor * (1.1 - rainWeight * 0.35),
+        wetRatePerSecond: 0.0012 * climate.wetRateFactor * (0.7 + rainWeight * 0.6),
+        dryRatePerSecond: 0.0001 * climate.dryRateFactor * (1.15 - rainWeight * 0.25),
     };
+    const profile = applyArchetypeToProfile(rawProfile, archetype);
     return {
         trackId,
         month: m,
         biome: climate.biome,
         rainWeight,
-        label: buildClimateLabel(trackId, m, rainWeight, climate.biome),
+        archetype,
+        label: buildClimateLabel(trackId, m, rainWeight, climate.biome, archetype),
         profile,
     };
 }
@@ -210,6 +253,7 @@ function formatWeatherConfigLines(resolved, rngSeed) {
         `weather_biome=${resolved.biome}`,
         `weather_label=${resolved.label}`,
         `weather_rain_weight=${resolved.rainWeight.toFixed(3)}`,
+        `weather_archetype=${resolved.archetype}`,
         `rng_seed=${rngSeed}`,
         `ambient_temp_c=${p.baseTempC.toFixed(2)}`,
         `weather_base_temp_c=${p.baseTempC.toFixed(2)}`,

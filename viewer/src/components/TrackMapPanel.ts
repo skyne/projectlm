@@ -1,5 +1,15 @@
-import type { CarSnapshot, RaceControlPayload, TrackGeometryPayload, WeatherContextPayload } from "../ws/protocol";
+import type {
+  CarSnapshot,
+  RaceControlPayload,
+  TrackGeometryPayload,
+  WeatherContextPayload,
+  WeekendSessionType,
+} from "../ws/protocol";
+import { sessionMapMetaPrefix } from "../utils/weekendSessions";
 import { trackDisplayName, trackIconSvg } from "../utils/trackIcons";
+import { trackSurfaceBackgroundUrl } from "../utils/trackBackgroundAssets";
+import { formatTrackWetnessConditions } from "../utils/trackWetnessDisplay";
+import { applyTrackTimePhase } from "../utils/trackWeatherVisual";
 import { resolveTrackTheme, type TrackTheme } from "../utils/trackThemes";
 import type { SvgTrack } from "./SvgTrack";
 
@@ -24,6 +34,7 @@ export class TrackMapPanel {
   private geometry: TrackGeometryPayload | null = null;
   private weather: WeatherContextPayload | undefined;
   private trackId: string | undefined;
+  private sessionType?: WeekendSessionType;
 
   constructor(mapPanel: HTMLElement) {
     this.mapPanel = mapPanel;
@@ -56,6 +67,7 @@ export class TrackMapPanel {
         </div>
       </header>
       <div class="track-map-stage">
+        <div class="track-map-atmosphere" aria-hidden="true"></div>
         <div id="track-container" class="track-map-canvas-host"></div>
         <div class="track-map-overlays">
           <div class="track-sector-legend"></div>
@@ -105,15 +117,20 @@ export class TrackMapPanel {
     }
   }
 
+  setSessionType(sessionType?: WeekendSessionType): void {
+    this.sessionType = sessionType;
+    this.renderHeader();
+  }
+
   setWeatherContext(ctx: WeatherContextPayload | undefined): void {
     this.weather = ctx;
     this.trackId = ctx?.trackId ?? this.trackId;
     this.theme = resolveTrackTheme(this.trackId, ctx?.biome);
-    this.applyThemeToStage();
-    if (this.geometry && this.trackRef) {
+    if (this.trackRef) {
       this.trackRef.setTheme(this.theme);
-      this.trackRef.setGeometry(this.geometry);
+      this.trackRef.setTrackId(this.trackId);
     }
+    this.applyThemeToStage();
     this.renderHeader();
   }
 
@@ -123,6 +140,7 @@ export class TrackMapPanel {
     this.theme = resolveTrackTheme(this.trackId, this.weather?.biome);
     this.applyThemeToStage();
     this.trackRef?.setTheme(this.theme);
+    this.trackRef?.setTrackId(this.trackId);
     this.trackRef?.setGeometry(geometry);
     this.trackRef?.setLayerVisibility(this.layers);
     this.renderHeader();
@@ -135,12 +153,13 @@ export class TrackMapPanel {
 
     if (raceControl) {
       const rain = Math.round((raceControl.rainIntensity ?? 0) * 100);
-      const wet = Math.round((raceControl.trackWetness ?? 0) * 100);
       const parts = [this.weather?.label ?? this.theme.label];
       if (rain > 0) parts.push(`Rain ${rain}%`);
-      if (wet > 0) parts.push(`Wet ${wet}%`);
+      const wetLabel = formatTrackWetnessConditions(raceControl.trackWetness);
+      if (wetLabel) parts.push(wetLabel);
       this.weatherEl.textContent = parts.join(" · ");
     }
+
   }
 
   private applyThemeToStage(): void {
@@ -152,6 +171,11 @@ export class TrackMapPanel {
     stage.style.setProperty("--track-bloom", this.theme.stageBloom);
     stage.style.setProperty("--track-outfield", this.theme.outfield);
     stage.style.setProperty("--track-infield", this.theme.infield);
+    stage.style.setProperty(
+      "--track-bg-image",
+      `url("${trackSurfaceBackgroundUrl(this.trackId, this.theme)}")`,
+    );
+    applyTrackTimePhase(stage, this.weather);
   }
 
   private renderHeader(): void {
@@ -166,7 +190,8 @@ export class TrackMapPanel {
 
     const lapKm = geo ? (geo.lapLength / 1000).toFixed(3) : "—";
     const sectorCount = geo?.sectors.length ?? 0;
-    this.metaEl.textContent = `${lapKm} km · ${sectorCount} sector${sectorCount === 1 ? "" : "s"} · ${this.theme.label}`;
+    const sessionPrefix = sessionMapMetaPrefix(this.sessionType);
+    this.metaEl.textContent = `${sessionPrefix} · ${lapKm} km · ${sectorCount} sector${sectorCount === 1 ? "" : "s"} · ${this.theme.label}`;
 
     if (!this.weather) {
       this.weatherEl.textContent = this.theme.label;
@@ -188,8 +213,8 @@ export class TrackMapPanel {
   private renderClassLegend(): void {
     const classes = [
       { id: "Hypercar", color: "#e10600", label: "Hypercar" },
-      { id: "LMP2", color: "#00a651", label: "LMP2" },
-      { id: "LMGT3", color: "#005aff", label: "LMGT3" },
+      { id: "LMGT3", color: "#00a651", label: "LMGT3" },
+      { id: "LMP2", color: "#005aff", label: "LMP2" },
     ];
     this.classLegendEl.replaceChildren();
     for (const cls of classes) {

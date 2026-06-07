@@ -112,6 +112,7 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
       }
     }
     static const PartCatalog kCatalog{};
+    car.tyreTread = plan.tyreTread;
     ApplyTireCompoundStats(car, plan.tireCompound, kCatalog);
   }
 
@@ -149,10 +150,15 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
 }
 
 bool ShouldEnterPitLane(const PitStopState &pit, double normalizedT,
-                        bool lapJustCompleted, int currentLap) {
+                        bool lapJustCompleted, int currentLap,
+                        double fuelRemaining, double fuelTankCapacity) {
   if (!pit.pendingEnter || pit.inPit)
     return false;
   if (lapJustCompleted)
+    return true;
+  // Emergency fuel — do not force another full lap to reach the pit window.
+  if (fuelTankCapacity > 0.0 && fuelRemaining >= 0.0 &&
+      fuelRemaining <= fuelTankCapacity * 0.18)
     return true;
   // On the opening lap cars sit on the start/finish line — wait until lap 2+
   // before allowing mid-lap pit entry via track position.
