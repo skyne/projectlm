@@ -71,31 +71,19 @@ function canStartWeekendSession(sessionType, completed) {
     }
     return null;
 }
-/** Re-grid entries by best qualifying lap within each class. */
+/** Re-grid entries by overall qualifying classification (one car per grid slot). */
 function applyQualifyingGrid(entries, qualiResults) {
     if (qualiResults.length === 0)
         return entries;
     const bestByEntry = new Map(qualiResults.map((q) => [q.entryId, q.bestLapTime]));
-    const byClass = new Map();
-    for (const entry of entries) {
-        const list = byClass.get(entry.classId) ?? [];
-        list.push(entry);
-        byClass.set(entry.classId, list);
-    }
-    const reordered = [];
-    for (const classEntries of byClass.values()) {
-        const sorted = [...classEntries].sort((a, b) => {
-            const ta = bestByEntry.get(a.entryId) ?? Number.POSITIVE_INFINITY;
-            const tb = bestByEntry.get(b.entryId) ?? Number.POSITIVE_INFINITY;
-            if (ta !== tb)
-                return ta - tb;
-            return a.grid - b.grid;
-        });
-        sorted.forEach((entry, index) => {
-            reordered.push({ ...entry, grid: index + 1 });
-        });
-    }
-    return reordered.sort((a, b) => a.grid - b.grid);
+    const sorted = [...entries].sort((a, b) => {
+        const ta = bestByEntry.get(a.entryId) ?? Number.POSITIVE_INFINITY;
+        const tb = bestByEntry.get(b.entryId) ?? Number.POSITIVE_INFINITY;
+        if (ta !== tb)
+            return ta - tb;
+        return a.grid - b.grid;
+    });
+    return sorted.map((entry, index) => ({ ...entry, grid: index + 1 }));
 }
 /** Order practice/qualifying results by best lap (cars without a lap go last). */
 function sortTimingResults(results) {

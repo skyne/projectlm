@@ -133,7 +133,7 @@ function syncPlayerDriversToStandings(season, playerTeamName, playerRoster, play
     }
 }
 function rosterKey(teamName, carNumber) {
-    return `${teamName}#${carNumber}`;
+    return (0, driver_catalog_1.sessionEntryKey)(teamName, carNumber);
 }
 function primaryCarNumber(repoRoot, teamName) {
     const entry = (0, grid_generator_1.loadLeMansEntries)(repoRoot).find((e) => e.teamName.toLowerCase() === teamName.toLowerCase());
@@ -172,23 +172,8 @@ function applyPlayerTeamRoundResult(season, teamName, classId, points) {
     team.championshipPoints += points;
     team.racesScored += 1;
 }
-function rosterDriversForResult(repoRoot, result, ctx) {
-    const key = rosterKey(result.teamName, result.carNumber);
-    if (ctx.rosterOverrides?.[key]?.length) {
-        return ctx.rosterOverrides[key].map((d) => ({ ...d }));
-    }
-    const playerKey = ctx.playerTeamName.trim().toLowerCase();
-    if (result.teamName.trim().toLowerCase() === playerKey) {
-        const car = ctx.playerFleet.find((c) => c.carNumber === result.carNumber);
-        if (car) {
-            return (0, driver_catalog_1.resolveCarDriverRoster)(ctx.playerRoster, car.assignedDriverIds);
-        }
-        return ctx.playerRoster.map((d) => ({ ...d }));
-    }
-    const catalog = (0, driver_catalog_1.loadLeMansDriverCatalog)(repoRoot);
-    return (catalog.get(key)?.map((d) => ({
-        ...d,
-    })) ?? []);
+function sessionRosterForResult(result, sessionEntryRosters) {
+    return sessionEntryRosters[rosterKey(result.teamName, result.carNumber)]?.map((d) => ({ ...d })) ?? [];
 }
 function classBudgetBase(classId, factory) {
     if (classId === "Hypercar")
@@ -425,12 +410,7 @@ function resolveDriverChampionshipTick(season, options) {
         const pts = (0, economy_1.computeChampionshipPoints)(pos);
         if (pts <= 0)
             continue;
-        const roster = rosterDriversForResult(options.repoRoot, result, {
-            playerTeamName: options.playerTeamName,
-            playerRoster: options.playerRoster,
-            playerFleet: options.playerFleet,
-            rosterOverrides: season.rosterOverrides,
-        });
+        const roster = sessionRosterForResult(result, options.sessionEntryRosters);
         if (!roster.length)
             continue;
         const isPlayer = result.teamName.trim().toLowerCase() ===

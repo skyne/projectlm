@@ -22,6 +22,8 @@ import {
 } from "../utils/carStats";
 import { mmPanelHeader } from "../utils/mmUi";
 import {
+  CONFIG_SLOT_BY_PART_SLOT,
+  describePartIncompatibility,
   isPartCompatibleWithBuild,
   validateAssemblyCompatibility,
 } from "../utils/partCompatibility";
@@ -501,6 +503,23 @@ export class CarGarage {
     return this.catalog?.assemblyRules ?? [];
   }
 
+  private configPartDisplayName(configSlot: string, partType: string): string {
+    const partSlot = (
+      Object.entries(CONFIG_SLOT_BY_PART_SLOT) as [PartSlot, string][]
+    ).find(([, slot]) => slot === configSlot)?.[0];
+    if (partSlot) {
+      const match = this.catalog?.partsBySlot[partSlot]?.find(
+        (p) => p.partType === partType,
+      );
+      if (match) return match.displayName;
+    }
+    if (configSlot === "engine") {
+      if (partType === "Hydrogen") return "Hydrogen";
+      if (partType === "Gasoline") return "Gasoline";
+    }
+    return partType.replace(/([a-z])([A-Z])/g, "$1 $2");
+  }
+
   private trySaveBuild(pendingMessage = ""): void {
     if (!this.build) return;
     const classId = this.activeClassId();
@@ -927,6 +946,16 @@ export class CarGarage {
           this.assemblyRules(),
         );
       const disabled = locked || incompatible;
+      const incompatReason = incompatible
+        ? describePartIncompatibility(
+            this.build,
+            slot,
+            part.partType,
+            this.assemblyRules(),
+            (configSlot, partType) =>
+              this.configPartDisplayName(configSlot, partType),
+          )
+        : null;
       const card = document.createElement("button");
       card.type = "button";
       card.disabled = disabled;
@@ -937,7 +966,7 @@ export class CarGarage {
         <span class="part-card-name">${escapeHtml(part.displayName)}</span>
         <div class="part-card-stats">${statHtml || '<span class="part-stat-line">Standard spec</span>'}</div>
         ${locked ? '<span class="part-lock-badge">R&amp;D Locked</span>' : ""}
-        ${incompatible ? '<span class="part-lock-badge">Incompatible</span>' : ""}
+        ${incompatible ? `<span class="part-lock-badge">Incompatible</span>${incompatReason ? `<span class="part-incompat-hint">${escapeHtml(incompatReason)}</span>` : ""}` : ""}
       `;
 
       card.addEventListener("mouseenter", () => {
@@ -1559,7 +1588,7 @@ export class CarGarage {
         <div class="confirm-card">
           <h4>Sim Performance</h4>
           <p class="confirm-detail">${escapeHtml(perfLine)}</p>
-          <p class="confirm-detail">${Math.round(compiled.calculatedTotalMass)} kg · Cl ${compiled.totalDownforceCl.toFixed(2)} · Cd ${compiled.totalDragCd.toFixed(3)}</p>
+          <p class="confirm-detail">${Math.round(compiled.rawTotalMass)} kg · Cl ${compiled.totalDownforceCl.toFixed(2)} · Cd ${compiled.totalDragCd.toFixed(3)}</p>
         </div>
       </div>
     `;
@@ -1620,7 +1649,11 @@ export class CarGarage {
         ? ` · +${currentCompiled.hybridDeployKw} kW hybrid`
         : "";
     this.root.querySelector(".garage-mass-note")!.textContent =
-      `Sim mass: ${Math.round(currentCompiled.calculatedTotalMass)} kg · Engine ${powerNote}${hybridNote} · Grip ×${effectiveGripScore(currentCompiled).toFixed(2)} · Corner ×${effectiveCorneringScore(currentCompiled).toFixed(2)}`;
+      `Build mass: ${Math.round(currentCompiled.rawTotalMass)} kg` +
+      (currentCompiled.calculatedTotalMass > currentCompiled.rawTotalMass + 0.5
+        ? ` · Race min ${Math.round(currentCompiled.calculatedTotalMass)} kg`
+        : "") +
+      ` · Engine ${powerNote}${hybridNote} · Grip ×${effectiveGripScore(currentCompiled).toFixed(2)} · Corner ×${effectiveCorneringScore(currentCompiled).toFixed(2)}`;
 
     const activeCar = this.resolvedFleetCar();
     const cls = activeCar?.classId ?? this.meta?.playerClassId ?? "Hypercar";
@@ -1664,7 +1697,7 @@ export class CarGarage {
       powerHp: compiled.peakHorsepower,
       downforceCl: compiled.totalDownforceCl,
       dragCd: compiled.totalDragCd,
-      massKg: compiled.calculatedTotalMass,
+      massKg: compiled.rawTotalMass,
       gripIndex: compiled.gripIndex,
       corneringFactor: compiled.corneringFactor,
       coolingCapacity: compiled.coolingCapacity,

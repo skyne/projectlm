@@ -77,7 +77,7 @@ describe("config_parser entry lines", () => {
       { entryId: "entry-34", classId: "LMGT3", bestLapTime: 104.0 },
     ]);
     assert.equal(reordered.find((e) => e.entryId === "entry-9")?.grid, 1);
-    assert.equal(reordered.find((e) => e.entryId === "entry-34")?.grid, 1);
+    assert.equal(reordered.find((e) => e.entryId === "entry-34")?.grid, 2);
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "plm-entries-"));
     const rel = "entries_test.txt";

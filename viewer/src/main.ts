@@ -11,6 +11,8 @@ import { TeamHQ } from "./components/TeamHQ";
 import { RaceHub } from "./components/RaceHub";
 import { SeasonCalendar } from "./components/SeasonCalendar";
 import { PostRaceOverlay } from "./components/PostRaceOverlay";
+import { SessionLogDevPanel, isDevToolsEnabled } from "./components/SessionLogDevPanel";
+import { SeasonEndOverlay } from "./components/SeasonEndOverlay";
 import { PreSessionBriefing } from "./components/PreSessionBriefing";
 import { TeamCreationWizard } from "./components/TeamCreationWizard";
 import { CarGarage } from "./components/CarGarage";
@@ -56,6 +58,7 @@ import {
   sessionShortLabel,
 } from "./utils/weekendSessions";
 import { resolveTrackTheme } from "./utils/trackThemes";
+import { isSeasonFinished } from "./utils/seasonState";
 
 const RACE_MAIN_VIEW_KEY = "projectlm-race-main-view";
 
@@ -161,6 +164,7 @@ function applyClientRole(role: ClientRole): void {
   engineerPanel.setInteractionEnabled(canControl);
   raceHub.setInteractionEnabled(role === "host");
   seasonCalendar.setInteractionEnabled(role === "host");
+  seasonEnd.setInteractionEnabled(role === "host");
 }
 
 let playerEntryId = "entry-1";
@@ -305,11 +309,57 @@ const preSessionBriefing = new PreSessionBriefing(
   },
 );
 
+function dismissPostRace(): void {
+  postRace.hide();
+  endRaceSession();
+  client.endSession();
+}
+
+let seasonFinalizePending = false;
+
+function tryShowSeasonEnd(): void {
+  if (!latestMeta || !isSeasonFinished(latestMeta)) return;
+  if (latestMeta.seasonSummary) {
+    seasonEnd.show(latestMeta);
+    return;
+  }
+  if (!seasonFinalizePending) {
+    seasonFinalizePending = true;
+    client.finalizeSeason();
+  }
+}
+
+function returnToChampionshipHub(): void {
+  dismissPostRace();
+  setMainView("season");
+  tryShowSeasonEnd();
+}
+
+function showSeasonEndOverlay(): void {
+  dismissPostRace();
+  setMainView("season");
+  tryShowSeasonEnd();
+}
+
+const seasonEnd = new SeasonEndOverlay(document.body, {
+  onStartNextSeason: () => {
+    seasonEnd.hide();
+    client.startNextSeason();
+  },
+  onClose: () => {
+    seasonEnd.hide();
+  },
+});
+
 const raceHub = new RaceHub(seasonPanel, {
   onStartRace: () => startNextWeekendSession(),
   onOpenGarage: () => {
     carGarage.clearEditingCar();
     setMainView("garage");
+  },
+  onViewSeasonResults: () => showSeasonEndOverlay(),
+  onStartNextSeason: () => {
+    client.startNextSeason();
   },
 });
 
@@ -318,19 +368,21 @@ const seasonCalendar = new SeasonCalendar(calendarPanel, {
   onStartRace: () => startNextWeekendSession(),
 });
 
+const sessionLogDev = new SessionLogDevPanel(
+  document.getElementById("session-log-dev-root")!,
+);
+
 const postRace = new PostRaceOverlay(document.getElementById("post-race-overlay")!, {
-  onContinue: () => {
-    endRaceSession();
-    teamHQ.showTab("season");
-    setMainView("team");
-  },
+  onContinue: () => returnToChampionshipHub(),
   onContinueWeekend: (nextSession) => {
-    endRaceSession();
+    dismissPostRace();
     startWeekendSession(nextSession);
   },
+  onViewSeasonResults: () => showSeasonEndOverlay(),
   onRestart: () => {
     void requestRestartSession(true);
   },
+  onOpenSessionLog: (sessionLogId) => sessionLogDev.show(sessionLogId),
 });
 
 const driverCenter = new DriverCenter(driversContainer, {
@@ -584,6 +636,22 @@ function applyMetaState(meta: MetaStatePayload): void {
   latestMeta = meta;
   if (postRace.isVisible()) {
     postRace.refreshChampionship(meta);
+    postRace.refreshContinueButton(meta);
+  }
+  if (seasonEnd.isVisible() && isSeasonFinished(meta) && meta.seasonSummary) {
+    seasonEnd.show(meta);
+  } else if (seasonEnd.isVisible() && !isSeasonFinished(meta)) {
+    seasonEnd.hide();
+  }
+  if (isSeasonFinished(meta)) {
+    if (!meta.seasonSummary && !meta.seasonComplete && !seasonFinalizePending) {
+      seasonFinalizePending = true;
+      client.finalizeSeason();
+    } else if (meta.seasonSummary) {
+      seasonFinalizePending = false;
+    }
+  } else {
+    seasonFinalizePending = false;
   }
   syncCarPreview(raceStarted ? commandEntryId : undefined);
   const engineerSkill =
@@ -744,6 +812,10 @@ function startWeekendSession(sessionType: WeekendSessionType): void {
 
 function startNextWeekendSession(): void {
   if (!latestMeta?.setupComplete) return;
+  if (isSeasonFinished(latestMeta)) {
+    showSeasonEndOverlay();
+    return;
+  }
   const current = latestMeta.calendar.find((e) => e.round === latestMeta!.currentRound);
   const isTest = current?.eventType === "test" || current?.format === "test";
   const next = resolveNextSession(latestMeta);
@@ -1020,11 +1092,18 @@ const client = new ViewerClient({
         message: "Race complete — check final standings",
       },
     ]);
+    if (isSeasonFinished(latestMeta)) {
+      client.endSession();
+      setMainView("season");
+      tryShowSeasonEnd();
+      return;
+    }
     postRace.show(
       payload,
       playerEntryId,
       latestMeta,
       latestSession?.weekendSessionType,
+      managedEntryIds,
     );
   },
   onJoinRejected: (message) => {
@@ -1085,4 +1164,13 @@ if (hasSavedDisplayName()) {
   statusEl.textContent = "Choose a display name";
   statusEl.className = "status status-connecting";
   joinModal.show({ requestedRole: "host" });
+}
+
+if (isDevToolsEnabled()) {
+  window.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "l") {
+      e.preventDefault();
+      sessionLogDev.toggle();
+    }
+  });
 }

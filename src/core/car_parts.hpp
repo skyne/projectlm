@@ -111,7 +111,11 @@ struct EngineConfig {
   double specificTorqueNmPerL = 0.0;
   std::string aspiration;
   std::string drivetrain;
+  /// Hydrogen only: Combustion (ICE) or FuelCell.
+  std::string energyConverter;
   double generatorKw = 0.0;
+  /// Fuel-cell buffer sizing hint (0–1) from garage UI.
+  double bufferSize = 0.5;
 };
 
 struct AssemblyConfig {
@@ -237,6 +241,7 @@ struct CarConfig {
   double drivetrainExtraMassKg = 0.0;
   bool isGeneratorOnly = false;
   bool isElectricDrive = false;
+  bool isFuelCell = false;
   double generatorPowerKW = 0.0;
   double drivetrainEfficiency = 1.0;
   double electricalDeployKW = 0.0;

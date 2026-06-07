@@ -200,6 +200,8 @@ public:
   void markRetired(const std::string &reason);
 
 private:
+  /** After pit service: retire in garage if structural damage is beyond repair. */
+  bool tryRetireTerminalDamageAfterPit();
   std::string entryId_;
   std::string teamName_;
   std::string carNumber_;

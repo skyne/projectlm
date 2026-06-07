@@ -192,3 +192,16 @@ describe("pit_planner stint guide", () => {
     assert.ok(withPlan?.services.fuel);
   });
 });
+
+describe("planPitStop irreparable structural damage", () => {
+  it("does not plan limp body repair when suspension is irreparable", () => {
+    const s = snap({
+      limpMode: "barely_driveable",
+      partIrreparable: ["susp_fr", "susp_rr"],
+      fuel: 20,
+      tireWear: 0.9,
+    });
+    const plan = planPitStop(s, baseCtx, 100);
+    assert.equal(plan, null);
+  });
+});

@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
+import { createServer } from "http";
 import { ClientSessionManager } from "./client_sessions";
 import { computeRaceFinances } from "./game/economy";
 import {
@@ -37,6 +38,7 @@ import {
   type TrackGeometryPayload,
   type TrackPreviewPayload,
 } from "./ws_protocol";
+import { listSessionLogs, readSessionLog } from "./session_log";
 
 const PORT = Number(process.env.PORT ?? 8765);
 
@@ -71,6 +73,48 @@ function sendForbidden(ws: WebSocket): void {
   );
 }
 
+function startDevSessionLogApi(repoRoot: string, port: number): void {
+  createServer((req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    if (req.method !== "GET") {
+      res.writeHead(405, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "method not allowed" }));
+      return;
+    }
+    const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
+    if (url.pathname === "/dev/session-logs") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ logs: listSessionLogs(repoRoot) }));
+      return;
+    }
+    const match = url.pathname.match(/^\/dev\/session-logs\/([^/]+)$/);
+    if (match) {
+      const log = readSessionLog(repoRoot, decodeURIComponent(match[1]));
+      if (!log) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "log not found" }));
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(log));
+      return;
+    }
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "not found" }));
+  }).listen(port, () => {
+    console.log(
+      `[server] Dev session log API http://127.0.0.1:${port}/dev/session-logs`,
+    );
+  });
+}
+
 function main(): void {
   const host = new SimHost();
   const engineer = new EngineerService();
@@ -96,14 +140,21 @@ function main(): void {
 
   function sendBootstrap(ws: WebSocket): SessionInitPayload {
     const sessionInit: SessionInitPayload = host.getSessionInit();
+    const meta = host.getMetaState();
     ws.send(JSON.stringify(serverMessage("session_init", sessionInit)));
-    if (sessionInit.raceActive && sessionInit.raceComplete) {
+    ws.send(JSON.stringify(serverMessage("meta_state", meta)));
+    let sessionActive = sessionInit.raceActive;
+    if (meta.seasonComplete && sessionInit.raceActive) {
+      host.endSession();
+      ws.send(JSON.stringify(serverMessage("session_init", host.getSessionInit())));
+      sessionActive = false;
+    } else if (sessionInit.raceActive && sessionInit.raceComplete) {
       const lastComplete = host.getLastRaceComplete();
       if (lastComplete) {
         ws.send(JSON.stringify(serverMessage("race_complete", lastComplete)));
       }
     }
-    if (sessionInit.raceActive) {
+    if (sessionActive) {
       const catchUp: TickPayload = {
         raceTime: host.getRaceTime(),
         snapshots: host.getSnapshots(),
@@ -111,7 +162,6 @@ function main(): void {
       };
       ws.send(JSON.stringify(serverMessage("tick", catchUp)));
     }
-    ws.send(JSON.stringify(serverMessage("meta_state", host.getMetaState())));
     ws.send(JSON.stringify(serverMessage("game_catalog", host.getGameCatalog())));
     void engineer.getStatus().then((status) => {
       ws.send(JSON.stringify(serverMessage("engineer_status", status)));
@@ -563,6 +613,21 @@ function main(): void {
           const payload: TrackPreviewPayload = { trackId, geometry };
           ws.send(JSON.stringify(serverMessage("track_preview", payload)));
         }
+      } else if (msg.type === "finalize_season") {
+        const result = host.finalizeSeasonIfReady();
+        if ("error" in result) {
+          ws.send(JSON.stringify(serverMessage("error", { message: result.error })));
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+        }
+      } else if (msg.type === "start_next_season") {
+        const result = host.startNextSeason();
+        if ("error" in result) {
+          ws.send(JSON.stringify(serverMessage("error", { message: result.error })));
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+          console.log("[server] New season started");
+        }
       } else if (msg.type === "new_game") {
         const meta = host.newGame();
         broadcast(clients, serverMessage("meta_state", meta));
@@ -634,7 +699,7 @@ function main(): void {
       const payload: EventsPayload = { events };
       broadcast(clients, serverMessage("events", payload));
     },
-    (raceTime, results, weekendSessionType) => {
+    (raceTime, results, weekendSessionType, sessionLogId) => {
       const meta = host.getMetaState();
       const session = host.getSessionInit();
       const managedIds =
@@ -644,12 +709,17 @@ function main(): void {
       const managedResults = results.filter((r) =>
         managedIds.includes(r.entryId),
       );
+      const classifiedManaged = managedResults.filter((r) => !r.retired);
       const playerResult =
-        managedResults.length > 0
-          ? managedResults.reduce((best, r) =>
+        classifiedManaged.length > 0
+          ? classifiedManaged.reduce((best, r) =>
               r.position < best.position ? r : best,
             )
-          : undefined;
+          : managedResults.length > 0
+            ? managedResults.reduce((best, r) =>
+                r.position < best.position ? r : best,
+              )
+            : undefined;
       const event = meta.calendar.find((e) => e.round === meta.currentRound);
       const scoring =
         event?.eventType !== "test" && event?.format !== "test";
@@ -704,15 +774,27 @@ function main(): void {
         finances: isRaceSession ? finances : undefined,
         weekendSessionType,
         nextWeekendSession: nextSession,
+        sessionLogId,
       };
       host.setLastRaceComplete(payload);
-      broadcast(clients, serverMessage("race_complete", payload));
       if (updatedMeta !== meta) {
         broadcast(clients, serverMessage("meta_state", updatedMeta));
+      }
+      broadcast(clients, serverMessage("race_complete", payload));
+      if (updatedMeta.seasonComplete) {
+        host.endSession();
+        broadcast(clients, serverMessage("session_init", host.getSessionInit()));
       }
       console.log(`[server] ${weekendSessionType} session complete`);
     },
   );
+
+  if (process.env.DEV_TOOLS !== "0") {
+    startDevSessionLogApi(
+      host.repoRoot,
+      Number(process.env.DEV_HTTP_PORT ?? PORT + 1),
+    );
+  }
 
   process.on("SIGINT", () => {
     host.stop();

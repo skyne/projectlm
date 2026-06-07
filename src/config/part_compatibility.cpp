@@ -85,6 +85,39 @@ bool ValidatePartCompatibility(const CarConfig &car,
     return false;
   }
 
+  if (car.engine.fuelType == "Hydrogen" &&
+      car.engine.energyConverter == "FuelCell") {
+    if (car.engine.drivetrain != "FullEV") {
+      if (errorOut) {
+        *errorOut =
+            "Hydrogen fuel cell requires FullEV drivetrain (SingleSpeedEDrive)";
+      }
+      return false;
+    }
+    if (car.hybridSystemId != "None" && !car.hybridSystemId.empty()) {
+      if (errorOut) {
+        *errorOut = "Fuel cell powertrain cannot use a separate hybrid system";
+      }
+      return false;
+    }
+    if (car.transmissionId != "SingleSpeedEDrive") {
+      if (errorOut) {
+        *errorOut =
+            "Hydrogen fuel cell requires SingleSpeedEDrive transmission";
+      }
+      return false;
+    }
+  }
+
+  if (car.engine.fuelType == "Hydrogen" &&
+      car.engine.drivetrain == "RangeExtender") {
+    if (errorOut) {
+      *errorOut =
+          "Hydrogen range-extender is not supported; use Fuel cell instead";
+    }
+    return false;
+  }
+
   for (const CompatibilityRule &rule : rules) {
     if (PartChoiceForSlot(car, rule.ifSlot) != rule.ifPart)
       continue;

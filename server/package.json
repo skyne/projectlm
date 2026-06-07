@@ -9,7 +9,7 @@
     "test": "npm run test:climate && npm run test:weather && npm run test:setup",
     "test:climate": "node --import tsx --test src/game/track_climate.test.ts",
     "test:weather": "node --import tsx --test src/weather_model.test.ts src/tyre_grip.test.ts",
-    "test:setup": "node --import tsx --test src/config_parser.test.ts src/game/driver_catalog.test.ts src/game/ai_rival_season.test.ts src/game/pitbot/pit_planner.test.ts src/game/pitbot/pit_wall.test.ts src/game/chassis_setup.test.ts src/game/class_rules.test.ts src/game/weekend_setup.test.ts src/game/weekend_sessions.test.ts src/llm/ai_stint_guide.test.ts src/llm/engineer_commands.test.ts",
+    "test:setup": "node --import tsx --test src/config_parser.test.ts src/game/driver_catalog.test.ts src/game/ai_rival_season.test.ts src/game/season_end.test.ts src/game/powertrain_traits.test.ts src/game/pitbot/pit_planner.test.ts src/game/pitbot/pit_wall.test.ts src/game/chassis_setup.test.ts src/game/class_rules.test.ts src/game/weekend_setup.test.ts src/game/weekend_sessions.test.ts src/llm/ai_stint_guide.test.ts src/llm/engineer_commands.test.ts",
     "benchmark:damage": "node --import tsx scripts/run_damage_endurance.mjs",
     "benchmark:damage:6h": "DURATION_HOURS=6 node --import tsx scripts/run_damage_endurance.mjs"
   },

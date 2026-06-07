@@ -301,6 +301,10 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
     if (pit_.plan.brakeBiasDelta != 0.0)
       brakeBias_ = std::clamp(brakeBias_ + pit_.plan.brakeBiasDelta, 0.35, 0.65);
     pitCount_ += 1;
+    if (tryRetireTerminalDamageAfterPit()) {
+      pit_.plan = PitStopPlan{};
+      return false;
+    }
     pit_.inPit = false;
     pit_.phase = PitPhase::None;
     pit_.pitElapsed = 0.0;
@@ -353,6 +357,11 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
     if (pit_.plan.brakeBiasDelta != 0.0)
       brakeBias_ = std::clamp(brakeBias_ + pit_.plan.brakeBiasDelta, 0.35, 0.65);
     pitCount_ += 1;
+
+    if (tryRetireTerminalDamageAfterPit()) {
+      pit_.plan = PitStopPlan{};
+      return false;
+    }
 
     state_.currentDistance = lane.mergeTrackDistance;
     state_.currentSpeed = speedLimit * 0.85;
@@ -567,24 +576,36 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
       state_.partDamage, config_, state_.tyreDeflation,
       state_.batteryChargeMJ > 0.0 ? state_.batteryChargeMJ
                                    : state_.hybridDeployRemainingMJ);
+  if (HasCatastrophicSameSideLoss(state_.partDamage)) {
+    pit_.pendingEnter = false;
+    state_.currentSpeed = 0.0;
+    if (!retired_) {
+      markRetired("Heavy crash — car stopped on track");
+      result.retired = true;
+    }
+    return result;
+  }
   const double structural = ComputeStructuralSeverity(state_.partDamage,
                                                       state_.tyreDeflation);
   if (limp == LimpMode::Immobilized) {
     mods.speedCapMs = std::max(mods.speedCapMs, 4.0);
     mods.throttleMultiplier *= 0.15;
-    if (!pit_.pendingEnter && !pit_.inPit)
+    if (!HasIrreparableSuspension(state_.partDamage) && !pit_.pendingEnter &&
+        !pit_.inPit)
       pit_.pendingEnter = true;
   } else if (limp == LimpMode::BarelyDriveable) {
     const double capMs = std::max(11.0, 28.0 - structural * 0.18);
     mods.speedCapMs = mods.speedCapMs > 0.0 ? std::min(mods.speedCapMs, capMs) : capMs;
     mods.throttleMultiplier *= 0.55;
-    if (!pit_.pendingEnter && !pit_.inPit)
+    if (!HasIrreparableSuspension(state_.partDamage) && !pit_.pendingEnter &&
+        !pit_.inPit)
       pit_.pendingEnter = true;
   } else if (limp == LimpMode::HybridOnly) {
     mods.throttleMultiplier *= 0.05;
     mods.hybridDeployScale = std::max(mods.hybridDeployScale, 0.35);
     mods.speedCapMs = mods.speedCapMs > 0.0 ? std::min(mods.speedCapMs, 36.0) : 36.0;
-    if (!pit_.pendingEnter && !pit_.inPit)
+    if (!HasTerminalStructuralDamage(state_.partDamage) && !pit_.pendingEnter &&
+        !pit_.inPit)
       pit_.pendingEnter = true;
   } else if (limp == LimpMode::ReducedPower) {
     mods.throttleMultiplier *= 0.45;
@@ -849,4 +870,17 @@ bool Car::isAheadOf(const Car &other) const {
 void Car::markRetired(const std::string &reason) {
   retired_ = true;
   retireReason_ = reason;
+}
+
+bool Car::tryRetireTerminalDamageAfterPit() {
+  if (retired_ || !HasTerminalStructuralDamage(state_.partDamage))
+    return false;
+  markRetired("Terminal damage (beyond repair)");
+  pit_.pendingEnter = false;
+  pit_.inPit = true;
+  pit_.phase = PitPhase::AtBox;
+  garageHold_ = true;
+  state_.currentSpeed = 0.0;
+  pit_.statusMessage = "Retired — terminal damage";
+  return true;
 }

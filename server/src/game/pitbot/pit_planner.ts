@@ -252,8 +252,13 @@ function deflatedWheels(s: PlannerSnap): string[] {
 }
 
 function needsLimpPit(s: PlannerSnap): boolean {
+  if (hasIrreparableSuspension(s)) return false;
   const limp = s.limpMode ?? "none";
   return limp === "barely_driveable" || limp === "hybrid_only" || limp === "immobilized";
+}
+
+function hasIrreparableSuspension(s: PlannerSnap): boolean {
+  return (s.partIrreparable ?? []).some((p) => p.startsWith("susp_"));
 }
 
 function tyresWorn(s: PlannerSnap): boolean {
@@ -352,6 +357,15 @@ export function planPitStop(
   ctx: PitPlannerContext,
   fuelAtLastPit: number,
 ): PitStopPlan | null {
+  if (
+    hasIrreparableSuspension(s) &&
+    (s.limpMode === "barely_driveable" ||
+      s.limpMode === "hybrid_only" ||
+      s.limpMode === "immobilized")
+  ) {
+    return null;
+  }
+
   const profile = profileFor(s.classId);
   const fuelBase = {
     low: ctx.stintPlan?.fuelStopFraction ?? profile.fuelLow,

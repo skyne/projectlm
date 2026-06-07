@@ -81,7 +81,7 @@ describe("weekend_sessions", () => {
     );
   });
 
-  it("applyQualifyingGrid sorts by best lap per class", () => {
+  it("applyQualifyingGrid assigns unique overall grid slots by best lap", () => {
     const entries = [
       entry("e1", "Hypercar", 1),
       entry("e2", "Hypercar", 2),
@@ -94,11 +94,16 @@ describe("weekend_sessions", () => {
       { entryId: "e3", classId: "GT3", bestLapTime: 102.1 },
       { entryId: "e4", classId: "GT3", bestLapTime: 101.4 },
     ]);
-    const hyper = reordered.filter((e) => e.classId === "Hypercar");
-    const gt3 = reordered.filter((e) => e.classId === "GT3");
-    assert.equal(hyper[0].entryId, "e2");
-    assert.equal(hyper[0].grid, 1);
-    assert.equal(gt3[0].entryId, "e4");
-    assert.equal(gt3[0].grid, 1);
+    assert.deepEqual(
+      reordered.map((e) => ({ id: e.entryId, grid: e.grid })),
+      [
+        { id: "e2", grid: 1 },
+        { id: "e1", grid: 2 },
+        { id: "e4", grid: 3 },
+        { id: "e3", grid: 4 },
+      ],
+    );
+    const grids = reordered.map((e) => e.grid);
+    assert.equal(new Set(grids).size, grids.length);
   });
 });

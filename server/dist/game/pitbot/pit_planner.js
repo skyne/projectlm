@@ -157,8 +157,13 @@ function deflatedWheels(s) {
         .map(([w]) => w.toUpperCase());
 }
 function needsLimpPit(s) {
+    if (hasIrreparableSuspension(s))
+        return false;
     const limp = s.limpMode ?? "none";
     return limp === "barely_driveable" || limp === "hybrid_only" || limp === "immobilized";
+}
+function hasIrreparableSuspension(s) {
+    return (s.partIrreparable ?? []).some((p) => p.startsWith("susp_"));
 }
 function tyresWorn(s) {
     const wear = s.tireWear ?? 0;
@@ -248,6 +253,12 @@ function scaledFuelThresholds(pitAggression = 1, base) {
 }
 /** Decide bundled pit stop (or defer). */
 function planPitStop(s, ctx, fuelAtLastPit) {
+    if (hasIrreparableSuspension(s) &&
+        (s.limpMode === "barely_driveable" ||
+            s.limpMode === "hybrid_only" ||
+            s.limpMode === "immobilized")) {
+        return null;
+    }
     const profile = profileFor(s.classId);
     const fuelBase = {
         low: ctx.stintPlan?.fuelStopFraction ?? profile.fuelLow,

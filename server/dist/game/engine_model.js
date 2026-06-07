@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DRIVETRAIN_TYPES = exports.ASPIRATION_TYPES = exports.FUEL_TYPES = exports.ENGINE_LAYOUTS = exports.DIESEL_WEIGHT_MULT = exports.ENGINE_WEIGHT_CYL_FACTOR = exports.ENGINE_WEIGHT_COEFF = exports.HP_CONVERSION = void 0;
+exports.ENERGY_CONVERTER_TYPES = exports.DRIVETRAIN_TYPES = exports.ASPIRATION_TYPES = exports.FUEL_TYPES = exports.ENGINE_LAYOUTS = exports.DIESEL_WEIGHT_MULT = exports.ENGINE_WEIGHT_CYL_FACTOR = exports.ENGINE_WEIGHT_COEFF = exports.HP_CONVERSION = void 0;
 exports.cylindersForLayout = cylindersForLayout;
 exports.displacementLiters = displacementLiters;
 exports.peakTorqueNm = peakTorqueNm;
@@ -21,6 +21,7 @@ exports.ASPIRATION_TYPES = [
 exports.DRIVETRAIN_TYPES = [
     "Mechanical", "ParallelHybrid", "FrontAxleHybrid", "RangeExtender", "FullEV",
 ];
+exports.ENERGY_CONVERTER_TYPES = ["Combustion", "FuelCell"];
 const LAYOUT_CYLINDERS = {
     I4: 4, I6: 6, V6: 6, V8: 8, V10: 10, V12: 12, Flat4: 4, Flat6: 6, Rotary: 2, LMP2Spec: 8,
 };
@@ -56,6 +57,14 @@ function engineMassKg(engine) {
     return mass;
 }
 function validateEngineBuild(engine) {
+    const isFuelCell = engine.fuel_type === "Hydrogen" && engine.energy_converter === "FuelCell";
+    if (isFuelCell) {
+        if (engine.drivetrain !== "FullEV")
+            return "Fuel cell requires FullEV drivetrain";
+        if (!engine.generator_kw || engine.generator_kw < 200)
+            return "Fuel cell stack kW out of range";
+        return null;
+    }
     if (!exports.ENGINE_LAYOUTS.includes(engine.engine_layout)) {
         return "Invalid engine layout";
     }

@@ -5,6 +5,7 @@ import type {
   RaceCompletePayload,
   WeekendSessionType,
 } from "../ws/protocol";
+import { isSeasonFinished } from "./seasonState";
 
 export function isTimingSession(type?: WeekendSessionType): boolean {
   return type === "practice" || type === "qualifying";
@@ -48,8 +49,9 @@ export function nextWeekendSession(
 }
 
 export function resolveNextSession(meta: MetaStatePayload): WeekendSessionType | null {
+  if (isSeasonFinished(meta)) return null;
   const current = meta.calendar.find((e) => e.round === meta.currentRound);
-  if (!current || !weekendScheduleActive(current)) return null;
+  if (!current || current.completed || !weekendScheduleActive(current)) return null;
   const completed =
     meta.weekendProgress?.round === meta.currentRound
       ? meta.weekendProgress.completedSessions

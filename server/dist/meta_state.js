@@ -48,6 +48,7 @@ const ai_rival_season_1 = require("./game/ai_rival_season");
 const car_condition_1 = require("./game/car_condition");
 const economy_1 = require("./game/economy");
 const track_catalog_1 = require("./game/track_catalog");
+const season_end_1 = require("./game/season_end");
 const staff_1 = require("./game/staff");
 function trim(s) {
     return s.trim();
@@ -226,6 +227,9 @@ class MetaStateManager {
             this.store.save(this.state);
         }
         syncLegacyFields(this.state);
+        if (this.ensureSeasonFinalized()) {
+            this.store.save(this.state);
+        }
     }
     getState() {
         let changed = false;
@@ -235,9 +239,82 @@ class MetaStateManager {
         this.ensureAiRivalSeason();
         if ((this.state.aiRivalSeason?.teams.length ?? 0) !== before)
             changed = true;
+        if (this.ensureSeasonFinalized())
+            changed = true;
         if (changed)
             this.store.save(this.state);
         return structuredClone(this.state);
+    }
+    isSeasonComplete() {
+        return this.state.seasonComplete === true;
+    }
+    seasonStartBlockedReason() {
+        if (this.state.seasonComplete) {
+            return "Season complete — review results and start the next season";
+        }
+        if ((0, season_end_1.isSeasonCalendarComplete)(this.state.calendar)) {
+            return "Season complete — review results and start the next season";
+        }
+        const event = this.state.calendar.find((e) => e.round === this.state.currentRound);
+        if (event?.completed) {
+            return "This round is already complete";
+        }
+        return null;
+    }
+    finalizeSeasonIfReady() {
+        if (!this.state.setupComplete) {
+            return { error: "Complete team setup first" };
+        }
+        if (!(0, season_end_1.isSeasonCalendarComplete)(this.state.calendar)) {
+            return { error: "Season still in progress" };
+        }
+        if (!this.state.seasonComplete) {
+            this.finalizeSeason();
+            return this.persist();
+        }
+        return this.getState();
+    }
+    ensureSeasonFinalized() {
+        if (!this.state.setupComplete ||
+            this.state.seasonComplete ||
+            !(0, season_end_1.isSeasonCalendarComplete)(this.state.calendar)) {
+            return false;
+        }
+        this.finalizeSeason();
+        return true;
+    }
+    finalizeSeason() {
+        this.ensureAiRivalSeason();
+        const summary = (0, season_end_1.finalizeSeasonSummary)(this.state);
+        if (!summary)
+            return;
+        if (summary.totalPayout > 0) {
+            this.state.budget += summary.totalPayout;
+        }
+        this.state.seasonSummary = summary;
+        this.state.seasonComplete = true;
+    }
+    startNextSeason() {
+        if (!this.state.setupComplete) {
+            return { error: "Complete team setup first" };
+        }
+        this.ensureSeasonFinalized();
+        if (!this.state.seasonComplete) {
+            return { error: "Finish the current season before starting a new one" };
+        }
+        this.state.seasonYear += 1;
+        this.state.calendar = (0, track_catalog_1.defaultWecCalendarPayload)();
+        this.state.currentRound = 0;
+        this.state.weekendProgress = undefined;
+        this.state.seasonComplete = false;
+        this.state.seasonSummary = undefined;
+        this.lastCompletedRound = null;
+        this.preRoundAiRivalSeason = null;
+        this.preRoundDriverMarket = null;
+        this.state.aiRivalSeason = (0, ai_rival_season_1.initAiRivalSeason)(this.repoRoot, this.state.teamName, this.state.seasonYear);
+        (0, ai_rival_season_1.syncPlayerDriversToStandings)(this.state.aiRivalSeason, this.state.teamName, this.state.driverRoster ?? [], this.state.fleet ?? []);
+        this.regenerateDriverMarket();
+        return this.persist();
     }
     persist() {
         syncLegacyFields(this.state);
@@ -258,7 +335,7 @@ class MetaStateManager {
         }
         (0, ai_rival_season_1.syncPlayerDriversToStandings)(this.state.aiRivalSeason, this.state.teamName, this.state.driverRoster ?? [], this.state.fleet ?? []);
     }
-    resolveAiOffWeek(raceResults, eventFormat, scoring, completingRound) {
+    resolveAiOffWeek(raceResults, eventFormat, scoring, completingRound, sessionEntryRosters = {}) {
         this.ensureAiRivalSeason();
         const season = this.state.aiRivalSeason;
         if (raceResults?.length) {
@@ -269,12 +346,10 @@ class MetaStateManager {
                 scoring,
             });
             (0, ai_rival_season_1.resolveDriverChampionshipTick)(season, {
-                repoRoot: this.repoRoot,
                 raceResults,
                 scoring,
                 playerTeamName: this.state.teamName,
-                playerRoster: this.state.driverRoster ?? [],
-                playerFleet: this.state.fleet ?? [],
+                sessionEntryRosters,
             });
         }
         const refreshCount = this.state.driverMarketRefreshCount ?? 0;
@@ -464,7 +539,7 @@ class MetaStateManager {
         }
         return this.persist();
     }
-    completeRound(position, classId, raceResults) {
+    completeRound(position, classId, raceResults, sessionEntryRosters = {}) {
         const completingRound = this.state.currentRound;
         const event = this.state.calendar.find((e) => e.round === completingRound);
         if (!event || event.completed)
@@ -490,7 +565,10 @@ class MetaStateManager {
         this.regenerateDriverMarket();
         this.preRoundAiRivalSeason = structuredClone(this.state.aiRivalSeason);
         this.preRoundDriverMarket = structuredClone(this.state.driverMarket ?? []);
-        this.resolveAiOffWeek(raceResults, event.format, scoring, completingRound);
+        this.resolveAiOffWeek(raceResults, event.format, scoring, completingRound, sessionEntryRosters);
+        if ((0, season_end_1.isSeasonCalendarComplete)(this.state.calendar)) {
+            this.finalizeSeason();
+        }
         return this.persist();
     }
     signSponsor(offerId) {

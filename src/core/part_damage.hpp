@@ -132,6 +132,13 @@ struct PartDamageRepairSpec {
 };
 
 PartDamageRepairSpec RepairSpecForPart(DamagePart part);
+/** True when any corner suspension is marked irreparable (terminal for race). */
+bool HasIrreparableSuspension(const PartDamageState &state);
+/** True after garage assessment — irreparable structural parts, no return to track. */
+bool HasTerminalStructuralDamage(const PartDamageState &state);
+/** Two corners on the same side or axle at 0% body+susp — car stops on track. */
+bool HasCatastrophicSameSideLoss(const PartDamageState &state,
+                                 double destroyedMaxHealth = 0.0);
 const char *LimpModeLabel(LimpMode mode);
 const char *TyreDeflationLabel(TyreDeflationState state);
 const char *HiddenFaultKindToken(HiddenFaultKind kind);

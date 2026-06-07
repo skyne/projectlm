@@ -141,12 +141,15 @@ function buildRaceForRound(repoRoot, meta, options = {}) {
         };
     })
         .filter((e) => e !== null);
-    const driverConfigPath = (0, driver_catalog_1.exportRuntimeDrivers)(repoRoot, {
+    const driverExportOptions = {
         playerTeamName: meta.teamName,
         playerRoster: teamRoster,
         playerEntries: playerDriverEntries,
         rosterOverrides: meta.aiRivalSeason?.rosterOverrides,
-    });
+    };
+    const allSessionRosters = (0, driver_catalog_1.buildSessionEntryRosters)(repoRoot, driverExportOptions);
+    const driverConfigPath = (0, driver_catalog_1.exportRuntimeDrivers)(repoRoot, driverExportOptions, allSessionRosters);
+    const sessionEntryRosters = (0, driver_catalog_1.rostersForCompetingEntries)(entries, allSessionRosters);
     const calendarEvent = track_catalog_1.WEC_2026_CALENDAR.find((e) => e.round === round.round) ?? null;
     const raceMonth = round.month ?? calendarEvent?.month ?? 6;
     const rngSeed = meta.seasonYear * 1000 + round.round;
@@ -196,6 +199,7 @@ function buildRaceForRound(repoRoot, meta, options = {}) {
         entries,
         playerEntryId: resolvedPlayerEntryId,
         managedEntryIds,
+        sessionEntryRosters,
         weatherContext: {
             trackId: round.trackId,
             month: raceMonth,

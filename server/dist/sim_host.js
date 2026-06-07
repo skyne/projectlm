@@ -42,9 +42,11 @@ const track_loader_1 = require("./game/track_loader");
 const catalog_1 = require("./game/catalog");
 const config_parser_1 = require("./config_parser");
 const pitbot_manager_1 = require("./game/pitbot/pitbot_manager");
+const race_classification_1 = require("./game/race_classification");
 const ai_stint_guide_1 = require("./llm/ai_stint_guide");
 const ai_rival_season_1 = require("./game/ai_rival_season");
 const mock_session_1 = require("./mock_session");
+const session_log_1 = require("./session_log");
 const weekend_sessions_1 = require("./game/weekend_sessions");
 const DEFAULT_RACE_CONFIG = "configs/race_config_web.txt";
 function resolveRepoRoot(explicit) {
@@ -88,9 +90,11 @@ class SimHost {
         this.pitBot = new pitbot_manager_1.PitBotManager();
         this.stintGuide = new ai_stint_guide_1.AiStintGuide();
         this.lastRaceComplete = null;
+        this.sessionEntryRosters = {};
         this.commandAttribution = new Map();
         this.repoRoot = resolveRepoRoot(options.repoRoot);
         this.meta = new meta_state_1.MetaStateManager(this.repoRoot);
+        this.sessionLog = new session_log_1.SessionLogWriter(this.repoRoot);
         const rel = options.raceConfigPath ?? DEFAULT_RACE_CONFIG;
         this.raceConfigPath = path.isAbsolute(rel)
             ? rel
@@ -179,6 +183,9 @@ class SimHost {
         const blocked = this.sessionStartBlockedReason();
         if (blocked)
             return blocked;
+        const seasonBlocked = this.meta.seasonStartBlockedReason();
+        if (seasonBlocked)
+            return seasonBlocked;
         this.sessionStartInProgress = true;
         try {
             if (this.inRaceSession) {
@@ -247,6 +254,14 @@ class SimHost {
         this.pitBot.reset();
         this.stintGuide.reset();
         this.lastRaceComplete = null;
+        this.sessionEntryRosters = built.sessionEntryRosters;
+        this.sessionLog.startSession({
+            trackName: built.trackName,
+            roundNumber: built.roundNumber,
+            weekendSessionType: built.sessionType,
+            raceFormat: built.raceFormat,
+            teamName: this.meta.getState().teamName,
+        });
         this.inRaceSession = true;
         this.paused = true;
         if (this.timeScale === 0)
@@ -312,7 +327,13 @@ class SimHost {
     }
     completeRound(position, classId, raceResults) {
         this.persistFleetCarConditions("race");
-        return this.meta.completeRound(position, classId, raceResults);
+        return this.meta.completeRound(position, classId, raceResults, this.sessionEntryRosters);
+    }
+    startNextSeason() {
+        return this.meta.startNextSeason();
+    }
+    finalizeSeasonIfReady() {
+        return this.meta.finalizeSeasonIfReady();
     }
     signSponsor(offerId) {
         return this.meta.signSponsor(offerId);
@@ -571,17 +592,17 @@ class SimHost {
             ? (0, adapters_1.normalizeEvent)(e)
             : e));
         if (events.length > 0) {
+            this.sessionLog.recordEvents(events);
             this.onEvents?.(events);
             if (events.some((e) => e.type === "RaceComplete")) {
-                this.onRaceComplete?.(raceTime, snapshots.map((s) => ({
-                    entryId: s.entryId,
-                    teamName: s.teamName,
-                    carNumber: s.carNumber,
-                    classId: s.classId,
-                    position: s.racePosition,
-                    bestLapTime: s.bestLapTime ?? 0,
-                    driverName: s.driverName,
-                })), this.getWeekendSessionType());
+                const lapLength = this.getTrackGeometry().lapLength ?? 0;
+                let finalSnaps = snapshots;
+                if (this.getWeekendSessionType() === "race") {
+                    finalSnaps = (0, race_classification_1.applyRaceClassification)(finalSnaps, lapLength);
+                }
+                const results = (0, race_classification_1.snapshotsToRaceResults)(finalSnaps);
+                const logEntry = this.sessionLog.finishSession(raceTime, results);
+                this.onRaceComplete?.(raceTime, results, this.getWeekendSessionType(), logEntry?.id);
                 this.paused = true;
             }
         }

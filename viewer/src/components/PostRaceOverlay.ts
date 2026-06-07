@@ -12,11 +12,16 @@ import {
   sessionLabel,
   sessionResultsTitle,
 } from "../utils/weekendSessions";
+import { isSeasonFinished } from "../utils/seasonState";
+import { resolveResultRetireReason } from "../utils/retireReason";
+import { isDevToolsEnabled } from "./SessionLogDevPanel";
 
 export interface PostRaceHandlers {
   onContinue: () => void;
   onContinueWeekend?: (nextSession: WeekendSessionType) => void;
+  onViewSeasonResults?: () => void;
   onRestart?: () => void;
+  onOpenSessionLog?: (sessionLogId: string) => void;
 }
 
 function escapeHtml(text: string): string {
@@ -70,13 +75,16 @@ export class PostRaceOverlay {
   private titleEl: HTMLElement;
   private badgeEl: HTMLElement;
   private playerSummaryEl: HTMLElement;
+  private fleetSummaryEl: HTMLElement;
   private financesEl: HTMLElement;
   private championshipEl: HTMLElement;
   private podiumEl: HTMLElement;
+  private devToolsEl: HTMLElement;
   private continueBtn: HTMLButtonElement;
   private weekendBtn: HTMLButtonElement;
   private handlers: PostRaceHandlers;
   private pendingNextSession: WeekendSessionType | null = null;
+  private pendingSeasonResults = false;
 
   constructor(container: HTMLElement, handlers: PostRaceHandlers) {
     this.handlers = handlers;
@@ -85,6 +93,7 @@ export class PostRaceOverlay {
     this.root.innerHTML = `
       <div class="post-race-card wec-results-card">
         <div class="post-race-chequer" aria-hidden="true"></div>
+        <div class="post-race-scroll">
         <div class="post-race-header">
           <div>
             <span class="post-race-badge mm-badge-wec">Session Complete</span>
@@ -96,7 +105,8 @@ export class PostRaceOverlay {
           </div>
         </div>
         <div class="post-race-podium"></div>
-        <p class="post-race-player-summary"></p>
+        <div class="post-race-fleet-summary"></div>
+        <p class="post-race-player-summary hidden"></p>
         <div class="post-race-finances"></div>
         <div class="post-race-championship hidden"></div>
         <div class="post-race-results-wrap">
@@ -112,6 +122,8 @@ export class PostRaceOverlay {
             <tbody></tbody>
           </table>
         </div>
+        </div>
+        <div class="post-race-dev-tools hidden"></div>
         <div class="post-race-actions">
           <button type="button" class="primary-btn btn-weekend-next hidden">Continue to Qualifying</button>
           <button type="button" class="primary-btn btn-continue">Continue Championship</button>
@@ -126,9 +138,11 @@ export class PostRaceOverlay {
     this.titleEl = this.root.querySelector(".post-race-title")!;
     this.badgeEl = this.root.querySelector(".post-race-badge")!;
     this.playerSummaryEl = this.root.querySelector(".post-race-player-summary")!;
+    this.fleetSummaryEl = this.root.querySelector(".post-race-fleet-summary")!;
     this.financesEl = this.root.querySelector(".post-race-finances")!;
     this.championshipEl = this.root.querySelector(".post-race-championship")!;
     this.podiumEl = this.root.querySelector(".post-race-podium")!;
+    this.devToolsEl = this.root.querySelector(".post-race-dev-tools")!;
     this.continueBtn = this.root.querySelector(".btn-continue")!;
     this.weekendBtn = this.root.querySelector(".btn-weekend-next")!;
 
@@ -158,6 +172,7 @@ export class PostRaceOverlay {
     playerEntryId: string,
     meta?: MetaStatePayload | null,
     activeSessionType?: WeekendSessionType,
+    managedEntryIds: string[] = [playerEntryId],
   ): void {
     const sessionType =
       payload.weekendSessionType ?? activeSessionType ?? "race";
@@ -166,6 +181,9 @@ export class PostRaceOverlay {
     const isRace = sessionType === "race";
     const isTiming = isQuali || isPractice;
     this.pendingNextSession = resolvePendingNextSession(payload, sessionType, meta);
+    this.pendingSeasonResults = Boolean(
+      isRace && !this.pendingNextSession && meta && isSeasonFinished(meta),
+    );
 
     this.badgeEl.textContent = sessionCompleteBadge(sessionType);
     this.titleEl.textContent = sessionResultsTitle(sessionType);
@@ -179,7 +197,11 @@ export class PostRaceOverlay {
     } else {
       this.weekendBtn.classList.add("hidden");
       this.continueBtn.classList.remove("hidden");
-      this.continueBtn.textContent = returnToHqButtonLabel(sessionType);
+      if (meta && isSeasonFinished(meta)) {
+        this.continueBtn.textContent = "View Season Results";
+      } else {
+        this.continueBtn.textContent = returnToHqButtonLabel(sessionType);
+      }
     }
 
     this.timeEl.textContent = formatRaceTime(payload.raceTime);
@@ -192,7 +214,11 @@ export class PostRaceOverlay {
           (a, b) => (a.bestLapTime ?? Infinity) - (b.bestLapTime ?? Infinity),
         )
       : [...payload.results].sort((a, b) => a.position - b.position);
+    const playerIds = new Set(
+      managedEntryIds.length ? managedEntryIds : [playerEntryId],
+    );
     const playerResult = sorted.find((r) => r.entryId === playerEntryId);
+    const playerResults = sorted.filter((r) => playerIds.has(r.entryId));
 
     for (const [index, result] of sorted.slice(0, 3).entries()) {
       const displayPos = isTiming ? index + 1 : result.position;
@@ -216,58 +242,41 @@ export class PostRaceOverlay {
     if (tableHead) {
       tableHead.innerHTML = isTiming
         ? `<th>Pos</th><th>#</th><th>Team</th><th>Class</th><th>Best lap</th>`
-        : `<th>Pos</th><th>#</th><th>Team</th><th>Class</th>`;
+        : `<th>Pos</th><th>#</th><th>Team</th><th>Class</th><th>Status</th>`;
     }
 
     for (const [index, result] of sorted.entries()) {
       const displayPos = isTiming ? index + 1 : result.position;
       const row = document.createElement("tr");
-      if (result.entryId === playerEntryId) row.className = "player-row";
+      if (playerIds.has(result.entryId)) row.className = "player-row";
       if (displayPos <= 3) row.classList.add("podium-row");
       const medal = podiumMedal(displayPos);
       const lapCell = isTiming
         ? `<td class="lap-time">${formatLapTime(result.bestLapTime ?? 0)}</td>`
+        : "";
+      const dnfReason = resolveResultRetireReason(result);
+      const statusCell = isRace
+        ? dnfReason
+          ? `<td><span class="status-tag status-retired" title="${escapeHtml(dnfReason)}">DNF</span> <span class="post-race-dnf-reason">${escapeHtml(dnfReason)}</span></td>`
+          : `<td></td>`
         : "";
       row.innerHTML = `
         <td>${medal ? `${medal} ` : ""}${displayPos}</td>
         <td class="car-num">${result.carNumber ? result.carNumber : "—"}</td>
         <td>${escapeHtml(result.teamName)}</td>
         <td><span class="class-badge class-${escapeHtml(result.classId)}">${escapeHtml(result.classId)}</span></td>
-        ${lapCell}
+        ${isTiming ? lapCell : statusCell}
       `;
       this.resultsBody.appendChild(row);
     }
 
-    if (playerResult) {
-      const displayPos = isTiming
-        ? sorted.findIndex((r) => r.entryId === playerResult.entryId) + 1
-        : playerResult.position;
-      const medal = podiumMedal(displayPos);
-      if (isRace) {
-        const pts = payload.finances?.championshipPoints ?? payload.championshipPoints ?? 0;
-        this.playerSummaryEl.innerHTML = `
-          Your finish: <strong>P${displayPos}</strong>${medal ? ` ${medal}` : ""}
-          · Class <span class="class-badge class-${escapeHtml(playerResult.classId)}">${escapeHtml(playerResult.classId)}</span>
-          · <strong>+${pts}</strong> championship pts
-        `;
-      } else if (isQuali) {
-        this.playerSummaryEl.innerHTML = `
-          ${escapeHtml(sessionLabel("qualifying"))} grid slot: <strong>P${displayPos}</strong>
-          · Best lap <strong>${formatLapTime(playerResult.bestLapTime ?? 0)}</strong>
-          · Class <span class="class-badge class-${escapeHtml(playerResult.classId)}">${escapeHtml(playerResult.classId)}</span>
-        `;
-      } else if (isPractice) {
-        this.playerSummaryEl.innerHTML = `
-          ${escapeHtml(sessionLabel("practice"))}: <strong>P${displayPos}</strong> by best lap
-          · Best lap <strong>${formatLapTime(playerResult.bestLapTime ?? 0)}</strong>
-          · Class <span class="class-badge class-${escapeHtml(playerResult.classId)}">${escapeHtml(playerResult.classId)}</span>
-        `;
-      } else {
-        this.playerSummaryEl.textContent = "";
-      }
-    } else {
-      this.playerSummaryEl.textContent = "";
-    }
+    this.renderFleetSummary(
+      playerResults,
+      sorted,
+      sessionType,
+      payload,
+      playerResult,
+    );
 
     const finances = isRace ? payload.finances : undefined;
     if (finances) {
@@ -303,6 +312,21 @@ export class PostRaceOverlay {
 
     this.renderChampionshipSummary(meta, payload, playerEntryId, isRace);
 
+    this.devToolsEl.replaceChildren();
+    if (isDevToolsEnabled() && payload.sessionLogId) {
+      this.devToolsEl.classList.remove("hidden");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "secondary-btn btn-session-log-dev";
+      btn.textContent = "View session log (developer)";
+      btn.addEventListener("click", () => {
+        this.handlers.onOpenSessionLog?.(payload.sessionLogId!);
+      });
+      this.devToolsEl.appendChild(btn);
+    } else {
+      this.devToolsEl.classList.add("hidden");
+    }
+
     this.root.classList.remove("hidden");
   }
 
@@ -312,6 +336,7 @@ export class PostRaceOverlay {
     if (!panel) return;
 
     this.updateOffWeekNarrative(panel, meta.aiRivalSeason);
+    this.refreshContinueButton(meta);
 
     const driverBlock = panel.querySelector(".post-race-driver-pts");
     if (driverBlock instanceof HTMLElement) {
@@ -328,6 +353,118 @@ export class PostRaceOverlay {
         driverBlock.classList.remove("hidden");
       }
     }
+  }
+
+  private renderFleetSummary(
+    playerResults: RaceCompletePayload["results"],
+    sorted: RaceCompletePayload["results"],
+    sessionType: WeekendSessionType,
+    payload: RaceCompletePayload,
+    playerResult: RaceCompletePayload["results"][number] | undefined,
+  ): void {
+    this.fleetSummaryEl.replaceChildren();
+    this.playerSummaryEl.classList.add("hidden");
+    this.playerSummaryEl.textContent = "";
+
+    if (!playerResults.length) {
+      this.fleetSummaryEl.classList.add("hidden");
+      return;
+    }
+
+    const isQuali = sessionType === "qualifying";
+    const isPractice = sessionType === "practice";
+    const isRace = sessionType === "race";
+    const isTiming = isQuali || isPractice;
+    const ordered = [...playerResults].sort((a, b) => {
+      const posA = isTiming
+        ? sorted.findIndex((r) => r.entryId === a.entryId) + 1
+        : a.position;
+      const posB = isTiming
+        ? sorted.findIndex((r) => r.entryId === b.entryId) + 1
+        : b.position;
+      return posA - posB;
+    });
+
+    const panel = document.createElement("div");
+    panel.className = "post-race-fleet-panel";
+    const title = document.createElement("h3");
+    title.className = "mm-section-title";
+    title.textContent = ordered.length > 1 ? "Your Team Results" : "Your Result";
+    panel.appendChild(title);
+
+    const list = document.createElement("ul");
+    list.className = "post-race-fleet-list";
+
+    for (const result of ordered) {
+      const displayPos = isTiming
+        ? sorted.findIndex((r) => r.entryId === result.entryId) + 1
+        : result.position;
+      const medal = podiumMedal(displayPos);
+      const carNum = formatCarNumber(result.carNumber);
+      const dnfReason = resolveResultRetireReason(result);
+      const li = document.createElement("li");
+      li.className = `post-race-fleet-car${dnfReason ? " is-dnf" : ""}`;
+
+      const numEl = document.createElement("span");
+      numEl.className = "fleet-car-num";
+      numEl.textContent = carNum || "—";
+
+      const classEl = document.createElement("span");
+      classEl.className = `class-badge class-${result.classId}`;
+      classEl.textContent = result.classId;
+
+      const posEl = document.createElement("span");
+      posEl.className = "fleet-car-pos";
+      posEl.textContent = `P${displayPos}${medal ? ` ${medal}` : ""}`;
+
+      li.append(numEl, classEl, posEl);
+
+      if (isTiming) {
+        const lapEl = document.createElement("span");
+        lapEl.className = "fleet-car-lap";
+        lapEl.textContent = formatLapTime(result.bestLapTime ?? 0);
+        li.appendChild(lapEl);
+      }
+
+      if (dnfReason) {
+        const tag = document.createElement("span");
+        tag.className = "status-tag status-retired";
+        tag.title = dnfReason;
+        tag.textContent = "DNF";
+        const reasonEl = document.createElement("span");
+        reasonEl.className = "fleet-dnf-reason";
+        reasonEl.textContent = dnfReason;
+        li.append(tag, reasonEl);
+      }
+
+      list.appendChild(li);
+    }
+
+    panel.appendChild(list);
+
+    if (isRace && playerResult) {
+      const pts = payload.finances?.championshipPoints ?? payload.championshipPoints ?? 0;
+      const footnote = document.createElement("p");
+      footnote.className = "post-race-fleet-footnote";
+      footnote.innerHTML =
+        pts > 0
+          ? `Best finish scores <strong>+${pts}</strong> championship pts`
+          : "No championship points scored this round";
+      panel.appendChild(footnote);
+    } else if (isQuali) {
+      const footnote = document.createElement("p");
+      footnote.className = "post-race-fleet-footnote";
+      footnote.textContent = `${sessionLabel("qualifying")} grid positions above.`;
+      panel.appendChild(footnote);
+    } else if (isPractice) {
+      const footnote = document.createElement("p");
+      footnote.className = "post-race-fleet-footnote";
+      footnote.textContent = `${sessionLabel("practice")} order by best lap.`;
+      panel.appendChild(footnote);
+    }
+
+    this.fleetSummaryEl.appendChild(panel);
+    this.fleetSummaryEl.classList.remove("hidden");
   }
 
   private renderChampionshipSummary(
@@ -450,6 +587,17 @@ export class PostRaceOverlay {
 
   hide(): void {
     this.root.classList.add("hidden");
+    this.pendingSeasonResults = false;
+  }
+
+  refreshContinueButton(meta: MetaStatePayload): void {
+    if (this.pendingNextSession) return;
+    this.pendingSeasonResults = Boolean(meta && isSeasonFinished(meta));
+    if (isSeasonFinished(meta)) {
+      this.continueBtn.textContent = "View Season Results";
+    } else if (!this.pendingNextSession) {
+      this.continueBtn.textContent = "Back to Headquarters";
+    }
   }
 
   isVisible(): boolean {

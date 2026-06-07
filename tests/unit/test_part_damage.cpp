@@ -86,3 +86,73 @@ TEST_CASE("Pit repair restores engine part health", "[unit][damage]") {
   REQUIRE(RepairPartToken(state, "engine", profiles));
   REQUIRE(PartHealth(state, DamagePart::Engine) > 40.0);
 }
+
+TEST_CASE("Irreparable suspension is terminal structural damage", "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  state.irreparable[DamagePartIndex(DamagePart::SuspFR)] = true;
+  REQUIRE(HasIrreparableSuspension(state));
+  REQUIRE(HasTerminalStructuralDamage(state));
+}
+
+TEST_CASE("Catastrophic same-side loss stops the car on track", "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  TyreDeflationStateArr tyres;
+  state.health[DamagePartIndex(DamagePart::BodyFR)] = 0.0;
+  state.health[DamagePartIndex(DamagePart::BodyRR)] = 0.0;
+  state.health[DamagePartIndex(DamagePart::SuspFR)] = 0.0;
+  state.health[DamagePartIndex(DamagePart::SuspRR)] = 0.0;
+  state.irreparable[DamagePartIndex(DamagePart::SuspFR)] = true;
+  state.irreparable[DamagePartIndex(DamagePart::SuspRR)] = true;
+  REQUIRE(HasCatastrophicSameSideLoss(state));
+  REQUIRE(EvaluateLimpMode(state, CarConfig{}, tyres, 0.0) == LimpMode::Immobilized);
+}
+
+TEST_CASE("Catastrophic front or rear axle loss stops the car on track",
+          "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  state.health[DamagePartIndex(DamagePart::BodyFL)] = 0.0;
+  state.health[DamagePartIndex(DamagePart::BodyFR)] = 0.0;
+  state.health[DamagePartIndex(DamagePart::SuspFL)] = 0.0;
+  state.health[DamagePartIndex(DamagePart::SuspFR)] = 0.0;
+  REQUIRE(HasCatastrophicSameSideLoss(state));
+
+  InitPartDamageState(state);
+  state.health[DamagePartIndex(DamagePart::BodyRL)] = 0.0;
+  state.health[DamagePartIndex(DamagePart::BodyRR)] = 0.0;
+  state.health[DamagePartIndex(DamagePart::SuspRL)] = 0.0;
+  state.health[DamagePartIndex(DamagePart::SuspRR)] = 0.0;
+  REQUIRE(HasCatastrophicSameSideLoss(state));
+}
+
+TEST_CASE("Low but non-zero corner damage can still limp", "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  TyreDeflationStateArr tyres;
+  state.health[DamagePartIndex(DamagePart::BodyFR)] = 3.0;
+  state.health[DamagePartIndex(DamagePart::BodyRR)] = 2.0;
+  state.health[DamagePartIndex(DamagePart::SuspFR)] = 4.0;
+  state.health[DamagePartIndex(DamagePart::SuspRR)] = 1.0;
+  state.irreparable[DamagePartIndex(DamagePart::SuspFR)] = true;
+  state.irreparable[DamagePartIndex(DamagePart::SuspRR)] = true;
+  REQUIRE_FALSE(HasCatastrophicSameSideLoss(state));
+  const LimpMode limp = EvaluateLimpMode(state, CarConfig{}, tyres, 0.0);
+  REQUIRE((limp == LimpMode::BarelyDriveable || limp == LimpMode::Immobilized));
+}
+
+TEST_CASE("Same-side severity uses left/right wheel pairs", "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  TyreDeflationStateArr tyres;
+  ApplyPartDamageHit(state, DamagePart::BodyFR, 100.0, {6, 20, 0, 1});
+  ApplyPartDamageHit(state, DamagePart::SuspRR, 100.0, {55, 40, 15, 1});
+  const double rightSide = ComputeStructuralSeverity(state, tyres);
+  InitPartDamageState(state);
+  ApplyPartDamageHit(state, DamagePart::BodyFL, 100.0, {6, 20, 0, 1});
+  ApplyPartDamageHit(state, DamagePart::SuspRL, 100.0, {55, 40, 15, 1});
+  const double leftSide = ComputeStructuralSeverity(state, tyres);
+  REQUIRE(rightSide >= 55.0);
+  REQUIRE(leftSide >= 55.0);
+}

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const ws_1 = require("ws");
+const http_1 = require("http");
 const client_sessions_1 = require("./client_sessions");
 const economy_1 = require("./game/economy");
 const weekend_sessions_1 = require("./game/weekend_sessions");
@@ -8,6 +9,7 @@ const engineer_service_1 = require("./llm/engineer_service");
 const garage_engineer_service_1 = require("./llm/garage_engineer_service");
 const sim_host_1 = require("./sim_host");
 const ws_protocol_1 = require("./ws_protocol");
+const session_log_1 = require("./session_log");
 const PORT = Number(process.env.PORT ?? 8765);
 function broadcast(clients, data) {
     const text = JSON.stringify(data);
@@ -29,6 +31,45 @@ function sendForbidden(ws) {
         code: "forbidden",
     })));
 }
+function startDevSessionLogApi(repoRoot, port) {
+    (0, http_1.createServer)((req, res) => {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+        if (req.method === "OPTIONS") {
+            res.writeHead(204);
+            res.end();
+            return;
+        }
+        if (req.method !== "GET") {
+            res.writeHead(405, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "method not allowed" }));
+            return;
+        }
+        const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
+        if (url.pathname === "/dev/session-logs") {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ logs: (0, session_log_1.listSessionLogs)(repoRoot) }));
+            return;
+        }
+        const match = url.pathname.match(/^\/dev\/session-logs\/([^/]+)$/);
+        if (match) {
+            const log = (0, session_log_1.readSessionLog)(repoRoot, decodeURIComponent(match[1]));
+            if (!log) {
+                res.writeHead(404, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "log not found" }));
+                return;
+            }
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(log));
+            return;
+        }
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "not found" }));
+    }).listen(port, () => {
+        console.log(`[server] Dev session log API http://127.0.0.1:${port}/dev/session-logs`);
+    });
+}
 function main() {
     const host = new sim_host_1.SimHost();
     const engineer = new engineer_service_1.EngineerService();
@@ -47,14 +88,22 @@ function main() {
     }
     function sendBootstrap(ws) {
         const sessionInit = host.getSessionInit();
+        const meta = host.getMetaState();
         ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("session_init", sessionInit)));
-        if (sessionInit.raceActive && sessionInit.raceComplete) {
+        ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("meta_state", meta)));
+        let sessionActive = sessionInit.raceActive;
+        if (meta.seasonComplete && sessionInit.raceActive) {
+            host.endSession();
+            ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("session_init", host.getSessionInit())));
+            sessionActive = false;
+        }
+        else if (sessionInit.raceActive && sessionInit.raceComplete) {
             const lastComplete = host.getLastRaceComplete();
             if (lastComplete) {
                 ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("race_complete", lastComplete)));
             }
         }
-        if (sessionInit.raceActive) {
+        if (sessionActive) {
             const catchUp = {
                 raceTime: host.getRaceTime(),
                 snapshots: host.getSnapshots(),
@@ -62,7 +111,6 @@ function main() {
             };
             ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("tick", catchUp)));
         }
-        ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("meta_state", host.getMetaState())));
         ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("game_catalog", host.getGameCatalog())));
         void engineer.getStatus().then((status) => {
             ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("engineer_status", status)));
@@ -461,6 +509,25 @@ function main() {
                     ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("track_preview", payload)));
                 }
             }
+            else if (msg.type === "finalize_season") {
+                const result = host.finalizeSeasonIfReady();
+                if ("error" in result) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
+                }
+            }
+            else if (msg.type === "start_next_season") {
+                const result = host.startNextSeason();
+                if ("error" in result) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
+                    console.log("[server] New season started");
+                }
+            }
             else if (msg.type === "new_game") {
                 const meta = host.newGame();
                 broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", meta));
@@ -521,16 +588,19 @@ function main() {
     }, (events) => {
         const payload = { events };
         broadcast(clients, (0, ws_protocol_1.serverMessage)("events", payload));
-    }, (raceTime, results, weekendSessionType) => {
+    }, (raceTime, results, weekendSessionType, sessionLogId) => {
         const meta = host.getMetaState();
         const session = host.getSessionInit();
         const managedIds = session.managedEntryIds?.length
             ? session.managedEntryIds
             : [session.playerEntryId ?? meta.playerEntryId];
         const managedResults = results.filter((r) => managedIds.includes(r.entryId));
-        const playerResult = managedResults.length > 0
-            ? managedResults.reduce((best, r) => r.position < best.position ? r : best)
-            : undefined;
+        const classifiedManaged = managedResults.filter((r) => !r.retired);
+        const playerResult = classifiedManaged.length > 0
+            ? classifiedManaged.reduce((best, r) => r.position < best.position ? r : best)
+            : managedResults.length > 0
+                ? managedResults.reduce((best, r) => r.position < best.position ? r : best)
+                : undefined;
         const event = meta.calendar.find((e) => e.round === meta.currentRound);
         const scoring = event?.eventType !== "test" && event?.format !== "test";
         const isRaceSession = weekendSessionType === "race";
@@ -567,14 +637,22 @@ function main() {
             finances: isRaceSession ? finances : undefined,
             weekendSessionType,
             nextWeekendSession: nextSession,
+            sessionLogId,
         };
         host.setLastRaceComplete(payload);
-        broadcast(clients, (0, ws_protocol_1.serverMessage)("race_complete", payload));
         if (updatedMeta !== meta) {
             broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", updatedMeta));
         }
+        broadcast(clients, (0, ws_protocol_1.serverMessage)("race_complete", payload));
+        if (updatedMeta.seasonComplete) {
+            host.endSession();
+            broadcast(clients, (0, ws_protocol_1.serverMessage)("session_init", host.getSessionInit()));
+        }
         console.log(`[server] ${weekendSessionType} session complete`);
     });
+    if (process.env.DEV_TOOLS !== "0") {
+        startDevSessionLogApi(host.repoRoot, Number(process.env.DEV_HTTP_PORT ?? PORT + 1));
+    }
     process.on("SIGINT", () => {
         host.stop();
         wss.close();

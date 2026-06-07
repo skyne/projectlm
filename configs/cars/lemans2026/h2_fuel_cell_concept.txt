@@ -1,0 +1,28 @@
+# Hypercar H₂ fuel cell concept — stack + buffer e-drive (680 hp BoP)
+car_name=H2 Fuel Cell Concept
+engine_layout=V6
+fuel_type=Hydrogen
+energy_converter=FuelCell
+cylinders=6
+bore=0.080
+stroke=0.060
+max_rpm=12000
+peak_torque_nm=630
+peak_torque_rpm=10200
+base_vibration=0.2
+aspiration=NA
+drivetrain=FullEV
+generator_kw=420
+buffer_size=0.55
+
+chassis_type=LMHInHouse
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PullrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=HydrogenTank
+brake_system=APRacingPrototype
+transmission=SingleSpeedEDrive
+hybrid_system=None

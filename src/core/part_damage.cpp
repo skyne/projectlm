@@ -48,11 +48,44 @@ bool DiagonalPairDamaged(const double cornerSeverity[4]) {
 }
 
 bool SameSidePairDamaged(const double cornerSeverity[4]) {
-  const bool left = cornerSeverity[0] > 0.5 && cornerSeverity[1] > 0.5;
-  const bool right = cornerSeverity[2] > 0.5 && cornerSeverity[3] > 0.5;
+  const bool left = cornerSeverity[0] > 0.5 && cornerSeverity[2] > 0.5;
+  const bool right = cornerSeverity[1] > 0.5 && cornerSeverity[3] > 0.5;
   return left || right;
 }
+
+double CornerStructuralHealth(const PartDamageState &state, int wheelIdx) {
+  return std::min(PartHealth(state, BodyPartForWheel(wheelIdx)),
+                  PartHealth(state, SuspPartForWheel(wheelIdx)));
+}
 } // namespace
+
+bool HasCatastrophicSameSideLoss(const PartDamageState &state,
+                                 double destroyedMaxHealth) {
+  auto pairDestroyed = [&](int a, int b) {
+    return CornerStructuralHealth(state, a) <= destroyedMaxHealth &&
+           CornerStructuralHealth(state, b) <= destroyedMaxHealth;
+  };
+  // Left/right sides and complete front/rear axles — all undriveable at 0%.
+  return pairDestroyed(0, 2) || pairDestroyed(1, 3) || pairDestroyed(0, 1) ||
+         pairDestroyed(2, 3);
+}
+
+bool HasIrreparableSuspension(const PartDamageState &state) {
+  for (int w = 0; w < 4; ++w) {
+    if (state.irreparable[DamagePartIndex(SuspPartForWheel(w))])
+      return true;
+  }
+  return false;
+}
+
+bool HasTerminalStructuralDamage(const PartDamageState &state) {
+  if (HasIrreparableSuspension(state))
+    return true;
+  if (state.irreparable[DamagePartIndex(DamagePart::Engine)] ||
+      state.irreparable[DamagePartIndex(DamagePart::Gearbox)])
+    return true;
+  return false;
+}
 
 PartDamageState::PartDamageState() {
   InitPartDamageState(*this);
@@ -339,6 +372,9 @@ double ComputeStructuralSeverity(const PartDamageState &state,
 
 LimpMode EvaluateLimpMode(const PartDamageState &state, const CarConfig &car,
                           const TyreDeflationStateArr &tyres, double batteryMJ) {
+  if (HasCatastrophicSameSideLoss(state))
+    return LimpMode::Immobilized;
+
   const double structural = ComputeStructuralSeverity(state, tyres);
   const int irrepCorners = CountIrreparableCorners(state);
   if (structural >= 92.0 || irrepCorners >= 3)

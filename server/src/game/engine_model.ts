@@ -15,6 +15,7 @@ export const ASPIRATION_TYPES = [
 export const DRIVETRAIN_TYPES = [
   "Mechanical", "ParallelHybrid", "FrontAxleHybrid", "RangeExtender", "FullEV",
 ] as const;
+export const ENERGY_CONVERTER_TYPES = ["Combustion", "FuelCell"] as const;
 
 const LAYOUT_CYLINDERS: Record<string, number> = {
   I4: 4, I6: 6, V6: 6, V8: 8, V10: 10, V12: 12, Flat4: 4, Flat6: 6, Rotary: 2, LMP2Spec: 8,
@@ -55,6 +56,13 @@ export function engineMassKg(engine: EngineBuildPayload): number {
 }
 
 export function validateEngineBuild(engine: EngineBuildPayload): string | null {
+  const isFuelCell =
+    engine.fuel_type === "Hydrogen" && engine.energy_converter === "FuelCell";
+  if (isFuelCell) {
+    if (engine.drivetrain !== "FullEV") return "Fuel cell requires FullEV drivetrain";
+    if (!engine.generator_kw || engine.generator_kw < 200) return "Fuel cell stack kW out of range";
+    return null;
+  }
   if (!ENGINE_LAYOUTS.includes(engine.engine_layout as (typeof ENGINE_LAYOUTS)[number])) {
     return "Invalid engine layout";
   }

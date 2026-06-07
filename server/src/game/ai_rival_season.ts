@@ -4,8 +4,9 @@ import {
   driverStandingKey,
   ensureCatalogDriverId,
   loadLeMansDriverCatalog,
-  resolveCarDriverRoster,
+  sessionEntryKey,
   type DriverProfilePayload,
+  type SessionEntryRosters,
 } from "./driver_catalog";
 import {
   computeChampionshipPoints,
@@ -232,7 +233,7 @@ export function syncPlayerDriversToStandings(
 }
 
 function rosterKey(teamName: string, carNumber: string): string {
-  return `${teamName}#${carNumber}`;
+  return sessionEntryKey(teamName, carNumber);
 }
 
 function primaryCarNumber(repoRoot: string, teamName: string): string {
@@ -288,39 +289,13 @@ export function applyPlayerTeamRoundResult(
   team.racesScored += 1;
 }
 
-function rosterDriversForResult(
-  repoRoot: string,
+function sessionRosterForResult(
   result: RaceResultForSeason,
-  ctx: {
-    playerTeamName: string;
-    playerRoster: DriverProfilePayload[];
-    playerFleet: FleetCarPayload[];
-    rosterOverrides?: Record<string, DriverProfilePayload[]>;
-  },
+  sessionEntryRosters: SessionEntryRosters,
 ): DriverProfilePayload[] {
-  const key = rosterKey(result.teamName, result.carNumber);
-  if (ctx.rosterOverrides?.[key]?.length) {
-    return ctx.rosterOverrides[key]!.map((d) => ({ ...d }));
-  }
-
-  const playerKey = ctx.playerTeamName.trim().toLowerCase();
-  if (result.teamName.trim().toLowerCase() === playerKey) {
-    const car = ctx.playerFleet.find((c) => c.carNumber === result.carNumber);
-    if (car) {
-      return resolveCarDriverRoster(
-        ctx.playerRoster,
-        car.assignedDriverIds,
-      );
-    }
-    return ctx.playerRoster.map((d) => ({ ...d }));
-  }
-
-  const catalog = loadLeMansDriverCatalog(repoRoot);
-  return (
-    catalog.get(key)?.map((d) => ({
-      ...d,
-    })) ?? []
-  );
+  return sessionEntryRosters[rosterKey(result.teamName, result.carNumber)]?.map(
+    (d) => ({ ...d }),
+  ) ?? [];
 }
 
 function classBudgetBase(classId: string, factory: boolean): number {
@@ -596,12 +571,10 @@ export function resolveAiSeasonTick(
 export function resolveDriverChampionshipTick(
   season: AiRivalSeasonPayload,
   options: {
-    repoRoot: string;
     raceResults: RaceResultForSeason[];
     scoring: boolean;
     playerTeamName: string;
-    playerRoster: DriverProfilePayload[];
-    playerFleet: FleetCarPayload[];
+    sessionEntryRosters: SessionEntryRosters;
   },
 ): AiRivalSeasonPayload {
   if (!options.scoring || !options.raceResults.length) {
@@ -617,12 +590,7 @@ export function resolveDriverChampionshipTick(
     const pts = computeChampionshipPoints(pos);
     if (pts <= 0) continue;
 
-    const roster = rosterDriversForResult(options.repoRoot, result, {
-      playerTeamName: options.playerTeamName,
-      playerRoster: options.playerRoster,
-      playerFleet: options.playerFleet,
-      rosterOverrides: season.rosterOverrides,
-    });
+    const roster = sessionRosterForResult(result, options.sessionEntryRosters);
     if (!roster.length) continue;
 
     const isPlayer =
