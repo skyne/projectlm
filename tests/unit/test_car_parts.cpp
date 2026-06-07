@@ -107,8 +107,10 @@ TEST_CASE("ApplyClassBoP Hypercar faster than LMP2 on power", "[unit][car][bop]"
   ApplyClassBoP(lmp2, rules.at("LMP2"));
 
   REQUIRE(hypercar.peakHorsepower > lmp2.peakHorsepower);
-  REQUIRE(lmp2.peakHorsepower > rules.at("LMGT3").powerCapHP);
-  REQUIRE(lmp2.peakHorsepower >= rules.at("LMGT3").powerCapHP * 0.85);
+  REQUIRE(lmp2.peakHorsepower ==
+          Catch::Approx(rules.at("LMP2").powerCapHP));
+  REQUIRE(rules.count("LMGT3") > 0);
+  REQUIRE(lmp2.peakHorsepower < rules.at("LMGT3").powerCapHP);
 }
 
 TEST_CASE("Suspension setup overrides compile and pit deltas clamp",

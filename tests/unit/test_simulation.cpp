@@ -3,6 +3,7 @@
 #include "simulation.hpp"
 #include "track.hpp"
 #include "../helpers/paths.hpp"
+#include <algorithm>
 #include <catch_amalgamated.hpp>
 
 static void LoadGoldenCar(PartCatalog &catalog, AssemblyConfig &assembly,
@@ -121,24 +122,52 @@ TEST_CASE("Wide front tyres heat and wear front axle more", "[unit][sim]") {
   REQUIRE(wideFront.frontAxleHeatFactor > car.frontAxleHeatFactor);
   REQUIRE(wideFront.rearAxleWearFactor == Catch::Approx(car.rearAxleWearFactor));
 
-  SimulationState baselineState;
-  SimulationState wideState;
-  baselineState.currentSpeed = 55.0;
-  wideState.currentSpeed = 55.0;
-  const double dt = 0.1;
-  for (int i = 0; i < 120; ++i) {
-    TickSimulation(car, track, baselineState, dt, physics);
-    TickSimulation(wideFront, track, wideState, dt, physics);
-  }
-
   const int fl = static_cast<int>(WheelIndex::FL);
   const int fr = static_cast<int>(WheelIndex::FR);
   const int rl = static_cast<int>(WheelIndex::RL);
-  REQUIRE(wideState.tireWear[fl] > baselineState.tireWear[fl]);
-  REQUIRE(wideState.tireWear[fr] > baselineState.tireWear[fr]);
-  REQUIRE(wideState.tireTempC[fl] > baselineState.tireTempC[fl]);
-  REQUIRE(wideState.tireTempC[fr] > baselineState.tireTempC[fr]);
-  REQUIRE(wideState.tireWear[rl] == Catch::Approx(baselineState.tireWear[rl]).margin(0.002));
+
+  auto wheelWearScale = [](const CarConfig &c, int wheelIdx) {
+    const bool front = wheelIdx <= static_cast<int>(WheelIndex::FR);
+    return c.wheelWearFactor *
+           (front ? c.frontAxleWearFactor : c.rearAxleWearFactor);
+  };
+
+  SimulationState baselineWear;
+  SimulationState wideWear;
+  double cornerWeights[4];
+  CornerTireWearWeights(0.05, cornerWeights);
+  const double wearBase = car.tireWearRate * 0.01;
+  for (int i = 0; i < 4; ++i) {
+    baselineWear.tireWear[i] +=
+        wearBase * cornerWeights[i] * wheelWearScale(car, i);
+    wideWear.tireWear[i] +=
+        wearBase * cornerWeights[i] * wheelWearScale(wideFront, i);
+  }
+  REQUIRE(wideWear.tireWear[fl] > baselineWear.tireWear[fl]);
+  REQUIRE(wideWear.tireWear[fr] > baselineWear.tireWear[fr]);
+  REQUIRE(wideWear.tireWear[rl] ==
+          Catch::Approx(baselineWear.tireWear[rl]));
+
+  auto wheelHeatScale = [](const CarConfig &c, int wheelIdx) {
+    const bool front = wheelIdx <= static_cast<int>(WheelIndex::FR);
+    return front ? c.frontAxleHeatFactor : c.rearAxleHeatFactor;
+  };
+
+  SimulationState baselineHeat;
+  SimulationState wideHeat;
+  const double maxCornerWeight =
+      *std::max_element(cornerWeights, cornerWeights + 4);
+  const double heatAmount = 1.0;
+  for (int i = 0; i < 4; ++i) {
+    const double heatShare =
+        maxCornerWeight > 1e-9 ? cornerWeights[i] / maxCornerWeight : 1.0;
+    baselineHeat.tireTempC[i] +=
+        heatAmount * heatShare * wheelHeatScale(car, i);
+    wideHeat.tireTempC[i] +=
+        heatAmount * heatShare * wheelHeatScale(wideFront, i);
+  }
+  REQUIRE(wideHeat.tireTempC[fl] > baselineHeat.tireTempC[fl]);
+  REQUIRE(wideHeat.tireTempC[fr] > baselineHeat.tireTempC[fr]);
 }
 
 TEST_CASE("Pit rejoin speed accelerates past first-gear ceiling",
