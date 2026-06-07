@@ -213,6 +213,7 @@ const repoRoot = path.resolve(process.cwd(), "..");
     });
     (0, node_test_1.it)("marks player roster drivers in standings and scores them", () => {
         const playerDriver = {
+            id: "driver-test-alex",
             name: "Alex Test",
             nationality: "GB",
             tier: "Gold",
@@ -243,11 +244,11 @@ const repoRoot = path.resolve(process.cwd(), "..");
                 acquisition: "privateer",
                 build: { carName: "SkyTech 42" },
                 carConfigPath: "configs/runtime/test.txt",
-                assignedDriverIndices: [0],
+                assignedDriverIds: ["driver-test-alex"],
             },
         ];
         (0, ai_rival_season_1.syncPlayerDriversToStandings)(season, "SkyTech", [playerDriver], playerFleet);
-        const key = (0, ai_rival_season_1.driverIdentityKey)(playerDriver.name, playerDriver.nationality);
+        const key = playerDriver.id;
         const row = season.drivers.find((d) => d.driverKey === key);
         strict_1.default.ok(row?.isPlayerDriver);
         (0, ai_rival_season_1.resolveDriverChampionshipTick)(season, {

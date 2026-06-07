@@ -72,6 +72,7 @@ function randomWizardDriver(): DriverProfilePayload {
   const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
   const j = (b: number, s: number) => Math.round(Math.min(96, Math.max(55, b + (Math.random() - 0.5) * s)));
   const d: DriverProfilePayload = {
+    id: crypto.randomUUID(),
     name: `${pick(DRIVER_FIRST)} ${pick(DRIVER_LAST)}`,
     nationality: pick(DRIVER_NATS),
     tier: "Silver",
@@ -89,6 +90,7 @@ function randomWizardDriver(): DriverProfilePayload {
 function defaultWizardRoster(team: string): DriverProfilePayload[] {
   return [
     {
+      id: crypto.randomUUID(),
       name: `${team} Ace`, nationality: "GB", tier: "Gold",
       dryPace: 84, wetPace: 78, consistency: 82, overtaking: 80, defending: 78,
       trafficManagement: 80, rollingStart: 78, standingStart: 76, setupFeedback: 74,
@@ -96,6 +98,7 @@ function defaultWizardRoster(team: string): DriverProfilePayload[] {
       stamina: 80, maxStintHours: 3,
     },
     {
+      id: crypto.randomUUID(),
       name: `${team} Endurance`, nationality: "FR", tier: "Silver",
       dryPace: 78, wetPace: 74, consistency: 80, overtaking: 72, defending: 76,
       trafficManagement: 78, rollingStart: 74, standingStart: 72, setupFeedback: 70,
@@ -323,7 +326,10 @@ export class TeamCreationWizard {
         },
       );
     }
-    this.driverRoster = (draft.driverRoster ?? []).map((d) => ({ ...d }));
+    this.driverRoster = (draft.driverRoster ?? []).map((d) => ({
+      ...d,
+      id: d.id?.trim() || crypto.randomUUID(),
+    }));
     this.selectedDriver = 0;
   }
 

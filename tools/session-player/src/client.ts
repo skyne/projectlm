@@ -375,7 +375,7 @@ export class SessionPlayer {
     switch (msg.type) {
       case "session_init":
         this.state.sessionInit = msg.payload as SessionInitPayload;
-        if (!this.state.sessionInit?.raceComplete) {
+        if (!this.state.sessionInit?.raceActive) {
           this.state.raceComplete = null;
         }
         break;

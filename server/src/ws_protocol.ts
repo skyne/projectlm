@@ -218,6 +218,8 @@ export interface DriverSnapshotPayload {
 }
 
 export interface DriverProfilePayload {
+  /** Stable roster identity for player team drivers. */
+  id?: string;
   name: string;
   nationality: string;
   tier: string;
@@ -452,8 +454,8 @@ export interface FleetCarPayload {
   carConfigPath: string;
   /** Per-track session setup sheets for this car (keyed by trackId). */
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
-  /** Indices into meta.driverRoster assigned to this car for race stints. */
-  assignedDriverIndices?: number[];
+  /** Driver roster ids assigned to this car for race stints (exclusive per driver). */
+  assignedDriverIds?: string[];
 }
 
 export interface CarPlatformPayload {

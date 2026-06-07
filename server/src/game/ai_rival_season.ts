@@ -1,5 +1,8 @@
 import type { DriverMarketListingPayload } from "../ws_protocol";
 import {
+  buildDriverContractMap,
+  driverStandingKey,
+  ensureCatalogDriverId,
   loadLeMansDriverCatalog,
   resolveCarDriverRoster,
   type DriverProfilePayload,
@@ -137,7 +140,7 @@ function upsertDriverStanding(
   classId: string,
   isPlayerDriver = false,
 ): DriverChampionshipPayload {
-  const key = driverIdentityKey(profile.name, profile.nationality);
+  const key = driverStandingKey(profile);
   let row = season.drivers.find((d) => d.driverKey === key);
   if (!row) {
     row = {
@@ -175,7 +178,7 @@ export function initDriverStandings(
     if (entry.teamName.trim().toLowerCase() === playerKey) continue;
     const roster = catalog.get(`${entry.teamName}#${entry.carNumber}`) ?? [];
     for (const profile of roster) {
-      const key = driverIdentityKey(profile.name, profile.nationality);
+      const key = driverStandingKey(ensureCatalogDriverId(profile));
       if (byKey.has(key)) continue;
       byKey.set(key, {
         driverKey: key,
@@ -192,7 +195,7 @@ export function initDriverStandings(
 
   const primaryClass = playerFleet[0]?.classId ?? "Hypercar";
   for (const profile of playerRoster) {
-    const key = driverIdentityKey(profile.name, profile.nationality);
+    const key = driverStandingKey(profile);
     byKey.set(key, {
       driverKey: key,
       name: profile.name,
@@ -250,12 +253,13 @@ function mergeRosterOverride(
   const key = rosterKey(teamName, carNumber);
   const catalog = loadLeMansDriverCatalog(repoRoot);
   const base = season.rosterOverrides[key] ?? catalog.get(key) ?? [];
-  const keyId = driverIdentityKey(driver.name, driver.nationality);
-  if (base.some((d) => driverIdentityKey(d.name, d.nationality) === keyId)) {
+  const signed = ensureCatalogDriverId(driver);
+  const driverId = signed.id!;
+  if (base.some((d) => ensureCatalogDriverId(d).id === driverId)) {
     season.rosterOverrides[key] = base.map((d) => ({ ...d }));
     return;
   }
-  let roster = [...base.map((d) => ({ ...d })), { ...driver }];
+  let roster = [...base.map((d) => ({ ...d })), { ...signed }];
   if (roster.length > 3) roster = roster.slice(-3);
   season.rosterOverrides[key] = roster;
 }
@@ -305,7 +309,7 @@ function rosterDriversForResult(
     if (car) {
       return resolveCarDriverRoster(
         ctx.playerRoster,
-        car.assignedDriverIndices,
+        car.assignedDriverIds,
       );
     }
     return ctx.playerRoster.map((d) => ({ ...d }));
@@ -683,6 +687,12 @@ export function resolveAiDriverMarketBids(
   const rnd = seeded(seed);
   const signedIds: string[] = [];
   const teamsByBudget = [...season.teams].sort((a, b) => b.budget - a.budget);
+  const playerTeam =
+    season.teams.find((t) => t.isPlayerTeam)?.teamName ?? "";
+  const contracts = buildDriverContractMap(repoRoot, {
+    playerTeamName: playerTeam,
+    rosterOverrides: season.rosterOverrides,
+  });
 
   const candidates = market.filter(
     (l) => l.source === "wec_active" || l.source === "prospect",
@@ -693,12 +703,21 @@ export function resolveAiDriverMarketBids(
     if (team.budget < 500_000) continue;
     if (rnd() > 0.35 + team.form * 0.05) continue;
 
-    const pool = candidates.filter(
-      (l) =>
-        !signedIds.includes(l.id) &&
-        (l.contractedTeam?.toLowerCase() === team.teamName.toLowerCase() ||
-          (l.source === "prospect" && team.budget > 15_000_000)),
-    );
+    const pool = candidates.filter((l) => {
+      if (signedIds.includes(l.id)) return false;
+      const driverId = ensureCatalogDriverId(l.driver).id!;
+      const holder = contracts.get(driverId);
+      if (l.source === "prospect") {
+        if (team.budget <= 15_000_000) return false;
+        return (
+          !holder || holder.toLowerCase() === team.teamName.toLowerCase()
+        );
+      }
+      return (
+        l.contractedTeam?.toLowerCase() === team.teamName.toLowerCase() &&
+        (!holder || holder.toLowerCase() === team.teamName.toLowerCase())
+      );
+    });
     if (pool.length === 0) continue;
 
     const pick = pool[Math.floor(rnd() * pool.length)]!;
@@ -720,7 +739,7 @@ export function resolveAiDriverMarketBids(
       season,
       signingTeam,
       carNumber,
-      pick.driver,
+      ensureCatalogDriverId(pick.driver),
     );
 
     pushOffWeekEvent(season, {

@@ -130,7 +130,7 @@ function buildRaceForRound(repoRoot, meta, options = {}) {
         const car = fleetById.get(carId);
         if (!car)
             return null;
-        const roster = (0, driver_catalog_1.resolveCarDriverRoster)(teamRoster, car.assignedDriverIndices);
+        const roster = (0, driver_catalog_1.resolveCarDriverRoster)(teamRoster, car.assignedDriverIds);
         if (!roster.length)
             return null;
         return {
@@ -141,6 +141,8 @@ function buildRaceForRound(repoRoot, meta, options = {}) {
     })
         .filter((e) => e !== null);
     const driverConfigPath = (0, driver_catalog_1.exportRuntimeDrivers)(repoRoot, {
+        playerTeamName: meta.teamName,
+        playerRoster: teamRoster,
         playerEntries: playerDriverEntries,
         rosterOverrides: meta.aiRivalSeason?.rosterOverrides,
     });

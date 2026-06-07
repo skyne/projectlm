@@ -20,7 +20,9 @@ import {
   defaultSuspensionForClass,
   loadGameCatalog,
 } from "./catalog";
-import { allDriverIndices } from "./driver_catalog";
+import {
+  migrateDriverAssignments,
+} from "./driver_catalog";
 import { normalizeCarBuild } from "./chassis_setup";
 import type { CarPlatform } from "./car_marketplace";
 import { STARTING_BUDGET } from "./economy";
@@ -363,21 +365,16 @@ export function createFleetCar(
 
 export function migrateLegacyMeta(state: MetaStatePayload): MetaStatePayload {
   const withSponsors = { ...state, sponsors: state.sponsors ?? [] };
+  const roster = withSponsors.driverRoster ?? [];
 
   if (withSponsors.fleet && withSponsors.fleet.length > 0) {
-    const teamRoster = withSponsors.driverRoster ?? [];
-    const fleet = withSponsors.fleet.map((car) => {
-      if (car.assignedDriverIndices !== undefined) return car;
-      return {
-        ...car,
-        assignedDriverIndices:
-          teamRoster.length > 0
-            ? allDriverIndices(teamRoster.length)
-            : undefined,
-      };
-    });
+    const { roster: migratedRoster, fleet } = migrateDriverAssignments(
+      roster,
+      withSponsors.fleet,
+    );
     return {
       ...withSponsors,
+      driverRoster: migratedRoster,
       activeCarId: withSponsors.activeCarId ?? fleet[0].id,
       fleet,
     };

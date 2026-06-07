@@ -39,10 +39,14 @@ import {
   type WeekendSessionType,
 } from "./game/weekend_sessions";
 import {
-  allDriverIndices,
-  sanitizeAssignedIndices,
+  assignUnassignedDriversToCars,
+  defaultDriverAssignments,
+  ensureCatalogDriverId,
+  ensureDriverIds,
+  sanitizeAssignedDriverIds,
   validateCustomDriver,
   validateDriverStats,
+  validateExclusiveDriverAssignments,
   inferTier,
   type DriverProfilePayload,
 } from "./game/driver_catalog";
@@ -52,6 +56,7 @@ import {
   findMarketListing,
   marketSeedForRound,
   MAX_DRIVER_ROSTER,
+  validateDriverMarketSigning,
 } from "./game/driver_market";
 import {
   applyPlayerTeamRoundResult,
@@ -391,6 +396,7 @@ export class MetaStateManager {
       seed,
       playerTeamName: this.state.teamName,
       existingRoster: this.state.driverRoster ?? [],
+      rosterOverrides: this.state.aiRivalSeason?.rosterOverrides,
     });
     this.state.driverMarketRound = this.state.currentRound;
   }
@@ -701,10 +707,13 @@ export class MetaStateManager {
     this.state.activeCarId = firstCar.id;
     this.state.playerCarId = firstCar.id;
     this.state.playerEntryId = "entry-1";
-    this.state.driverRoster = payload.driverRoster.map((d) => ({ ...d }));
-    const driverIndices = allDriverIndices(this.state.driverRoster.length);
+    this.state.driverRoster = ensureDriverIds(payload.driverRoster.map((d) => ({ ...d })));
+    const assignments = defaultDriverAssignments(
+      this.state.driverRoster,
+      firstCars,
+    );
     for (const car of firstCars) {
-      car.assignedDriverIndices = [...driverIndices];
+      car.assignedDriverIds = assignments[car.id] ?? [];
     }
     this.state.setupComplete = true;
     this.state.teamCreationDraft = null;
@@ -797,9 +806,22 @@ export class MetaStateManager {
     this.state.fleet = [...(this.state.fleet ?? []), ...cars];
     if (!this.state.activeCarId) this.state.activeCarId = cars[0].id;
 
-    const driverIndices = allDriverIndices(this.state.driverRoster?.length ?? 0);
+    const driverUpdates = assignUnassignedDriversToCars(
+      this.state.driverRoster ?? [],
+      this.state.fleet ?? [],
+      cars.map((c) => c.id),
+    );
     for (const car of cars) {
-      car.assignedDriverIndices = [...driverIndices];
+      const extra = driverUpdates[car.id];
+      if (extra?.length) {
+        car.assignedDriverIds = [
+          ...sanitizeAssignedDriverIds(car.assignedDriverIds, this.state.driverRoster ?? []),
+          ...extra,
+        ];
+      } else {
+        car.assignedDriverIds =
+          sanitizeAssignedDriverIds(car.assignedDriverIds, this.state.driverRoster ?? []);
+      }
     }
 
     const templates = platformTemplateMap(this.repoRoot);
@@ -911,7 +933,7 @@ export class MetaStateManager {
 
   saveDriverRoster(
     roster: DriverProfilePayload[],
-    assignments?: Record<string, number[]>,
+    assignments?: Record<string, string[]>,
   ): MetaStatePayload | { error: string } {
     if (roster.length < 1) {
       return { error: "Roster must have at least one driver" };
@@ -920,30 +942,45 @@ export class MetaStateManager {
       const err = validateCustomDriver(d);
       if (err) return { error: err };
     }
-    this.state.driverRoster = roster.map((d) => ({ ...d }));
+    this.state.driverRoster = ensureDriverIds(roster.map((d) => ({ ...d })));
 
     if (assignments && this.state.fleet?.length) {
       for (const car of this.state.fleet) {
         if (!(car.id in assignments)) continue;
-        const sanitized = sanitizeAssignedIndices(
+        const sanitized = sanitizeAssignedDriverIds(
           assignments[car.id],
-          roster.length,
+          this.state.driverRoster,
         );
         if (sanitized.length < 1) {
           return {
             error: `Car #${car.carNumber} must have at least one assigned driver`,
           };
         }
-        car.assignedDriverIndices = sanitized;
+        car.assignedDriverIds = sanitized;
       }
+      const exclusiveErr = validateExclusiveDriverAssignments(
+        this.state.fleet,
+        this.state.driverRoster,
+      );
+      if (exclusiveErr) return { error: exclusiveErr };
     } else if (this.state.fleet?.length) {
       for (const car of this.state.fleet) {
-        car.assignedDriverIndices = sanitizeAssignedIndices(
-          car.assignedDriverIndices,
-          roster.length,
+        car.assignedDriverIds = sanitizeAssignedDriverIds(
+          car.assignedDriverIds,
+          this.state.driverRoster,
         );
-        if (!car.assignedDriverIndices.length) {
-          car.assignedDriverIndices = allDriverIndices(roster.length);
+      }
+      const exclusiveErr = validateExclusiveDriverAssignments(
+        this.state.fleet,
+        this.state.driverRoster,
+      );
+      if (exclusiveErr) {
+        const defaults = defaultDriverAssignments(
+          this.state.driverRoster,
+          this.state.fleet,
+        );
+        for (const car of this.state.fleet) {
+          car.assignedDriverIds = defaults[car.id] ?? car.assignedDriverIds ?? [];
         }
       }
     }
@@ -982,10 +1019,14 @@ export class MetaStateManager {
     if (roster.length >= MAX_DRIVER_ROSTER) {
       return { error: `Roster full (${MAX_DRIVER_ROSTER} drivers maximum)` };
     }
-    const nameKey = listing.driver.name.trim().toLowerCase();
-    if (roster.some((d) => d.name.trim().toLowerCase() === nameKey)) {
-      return { error: `${listing.driver.name} is already on your roster` };
-    }
+    const contractErr = validateDriverMarketSigning(
+      listing,
+      this.state.teamName,
+      roster,
+      this.repoRoot,
+      this.state.aiRivalSeason?.rosterOverrides,
+    );
+    if (contractErr) return { error: contractErr };
     if (this.state.budget < listing.signingFee) {
       return {
         error: `Insufficient budget (need $${listing.signingFee.toLocaleString()} signing fee)`,
@@ -996,20 +1037,21 @@ export class MetaStateManager {
     if (statErr) return { error: statErr };
 
     this.state.budget -= listing.signingFee;
-    roster.push({ ...listing.driver, tier: inferTier(listing.driver) });
-    this.state.driverRoster = roster;
+    const signed = ensureCatalogDriverId(listing.driver);
+    roster.push({
+      ...signed,
+      tier: inferTier(signed),
+    });
+    this.state.driverRoster = ensureDriverIds(roster);
     this.state.driverMarket = (this.state.driverMarket ?? []).filter(
       (l) => l.id !== listingId,
     );
 
-    const newIdx = roster.length - 1;
     for (const car of this.state.fleet ?? []) {
-      const indices = sanitizeAssignedIndices(
-        car.assignedDriverIndices,
-        roster.length,
+      car.assignedDriverIds = sanitizeAssignedDriverIds(
+        car.assignedDriverIds,
+        this.state.driverRoster,
       );
-      if (!indices.includes(newIdx)) indices.push(newIdx);
-      car.assignedDriverIndices = [...indices].sort((a, b) => a - b);
     }
 
     this.ensureAiRivalSeason();

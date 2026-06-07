@@ -218,6 +218,7 @@ describe("ai_rival_season", () => {
 
   it("marks player roster drivers in standings and scores them", () => {
     const playerDriver = {
+      id: "driver-test-alex",
       name: "Alex Test",
       nationality: "GB",
       tier: "Gold",
@@ -248,13 +249,13 @@ describe("ai_rival_season", () => {
         acquisition: "privateer",
         build: { carName: "SkyTech 42" },
         carConfigPath: "configs/runtime/test.txt",
-        assignedDriverIndices: [0],
+        assignedDriverIds: ["driver-test-alex"],
       },
     ] as FleetCarPayload[];
 
     syncPlayerDriversToStandings(season, "SkyTech", [playerDriver], playerFleet);
 
-    const key = driverIdentityKey(playerDriver.name, playerDriver.nationality);
+    const key = playerDriver.id!;
     const row = season.drivers.find((d) => d.driverKey === key);
     assert.ok(row?.isPlayerDriver);
 

@@ -1,17 +1,22 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.SETUP_CLASS_ORDER = void 0;
 exports.initCarState = initCarState;
 exports.releaseFromGarage = releaseFromGarage;
 exports.gridSetupCommands = gridSetupCommands;
 exports.tickPitBot = tickPitBot;
 exports.fmtLap = fmtLap;
+exports.teamResultsByClass = teamResultsByClass;
+exports.sortedTeamClasses = sortedTeamClasses;
 exports.classResults = classResults;
 const tyre_grip_1 = require("../../tyre_grip");
 const pit_planner_1 = require("./pit_planner");
 const WING_HYPER = 0.03;
 const WING_GT3 = 0.02;
+const WING_LMP2 = 0.025;
 const BIAS_HYPER = 0.01;
 const BIAS_GT3 = 0.01;
+const BIAS_LMP2 = 0.01;
 const COOLANT_CONSERVE_C = 100;
 const ENGINE_CONSERVE_HEALTH = 92;
 function isTimingSession(phase) {
@@ -20,6 +25,11 @@ function isTimingSession(phase) {
 function isHypercar(s) {
     return s.classId === "Hypercar";
 }
+function isLmp2(s) {
+    return s.classId === "LMP2";
+}
+/** Prototype / GT setup pit order within a multi-class team. */
+exports.SETUP_CLASS_ORDER = ["Hypercar", "LMP2", "LMGT3"];
 function driverMode(s, wet, tread, plan) {
     const coolant = s.coolantTempC ?? 70;
     const health = s.engineHealth ?? 100;
@@ -50,15 +60,23 @@ function hybridStrategy(s, wet, tread, phase) {
     return "hybrid_strategy=balanced";
 }
 function setupWing(s) {
-    return isHypercar(s) ? WING_HYPER : WING_GT3;
+    if (isHypercar(s))
+        return WING_HYPER;
+    if (isLmp2(s))
+        return WING_LMP2;
+    return WING_GT3;
 }
 function setupBias(s) {
-    return isHypercar(s) ? BIAS_HYPER : BIAS_GT3;
+    if (isHypercar(s))
+        return BIAS_HYPER;
+    if (isLmp2(s))
+        return BIAS_LMP2;
+    return BIAS_GT3;
 }
 function byEntryId(a, b) {
     return a.entryId.localeCompare(b.entryId);
 }
-/** Stagger setup pits within a team: hypercars first, then GT3. */
+/** Stagger setup pits: Hypercar → LMP2 → LMGT3, then by entry within class. */
 function canRunSetupPit(snap, allSnaps, carState, phase, st) {
     if (st.setupDone)
         return false;
@@ -69,23 +87,26 @@ function canRunSetupPit(snap, allSnaps, carState, phase, st) {
     const teamSnaps = allSnaps
         .filter((s) => s.teamName === snap.teamName)
         .sort(byEntryId);
-    const hypercars = teamSnaps.filter((s) => s.classId === "Hypercar");
-    const gt3s = teamSnaps.filter((s) => s.classId === "LMGT3");
-    if (snap.classId === "Hypercar") {
-        const idx = hypercars.findIndex((s) => s.entryId === snap.entryId);
-        if (idx <= 0)
-            return true;
-        const prev = hypercars[idx - 1];
-        return carState.get(prev.entryId)?.setupDone ?? false;
+    const classIdx = exports.SETUP_CLASS_ORDER.indexOf(snap.classId);
+    if (classIdx >= 0) {
+        for (let i = 0; i < classIdx; i++) {
+            const priorClass = exports.SETUP_CLASS_ORDER[i];
+            const priorCars = teamSnaps.filter((s) => s.classId === priorClass);
+            if (priorCars.length === 0)
+                continue;
+            const anyDone = priorCars.some((c) => carState.get(c.entryId)?.setupDone ?? false);
+            if (!anyDone)
+                return false;
+        }
     }
-    const anyHyperSetup = hypercars.some((h) => carState.get(h.entryId)?.setupDone);
-    if (hypercars.length > 0 && !anyHyperSetup)
-        return false;
-    const gt3Idx = gt3s.findIndex((s) => s.entryId === snap.entryId);
-    if (gt3Idx <= 0)
+    const sameClass = teamSnaps
+        .filter((s) => s.classId === snap.classId)
+        .sort(byEntryId);
+    const idx = sameClass.findIndex((s) => s.entryId === snap.entryId);
+    if (idx <= 0)
         return true;
-    const prevGt3 = gt3s[gt3Idx - 1];
-    return carState.get(prevGt3.entryId)?.setupDone ?? false;
+    const prev = sameClass[idx - 1];
+    return carState.get(prev.entryId)?.setupDone ?? false;
 }
 function initCarState(entryIds, wet = 0, options) {
     const m = new Map();
@@ -228,10 +249,46 @@ function fmtLap(sec) {
     const s = sec - m * 60;
     return m > 0 ? `${m}:${s.toFixed(3).padStart(6, "0")}` : `${s.toFixed(3)}s`;
 }
+function teamResultsByClass(snapshots, options = {}) {
+    const list = Array.isArray(snapshots) ? snapshots : [];
+    const entrySet = options.entryIds && options.entryIds.length > 0
+        ? new Set(options.entryIds)
+        : null;
+    const needle = options.teamNeedle?.trim() ?? "";
+    const ours = list.filter((s) => {
+        if (entrySet)
+            return entrySet.has(s.entryId);
+        if (needle)
+            return s.teamName.includes(needle);
+        return false;
+    });
+    const byClass = {};
+    for (const snap of ours) {
+        const bucket = byClass[snap.classId] ?? [];
+        bucket.push(snap);
+        byClass[snap.classId] = bucket;
+    }
+    return byClass;
+}
+function sortedTeamClasses(byClass) {
+    return Object.keys(byClass)
+        .filter((cls) => byClass[cls].length > 0)
+        .sort((a, b) => {
+        const ia = exports.SETUP_CLASS_ORDER.indexOf(a);
+        const ib = exports.SETUP_CLASS_ORDER.indexOf(b);
+        const ra = ia >= 0 ? ia : 99;
+        const rb = ib >= 0 ? ib : 99;
+        if (ra !== rb)
+            return ra - rb;
+        return a.localeCompare(b);
+    });
+}
+/** @deprecated Prefer teamResultsByClass — kept for callers expecting Hypercar/GT3 buckets. */
 function classResults(snapshots, teamNeedle) {
-    const ours = snapshots.filter((s) => s.teamName.includes(teamNeedle));
+    const byClass = teamResultsByClass(snapshots, { teamNeedle });
     return {
-        hypercar: ours.filter((s) => s.classId === "Hypercar"),
-        gt3: ours.filter((s) => s.classId === "LMGT3"),
+        hypercar: byClass.Hypercar ?? [],
+        lmp2: byClass.LMP2 ?? [],
+        gt3: byClass.LMGT3 ?? [],
     };
 }

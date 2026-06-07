@@ -58,7 +58,7 @@ function driverIdentityKey(name, nationality) {
     return `${name.trim().toLowerCase()}|${nationality.trim().toUpperCase()}`;
 }
 function upsertDriverStanding(season, profile, teamName, classId, isPlayerDriver = false) {
-    const key = driverIdentityKey(profile.name, profile.nationality);
+    const key = (0, driver_catalog_1.driverStandingKey)(profile);
     let row = season.drivers.find((d) => d.driverKey === key);
     if (!row) {
         row = {
@@ -92,7 +92,7 @@ function initDriverStandings(repoRoot, playerTeamName, playerRoster = [], player
             continue;
         const roster = catalog.get(`${entry.teamName}#${entry.carNumber}`) ?? [];
         for (const profile of roster) {
-            const key = driverIdentityKey(profile.name, profile.nationality);
+            const key = (0, driver_catalog_1.driverStandingKey)((0, driver_catalog_1.ensureCatalogDriverId)(profile));
             if (byKey.has(key))
                 continue;
             byKey.set(key, {
@@ -109,7 +109,7 @@ function initDriverStandings(repoRoot, playerTeamName, playerRoster = [], player
     }
     const primaryClass = playerFleet[0]?.classId ?? "Hypercar";
     for (const profile of playerRoster) {
-        const key = driverIdentityKey(profile.name, profile.nationality);
+        const key = (0, driver_catalog_1.driverStandingKey)(profile);
         byKey.set(key, {
             driverKey: key,
             name: profile.name,
@@ -145,12 +145,13 @@ function mergeRosterOverride(repoRoot, season, teamName, carNumber, driver) {
     const key = rosterKey(teamName, carNumber);
     const catalog = (0, driver_catalog_1.loadLeMansDriverCatalog)(repoRoot);
     const base = season.rosterOverrides[key] ?? catalog.get(key) ?? [];
-    const keyId = driverIdentityKey(driver.name, driver.nationality);
-    if (base.some((d) => driverIdentityKey(d.name, d.nationality) === keyId)) {
+    const signed = (0, driver_catalog_1.ensureCatalogDriverId)(driver);
+    const driverId = signed.id;
+    if (base.some((d) => (0, driver_catalog_1.ensureCatalogDriverId)(d).id === driverId)) {
         season.rosterOverrides[key] = base.map((d) => ({ ...d }));
         return;
     }
-    let roster = [...base.map((d) => ({ ...d })), { ...driver }];
+    let roster = [...base.map((d) => ({ ...d })), { ...signed }];
     if (roster.length > 3)
         roster = roster.slice(-3);
     season.rosterOverrides[key] = roster;
@@ -180,7 +181,7 @@ function rosterDriversForResult(repoRoot, result, ctx) {
     if (result.teamName.trim().toLowerCase() === playerKey) {
         const car = ctx.playerFleet.find((c) => c.carNumber === result.carNumber);
         if (car) {
-            return (0, driver_catalog_1.resolveCarDriverRoster)(ctx.playerRoster, car.assignedDriverIndices);
+            return (0, driver_catalog_1.resolveCarDriverRoster)(ctx.playerRoster, car.assignedDriverIds);
         }
         return ctx.playerRoster.map((d) => ({ ...d }));
     }
@@ -460,6 +461,11 @@ function resolveAiDriverMarketBids(repoRoot, season, market, seed) {
     const rnd = seeded(seed);
     const signedIds = [];
     const teamsByBudget = [...season.teams].sort((a, b) => b.budget - a.budget);
+    const playerTeam = season.teams.find((t) => t.isPlayerTeam)?.teamName ?? "";
+    const contracts = (0, driver_catalog_1.buildDriverContractMap)(repoRoot, {
+        playerTeamName: playerTeam,
+        rosterOverrides: season.rosterOverrides,
+    });
     const candidates = market.filter((l) => l.source === "wec_active" || l.source === "prospect");
     for (const team of teamsByBudget.slice(0, 8)) {
         if (signedIds.length >= 3)
@@ -468,9 +474,19 @@ function resolveAiDriverMarketBids(repoRoot, season, market, seed) {
             continue;
         if (rnd() > 0.35 + team.form * 0.05)
             continue;
-        const pool = candidates.filter((l) => !signedIds.includes(l.id) &&
-            (l.contractedTeam?.toLowerCase() === team.teamName.toLowerCase() ||
-                (l.source === "prospect" && team.budget > 15000000)));
+        const pool = candidates.filter((l) => {
+            if (signedIds.includes(l.id))
+                return false;
+            const driverId = (0, driver_catalog_1.ensureCatalogDriverId)(l.driver).id;
+            const holder = contracts.get(driverId);
+            if (l.source === "prospect") {
+                if (team.budget <= 15000000)
+                    return false;
+                return (!holder || holder.toLowerCase() === team.teamName.toLowerCase());
+            }
+            return (l.contractedTeam?.toLowerCase() === team.teamName.toLowerCase() &&
+                (!holder || holder.toLowerCase() === team.teamName.toLowerCase()));
+        });
         if (pool.length === 0)
             continue;
         const pick = pool[Math.floor(rnd() * pool.length)];
@@ -485,7 +501,7 @@ function resolveAiDriverMarketBids(repoRoot, season, market, seed) {
             ? pick.contractedTeam
             : team.teamName;
         const carNumber = primaryCarNumber(repoRoot, signingTeam);
-        mergeRosterOverride(repoRoot, season, signingTeam, carNumber, pick.driver);
+        mergeRosterOverride(repoRoot, season, signingTeam, carNumber, (0, driver_catalog_1.ensureCatalogDriverId)(pick.driver));
         pushOffWeekEvent(season, {
             type: "market",
             teamName: signingTeam,

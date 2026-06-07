@@ -35,8 +35,20 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DRIVER_STAT_DEFS = exports.DRIVER_POINT_POOL = void 0;
 exports.loadLeMansDriverCatalog = loadLeMansDriverCatalog;
-exports.allDriverIndices = allDriverIndices;
-exports.sanitizeAssignedIndices = sanitizeAssignedIndices;
+exports.generateDriverId = generateDriverId;
+exports.stableCatalogDriverId = stableCatalogDriverId;
+exports.ensureCatalogDriverId = ensureCatalogDriverId;
+exports.buildDriverContractMap = buildDriverContractMap;
+exports.driverContractTeam = driverContractTeam;
+exports.isDriverOnTeam = isDriverOnTeam;
+exports.filterRosterByContract = filterRosterByContract;
+exports.ensureDriverIds = ensureDriverIds;
+exports.driverStandingKey = driverStandingKey;
+exports.sanitizeAssignedDriverIds = sanitizeAssignedDriverIds;
+exports.validateExclusiveDriverAssignments = validateExclusiveDriverAssignments;
+exports.defaultDriverAssignments = defaultDriverAssignments;
+exports.assignUnassignedDriversToCars = assignUnassignedDriversToCars;
+exports.migrateDriverAssignments = migrateDriverAssignments;
 exports.resolveCarDriverRoster = resolveCarDriverRoster;
 exports.exportRuntimeDrivers = exportRuntimeDrivers;
 exports.computeDriverPointCost = computeDriverPointCost;
@@ -45,6 +57,7 @@ exports.validateDriverStats = validateDriverStats;
 exports.validateCustomDriver = validateCustomDriver;
 exports.generateRandomDriver = generateRandomDriver;
 exports.defaultPlayerRoster = defaultPlayerRoster;
+const crypto_1 = require("crypto");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 exports.DRIVER_POINT_POOL = 750;
@@ -128,7 +141,7 @@ function loadLeMansDriverCatalog(repoRoot) {
         else if (k === "driver" && key) {
             const d = parseDriverLine(v);
             if (d)
-                map.get(key).push(d);
+                map.get(key).push(ensureCatalogDriverId(d));
         }
     }
     return map;
@@ -142,26 +155,212 @@ function driverToLine(d) {
         d.stamina, d.maxStintHours,
     ].join("|")}`;
 }
-function allDriverIndices(rosterLength) {
-    return Array.from({ length: rosterLength }, (_, i) => i);
+function generateDriverId() {
+    return (0, crypto_1.randomUUID)();
 }
-function sanitizeAssignedIndices(indices, rosterLength) {
-    if (!indices?.length || rosterLength <= 0)
+function slugDriverPart(value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+}
+/** Deterministic id for real-world / catalog drivers (WEC grid, legends). */
+function stableCatalogDriverId(name, nationality) {
+    return `catalog-${slugDriverPart(name)}-${nationality.trim().toUpperCase()}`;
+}
+/** Assign a stable catalog id, or keep an existing roster id (custom drivers). */
+function ensureCatalogDriverId(driver) {
+    const existing = driver.id?.trim();
+    if (existing)
+        return { ...driver, id: existing };
+    return {
+        ...driver,
+        id: stableCatalogDriverId(driver.name, driver.nationality),
+    };
+}
+/** Resolve which team holds each driver id (player roster wins over overrides over catalog). */
+function buildDriverContractMap(repoRoot, ctx) {
+    const contracts = new Map();
+    const playerKey = ctx.playerTeamName.trim().toLowerCase();
+    const catalog = loadLeMansDriverCatalog(repoRoot);
+    for (const [key, roster] of catalog) {
+        const team = key.slice(0, key.lastIndexOf("#"));
+        if (team.toLowerCase() === playerKey)
+            continue;
+        for (const d of roster) {
+            const id = ensureCatalogDriverId(d).id;
+            if (!contracts.has(id))
+                contracts.set(id, team);
+        }
+    }
+    for (const [key, roster] of Object.entries(ctx.rosterOverrides ?? {})) {
+        const team = key.slice(0, key.lastIndexOf("#"));
+        for (const d of roster) {
+            contracts.set(ensureCatalogDriverId(d).id, team);
+        }
+    }
+    for (const d of ctx.playerRoster ?? []) {
+        const id = d.id?.trim();
+        if (id)
+            contracts.set(id, ctx.playerTeamName);
+    }
+    return contracts;
+}
+function driverContractTeam(driverId, contracts) {
+    return contracts.get(driverId.trim());
+}
+function isDriverOnTeam(driverId, teamName, contracts) {
+    const holder = driverContractTeam(driverId, contracts);
+    return holder?.toLowerCase() === teamName.trim().toLowerCase();
+}
+/** Filter a team entry roster to drivers contracted to that team. */
+function filterRosterByContract(roster, teamName, contracts) {
+    return roster.filter((d) => {
+        const id = ensureCatalogDriverId(d).id;
+        const holder = contracts.get(id);
+        return !holder || holder.toLowerCase() === teamName.trim().toLowerCase();
+    });
+}
+function ensureDriverIds(roster) {
+    return roster.map((d) => ({
+        ...d,
+        id: d.id?.trim() || generateDriverId(),
+    }));
+}
+/** Championship / dedup key — prefers stable roster id over name+nat. */
+function driverStandingKey(profile) {
+    const id = profile.id?.trim();
+    if (id)
+        return id;
+    return `${profile.name.trim().toLowerCase()}|${profile.nationality.trim().toUpperCase()}`;
+}
+const rosterIdSet = (roster) => new Set(roster
+    .map((d) => d.id?.trim())
+    .filter((id) => Boolean(id)));
+function sanitizeAssignedDriverIds(driverIds, roster) {
+    if (!driverIds?.length)
         return [];
+    const valid = rosterIdSet(roster);
     const seen = new Set();
     const out = [];
-    for (const i of indices) {
-        if (i >= 0 && i < rosterLength && !seen.has(i)) {
-            seen.add(i);
-            out.push(i);
-        }
+    for (const id of driverIds) {
+        const trimmed = id.trim();
+        if (!trimmed || !valid.has(trimmed) || seen.has(trimmed))
+            continue;
+        seen.add(trimmed);
+        out.push(trimmed);
     }
     return out;
 }
+/** Each driver id may appear on at most one car; each car needs ≥1 when fleet non-empty. */
+function validateExclusiveDriverAssignments(fleet, roster) {
+    if (!fleet.length)
+        return null;
+    const valid = rosterIdSet(roster);
+    const claimed = new Map();
+    for (const car of fleet) {
+        const ids = sanitizeAssignedDriverIds(car.assignedDriverIds, roster);
+        if (ids.length < 1) {
+            return `Car #${car.carNumber} must have at least one assigned driver`;
+        }
+        for (const driverId of ids) {
+            if (!valid.has(driverId)) {
+                return `Car #${car.carNumber} references an unknown driver`;
+            }
+            const otherCar = claimed.get(driverId);
+            if (otherCar && otherCar !== car.id) {
+                const driver = roster.find((d) => d.id === driverId);
+                return `${driver?.name ?? "A driver"} cannot be assigned to more than one car`;
+            }
+            claimed.set(driverId, car.id);
+        }
+    }
+    return null;
+}
+/** Default exclusive assignments: single car gets full pool; multi-car uses round-robin. */
+function defaultDriverAssignments(roster, fleet) {
+    const withIds = ensureDriverIds(roster);
+    const driverIds = withIds.map((d) => d.id);
+    const out = {};
+    if (!fleet.length || !driverIds.length)
+        return out;
+    if (fleet.length === 1) {
+        out[fleet[0].id] = [...driverIds];
+        return out;
+    }
+    for (const car of fleet)
+        out[car.id] = [];
+    let carIdx = 0;
+    for (const driverId of driverIds) {
+        out[fleet[carIdx].id].push(driverId);
+        carIdx = (carIdx + 1) % fleet.length;
+    }
+    return out;
+}
+/** Assign roster drivers not yet on any car to new fleet entries (round-robin). */
+function assignUnassignedDriversToCars(roster, fleet, targetCarIds) {
+    const withIds = ensureDriverIds(roster);
+    const claimed = new Set();
+    for (const car of fleet) {
+        for (const id of car.assignedDriverIds ?? [])
+            claimed.add(id);
+    }
+    const unassigned = withIds.map((d) => d.id).filter((id) => !claimed.has(id));
+    const updates = {};
+    let carIdx = 0;
+    for (const driverId of unassigned) {
+        const carId = targetCarIds[carIdx % targetCarIds.length];
+        updates[carId] = [...(updates[carId] ?? []), driverId];
+        carIdx += 1;
+    }
+    return updates;
+}
+/** Migrate index-based assignments and assign stable driver ids. */
+function migrateDriverAssignments(roster, fleet) {
+    const withIds = ensureDriverIds(roster);
+    const idByIndex = withIds.map((d) => d.id);
+    let migratedFleet = fleet.map((car) => {
+        const legacy = car;
+        let assignedDriverIds = sanitizeAssignedDriverIds(car.assignedDriverIds, withIds);
+        if (!assignedDriverIds.length && legacy.assignedDriverIndices?.length) {
+            assignedDriverIds = sanitizeAssignedDriverIds(legacy.assignedDriverIndices
+                .filter((i) => i >= 0 && i < idByIndex.length)
+                .map((i) => idByIndex[i]), withIds);
+        }
+        const { assignedDriverIndices: _legacy, ...rest } = legacy;
+        return { ...rest, assignedDriverIds };
+    });
+    const overlap = () => {
+        const seen = new Set();
+        for (const car of migratedFleet) {
+            for (const id of car.assignedDriverIds ?? []) {
+                if (seen.has(id))
+                    return true;
+                seen.add(id);
+            }
+        }
+        return false;
+    };
+    if (overlap() || migratedFleet.some((c) => !(c.assignedDriverIds?.length))) {
+        const defaults = defaultDriverAssignments(withIds, migratedFleet);
+        migratedFleet = migratedFleet.map((car) => ({
+            ...car,
+            assignedDriverIds: defaults[car.id] ?? [],
+        }));
+    }
+    return { roster: withIds, fleet: migratedFleet };
+}
 /** Resolve the driver line-up for a fleet car from team roster + per-car assignments. */
-function resolveCarDriverRoster(teamRoster, assignedIndices) {
-    if (assignedIndices !== undefined) {
-        return sanitizeAssignedIndices(assignedIndices, teamRoster.length).map((i) => ({ ...teamRoster[i] }));
+function resolveCarDriverRoster(teamRoster, assignedDriverIds) {
+    if (assignedDriverIds !== undefined) {
+        const byId = new Map(ensureDriverIds(teamRoster)
+            .filter((d) => d.id)
+            .map((d) => [d.id, d]));
+        return sanitizeAssignedDriverIds(assignedDriverIds, teamRoster).flatMap((id) => {
+            const driver = byId.get(id);
+            return driver ? [{ ...driver }] : [];
+        });
     }
     return teamRoster.map((d) => ({ ...d }));
 }
@@ -170,6 +369,13 @@ function exportRuntimeDrivers(repoRoot, options) {
     const abs = path.join(repoRoot, rel);
     const lemans = loadLeMansDriverCatalog(repoRoot);
     const overrides = options.rosterOverrides ?? {};
+    const contracts = buildDriverContractMap(repoRoot, {
+        playerTeamName: options.playerTeamName ?? "",
+        playerRoster: options.playerRoster ??
+            options.playerEntries?.flatMap((e) => e.roster) ??
+            [],
+        rosterOverrides: overrides,
+    });
     const lines = [
         "# Runtime driver roster — generated by server",
         "# Merges 2026 Le Mans entry list with player custom drivers",
@@ -182,8 +388,11 @@ function exportRuntimeDrivers(repoRoot, options) {
         const merged = overrides[key]?.length
             ? overrides[key].map((d) => ({ ...d }))
             : roster.map((d) => ({ ...d }));
+        const filtered = filterRosterByContract(merged, team, contracts);
+        if (!filtered.length)
+            continue;
         lines.push(`entry=${team},${num}`);
-        for (const d of merged)
+        for (const d of filtered)
             lines.push(driverToLine(d));
         lines.push("");
     }
@@ -251,6 +460,7 @@ function generateRandomDriver(seed = Date.now()) {
     const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
     const jitter = (base, spread) => Math.round(Math.min(96, Math.max(55, base + (rnd() - 0.5) * spread)));
     const driver = {
+        id: generateDriverId(),
         name: `${pick(FIRST_NAMES)} ${pick(LAST_NAMES)}`,
         nationality: pick(NATIONS),
         tier: "Silver",
@@ -277,6 +487,7 @@ function generateRandomDriver(seed = Date.now()) {
 function defaultPlayerRoster(teamName) {
     return [
         {
+            id: generateDriverId(),
             name: `${teamName} Ace`,
             nationality: "GB",
             tier: "Gold",
@@ -286,6 +497,7 @@ function defaultPlayerRoster(teamName) {
             stamina: 80, maxStintHours: 3.0,
         },
         {
+            id: generateDriverId(),
             name: `${teamName} Endurance`,
             nationality: "FR",
             tier: "Silver",

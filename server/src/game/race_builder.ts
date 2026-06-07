@@ -183,7 +183,7 @@ export function buildRaceForRound(
       if (!car) return null;
       const roster = resolveCarDriverRoster(
         teamRoster,
-        car.assignedDriverIndices,
+        car.assignedDriverIds,
       );
       if (!roster.length) return null;
       return {
@@ -195,6 +195,8 @@ export function buildRaceForRound(
     .filter((e): e is NonNullable<typeof e> => e !== null);
 
   const driverConfigPath = exportRuntimeDrivers(repoRoot, {
+    playerTeamName: meta.teamName,
+    playerRoster: teamRoster,
     playerEntries: playerDriverEntries,
     rosterOverrides: meta.aiRivalSeason?.rosterOverrides,
   });

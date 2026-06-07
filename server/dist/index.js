@@ -48,6 +48,12 @@ function main() {
     function sendBootstrap(ws) {
         const sessionInit = host.getSessionInit();
         ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("session_init", sessionInit)));
+        if (sessionInit.raceActive && sessionInit.raceComplete) {
+            const lastComplete = host.getLastRaceComplete();
+            if (lastComplete) {
+                ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("race_complete", lastComplete)));
+            }
+        }
         if (sessionInit.raceActive) {
             const catchUp = {
                 raceTime: host.getRaceTime(),
@@ -548,6 +554,7 @@ function main() {
             weekendSessionType,
             nextWeekendSession: nextSession,
         };
+        host.setLastRaceComplete(payload);
         broadcast(clients, (0, ws_protocol_1.serverMessage)("race_complete", payload));
         if (updatedMeta !== meta) {
             broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", updatedMeta));

@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import type {
   BuyCarPayload,
   CreateTeamPayload,
@@ -22,6 +23,7 @@ export interface TeamPresetOptions {
 export function defaultDriverRoster(teamName: string): DriverProfilePayload[] {
   return [
     {
+      id: randomUUID(),
       name: `${teamName} Ace`,
       nationality: "GB",
       tier: "Gold",
@@ -43,6 +45,7 @@ export function defaultDriverRoster(teamName: string): DriverProfilePayload[] {
       maxStintHours: 3,
     },
     {
+      id: randomUUID(),
       name: `${teamName} Endurance`,
       nationality: "FR",
       tier: "Silver",

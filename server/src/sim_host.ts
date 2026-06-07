@@ -16,7 +16,7 @@ import { PitBotManager } from "./game/pitbot/pitbot_manager";
 import { AiStintGuide } from "./llm/ai_stint_guide";
 import { rivalModifiersForTeam } from "./game/ai_rival_season";
 import { MockSimSession } from "./mock_session";
-import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload, WeekendSessionType } from "./ws_protocol";
+import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceCompletePayload, RaceControlPayload, SessionInitPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload, WeekendSessionType } from "./ws_protocol";
 import { collectQualifyingResults } from "./game/weekend_sessions";
 
 export interface SimSessionLike {
@@ -101,6 +101,7 @@ export class SimHost {
   private activeRoundNumber = 0;
   private readonly pitBot = new PitBotManager();
   private readonly stintGuide = new AiStintGuide();
+  private lastRaceComplete: RaceCompletePayload | null = null;
 
   private onTick?: (raceTime: number, snapshots: CarSnapshot[]) => void;
   private onEvents?: (events: SimEvent[]) => void;
@@ -166,6 +167,14 @@ export class SimHost {
         { entryId: "solo-1", teamName: "Solo Entry", carNumber: "1", classId: "solo" },
       ];
     }
+  }
+
+  getLastRaceComplete(): RaceCompletePayload | null {
+    return this.lastRaceComplete;
+  }
+
+  setLastRaceComplete(payload: RaceCompletePayload): void {
+    this.lastRaceComplete = payload;
   }
 
   getSessionInit(): SessionInitPayload {
@@ -289,6 +298,7 @@ export class SimHost {
     this.meta.clearLastCompletedRound();
     this.pitBot.reset();
     this.stintGuide.reset();
+    this.lastRaceComplete = null;
 
     this.inRaceSession = true;
     this.paused = true;
@@ -419,7 +429,7 @@ export class SimHost {
 
   saveDriverRoster(
     roster: import("./ws_protocol").DriverProfilePayload[],
-    assignments?: Record<string, number[]>,
+    assignments?: Record<string, string[]>,
   ): MetaStatePayload | { error: string } {
     return this.meta.saveDriverRoster(roster, assignments);
   }
@@ -557,6 +567,7 @@ export class SimHost {
     };
     this.pitBot.reset();
     this.stintGuide.reset();
+    this.lastRaceComplete = null;
     this.paused = true;
     if (this.timeScale === 0) this.timeScale = 1;
 
@@ -692,14 +703,17 @@ export class SimHost {
       this.session.tick(dt);
       remaining -= dt;
       pitBotAccumSec += dt;
-      if (pitBotAccumSec >= PITBOT_INTERVAL_SEC) {
+      if (
+        pitBotAccumSec >= PITBOT_INTERVAL_SEC &&
+        !this.session.isRaceComplete()
+      ) {
         pitBotAccumSec = 0;
         this.runPitBot();
       }
     }
     this.raceTime += frameDelta;
 
-    if (pitBotAccumSec > 0) {
+    if (pitBotAccumSec > 0 && !this.session.isRaceComplete()) {
       this.runPitBot();
     }
 

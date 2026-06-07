@@ -86,6 +86,7 @@ class SimHost {
         this.activeRoundNumber = 0;
         this.pitBot = new pitbot_manager_1.PitBotManager();
         this.stintGuide = new ai_stint_guide_1.AiStintGuide();
+        this.lastRaceComplete = null;
         this.commandAttribution = new Map();
         this.repoRoot = resolveRepoRoot(options.repoRoot);
         this.meta = new meta_state_1.MetaStateManager(this.repoRoot);
@@ -125,6 +126,12 @@ class SimHost {
                 { entryId: "solo-1", teamName: "Solo Entry", carNumber: "1", classId: "solo" },
             ];
         }
+    }
+    getLastRaceComplete() {
+        return this.lastRaceComplete;
+    }
+    setLastRaceComplete(payload) {
+        this.lastRaceComplete = payload;
     }
     getSessionInit() {
         const meta = this.getMetaState();
@@ -235,6 +242,7 @@ class SimHost {
         this.meta.clearLastCompletedRound();
         this.pitBot.reset();
         this.stintGuide.reset();
+        this.lastRaceComplete = null;
         this.inRaceSession = true;
         this.paused = true;
         if (this.timeScale === 0)
@@ -422,6 +430,7 @@ class SimHost {
         };
         this.pitBot.reset();
         this.stintGuide.reset();
+        this.lastRaceComplete = null;
         this.paused = true;
         if (this.timeScale === 0)
             this.timeScale = 1;
@@ -530,13 +539,14 @@ class SimHost {
             this.session.tick(dt);
             remaining -= dt;
             pitBotAccumSec += dt;
-            if (pitBotAccumSec >= PITBOT_INTERVAL_SEC) {
+            if (pitBotAccumSec >= PITBOT_INTERVAL_SEC &&
+                !this.session.isRaceComplete()) {
                 pitBotAccumSec = 0;
                 this.runPitBot();
             }
         }
         this.raceTime += frameDelta;
-        if (pitBotAccumSec > 0) {
+        if (pitBotAccumSec > 0 && !this.session.isRaceComplete()) {
             this.runPitBot();
         }
         const snapshots = this.enrichSnapshots(this.session.getSnapshots());

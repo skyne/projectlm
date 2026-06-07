@@ -291,6 +291,7 @@ class MetaStateManager {
             seed,
             playerTeamName: this.state.teamName,
             existingRoster: this.state.driverRoster ?? [],
+            rosterOverrides: this.state.aiRivalSeason?.rosterOverrides,
         });
         this.state.driverMarketRound = this.state.currentRound;
     }
@@ -539,10 +540,10 @@ class MetaStateManager {
         this.state.activeCarId = firstCar.id;
         this.state.playerCarId = firstCar.id;
         this.state.playerEntryId = "entry-1";
-        this.state.driverRoster = payload.driverRoster.map((d) => ({ ...d }));
-        const driverIndices = (0, driver_catalog_1.allDriverIndices)(this.state.driverRoster.length);
+        this.state.driverRoster = (0, driver_catalog_1.ensureDriverIds)(payload.driverRoster.map((d) => ({ ...d })));
+        const assignments = (0, driver_catalog_1.defaultDriverAssignments)(this.state.driverRoster, firstCars);
         for (const car of firstCars) {
-            car.assignedDriverIndices = [...driverIndices];
+            car.assignedDriverIds = assignments[car.id] ?? [];
         }
         this.state.setupComplete = true;
         this.state.teamCreationDraft = null;
@@ -613,9 +614,19 @@ class MetaStateManager {
         this.state.fleet = [...(this.state.fleet ?? []), ...cars];
         if (!this.state.activeCarId)
             this.state.activeCarId = cars[0].id;
-        const driverIndices = (0, driver_catalog_1.allDriverIndices)(this.state.driverRoster?.length ?? 0);
+        const driverUpdates = (0, driver_catalog_1.assignUnassignedDriversToCars)(this.state.driverRoster ?? [], this.state.fleet ?? [], cars.map((c) => c.id));
         for (const car of cars) {
-            car.assignedDriverIndices = [...driverIndices];
+            const extra = driverUpdates[car.id];
+            if (extra?.length) {
+                car.assignedDriverIds = [
+                    ...(0, driver_catalog_1.sanitizeAssignedDriverIds)(car.assignedDriverIds, this.state.driverRoster ?? []),
+                    ...extra,
+                ];
+            }
+            else {
+                car.assignedDriverIds =
+                    (0, driver_catalog_1.sanitizeAssignedDriverIds)(car.assignedDriverIds, this.state.driverRoster ?? []);
+            }
         }
         const templates = platformTemplateMap(this.repoRoot);
         for (const car of cars) {
@@ -702,25 +713,32 @@ class MetaStateManager {
             if (err)
                 return { error: err };
         }
-        this.state.driverRoster = roster.map((d) => ({ ...d }));
+        this.state.driverRoster = (0, driver_catalog_1.ensureDriverIds)(roster.map((d) => ({ ...d })));
         if (assignments && this.state.fleet?.length) {
             for (const car of this.state.fleet) {
                 if (!(car.id in assignments))
                     continue;
-                const sanitized = (0, driver_catalog_1.sanitizeAssignedIndices)(assignments[car.id], roster.length);
+                const sanitized = (0, driver_catalog_1.sanitizeAssignedDriverIds)(assignments[car.id], this.state.driverRoster);
                 if (sanitized.length < 1) {
                     return {
                         error: `Car #${car.carNumber} must have at least one assigned driver`,
                     };
                 }
-                car.assignedDriverIndices = sanitized;
+                car.assignedDriverIds = sanitized;
             }
+            const exclusiveErr = (0, driver_catalog_1.validateExclusiveDriverAssignments)(this.state.fleet, this.state.driverRoster);
+            if (exclusiveErr)
+                return { error: exclusiveErr };
         }
         else if (this.state.fleet?.length) {
             for (const car of this.state.fleet) {
-                car.assignedDriverIndices = (0, driver_catalog_1.sanitizeAssignedIndices)(car.assignedDriverIndices, roster.length);
-                if (!car.assignedDriverIndices.length) {
-                    car.assignedDriverIndices = (0, driver_catalog_1.allDriverIndices)(roster.length);
+                car.assignedDriverIds = (0, driver_catalog_1.sanitizeAssignedDriverIds)(car.assignedDriverIds, this.state.driverRoster);
+            }
+            const exclusiveErr = (0, driver_catalog_1.validateExclusiveDriverAssignments)(this.state.fleet, this.state.driverRoster);
+            if (exclusiveErr) {
+                const defaults = (0, driver_catalog_1.defaultDriverAssignments)(this.state.driverRoster, this.state.fleet);
+                for (const car of this.state.fleet) {
+                    car.assignedDriverIds = defaults[car.id] ?? car.assignedDriverIds ?? [];
                 }
             }
         }
@@ -755,10 +773,9 @@ class MetaStateManager {
         if (roster.length >= driver_market_1.MAX_DRIVER_ROSTER) {
             return { error: `Roster full (${driver_market_1.MAX_DRIVER_ROSTER} drivers maximum)` };
         }
-        const nameKey = listing.driver.name.trim().toLowerCase();
-        if (roster.some((d) => d.name.trim().toLowerCase() === nameKey)) {
-            return { error: `${listing.driver.name} is already on your roster` };
-        }
+        const contractErr = (0, driver_market_1.validateDriverMarketSigning)(listing, this.state.teamName, roster, this.repoRoot, this.state.aiRivalSeason?.rosterOverrides);
+        if (contractErr)
+            return { error: contractErr };
         if (this.state.budget < listing.signingFee) {
             return {
                 error: `Insufficient budget (need $${listing.signingFee.toLocaleString()} signing fee)`,
@@ -768,15 +785,15 @@ class MetaStateManager {
         if (statErr)
             return { error: statErr };
         this.state.budget -= listing.signingFee;
-        roster.push({ ...listing.driver, tier: (0, driver_catalog_1.inferTier)(listing.driver) });
-        this.state.driverRoster = roster;
+        const signed = (0, driver_catalog_1.ensureCatalogDriverId)(listing.driver);
+        roster.push({
+            ...signed,
+            tier: (0, driver_catalog_1.inferTier)(signed),
+        });
+        this.state.driverRoster = (0, driver_catalog_1.ensureDriverIds)(roster);
         this.state.driverMarket = (this.state.driverMarket ?? []).filter((l) => l.id !== listingId);
-        const newIdx = roster.length - 1;
         for (const car of this.state.fleet ?? []) {
-            const indices = (0, driver_catalog_1.sanitizeAssignedIndices)(car.assignedDriverIndices, roster.length);
-            if (!indices.includes(newIdx))
-                indices.push(newIdx);
-            car.assignedDriverIndices = [...indices].sort((a, b) => a - b);
+            car.assignedDriverIds = (0, driver_catalog_1.sanitizeAssignedDriverIds)(car.assignedDriverIds, this.state.driverRoster);
         }
         this.ensureAiRivalSeason();
         (0, ai_rival_season_1.syncPlayerDriversToStandings)(this.state.aiRivalSeason, this.state.teamName, this.state.driverRoster, this.state.fleet ?? []);
