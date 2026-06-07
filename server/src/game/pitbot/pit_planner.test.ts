@@ -5,6 +5,7 @@ import {
   scaledFuelThresholds,
   type PlannerSnap,
 } from "./pit_planner";
+import { fallbackStintPlan } from "../../llm/stint_plan";
 
 function snap(overrides: Partial<PlannerSnap>): PlannerSnap {
   const base = {
@@ -166,5 +167,28 @@ describe("pit_planner rival aggression", () => {
     const conservative = scaledFuelThresholds(0.85, { low: 0.3, critical: 0.14 });
     assert.ok(conservative.low < base.low);
     assert.ok(conservative.critical < base.critical);
+  });
+});
+
+describe("pit_planner stint guide", () => {
+  it("pits earlier when AiStintGuide sets a higher fuel stop fraction", () => {
+    const s = snap({
+      classId: "Hypercar",
+      lap: 5,
+      fuel: 31,
+      fuelTankCapacity: 100,
+    });
+    const withoutPlan = planPitStop(s, baseCtx, 100);
+    assert.equal(withoutPlan, null);
+
+    const stintPlan = fallbackStintPlan(s, 1);
+    stintPlan.fuelStopFraction = 0.35;
+    const withPlan = planPitStop(
+      s,
+      { ...baseCtx, stintPlan },
+      100,
+    );
+    assert.ok(withPlan);
+    assert.ok(withPlan?.services.fuel);
   });
 });

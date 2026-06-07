@@ -3,6 +3,7 @@
  * Cost model mirrors viewer/src/utils/pitCommands.ts and src/sim/pit_stop.cpp.
  */
 import type { CarSnapshot, WeekendSessionType } from "../../ws_protocol";
+import type { AiStintPlan } from "../../llm/stint_plan";
 import {
   desiredTyreTread,
   needsWeatherTyreSwap,
@@ -104,6 +105,8 @@ export interface PitPlannerContext {
   setupBias?: number;
   /** >1 pits earlier; <1 stretches stints (rival season form). */
   pitAggression?: number;
+  /** LLM/heuristic stint plan from AiStintGuide. */
+  stintPlan?: AiStintPlan;
 }
 
 export interface PitServiceFlags {
@@ -185,7 +188,10 @@ function lapsUntilFuelBelow(
   return Math.floor((s.fuel - target) / burn);
 }
 
-function driverSwapState(s: PlannerSnap): {
+function driverSwapState(
+  s: PlannerSnap,
+  stintPlan?: AiStintPlan,
+): {
   needed: boolean;
   urgent: boolean;
   lapsUntil: number;
@@ -195,6 +201,31 @@ function driverSwapState(s: PlannerSnap): {
   const maxStint = s.maxDriverStintSeconds ?? 0;
   const stint = s.driverStintSeconds ?? 0;
   const lapSec = lapTimeSec(s);
+
+  if (stintPlan && stintPlan.targetStintSeconds > 0) {
+    const target = stintPlan.targetStintSeconds;
+    if (stint >= target * 0.98) {
+      return { needed: true, urgent: true, lapsUntil: 0 };
+    }
+    if (
+      stintPlan.driverChangeNextStop &&
+      stint >= target * 0.88
+    ) {
+      return { needed: true, urgent: false, lapsUntil: 0 };
+    }
+    if (stint >= target * 0.92) {
+      return { needed: true, urgent: false, lapsUntil: 0 };
+    }
+    const remaining = target * 0.92 - stint;
+    if (remaining > 0) {
+      return {
+        needed: false,
+        urgent: false,
+        lapsUntil: Math.ceil(remaining / lapSec),
+      };
+    }
+  }
+
   if (maxStint > 0) {
     if (stint >= maxStint * 0.98) return { needed: true, urgent: true, lapsUntil: 0 };
     const swapAt = maxStint * DRIVER_STINT_SWAP_FRACTION;
@@ -245,7 +276,10 @@ function buildParts(
   driverIndex: number,
 ): string[] {
   const tread = desiredTyreTread(ctx.wet);
-  const compound = tread === "slick" ? slickCompound(ctx.wet) : "medium";
+  const compound =
+    tread === "slick"
+      ? ctx.stintPlan?.compound ?? slickCompound(ctx.wet)
+      : "medium";
   const parts: string[] = [];
 
   if (services.fuel) parts.push(`fuel=${fuelToAdd(s)}`);
@@ -298,15 +332,21 @@ export function planPitStop(
   fuelAtLastPit: number,
 ): PitStopPlan | null {
   const profile = profileFor(s.classId);
+  const fuelBase = {
+    low: ctx.stintPlan?.fuelStopFraction ?? profile.fuelLow,
+    critical: ctx.stintPlan?.fuelStopFraction
+      ? Math.min(profile.fuelCritical, ctx.stintPlan.fuelStopFraction * 0.55)
+      : profile.fuelCritical,
+  };
   const { low: fuelLow, critical: fuelCrit } = scaledFuelThresholds(
     ctx.pitAggression,
-    { low: profile.fuelLow, critical: profile.fuelCritical },
+    fuelBase,
   );
   const fuelPct = s.fuel / tankCapacity(s);
   const weatherTyres = needsWeatherTyreSwap(ctx.tyreTread, ctx.wet);
   const driver =
     ctx.phase === "race"
-      ? driverSwapState(s)
+      ? driverSwapState(s, ctx.stintPlan)
       : { needed: false, urgent: false, lapsUntil: 99 };
   const engine = (s.engineHealth ?? 100) <= ENGINE_REPAIR_HEALTH;
   const worn = tyresWorn(s);

@@ -309,12 +309,11 @@ export class PostRaceOverlay {
   refreshChampionship(meta: MetaStatePayload | null | undefined): void {
     if (!meta?.aiRivalSeason) return;
     const panel = this.championshipEl.querySelector(".post-race-championship-panel");
-    const noteEl = panel?.querySelector(".post-race-rival-note");
-    if (noteEl instanceof HTMLElement && meta.aiRivalSeason.lastMarketNote) {
-      noteEl.textContent = meta.aiRivalSeason.lastMarketNote;
-      noteEl.classList.remove("hidden");
-    }
-    const driverBlock = panel?.querySelector(".post-race-driver-pts");
+    if (!panel) return;
+
+    this.updateOffWeekNarrative(panel, meta.aiRivalSeason);
+
+    const driverBlock = panel.querySelector(".post-race-driver-pts");
     if (driverBlock instanceof HTMLElement) {
       const playerDrivers = meta.aiRivalSeason.drivers.filter(
         (d) => d.isPlayerDriver && d.lastRoundPoints > 0,
@@ -354,9 +353,18 @@ export class PostRaceOverlay {
     const hypercarLead = season?.teams
       .filter((t) => t.primaryClassId === (playerResult?.classId ?? "Hypercar"))
       .sort((a, b) => b.championshipPoints - a.championshipPoints)[0];
+    const headline = season?.lastOffWeekHeadline ?? "";
+    const events = season?.lastOffWeekEvents ?? [];
     const marketNote = season?.lastMarketNote ?? "";
 
-    if (teamPts <= 0 && !playerDrivers.length && !marketNote && !hypercarLead) {
+    if (
+      teamPts <= 0 &&
+      !playerDrivers.length &&
+      !marketNote &&
+      !headline &&
+      !events.length &&
+      !hypercarLead
+    ) {
       this.championshipEl.classList.add("hidden");
       return;
     }
@@ -382,6 +390,13 @@ export class PostRaceOverlay {
           ? `<p class="post-race-rival-lead">${escapeHtml(hypercarLead.teamName)} leads ${escapeHtml(playerResult?.classId ?? "Hypercar")} with ${hypercarLead.championshipPoints} pts</p>`
           : ""
       }
+      <p class="post-race-offweek-headline ${headline ? "" : "hidden"}">${escapeHtml(headline)}</p>
+      <ul class="post-race-offweek-events ${events.length ? "" : "hidden"}">
+        ${events
+          .slice(0, 4)
+          .map((e) => `<li class="post-race-offweek-event">${escapeHtml(e.text)}</li>`)
+          .join("")}
+      </ul>
       <p class="post-race-rival-note ${marketNote ? "" : "hidden"}">${escapeHtml(marketNote)}</p>
     `;
 
@@ -397,6 +412,40 @@ export class PostRaceOverlay {
 
     this.championshipEl.appendChild(panel);
     this.championshipEl.classList.remove("hidden");
+  }
+
+  private updateOffWeekNarrative(
+    panel: Element,
+    season: NonNullable<MetaStatePayload["aiRivalSeason"]>,
+  ): void {
+    const headlineEl = panel.querySelector(".post-race-offweek-headline");
+    const eventsEl = panel.querySelector(".post-race-offweek-events");
+    const noteEl = panel.querySelector(".post-race-rival-note");
+
+    const headline = season.lastOffWeekHeadline ?? "";
+    const events = season.lastOffWeekEvents ?? [];
+    const marketNote = season.lastMarketNote ?? "";
+
+    if (headlineEl instanceof HTMLElement) {
+      headlineEl.textContent = headline;
+      headlineEl.classList.toggle("hidden", !headline);
+    }
+
+    if (eventsEl instanceof HTMLElement) {
+      eventsEl.replaceChildren();
+      for (const event of events.slice(0, 4)) {
+        const li = document.createElement("li");
+        li.className = "post-race-offweek-event";
+        li.textContent = event.text;
+        eventsEl.appendChild(li);
+      }
+      eventsEl.classList.toggle("hidden", events.length === 0);
+    }
+
+    if (noteEl instanceof HTMLElement) {
+      noteEl.textContent = marketNote;
+      noteEl.classList.toggle("hidden", !marketNote);
+    }
   }
 
   hide(): void {

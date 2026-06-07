@@ -13,6 +13,7 @@ import {
   type ParsedEntry,
 } from "./config_parser";
 import { PitBotManager } from "./game/pitbot/pitbot_manager";
+import { AiStintGuide } from "./llm/ai_stint_guide";
 import { rivalModifiersForTeam } from "./game/ai_rival_season";
 import { MockSimSession } from "./mock_session";
 import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload, WeekendSessionType } from "./ws_protocol";
@@ -99,6 +100,7 @@ export class SimHost {
   private runtimeManagedEntryIds: string[] = ["entry-1"];
   private activeRoundNumber = 0;
   private readonly pitBot = new PitBotManager();
+  private readonly stintGuide = new AiStintGuide();
 
   private onTick?: (raceTime: number, snapshots: CarSnapshot[]) => void;
   private onEvents?: (events: SimEvent[]) => void;
@@ -152,6 +154,7 @@ export class SimHost {
     this.refreshEntriesFromConfig();
     this.raceTime = 0;
     this.pitBot.reset();
+    this.stintGuide.reset();
     return true;
   }
 
@@ -285,6 +288,7 @@ export class SimHost {
     this.activeRoundNumber = built.roundNumber;
     this.meta.clearLastCompletedRound();
     this.pitBot.reset();
+    this.stintGuide.reset();
 
     this.inRaceSession = true;
     this.paused = true;
@@ -463,6 +467,7 @@ export class SimHost {
     this.refreshEntriesFromConfig();
     this.raceTime = 0;
     this.pitBot.reset();
+    this.stintGuide.reset();
     this.paused = true;
     if (this.timeScale === 0) this.timeScale = 1;
     this.restartTickLoop();
@@ -551,6 +556,7 @@ export class SimHost {
       weekendSessionType: undefined,
     };
     this.pitBot.reset();
+    this.stintGuide.reset();
     this.paused = true;
     if (this.timeScale === 0) this.timeScale = 1;
 
@@ -575,6 +581,7 @@ export class SimHost {
 
     this.raceTime = 0;
     this.pitBot.reset();
+    this.stintGuide.reset();
     this.paused = false;
     if (this.timeScale === 0) this.timeScale = 1;
     this.ensureTickLoop();
@@ -602,6 +609,7 @@ export class SimHost {
 
     this.raceTime = 0;
     this.pitBot.reset();
+    this.stintGuide.reset();
     this.paused = true;
     if (this.timeScale === 0) this.timeScale = 1;
     this.meta.reload();
@@ -643,6 +651,18 @@ export class SimHost {
     const snapshots = this.session.getSnapshots();
     const raceControl = this.getRaceControl();
     const rivalSeason = this.meta.getState().aiRivalSeason;
+    const raceTime = this.getRaceTime();
+
+    this.stintGuide.observe(
+      snapshots,
+      this.runtimeManagedEntryIds,
+      {
+        trackName: this.trackName,
+        targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
+        raceTimeSec: raceTime,
+      },
+    );
+
     this.pitBot.tick(
       snapshots,
       this.runtimeManagedEntryIds,
@@ -651,6 +671,7 @@ export class SimHost {
         weekendSessionType: this.sessionExtra.weekendSessionType,
         rivalPitAggression: (teamName) =>
           rivalModifiersForTeam(teamName, rivalSeason).pitAggression,
+        getStintPlan: (entryId) => this.stintGuide.getPlan(entryId),
       },
       (entryId, command) => this.session.submitCommand!(entryId, command),
     );

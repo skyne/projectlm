@@ -1713,6 +1713,24 @@ body.mock-sim-active #app {
   color: var(--text-muted);
 }
 
+.rival-offweek-headline {
+  margin-top: 0.75rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rival-offweek-events {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.rival-offweek-event {
+  margin: 0.2rem 0;
+}
+
 .driver-standings-section {
   margin-top: 1.25rem;
 }
@@ -2404,10 +2422,27 @@ body.mock-sim-active #app {
 
 .post-race-team-pts,
 .post-race-rival-lead,
+.post-race-offweek-headline,
 .post-race-rival-note {
   margin: 0.35rem 0 0;
   font-size: 0.85rem;
   color: var(--text-muted);
+}
+
+.post-race-offweek-headline {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.post-race-offweek-events {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.post-race-offweek-event {
+  margin: 0.15rem 0;
 }
 
 .post-race-driver-pts {

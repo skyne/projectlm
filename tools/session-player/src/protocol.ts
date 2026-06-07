@@ -166,6 +166,13 @@ export interface AiRivalSeasonPayload {
   teams: AiRivalTeamPayload[];
   drivers: DriverChampionshipPayload[];
   lastMarketNote?: string;
+  lastOffWeekHeadline?: string;
+  lastOffWeekEvents?: Array<{
+    type: string;
+    teamName: string;
+    classId?: string;
+    text: string;
+  }>;
 }
 
 export interface MetaStatePayload {

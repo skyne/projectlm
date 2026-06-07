@@ -97,6 +97,8 @@ export class RaceHub {
       <div class="rival-standings-section hidden">
         <h3 class="mm-section-title">Team Championships</h3>
         <div class="rival-standings-grid"></div>
+        <p class="rival-offweek-headline hidden"></p>
+        <ul class="rival-offweek-events hidden"></ul>
         <p class="rival-market-note"></p>
       </div>
 
@@ -284,6 +286,27 @@ export class RaceHub {
     if (noteEl instanceof HTMLElement) {
       noteEl.textContent = season.lastMarketNote ?? "";
       noteEl.classList.toggle("hidden", !season.lastMarketNote);
+    }
+
+    const headlineEl = this.root.querySelector(".rival-offweek-headline");
+    const eventsEl = this.root.querySelector(".rival-offweek-events");
+    const headline = season.lastOffWeekHeadline ?? "";
+    const events = season.lastOffWeekEvents ?? [];
+
+    if (headlineEl instanceof HTMLElement) {
+      headlineEl.textContent = headline;
+      headlineEl.classList.toggle("hidden", !headline);
+    }
+
+    if (eventsEl instanceof HTMLElement) {
+      eventsEl.replaceChildren();
+      for (const event of events.slice(0, 5)) {
+        const li = document.createElement("li");
+        li.className = `rival-offweek-event rival-offweek-${event.type}`;
+        li.textContent = event.text;
+        eventsEl.appendChild(li);
+      }
+      eventsEl.classList.toggle("hidden", events.length === 0);
     }
   }
 

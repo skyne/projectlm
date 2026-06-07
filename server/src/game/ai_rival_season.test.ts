@@ -7,6 +7,7 @@ import {
   applyPlayerTeamRoundResult,
   classPositions,
   driverIdentityKey,
+  buildOffWeekHeadline,
   initAiRivalSeason,
   resolveAiDriverMarketBids,
   resolveAiSeasonTick,
@@ -356,5 +357,77 @@ describe("ai_rival_season", () => {
     const abs = path.join(repoRoot, rel);
     const text = fs.readFileSync(abs, "utf8");
     assert.ok(text.includes("Signed Prospect"));
+  });
+
+  it("builds off-week headline and narrative events", () => {
+    const season = initAiRivalSeason(repoRoot, "SkyTech", 2026);
+    const toyota = season.teams.find((t) =>
+      t.teamName.toLowerCase().includes("toyota"),
+    );
+    assert.ok(toyota);
+
+    resolveAiSeasonTick(season, {
+      playerTeamName: "SkyTech",
+      scoring: true,
+      eventFormat: "6h",
+      raceResults: [
+        {
+          entryId: "e1",
+          teamName: toyota!.teamName,
+          carNumber: "7",
+          classId: "Hypercar",
+          position: 1,
+        },
+      ],
+    });
+
+    assert.ok((season.lastOffWeekEvents?.length ?? 0) >= 2);
+    assert.ok(season.lastOffWeekEvents?.some((e) => e.type === "points"));
+    assert.ok(season.lastOffWeekEvents?.some((e) => e.type === "standings"));
+
+    for (const team of season.teams) team.budget = 1_000_000;
+    toyota!.budget = 120_000_000;
+    toyota!.form = 3;
+
+    resolveAiDriverMarketBids(
+      repoRoot,
+      season,
+      [
+        {
+          id: "wec-toyota-new",
+          source: "wec_active",
+          contractedTeam: "Toyota Racing",
+          driver: {
+            name: "Narrative Prospect",
+            nationality: "FR",
+            tier: "Gold",
+            dryPace: 85,
+            wetPace: 82,
+            consistency: 84,
+            overtaking: 80,
+            defending: 78,
+            trafficManagement: 80,
+            rollingStart: 78,
+            standingStart: 76,
+            setupFeedback: 74,
+            tireManagement: 80,
+            fuelSaving: 78,
+            composure: 82,
+            nightPace: 78,
+            rainRadar: 76,
+            stamina: 80,
+            maxStintHours: 3,
+          },
+          signingFee: 100_000,
+          salaryPerRace: 30_000,
+          tagline: "buyout",
+        },
+      ],
+      42,
+    );
+
+    assert.ok(season.lastOffWeekHeadline);
+    assert.ok(season.lastOffWeekEvents?.some((e) => e.type === "market"));
+    assert.ok(buildOffWeekHeadline(season).length > 0);
   });
 });

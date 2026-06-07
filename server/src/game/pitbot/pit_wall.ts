@@ -2,6 +2,7 @@
  * PitBot pit-wall logic — shared by server (opponent AI) and session-player (co-op).
  */
 import type { CarSnapshot, WeekendSessionType } from "../../ws_protocol";
+import type { AiStintPlan } from "../../llm/stint_plan";
 import {
   desiredTyreTread,
   INTER_TYRE_THRESHOLD,
@@ -34,6 +35,7 @@ export interface PitBotContext {
   phase: WeekendSessionType;
   wet: number;
   rivalPitAggression?: (teamName: string) => number;
+  getStintPlan?: (entryId: string) => AiStintPlan | undefined;
 }
 
 export interface PitBotAction {
@@ -50,11 +52,21 @@ function isHypercar(s: PlannerSnap): boolean {
   return s.classId === "Hypercar";
 }
 
-function driverMode(s: PlannerSnap, wet: number, tread: TyreTread): string {
+function driverMode(
+  s: PlannerSnap,
+  wet: number,
+  tread: TyreTread,
+  plan?: AiStintPlan,
+): string {
   const coolant = s.coolantTempC ?? 70;
   const health = s.engineHealth ?? 100;
   if (coolant >= COOLANT_CONSERVE_C || health <= ENGINE_CONSERVE_HEALTH || tread === "wet") {
     return "driver_mode=conserve";
+  }
+  if (plan?.driverMode === "conserve") return "driver_mode=conserve";
+  if (plan?.driverMode === "normal") return "driver_mode=normal";
+  if (plan?.driverMode === "push" && wet < INTER_TYRE_THRESHOLD && tread === "slick") {
+    return "driver_mode=push";
   }
   if (wet < INTER_TYRE_THRESHOLD) return "driver_mode=push";
   return "driver_mode=normal";
@@ -185,13 +197,15 @@ export function gridSetupCommands(
   snapshots: PlannerSnap[],
   entryIds: string[],
   wet: number,
+  getStintPlan?: (entryId: string) => AiStintPlan | undefined,
 ): PitBotAction[] {
   const tread = desiredTyreTread(wet);
-  const compound = tread === "slick" ? "soft" : "medium";
   const actions: PitBotAction[] = [];
 
   for (const entryId of entryIds) {
     const snap = snapshots.find((s) => s.entryId === entryId);
+    const plan = getStintPlan?.(entryId);
+    const compound = plan?.compound ?? (tread === "slick" ? "soft" : "medium");
     actions.push({
       entryId,
       command: `starting_compound=${compound}`,
@@ -202,7 +216,12 @@ export function gridSetupCommands(
     } else if (tread === "intermediate") {
       actions.push({ entryId, command: "driver_mode=normal" });
     } else {
-      actions.push({ entryId, command: "driver_mode=push" });
+      actions.push({
+        entryId,
+        command: plan?.driverMode
+          ? `driver_mode=${plan.driverMode}`
+          : "driver_mode=push",
+      });
     }
     if (snap && isHypercar(snap)) {
       actions.push({
@@ -254,12 +273,14 @@ export function tickPitBot(
       timing &&
       !canRunSetupPit(s, snapshots, carState, ctx.phase, st)
     ) {
+      const stintPlan = ctx.getStintPlan?.(entryId);
       const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase);
       if (hybrid) trySubmit(submitCommand, entryId, hybrid);
-      trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread));
+      trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread, stintPlan));
       continue;
     }
 
+    const stintPlan = ctx.getStintPlan?.(entryId);
     const plan = planPitStop(
       s,
       {
@@ -271,6 +292,7 @@ export function tickPitBot(
         setupWing: setupWing(s),
         setupBias: setupBias(s),
         pitAggression: ctx.rivalPitAggression?.(s.teamName) ?? 1,
+        stintPlan,
       },
       st.fuelAtLastPit,
     );
@@ -286,7 +308,11 @@ export function tickPitBot(
 
     const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase);
     if (hybrid) trySubmit(submitCommand, entryId, hybrid);
-    trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread));
+    trySubmit(
+      submitCommand,
+      entryId,
+      driverMode(s, ctx.wet, st.tyreTread, ctx.getStintPlan?.(entryId)),
+    );
   }
 
   return actions;

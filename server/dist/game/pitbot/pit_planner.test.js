@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const strict_1 = __importDefault(require("node:assert/strict"));
 const node_test_1 = require("node:test");
 const pit_planner_1 = require("./pit_planner");
+const stint_plan_1 = require("../../llm/stint_plan");
 function snap(overrides) {
     const base = {
         entryId: "e1",
@@ -128,5 +129,22 @@ const baseCtx = {
         const conservative = (0, pit_planner_1.scaledFuelThresholds)(0.85, { low: 0.3, critical: 0.14 });
         strict_1.default.ok(conservative.low < base.low);
         strict_1.default.ok(conservative.critical < base.critical);
+    });
+});
+(0, node_test_1.describe)("pit_planner stint guide", () => {
+    (0, node_test_1.it)("pits earlier when AiStintGuide sets a higher fuel stop fraction", () => {
+        const s = snap({
+            classId: "Hypercar",
+            lap: 5,
+            fuel: 31,
+            fuelTankCapacity: 100,
+        });
+        const withoutPlan = (0, pit_planner_1.planPitStop)(s, baseCtx, 100);
+        strict_1.default.equal(withoutPlan, null);
+        const stintPlan = (0, stint_plan_1.fallbackStintPlan)(s, 1);
+        stintPlan.fuelStopFraction = 0.35;
+        const withPlan = (0, pit_planner_1.planPitStop)(s, { ...baseCtx, stintPlan }, 100);
+        strict_1.default.ok(withPlan);
+        strict_1.default.ok(withPlan?.services.fuel);
     });
 });

@@ -104,13 +104,34 @@ function lapsUntilFuelBelow(s, thresholdFrac, sincePit, fuelAtLastPit) {
         return 99;
     return Math.floor((s.fuel - target) / burn);
 }
-function driverSwapState(s) {
+function driverSwapState(s, stintPlan) {
     const roster = s.driverRoster ?? [];
     if (roster.length < 2)
         return { needed: false, urgent: false, lapsUntil: 99 };
     const maxStint = s.maxDriverStintSeconds ?? 0;
     const stint = s.driverStintSeconds ?? 0;
     const lapSec = lapTimeSec(s);
+    if (stintPlan && stintPlan.targetStintSeconds > 0) {
+        const target = stintPlan.targetStintSeconds;
+        if (stint >= target * 0.98) {
+            return { needed: true, urgent: true, lapsUntil: 0 };
+        }
+        if (stintPlan.driverChangeNextStop &&
+            stint >= target * 0.88) {
+            return { needed: true, urgent: false, lapsUntil: 0 };
+        }
+        if (stint >= target * 0.92) {
+            return { needed: true, urgent: false, lapsUntil: 0 };
+        }
+        const remaining = target * 0.92 - stint;
+        if (remaining > 0) {
+            return {
+                needed: false,
+                urgent: false,
+                lapsUntil: Math.ceil(remaining / lapSec),
+            };
+        }
+    }
     if (maxStint > 0) {
         if (stint >= maxStint * 0.98)
             return { needed: true, urgent: true, lapsUntil: 0 };
@@ -156,7 +177,9 @@ function slickCompound(wet) {
 }
 function buildParts(s, ctx, services, driverIndex) {
     const tread = (0, tyre_grip_1.desiredTyreTread)(ctx.wet);
-    const compound = tread === "slick" ? slickCompound(ctx.wet) : "medium";
+    const compound = tread === "slick"
+        ? ctx.stintPlan?.compound ?? slickCompound(ctx.wet)
+        : "medium";
     const parts = [];
     if (services.fuel)
         parts.push(`fuel=${fuelToAdd(s)}`);
@@ -205,11 +228,17 @@ function scaledFuelThresholds(pitAggression = 1, base) {
 /** Decide bundled pit stop (or defer). */
 function planPitStop(s, ctx, fuelAtLastPit) {
     const profile = profileFor(s.classId);
-    const { low: fuelLow, critical: fuelCrit } = scaledFuelThresholds(ctx.pitAggression, { low: profile.fuelLow, critical: profile.fuelCritical });
+    const fuelBase = {
+        low: ctx.stintPlan?.fuelStopFraction ?? profile.fuelLow,
+        critical: ctx.stintPlan?.fuelStopFraction
+            ? Math.min(profile.fuelCritical, ctx.stintPlan.fuelStopFraction * 0.55)
+            : profile.fuelCritical,
+    };
+    const { low: fuelLow, critical: fuelCrit } = scaledFuelThresholds(ctx.pitAggression, fuelBase);
     const fuelPct = s.fuel / tankCapacity(s);
     const weatherTyres = (0, tyre_grip_1.needsWeatherTyreSwap)(ctx.tyreTread, ctx.wet);
     const driver = ctx.phase === "race"
-        ? driverSwapState(s)
+        ? driverSwapState(s, ctx.stintPlan)
         : { needed: false, urgent: false, lapsUntil: 99 };
     const engine = (s.engineHealth ?? 100) <= ENGINE_REPAIR_HEALTH;
     const worn = tyresWorn(s);

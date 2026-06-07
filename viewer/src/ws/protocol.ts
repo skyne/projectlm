@@ -587,6 +587,15 @@ export interface AiRivalSeasonPayload {
   rosterOverrides?: Record<string, DriverProfilePayload[]>;
   marketSignedListingIds?: string[];
   lastMarketNote?: string;
+  lastOffWeekHeadline?: string;
+  lastOffWeekEvents?: AiRivalOffWeekEventPayload[];
+}
+
+export interface AiRivalOffWeekEventPayload {
+  type: "points" | "form" | "rd" | "market" | "arc" | "standings";
+  teamName: string;
+  classId?: string;
+  text: string;
 }
 
 export interface DriverChampionshipPayload {

@@ -20,11 +20,18 @@ function isTimingSession(phase) {
 function isHypercar(s) {
     return s.classId === "Hypercar";
 }
-function driverMode(s, wet, tread) {
+function driverMode(s, wet, tread, plan) {
     const coolant = s.coolantTempC ?? 70;
     const health = s.engineHealth ?? 100;
     if (coolant >= COOLANT_CONSERVE_C || health <= ENGINE_CONSERVE_HEALTH || tread === "wet") {
         return "driver_mode=conserve";
+    }
+    if (plan?.driverMode === "conserve")
+        return "driver_mode=conserve";
+    if (plan?.driverMode === "normal")
+        return "driver_mode=normal";
+    if (plan?.driverMode === "push" && wet < tyre_grip_1.INTER_TYRE_THRESHOLD && tread === "slick") {
+        return "driver_mode=push";
     }
     if (wet < tyre_grip_1.INTER_TYRE_THRESHOLD)
         return "driver_mode=push";
@@ -120,12 +127,13 @@ function releaseFromGarage(snapshots, entryIds, carState, submitCommand) {
     }
 }
 /** Pre-race grid commands for tyre compound, tread, driver mode, hybrid. */
-function gridSetupCommands(snapshots, entryIds, wet) {
+function gridSetupCommands(snapshots, entryIds, wet, getStintPlan) {
     const tread = (0, tyre_grip_1.desiredTyreTread)(wet);
-    const compound = tread === "slick" ? "soft" : "medium";
     const actions = [];
     for (const entryId of entryIds) {
         const snap = snapshots.find((s) => s.entryId === entryId);
+        const plan = getStintPlan?.(entryId);
+        const compound = plan?.compound ?? (tread === "slick" ? "soft" : "medium");
         actions.push({
             entryId,
             command: `starting_compound=${compound}`,
@@ -138,7 +146,12 @@ function gridSetupCommands(snapshots, entryIds, wet) {
             actions.push({ entryId, command: "driver_mode=normal" });
         }
         else {
-            actions.push({ entryId, command: "driver_mode=push" });
+            actions.push({
+                entryId,
+                command: plan?.driverMode
+                    ? `driver_mode=${plan.driverMode}`
+                    : "driver_mode=push",
+            });
         }
         if (snap && isHypercar(snap)) {
             actions.push({
@@ -174,12 +187,14 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
         if (!st.setupDone &&
             timing &&
             !canRunSetupPit(s, snapshots, carState, ctx.phase, st)) {
+            const stintPlan = ctx.getStintPlan?.(entryId);
             const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase);
             if (hybrid)
                 trySubmit(submitCommand, entryId, hybrid);
-            trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread));
+            trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread, stintPlan));
             continue;
         }
+        const stintPlan = ctx.getStintPlan?.(entryId);
         const plan = (0, pit_planner_1.planPitStop)(s, {
             phase: ctx.phase,
             wet: ctx.wet,
@@ -189,6 +204,7 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
             setupWing: setupWing(s),
             setupBias: setupBias(s),
             pitAggression: ctx.rivalPitAggression?.(s.teamName) ?? 1,
+            stintPlan,
         }, st.fuelAtLastPit);
         if (plan?.pitNow) {
             const cmd = `pit|${plan.parts.join("|")}`;
@@ -201,7 +217,7 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
         const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase);
         if (hybrid)
             trySubmit(submitCommand, entryId, hybrid);
-        trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread));
+        trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread, ctx.getStintPlan?.(entryId)));
     }
     return actions;
 }

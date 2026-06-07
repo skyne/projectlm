@@ -6,6 +6,7 @@ exports.syncPlayerDriversToStandings = syncPlayerDriversToStandings;
 exports.applyPlayerTeamRoundResult = applyPlayerTeamRoundResult;
 exports.initAiRivalSeason = initAiRivalSeason;
 exports.classPositions = classPositions;
+exports.buildOffWeekHeadline = buildOffWeekHeadline;
 exports.resolveAiSeasonTick = resolveAiSeasonTick;
 exports.resolveDriverChampionshipTick = resolveDriverChampionshipTick;
 exports.rivalModifiersForTeam = rivalModifiersForTeam;
@@ -255,6 +256,7 @@ function classPositions(results) {
     return out;
 }
 function updateArc(team) {
+    const prev = team.arc;
     if (team.form >= 2 && team.championshipPoints >= 40) {
         team.arc = "hot_streak";
     }
@@ -270,6 +272,19 @@ function updateArc(team) {
     else {
         team.arc = null;
     }
+    return prev !== team.arc ? team.arc : null;
+}
+function arcLabel(arc) {
+    if (!arc)
+        return "";
+    return arc.replace(/_/g, " ");
+}
+function pushOffWeekEvent(season, event) {
+    if (!season.lastOffWeekEvents)
+        season.lastOffWeekEvents = [];
+    if (season.lastOffWeekEvents.length >= 8)
+        return;
+    season.lastOffWeekEvents.push(event);
 }
 function applyFormDelta(team, classPos) {
     if (classPos <= 3)
@@ -286,14 +301,39 @@ function maybeInvestRd(team) {
             team.budget -= upgradeCost;
             team.rdTier += 1;
             team.engineerSkill = Math.min(95, team.engineerSkill + 1);
+            return true;
         }
     }
+    return false;
+}
+/** One-line off-week headline for UI tickers. */
+function buildOffWeekHeadline(season) {
+    const hot = season.teams
+        .filter((t) => t.arc === "hot_streak" && t.lastRoundPoints > 0)
+        .sort((a, b) => b.lastRoundPoints - a.lastRoundPoints)[0];
+    if (hot) {
+        return `${hot.teamName} surges on ${hot.lastRoundPoints} pts — form +${hot.form}`;
+    }
+    for (const classId of ["Hypercar", "LMP2", "LMGT3"]) {
+        const leader = topRivalsByClass(season, classId, 1)[0];
+        if (leader && leader.championshipPoints > 0) {
+            return `${leader.teamName} leads ${classId} on ${leader.championshipPoints} pts`;
+        }
+    }
+    const market = season.lastOffWeekEvents?.find((e) => e.type === "market");
+    if (market)
+        return market.text;
+    return season.lastMarketNote ?? "Rivals regroup between rounds";
 }
 /** Resolve off-week rival progression from a completed race session. */
 function resolveAiSeasonTick(season, options) {
     const playerKey = options.playerTeamName.trim().toLowerCase();
     const classPos = classPositions(options.raceResults);
     const byTeam = new Map(season.teams.map((t) => [t.teamName, t]));
+    season.lastOffWeekEvents = [];
+    season.lastOffWeekHeadline = undefined;
+    season.marketSignedListingIds = [];
+    season.lastMarketNote = undefined;
     for (const result of options.raceResults) {
         if (result.teamName.trim().toLowerCase() === playerKey)
             continue;
@@ -312,12 +352,61 @@ function resolveAiSeasonTick(season, options) {
         team.championshipPoints += pts;
         team.budget += prize + 75000 - 35000;
         team.racesScored += 1;
+        const prevForm = team.form;
         applyFormDelta(team, pos);
-        maybeInvestRd(team);
-        updateArc(team);
+        if (team.form > prevForm) {
+            pushOffWeekEvent(season, {
+                type: "form",
+                teamName: team.teamName,
+                classId: team.primaryClassId,
+                text: `${team.teamName} building momentum (form +${team.form - prevForm})`,
+            });
+        }
+        else if (team.form < prevForm) {
+            pushOffWeekEvent(season, {
+                type: "form",
+                teamName: team.teamName,
+                classId: team.primaryClassId,
+                text: `${team.teamName} struggling for rhythm (form ${team.form})`,
+            });
+        }
+        if (pts >= 15) {
+            pushOffWeekEvent(season, {
+                type: "points",
+                teamName: team.teamName,
+                classId: team.primaryClassId,
+                text: `${team.teamName} banked ${pts} pts (P${pos} in ${result.classId})`,
+            });
+        }
+        if (maybeInvestRd(team)) {
+            pushOffWeekEvent(season, {
+                type: "rd",
+                teamName: team.teamName,
+                classId: team.primaryClassId,
+                text: `${team.teamName} upgrades R&D to tier ${team.rdTier}`,
+            });
+        }
+        const newArc = updateArc(team);
+        if (newArc) {
+            pushOffWeekEvent(season, {
+                type: "arc",
+                teamName: team.teamName,
+                classId: team.primaryClassId,
+                text: `${team.teamName} now tagged as ${arcLabel(newArc)}`,
+            });
+        }
     }
-    season.marketSignedListingIds = [];
-    season.lastMarketNote = undefined;
+    for (const classId of ["Hypercar", "LMP2", "LMGT3"]) {
+        const leader = topRivalsByClass(season, classId, 1)[0];
+        if (leader && leader.championshipPoints > 0 && !leader.isPlayerTeam) {
+            pushOffWeekEvent(season, {
+                type: "standings",
+                teamName: leader.teamName,
+                classId,
+                text: `${leader.teamName} tops ${classId} on ${leader.championshipPoints} pts`,
+            });
+        }
+    }
     return season;
 }
 /** Award class points to every driver listed for each finishing entry. */
@@ -397,13 +486,19 @@ function resolveAiDriverMarketBids(repoRoot, season, market, seed) {
             : team.teamName;
         const carNumber = primaryCarNumber(repoRoot, signingTeam);
         mergeRosterOverride(repoRoot, season, signingTeam, carNumber, pick.driver);
+        pushOffWeekEvent(season, {
+            type: "market",
+            teamName: signingTeam,
+            text: `${signingTeam} signs ${pick.driver.name} from the driver market`,
+        });
     }
     const remaining = market.filter((l) => !signedIds.includes(l.id));
     const note = signedIds.length > 0
-        ? `${signedIds.length} driver listing(s) signed by rival teams`
+        ? `${signedIds.length} rival driver signing(s) this off-week`
         : "No rival driver signings this off-week";
     season.marketSignedListingIds = signedIds;
     season.lastMarketNote = note;
+    season.lastOffWeekHeadline = buildOffWeekHeadline(season);
     return { market: remaining, signedIds, note };
 }
 function topRivalsByClass(season, classId, limit = 5) {

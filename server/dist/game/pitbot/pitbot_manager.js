@@ -37,7 +37,7 @@ class PitBotManager {
         }
         const actions = [];
         if (!this.gridSetupDone && opponents.length > 0) {
-            for (const action of (0, pit_wall_1.gridSetupCommands)(snapshots, opponents, wet)) {
+            for (const action of (0, pit_wall_1.gridSetupCommands)(snapshots, opponents, wet, ctx.getStintPlan)) {
                 if (submitCommand(action.entryId, action.command)) {
                     actions.push(action);
                 }
@@ -48,6 +48,7 @@ class PitBotManager {
             phase,
             wet,
             rivalPitAggression: ctx.rivalPitAggression,
+            getStintPlan: ctx.getStintPlan,
         }, submitCommand));
         return actions;
     }
