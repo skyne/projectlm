@@ -62,6 +62,25 @@ void ApplyCarConditionLine(SimulationState &state, const CarConfig &car,
       }
       continue;
     }
+    if (key == "fault") {
+      std::istringstream fr(val);
+      std::string id;
+      std::string kindTok;
+      std::string linkedTok;
+      std::string sevTok;
+      std::string revTok;
+      if (!std::getline(fr, id, '|') || !std::getline(fr, kindTok, '|') ||
+          !std::getline(fr, linkedTok, '|') || !std::getline(fr, sevTok, '|') ||
+          !std::getline(fr, revTok, '|'))
+        continue;
+      HiddenFault fault;
+      fault.kind = HiddenFaultKindFromToken(Trim(kindTok));
+      fault.linkedPart = DamagePartFromToken(Trim(linkedTok));
+      fault.severity = std::max(0.0, std::min(100.0, std::stod(Trim(sevTok))));
+      fault.revealed = Trim(revTok) == "1";
+      state.partDamage.hiddenFaults.push_back(fault);
+      continue;
+    }
     const DamagePart part = DamagePartFromToken(key);
     if (part == DamagePart::Count)
       continue;

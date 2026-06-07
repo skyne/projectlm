@@ -498,3 +498,21 @@ const char *TyreDeflationLabel(TyreDeflationState state) {
   default: return "normal";
   }
 }
+
+const char *HiddenFaultKindToken(HiddenFaultKind kind) {
+  switch (kind) {
+  case HiddenFaultKind::CoolingHoseLeak: return "cooling_hose_leak";
+  case HiddenFaultKind::PowertrainSealLeak: return "powertrain_seal_leak";
+  case HiddenFaultKind::HairlineCrack: return "hairline_crack";
+  case HiddenFaultKind::WiringChafe: return "wiring_chafe";
+  default: return "unknown";
+  }
+}
+
+HiddenFaultKind HiddenFaultKindFromToken(const std::string &token) {
+  if (token == "cooling_hose_leak") return HiddenFaultKind::CoolingHoseLeak;
+  if (token == "powertrain_seal_leak") return HiddenFaultKind::PowertrainSealLeak;
+  if (token == "hairline_crack") return HiddenFaultKind::HairlineCrack;
+  if (token == "wiring_chafe") return HiddenFaultKind::WiringChafe;
+  return HiddenFaultKind::CoolingHoseLeak;
+}

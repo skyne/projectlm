@@ -332,7 +332,7 @@ export class SimHost {
 
   repairCarCondition(
     carId: string,
-    options?: { parts?: string[]; rebuild?: boolean },
+    options?: { parts?: string[]; rebuild?: boolean; reveal?: boolean },
   ): MetaStatePayload | { error: string } {
     return this.meta.repairCarCondition(carId, options);
   }

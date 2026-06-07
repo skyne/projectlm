@@ -704,9 +704,18 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const 
       snap.tyreDeflation[kWheel[i]] =
           TyreDeflationLabel(state_.tyreDeflation.state[i]);
   }
+  snap.hiddenFaults.clear();
+  int faultIdx = 0;
   for (const HiddenFault &fault : state_.partDamage.hiddenFaults) {
     if (!fault.revealed && fault.severity > 45.0)
       snap.suspectedIssues = true;
+    CarSnapshot::HiddenFaultSnapshot fs;
+    fs.id = "hf-" + std::to_string(faultIdx++);
+    fs.kind = HiddenFaultKindToken(fault.kind);
+    fs.linkedPart = DamagePartToken(fault.linkedPart);
+    fs.severity = fault.severity;
+    fs.revealed = fault.revealed;
+    snap.hiddenFaults.push_back(std::move(fs));
   }
   snap.sectorIndex = static_cast<int>(state_.currentTrackNodeIndex);
   snap.racePosition = racePosition;

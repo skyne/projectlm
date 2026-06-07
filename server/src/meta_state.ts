@@ -429,7 +429,7 @@ export class MetaStateManager {
 
   repairCarCondition(
     carId: string,
-    options?: { parts?: string[]; rebuild?: boolean },
+    options?: { parts?: string[]; rebuild?: boolean; reveal?: boolean },
   ): MetaStatePayload | { error: string } {
     const fleet = this.state.fleet ?? [];
     const idx = fleet.findIndex((c) => c.id === carId);

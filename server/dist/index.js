@@ -287,6 +287,7 @@ function main() {
                 const result = host.repairCarCondition(payload.carId, {
                     parts: payload.parts,
                     rebuild: payload.rebuild,
+                    reveal: payload.reveal,
                 });
                 if ("error" in result) {
                     ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));

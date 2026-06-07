@@ -104,6 +104,7 @@ export interface CarSnapshot {
   limpReason?: string;
   structuralSeverity?: number;
   suspectedIssues?: boolean;
+  hiddenFaults?: HiddenFaultPayload[];
 }
 
 export type SimEventType =
@@ -470,6 +471,7 @@ export interface RepairCarConditionPayload {
   carId: string;
   parts?: string[];
   rebuild?: boolean;
+  reveal?: boolean;
 }
 
 export interface FleetCarPayload {

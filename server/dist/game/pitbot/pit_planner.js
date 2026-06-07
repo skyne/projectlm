@@ -278,7 +278,8 @@ function planPitStop(s, ctx, fuelAtLastPit) {
     if (!bundleServices.fuel &&
         !bundleServices.tyres &&
         !bundleServices.driver &&
-        !bundleServices.engine) {
+        !bundleServices.engine &&
+        !bundleServices.body) {
         return null;
     }
     const fuelL = bundleServices.fuel ? fuelToAdd(s) : 0;

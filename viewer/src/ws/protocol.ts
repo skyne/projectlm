@@ -104,6 +104,7 @@ export interface CarSnapshot {
   limpReason?: string;
   structuralSeverity?: number;
   suspectedIssues?: boolean;
+  hiddenFaults?: HiddenFaultPayload[];
 }
 
 export type SimEventType =
@@ -473,9 +474,18 @@ export interface TrackSetupPresetPayload {
   finalDriveRatio?: number;
 }
 
+export interface HiddenFaultPayload {
+  id: string;
+  kind: string;
+  linkedPart: string;
+  severity: number;
+  revealed: boolean;
+}
+
 export interface CarConditionPayload {
   partHealth: Record<string, number>;
   irreparable: string[];
+  hiddenFaults?: HiddenFaultPayload[];
   limpMode?: string;
   structuralSeverity?: number;
 }

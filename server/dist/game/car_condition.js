@@ -37,12 +37,15 @@ exports.snapshotToCarCondition = snapshotToCarCondition;
 exports.serializeCarConditionLine = serializeCarConditionLine;
 exports.writeCarConditionsFile = writeCarConditionsFile;
 exports.repairCarCondition = repairCarCondition;
+exports.mergeHiddenFaults = mergeHiddenFaults;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 function snapshotToCarCondition(snap) {
+    const hiddenFaults = (snap.hiddenFaults ?? []).map((f) => ({ ...f }));
     return {
         partHealth: { ...(snap.partHealth ?? {}) },
         irreparable: [...(snap.partIrreparable ?? [])],
+        hiddenFaults: hiddenFaults.length ? hiddenFaults : undefined,
         limpMode: snap.limpMode !== "none" ? snap.limpMode : undefined,
         structuralSeverity: snap.structuralSeverity,
     };
@@ -56,6 +59,9 @@ function serializeCarConditionLine(entryId, condition) {
     if (condition.irreparable?.length) {
         parts.push(`irreparable=${condition.irreparable.join(",")}`);
     }
+    for (const fault of condition.hiddenFaults ?? []) {
+        parts.push(`fault=${fault.id}|${fault.kind}|${fault.linkedPart}|${fault.severity.toFixed(1)}|${fault.revealed ? 1 : 0}`);
+    }
     return `condition=${parts.join("|")}`;
 }
 function writeCarConditionsFile(absPath, rows) {
@@ -64,7 +70,8 @@ function writeCarConditionsFile(absPath, rows) {
         if (!row.condition)
             continue;
         const hasDamage = Object.keys(row.condition.partHealth ?? {}).length > 0 ||
-            (row.condition.irreparable?.length ?? 0) > 0;
+            (row.condition.irreparable?.length ?? 0) > 0 ||
+            (row.condition.hiddenFaults?.length ?? 0) > 0;
         if (!hasDamage)
             continue;
         lines.push(serializeCarConditionLine(row.entryId, row.condition));
@@ -80,6 +87,12 @@ function repairCarCondition(condition, options) {
         limpMode: undefined,
         structuralSeverity: 0,
     };
+    if (options?.reveal) {
+        return {
+            ...next,
+            hiddenFaults: (next.hiddenFaults ?? []).map((f) => ({ ...f, revealed: true })),
+        };
+    }
     if (options?.rebuild) {
         return {
             partHealth: {},
@@ -96,4 +109,15 @@ function repairCarCondition(condition, options) {
         next.irreparable = next.irreparable.filter((p) => p !== part);
     }
     return next;
+}
+function mergeHiddenFaults(existing, incoming) {
+    if (!incoming?.length)
+        return existing?.length ? [...existing] : undefined;
+    const byId = new Map((existing ?? []).map((f) => [f.id, f]));
+    for (const fault of incoming) {
+        const prev = byId.get(fault.id);
+        byId.set(fault.id, prev ? { ...prev, ...fault, revealed: prev.revealed || fault.revealed } : fault);
+    }
+    const merged = [...byId.values()];
+    return merged.length ? merged : undefined;
 }

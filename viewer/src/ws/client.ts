@@ -317,7 +317,10 @@ export class ViewerClient {
     this.send(clientMessage("save_team_creation_draft", draft));
   }
 
-  repairCarCondition(carId: string, options?: { parts?: string[]; rebuild?: boolean }): void {
+  repairCarCondition(
+    carId: string,
+    options?: { parts?: string[]; rebuild?: boolean; reveal?: boolean },
+  ): void {
     this.send(clientMessage("repair_car_condition", { carId, ...options }));
   }
 

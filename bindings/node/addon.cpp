@@ -191,6 +191,20 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
     obj.Set("structuralSeverity", snapshot.structuralSeverity);
   if (snapshot.suspectedIssues)
     obj.Set("suspectedIssues", true);
+  if (!snapshot.hiddenFaults.empty()) {
+    Napi::Array hf = Napi::Array::New(env, snapshot.hiddenFaults.size());
+    for (size_t i = 0; i < snapshot.hiddenFaults.size(); ++i) {
+      const auto &fault = snapshot.hiddenFaults[i];
+      Napi::Object fo = Napi::Object::New(env);
+      fo.Set("id", fault.id);
+      fo.Set("kind", fault.kind);
+      fo.Set("linkedPart", fault.linkedPart);
+      fo.Set("severity", fault.severity);
+      fo.Set("revealed", fault.revealed);
+      hf.Set(static_cast<uint32_t>(i), fo);
+    }
+    obj.Set("hiddenFaults", hf);
+  }
   return obj;
 }
 

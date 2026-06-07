@@ -112,6 +112,13 @@ export interface CarSnapshot {
   limpReason?: string;
   structuralSeverity?: number;
   suspectedIssues?: boolean;
+  hiddenFaults?: Array<{
+    id: string;
+    kind: string;
+    linkedPart: string;
+    severity: number;
+    revealed: boolean;
+  }>;
 }
 
 export type SimEventType =

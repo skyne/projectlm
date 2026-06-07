@@ -134,5 +134,7 @@ struct PartDamageRepairSpec {
 PartDamageRepairSpec RepairSpecForPart(DamagePart part);
 const char *LimpModeLabel(LimpMode mode);
 const char *TyreDeflationLabel(TyreDeflationState state);
+const char *HiddenFaultKindToken(HiddenFaultKind kind);
+HiddenFaultKind HiddenFaultKindFromToken(const std::string &token);
 
 #endif

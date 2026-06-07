@@ -10,6 +10,10 @@ import { normalizeTyreCompound, tyreCompoundIconHtml } from "../utils/tyreCompou
 import { formatSetupSummary } from "../utils/setupCommands";
 import { buildTyreTelemetryPanelHtml, formatTyreTemp, formatTyreWear, wheelTempFromSnapshot, wheelWearFromSnapshot, worstWheelWear, hottestWheelTemp } from "../utils/formatTyre";
 import { escapeHtml } from "../utils/mmUi";
+import {
+  buildSubsystemRepairHtml,
+  collectSubsystemRepairs,
+} from "../utils/pitRepairParts";
 
 export interface PitStopModalHandlers {
   onConfirm: (entryId: string, command: string) => void;
@@ -37,6 +41,7 @@ export class PitStopModal {
   private setupDelta: PitSetupDelta = {};
   private engineerSkill = 75;
   private setupSummaryEl!: HTMLElement;
+  private subsystemHost!: HTMLElement;
 
   constructor(container: HTMLElement, handlers: PitStopModalHandlers) {
     this.handlers = handlers;
@@ -90,6 +95,7 @@ export class PitStopModal {
           <div class="pit-modal-wear-grid hidden"></div>
           <label><input type="checkbox" class="pit-modal-repair-engine" /> Engine repair</label>
           <label><input type="checkbox" class="pit-modal-repair-body" /> Bodywork repair</label>
+          <div class="pit-modal-subsystem-host"></div>
           <label><input type="checkbox" class="pit-modal-driver-change" /> <span class="pit-modal-driver-change-label">Driver change</span></label>
           <label class="pit-driver-select-wrap hidden">Swap to
             <select class="pit-modal-driver-select"></select>
@@ -209,6 +215,8 @@ export class PitStopModal {
     this.carSummaryEl = this.root.querySelector(".pit-modal-car-summary")!;
     this.wearGridEl = this.root.querySelector(".pit-modal-wear-grid")!;
     this.setupSummaryEl = this.root.querySelector(".pit-setup-summary")!;
+    this.subsystemHost = this.root.querySelector(".pit-modal-subsystem-host")!;
+    this.subsystemHost.addEventListener("change", () => this.updateEstimate());
 
     const refresh = () => this.updateEstimate();
     this.fuelInput.addEventListener("input", refresh);
@@ -289,11 +297,13 @@ export class PitStopModal {
       }
       if ((snap.engineHealth ?? 100) < 78) this.repairEngine.checked = true;
       if (snap.limpMode && snap.limpMode !== "none") this.repairBody.checked = true;
+      this.refreshSubsystemRepairs(snap);
       this.populateDriverSelect(snap);
     } else {
       this.carSummaryEl.textContent = "Your car";
       this.wearGridEl.classList.add("hidden");
       this.wearGridEl.innerHTML = "";
+      this.subsystemHost.innerHTML = "";
     }
     this.syncCompoundFieldState();
     this.updateEstimate();
@@ -317,11 +327,13 @@ export class PitStopModal {
     if (driverLabel) {
       driverLabel.textContent = `Driver change (+${driverSec}s)`;
     }
+    const repairParts = collectSubsystemRepairs(this.subsystemHost);
     const sec = estimatePitSeconds({
       fuel: Number(this.fuelInput.value) || 0,
       tireCount: tires,
       repairEngine: this.repairEngine.checked,
       repairBody: this.repairBody.checked,
+      repairParts,
       driverChange: this.driverChange.checked,
       setup: this.setupDelta,
       serviceabilityFactor: serviceability,
@@ -465,6 +477,13 @@ export class PitStopModal {
     );
   }
 
+  private refreshSubsystemRepairs(snap: CarSnapshot): void {
+    this.subsystemHost.innerHTML = buildSubsystemRepairHtml(
+      snap,
+      "pit-subsystem-repairs",
+    );
+  }
+
   private applyWearBasedTireSelection(wear: ReturnType<typeof wheelWearFromSnapshot>): void {
     const corners = ["FL", "FR", "RL", "RR"] as const;
     const values = corners.map((corner) => wear[corner]);
@@ -486,6 +505,7 @@ export class PitStopModal {
     const repairs: string[] = [];
     if (this.repairEngine.checked) repairs.push("engine");
     if (this.repairBody.checked) repairs.push("body");
+    repairs.push(...collectSubsystemRepairs(this.subsystemHost));
     const tread = this.selectedTyreTread();
     return buildPitCommand({
       fuel: Number(this.fuelInput.value) || 0,

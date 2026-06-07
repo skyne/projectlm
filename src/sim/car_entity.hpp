@@ -130,6 +130,14 @@ struct CarSnapshot {
   std::string limpReason;
   double structuralSeverity = 0.0;
   bool suspectedIssues = false;
+  struct HiddenFaultSnapshot {
+    std::string id;
+    std::string kind;
+    std::string linkedPart;
+    double severity = 0.0;
+    bool revealed = false;
+  };
+  std::vector<HiddenFaultSnapshot> hiddenFaults;
 };
 
 class Car {
