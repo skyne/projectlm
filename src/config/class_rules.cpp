@@ -47,6 +47,10 @@ static std::string ChassisToString(EChassis type) {
     return "LMDhLigier";
   case EChassis::Oreca07:
     return "Oreca07";
+  case EChassis::Oreca07Endurance:
+    return "Oreca07Endurance";
+  case EChassis::Oreca07Sprint:
+    return "Oreca07Sprint";
   case EChassis::GT3Oreca:
     return "GT3Oreca";
   case EChassis::GT3PrattMiller:
@@ -64,8 +68,12 @@ static std::string ChassisToString(EChassis type) {
 
 static std::string FrontAeroToString(EFrontAero type) {
   switch (type) {
+  case EFrontAero::LowDragNoseSlim:
+    return "LowDragNoseSlim";
   case EFrontAero::HighDownforceSplitter:
     return "HighDownforceSplitter";
+  case EFrontAero::HighDownforceSplitterPlus:
+    return "HighDownforceSplitterPlus";
   default:
     return "LowDragNose";
   }
@@ -73,8 +81,12 @@ static std::string FrontAeroToString(EFrontAero type) {
 
 static std::string RearAeroToString(ERearAero type) {
   switch (type) {
+  case ERearAero::StandardWingLowDrag:
+    return "StandardWingLowDrag";
   case ERearAero::HighDownforceWing:
     return "HighDownforceWing";
+  case ERearAero::HighDownforceWingPlus:
+    return "HighDownforceWingPlus";
   case ERearAero::WinglessGroundEffect:
     return "WinglessGroundEffect";
   default:
@@ -86,6 +98,10 @@ static std::string CoolingToString(ECoolingPack type) {
   switch (type) {
   case ECoolingPack::SprintSlimline:
     return "SprintSlimline";
+  case ECoolingPack::SprintSlimlinePlus:
+    return "SprintSlimlinePlus";
+  case ECoolingPack::EnduranceHeavyDutyLight:
+    return "EnduranceHeavyDutyLight";
   case ECoolingPack::DuctedRacing:
     return "DuctedRacing";
   case ECoolingPack::MaxFlowEndurance:
@@ -97,10 +113,14 @@ static std::string CoolingToString(ECoolingPack type) {
 
 static std::string BrakeSystemToString(EBrakeSystem type) {
   switch (type) {
+  case EBrakeSystem::StandardCaliperLight:
+    return "StandardCaliperLight";
   case EBrakeSystem::CarbonCeramic:
     return "CarbonCeramic";
   case EBrakeSystem::HeavyDutyEndurance:
     return "HeavyDutyEndurance";
+  case EBrakeSystem::APRacingGT3:
+    return "APRacingGT3";
   case EBrakeSystem::BremboHypercar:
     return "BremboHypercar";
   case EBrakeSystem::AkebonoHypercar:
@@ -114,14 +134,22 @@ static std::string BrakeSystemToString(EBrakeSystem type) {
 
 static std::string TransmissionToString(ETransmission type) {
   switch (type) {
+  case ETransmission::SixSpeedSequentialEndurance:
+    return "SixSpeedSequentialEndurance";
+  case ETransmission::SixSpeedSequentialShortRatio:
+    return "SixSpeedSequentialShortRatio";
   case ETransmission::SevenSpeedSequential:
     return "SevenSpeedSequential";
   case ETransmission::EightSpeedPaddle:
     return "EightSpeedPaddle";
   case ETransmission::XtracP1359:
     return "XtracP1359";
+  case ETransmission::XtracP1359Endurance:
+    return "XtracP1359Endurance";
   case ETransmission::XtracP529:
     return "XtracP529";
+  case ETransmission::XtracP529Endurance:
+    return "XtracP529Endurance";
   case ETransmission::SingleSpeedEDrive:
     return "SingleSpeedEDrive";
   default:
@@ -131,6 +159,10 @@ static std::string TransmissionToString(ETransmission type) {
 
 static std::string HybridSystemToString(EHybridSystem type) {
   switch (type) {
+  case EHybridSystem::NoneLightweight:
+    return "NoneLightweight";
+  case EHybridSystem::NoneEndurance:
+    return "NoneEndurance";
   case EHybridSystem::LMDh500kW:
     return "LMDh500kW";
   case EHybridSystem::HypercarHV:
@@ -144,14 +176,22 @@ static std::string HybridSystemToString(EHybridSystem type) {
 
 static std::string WheelPackageToString(EWheelPackage type) {
   switch (type) {
+  case EWheelPackage::Hypercar18Balanced:
+    return "Hypercar18Balanced";
   case EWheelPackage::Hypercar18WideRear:
     return "Hypercar18WideRear";
   case EWheelPackage::Hypercar18LowDrag:
     return "Hypercar18LowDrag";
   case EWheelPackage::LMP2Oreca18:
     return "LMP2Oreca18";
+  case EWheelPackage::LMP2Oreca18Wide:
+    return "LMP2Oreca18Wide";
+  case EWheelPackage::LMP2Oreca18Endurance:
+    return "LMP2Oreca18Endurance";
   case EWheelPackage::GT3Front20Rear21:
     return "GT3Front20Rear21";
+  case EWheelPackage::GT3Front20Rear21Endurance:
+    return "GT3Front20Rear21Endurance";
   case EWheelPackage::GT3WideRear21:
     return "GT3WideRear21";
   default:
@@ -161,18 +201,30 @@ static std::string WheelPackageToString(EWheelPackage type) {
 
 static std::string SuspensionLayoutToString(ESuspensionLayout type) {
   switch (type) {
+  case ESuspensionLayout::PushrodDoubleWishboneEndurance:
+    return "PushrodDoubleWishboneEndurance";
   case ESuspensionLayout::PullrodDoubleWishbone:
     return "PullrodDoubleWishbone";
+  case ESuspensionLayout::PullrodDoubleWishboneLowDrag:
+    return "PullrodDoubleWishboneLowDrag";
   case ESuspensionLayout::DoubleWishboneHeaveSpring:
     return "DoubleWishboneHeaveSpring";
   case ESuspensionLayout::MultilinkRearHypercar:
     return "MultilinkRearHypercar";
   case ESuspensionLayout::MacPhersonStrutGT3:
     return "MacPhersonStrutGT3";
+  case ESuspensionLayout::MacPhersonStrutGT3Light:
+    return "MacPhersonStrutGT3Light";
   case ESuspensionLayout::DoubleWishboneGT3:
     return "DoubleWishboneGT3";
+  case ESuspensionLayout::DoubleWishboneGT3Stiff:
+    return "DoubleWishboneGT3Stiff";
+  case ESuspensionLayout::DoubleWishboneGT3Endurance:
+    return "DoubleWishboneGT3Endurance";
   case ESuspensionLayout::OrecaLMP2Spec:
     return "OrecaLMP2Spec";
+  case ESuspensionLayout::OrecaLMP2SpecEndurance:
+    return "OrecaLMP2SpecEndurance";
   default:
     return "PushrodDoubleWishbone";
   }
@@ -272,6 +324,10 @@ std::map<std::string, ClassRule> LoadClassRules(const std::string &filename) {
 static ECoolingPack CoolingFromName(const std::string &name) {
   if (name == "SprintSlimline")
     return ECoolingPack::SprintSlimline;
+  if (name == "SprintSlimlinePlus")
+    return ECoolingPack::SprintSlimlinePlus;
+  if (name == "EnduranceHeavyDutyLight")
+    return ECoolingPack::EnduranceHeavyDutyLight;
   if (name == "DuctedRacing")
     return ECoolingPack::DuctedRacing;
   if (name == "MaxFlowEndurance")
@@ -290,6 +346,10 @@ static EChassis ChassisFromName(const std::string &name) {
     return EChassis::LMDhDallara;
   if (name == "Oreca07")
     return EChassis::Oreca07;
+  if (name == "Oreca07Endurance")
+    return EChassis::Oreca07Endurance;
+  if (name == "Oreca07Sprint")
+    return EChassis::Oreca07Sprint;
   if (name == "GT3PrattMiller")
     return EChassis::GT3PrattMiller;
   if (name == "GT3McLaren")
@@ -304,8 +364,12 @@ static EChassis ChassisFromName(const std::string &name) {
 }
 
 static EBrakeSystem BrakesFromName(const std::string &name) {
+  if (name == "StandardCaliperLight")
+    return EBrakeSystem::StandardCaliperLight;
   if (name == "CarbonCeramic")
     return EBrakeSystem::CarbonCeramic;
+  if (name == "APRacingGT3")
+    return EBrakeSystem::APRacingGT3;
   if (name == "BremboHypercar")
     return EBrakeSystem::BremboHypercar;
   if (name == "AkebonoHypercar")
@@ -316,16 +380,28 @@ static EBrakeSystem BrakesFromName(const std::string &name) {
 }
 
 static ETransmission TransmissionFromName(const std::string &name) {
+  if (name == "SixSpeedSequentialEndurance")
+    return ETransmission::SixSpeedSequentialEndurance;
+  if (name == "SixSpeedSequentialShortRatio")
+    return ETransmission::SixSpeedSequentialShortRatio;
   if (name == "XtracP1359")
     return ETransmission::XtracP1359;
+  if (name == "XtracP1359Endurance")
+    return ETransmission::XtracP1359Endurance;
   if (name == "XtracP529")
     return ETransmission::XtracP529;
+  if (name == "XtracP529Endurance")
+    return ETransmission::XtracP529Endurance;
   if (name == "SevenSpeedSequential")
     return ETransmission::SevenSpeedSequential;
   return ETransmission::SixSpeedSequential;
 }
 
 static EHybridSystem HybridFromName(const std::string &name) {
+  if (name == "NoneLightweight")
+    return EHybridSystem::NoneLightweight;
+  if (name == "NoneEndurance")
+    return EHybridSystem::NoneEndurance;
   if (name == "HypercarHV")
     return EHybridSystem::HypercarHV;
   if (name == "LMDh50kW")
@@ -336,42 +412,72 @@ static EHybridSystem HybridFromName(const std::string &name) {
 }
 
 static EWheelPackage WheelPackageFromName(const std::string &name) {
+  if (name == "Hypercar18Balanced")
+    return EWheelPackage::Hypercar18Balanced;
   if (name == "Hypercar18WideRear")
     return EWheelPackage::Hypercar18WideRear;
   if (name == "Hypercar18LowDrag")
     return EWheelPackage::Hypercar18LowDrag;
   if (name == "LMP2Oreca18")
     return EWheelPackage::LMP2Oreca18;
+  if (name == "LMP2Oreca18Wide")
+    return EWheelPackage::LMP2Oreca18Wide;
+  if (name == "LMP2Oreca18Endurance")
+    return EWheelPackage::LMP2Oreca18Endurance;
+  if (name == "GT3Front20Rear21")
+    return EWheelPackage::GT3Front20Rear21;
+  if (name == "GT3Front20Rear21Endurance")
+    return EWheelPackage::GT3Front20Rear21Endurance;
   if (name == "GT3WideRear21")
     return EWheelPackage::GT3WideRear21;
   return EWheelPackage::Hypercar18Standard;
 }
 
 static ESuspensionLayout SuspensionFromName(const std::string &name) {
+  if (name == "PushrodDoubleWishboneEndurance")
+    return ESuspensionLayout::PushrodDoubleWishboneEndurance;
   if (name == "PullrodDoubleWishbone")
     return ESuspensionLayout::PullrodDoubleWishbone;
+  if (name == "PullrodDoubleWishboneLowDrag")
+    return ESuspensionLayout::PullrodDoubleWishboneLowDrag;
   if (name == "DoubleWishboneHeaveSpring")
     return ESuspensionLayout::DoubleWishboneHeaveSpring;
   if (name == "MultilinkRearHypercar")
     return ESuspensionLayout::MultilinkRearHypercar;
   if (name == "MacPhersonStrutGT3")
     return ESuspensionLayout::MacPhersonStrutGT3;
+  if (name == "MacPhersonStrutGT3Light")
+    return ESuspensionLayout::MacPhersonStrutGT3Light;
   if (name == "DoubleWishboneGT3")
     return ESuspensionLayout::DoubleWishboneGT3;
+  if (name == "DoubleWishboneGT3Stiff")
+    return ESuspensionLayout::DoubleWishboneGT3Stiff;
+  if (name == "DoubleWishboneGT3Endurance")
+    return ESuspensionLayout::DoubleWishboneGT3Endurance;
   if (name == "OrecaLMP2Spec")
     return ESuspensionLayout::OrecaLMP2Spec;
+  if (name == "OrecaLMP2SpecEndurance")
+    return ESuspensionLayout::OrecaLMP2SpecEndurance;
   return ESuspensionLayout::PushrodDoubleWishbone;
 }
 
 static EFrontAero FrontAeroFromName(const std::string &name) {
+  if (name == "LowDragNoseSlim")
+    return EFrontAero::LowDragNoseSlim;
   if (name == "HighDownforceSplitter")
     return EFrontAero::HighDownforceSplitter;
+  if (name == "HighDownforceSplitterPlus")
+    return EFrontAero::HighDownforceSplitterPlus;
   return EFrontAero::LowDragNose;
 }
 
 static ERearAero RearAeroFromName(const std::string &name) {
+  if (name == "StandardWingLowDrag")
+    return ERearAero::StandardWingLowDrag;
   if (name == "HighDownforceWing")
     return ERearAero::HighDownforceWing;
+  if (name == "HighDownforceWingPlus")
+    return ERearAero::HighDownforceWingPlus;
   if (name == "WinglessGroundEffect")
     return ERearAero::WinglessGroundEffect;
   return ERearAero::StandardWing;

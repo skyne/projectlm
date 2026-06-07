@@ -31,7 +31,14 @@ rule=wingless_requires_low_drag_nose
 if_slot=rear_aero
 if_part=WinglessGroundEffect
 requires_slot=front_aero
-requires_part=LowDragNose
+requires_any_parts=LowDragNose,LowDragNoseSlim
+
+# APRacing GT3 kit fits homologated GT3 constructors
+rule=apr_gt3_requires_gt3_chassis
+if_slot=brake_system
+if_part=APRacingGT3
+requires_slot=chassis
+requires_any_parts=GT3Spaceframe,GT3Oreca,GT3PrattMiller,GT3McLaren,GT3Multimatic
 
 # LMDh spec hybrid fits any homologated LMDh spine
 rule=lmdh_hybrid_requires_lmdh_spine

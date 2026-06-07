@@ -565,6 +565,8 @@ export interface ClassInfoPayload {
   minWeightKg: number;
   maxWeightKg: number;
   maxStintHours: number;
+  /** Allowed part types per garage slot (from class_rules.txt legal_* lists). */
+  legalParts?: Partial<Record<string, string[]>>;
 }
 
 export interface PartOptionPayload {

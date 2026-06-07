@@ -13,32 +13,52 @@ static std::string Trim(const std::string &s) {
 }
 
 static EWheelPackage ParseWheelPackage(const std::string &value) {
+  if (value == "Hypercar18Balanced")
+    return EWheelPackage::Hypercar18Balanced;
   if (value == "Hypercar18WideRear")
     return EWheelPackage::Hypercar18WideRear;
   if (value == "Hypercar18LowDrag")
     return EWheelPackage::Hypercar18LowDrag;
   if (value == "LMP2Oreca18")
     return EWheelPackage::LMP2Oreca18;
+  if (value == "LMP2Oreca18Wide")
+    return EWheelPackage::LMP2Oreca18Wide;
+  if (value == "LMP2Oreca18Endurance")
+    return EWheelPackage::LMP2Oreca18Endurance;
   if (value == "GT3Front20Rear21")
     return EWheelPackage::GT3Front20Rear21;
+  if (value == "GT3Front20Rear21Endurance")
+    return EWheelPackage::GT3Front20Rear21Endurance;
   if (value == "GT3WideRear21")
     return EWheelPackage::GT3WideRear21;
   return EWheelPackage::Hypercar18Standard;
 }
 
 static ESuspensionLayout ParseSuspensionLayout(const std::string &value) {
+  if (value == "PushrodDoubleWishboneEndurance")
+    return ESuspensionLayout::PushrodDoubleWishboneEndurance;
   if (value == "PullrodDoubleWishbone")
     return ESuspensionLayout::PullrodDoubleWishbone;
+  if (value == "PullrodDoubleWishboneLowDrag")
+    return ESuspensionLayout::PullrodDoubleWishboneLowDrag;
   if (value == "DoubleWishboneHeaveSpring")
     return ESuspensionLayout::DoubleWishboneHeaveSpring;
   if (value == "MultilinkRearHypercar")
     return ESuspensionLayout::MultilinkRearHypercar;
   if (value == "MacPhersonStrutGT3")
     return ESuspensionLayout::MacPhersonStrutGT3;
+  if (value == "MacPhersonStrutGT3Light")
+    return ESuspensionLayout::MacPhersonStrutGT3Light;
   if (value == "DoubleWishboneGT3")
     return ESuspensionLayout::DoubleWishboneGT3;
+  if (value == "DoubleWishboneGT3Stiff")
+    return ESuspensionLayout::DoubleWishboneGT3Stiff;
+  if (value == "DoubleWishboneGT3Endurance")
+    return ESuspensionLayout::DoubleWishboneGT3Endurance;
   if (value == "OrecaLMP2Spec")
     return ESuspensionLayout::OrecaLMP2Spec;
+  if (value == "OrecaLMP2SpecEndurance")
+    return ESuspensionLayout::OrecaLMP2SpecEndurance;
   return ESuspensionLayout::PushrodDoubleWishbone;
 }
 
@@ -54,14 +74,22 @@ static ETireCompound ParseTireCompound(const std::string &value) {
 
 static WheelPackagePart *WheelCatalogEntry(PartCatalog &catalog,
                                            const std::string &name) {
+  if (name == "Hypercar18Balanced")
+    return &catalog.wheelHypercar18Balanced;
   if (name == "Hypercar18WideRear")
     return &catalog.wheelHypercar18WideRear;
   if (name == "Hypercar18LowDrag")
     return &catalog.wheelHypercar18LowDrag;
   if (name == "LMP2Oreca18")
     return &catalog.wheelLMP2Oreca18;
+  if (name == "LMP2Oreca18Wide")
+    return &catalog.wheelLMP2Oreca18Wide;
+  if (name == "LMP2Oreca18Endurance")
+    return &catalog.wheelLMP2Oreca18Endurance;
   if (name == "GT3Front20Rear21")
     return &catalog.wheelGT3Front20Rear21;
+  if (name == "GT3Front20Rear21Endurance")
+    return &catalog.wheelGT3Front20Rear21Endurance;
   if (name == "GT3WideRear21")
     return &catalog.wheelGT3WideRear21;
   return &catalog.wheelHypercar18Standard;
@@ -69,18 +97,30 @@ static WheelPackagePart *WheelCatalogEntry(PartCatalog &catalog,
 
 static SuspensionPart *SuspensionCatalogEntry(PartCatalog &catalog,
                                               const std::string &name) {
+  if (name == "PushrodDoubleWishboneEndurance")
+    return &catalog.suspensionPushrodDoubleWishboneEndurance;
   if (name == "PullrodDoubleWishbone")
     return &catalog.suspensionPullrodDoubleWishbone;
+  if (name == "PullrodDoubleWishboneLowDrag")
+    return &catalog.suspensionPullrodDoubleWishboneLowDrag;
   if (name == "DoubleWishboneHeaveSpring")
     return &catalog.suspensionDoubleWishboneHeaveSpring;
   if (name == "MultilinkRearHypercar")
     return &catalog.suspensionMultilinkRearHypercar;
   if (name == "MacPhersonStrutGT3")
     return &catalog.suspensionMacPhersonStrutGT3;
+  if (name == "MacPhersonStrutGT3Light")
+    return &catalog.suspensionMacPhersonStrutGT3Light;
   if (name == "DoubleWishboneGT3")
     return &catalog.suspensionDoubleWishboneGT3;
+  if (name == "DoubleWishboneGT3Stiff")
+    return &catalog.suspensionDoubleWishboneGT3Stiff;
+  if (name == "DoubleWishboneGT3Endurance")
+    return &catalog.suspensionDoubleWishboneGT3Endurance;
   if (name == "OrecaLMP2Spec")
     return &catalog.suspensionOrecaLMP2Spec;
+  if (name == "OrecaLMP2SpecEndurance")
+    return &catalog.suspensionOrecaLMP2SpecEndurance;
   return &catalog.suspensionPushrodDoubleWishbone;
 }
 
@@ -146,6 +186,10 @@ bool LoadCarConfig(const std::string &filename, CarConfig &car) {
           car.chassisChoice = EChassis::LMDhLigier;
         else if (value == "Oreca07")
           car.chassisChoice = EChassis::Oreca07;
+        else if (value == "Oreca07Endurance")
+          car.chassisChoice = EChassis::Oreca07Endurance;
+        else if (value == "Oreca07Sprint")
+          car.chassisChoice = EChassis::Oreca07Sprint;
         else if (value == "GT3Oreca")
           car.chassisChoice = EChassis::GT3Oreca;
         else if (value == "GT3PrattMiller")
@@ -159,13 +203,21 @@ bool LoadCarConfig(const std::string &filename, CarConfig &car) {
         else
           car.chassisChoice = EChassis::CarbonMonocoque;
       } else if (key == "front_aero_type") {
-        if (value == "LowDragNose")
-          car.frontAeroChoice = EFrontAero::LowDragNose;
-        else
+        if (value == "LowDragNoseSlim")
+          car.frontAeroChoice = EFrontAero::LowDragNoseSlim;
+        else if (value == "HighDownforceSplitter")
           car.frontAeroChoice = EFrontAero::HighDownforceSplitter;
+        else if (value == "HighDownforceSplitterPlus")
+          car.frontAeroChoice = EFrontAero::HighDownforceSplitterPlus;
+        else
+          car.frontAeroChoice = EFrontAero::LowDragNose;
       } else if (key == "rear_aero_type") {
-        if (value == "HighDownforceWing")
+        if (value == "StandardWingLowDrag")
+          car.rearAeroChoice = ERearAero::StandardWingLowDrag;
+        else if (value == "HighDownforceWing")
           car.rearAeroChoice = ERearAero::HighDownforceWing;
+        else if (value == "HighDownforceWingPlus")
+          car.rearAeroChoice = ERearAero::HighDownforceWingPlus;
         else if (value == "WinglessGroundEffect")
           car.rearAeroChoice = ERearAero::WinglessGroundEffect;
         else
@@ -173,6 +225,10 @@ bool LoadCarConfig(const std::string &filename, CarConfig &car) {
       } else if (key == "cooling_pack") {
         if (value == "SprintSlimline")
           car.coolingChoice = ECoolingPack::SprintSlimline;
+        else if (value == "SprintSlimlinePlus")
+          car.coolingChoice = ECoolingPack::SprintSlimlinePlus;
+        else if (value == "EnduranceHeavyDutyLight")
+          car.coolingChoice = ECoolingPack::EnduranceHeavyDutyLight;
         else if (value == "DuctedRacing")
           car.coolingChoice = ECoolingPack::DuctedRacing;
         else if (value == "MaxFlowEndurance")
@@ -227,6 +283,8 @@ bool LoadCarConfig(const std::string &filename, CarConfig &car) {
           car.fuelSystemChoice = EFuelSystem::LargeTank;
         else if (value == "LeMans90L")
           car.fuelSystemChoice = EFuelSystem::LeMans90L;
+        else if (value == "LeMans95L")
+          car.fuelSystemChoice = EFuelSystem::LeMans95L;
         else if (value == "LeMans110L")
           car.fuelSystemChoice = EFuelSystem::LeMans110L;
         else if (value == "HydrogenTank")
@@ -234,10 +292,14 @@ bool LoadCarConfig(const std::string &filename, CarConfig &car) {
         else
           car.fuelSystemChoice = EFuelSystem::StandardTank;
       } else if (key == "brake_system") {
-        if (value == "CarbonCeramic")
+        if (value == "StandardCaliperLight")
+          car.brakeSystemChoice = EBrakeSystem::StandardCaliperLight;
+        else if (value == "CarbonCeramic")
           car.brakeSystemChoice = EBrakeSystem::CarbonCeramic;
         else if (value == "HeavyDutyEndurance")
           car.brakeSystemChoice = EBrakeSystem::HeavyDutyEndurance;
+        else if (value == "APRacingGT3")
+          car.brakeSystemChoice = EBrakeSystem::APRacingGT3;
         else if (value == "BremboHypercar")
           car.brakeSystemChoice = EBrakeSystem::BremboHypercar;
         else if (value == "AkebonoHypercar")
@@ -247,20 +309,32 @@ bool LoadCarConfig(const std::string &filename, CarConfig &car) {
         else
           car.brakeSystemChoice = EBrakeSystem::StandardCaliper;
       } else if (key == "transmission") {
-        if (value == "SevenSpeedSequential")
+        if (value == "SixSpeedSequentialEndurance")
+          car.transmissionChoice = ETransmission::SixSpeedSequentialEndurance;
+        else if (value == "SixSpeedSequentialShortRatio")
+          car.transmissionChoice = ETransmission::SixSpeedSequentialShortRatio;
+        else if (value == "SevenSpeedSequential")
           car.transmissionChoice = ETransmission::SevenSpeedSequential;
         else if (value == "EightSpeedPaddle")
           car.transmissionChoice = ETransmission::EightSpeedPaddle;
         else if (value == "XtracP1359")
           car.transmissionChoice = ETransmission::XtracP1359;
+        else if (value == "XtracP1359Endurance")
+          car.transmissionChoice = ETransmission::XtracP1359Endurance;
         else if (value == "XtracP529")
           car.transmissionChoice = ETransmission::XtracP529;
+        else if (value == "XtracP529Endurance")
+          car.transmissionChoice = ETransmission::XtracP529Endurance;
         else if (value == "SingleSpeedEDrive")
           car.transmissionChoice = ETransmission::SingleSpeedEDrive;
         else
           car.transmissionChoice = ETransmission::SixSpeedSequential;
       } else if (key == "hybrid_system") {
-        if (value == "LMDh500kW")
+        if (value == "NoneLightweight")
+          car.hybridSystemChoice = EHybridSystem::NoneLightweight;
+        else if (value == "NoneEndurance")
+          car.hybridSystemChoice = EHybridSystem::NoneEndurance;
+        else if (value == "LMDh500kW")
           car.hybridSystemChoice = EHybridSystem::LMDh500kW;
         else if (value == "HypercarHV")
           car.hybridSystemChoice = EHybridSystem::HypercarHV;
@@ -522,6 +596,10 @@ static ChassisPart *FindChassisPart(PartCatalog &catalog,
     return &catalog.chassisLMDhLigier;
   if (name == "Oreca07")
     return &catalog.chassisOreca07;
+  if (name == "Oreca07Endurance")
+    return &catalog.chassisOreca07Endurance;
+  if (name == "Oreca07Sprint")
+    return &catalog.chassisOreca07Sprint;
   if (name == "GT3Spaceframe")
     return &catalog.chassisGT3Spaceframe;
   if (name == "GT3Oreca")
@@ -662,6 +740,18 @@ bool LoadPartCatalog(const std::string &filename, PartCatalog &catalog) {
       catalog.chassisOreca07.structuralRigidity = std::stod(val);
     else if (key == "chassis.Oreca07.drag")
       catalog.chassisOreca07.baselineDrag = std::stod(val);
+    else if (key == "chassis.Oreca07Endurance.mass")
+      catalog.chassisOreca07Endurance.mass = std::stod(val);
+    else if (key == "chassis.Oreca07Endurance.rigidity")
+      catalog.chassisOreca07Endurance.structuralRigidity = std::stod(val);
+    else if (key == "chassis.Oreca07Endurance.drag")
+      catalog.chassisOreca07Endurance.baselineDrag = std::stod(val);
+    else if (key == "chassis.Oreca07Sprint.mass")
+      catalog.chassisOreca07Sprint.mass = std::stod(val);
+    else if (key == "chassis.Oreca07Sprint.rigidity")
+      catalog.chassisOreca07Sprint.structuralRigidity = std::stod(val);
+    else if (key == "chassis.Oreca07Sprint.drag")
+      catalog.chassisOreca07Sprint.baselineDrag = std::stod(val);
     else if (key == "chassis.GT3Spaceframe.mass")
       catalog.chassisGT3Spaceframe.mass = std::stod(val);
     else if (key == "chassis.GT3Spaceframe.rigidity")
@@ -704,6 +794,18 @@ bool LoadPartCatalog(const std::string &filename, PartCatalog &catalog) {
       catalog.frontHighDownforceSplitter.downforceCl = std::stod(val);
     else if (key == "front_aero.HighDownforceSplitter.drag")
       catalog.frontHighDownforceSplitter.dragCd = std::stod(val);
+    else if (key == "front_aero.LowDragNoseSlim.mass")
+      catalog.frontLowDragNoseSlim.mass = std::stod(val);
+    else if (key == "front_aero.LowDragNoseSlim.downforce")
+      catalog.frontLowDragNoseSlim.downforceCl = std::stod(val);
+    else if (key == "front_aero.LowDragNoseSlim.drag")
+      catalog.frontLowDragNoseSlim.dragCd = std::stod(val);
+    else if (key == "front_aero.HighDownforceSplitterPlus.mass")
+      catalog.frontHighDownforceSplitterPlus.mass = std::stod(val);
+    else if (key == "front_aero.HighDownforceSplitterPlus.downforce")
+      catalog.frontHighDownforceSplitterPlus.downforceCl = std::stod(val);
+    else if (key == "front_aero.HighDownforceSplitterPlus.drag")
+      catalog.frontHighDownforceSplitterPlus.dragCd = std::stod(val);
     else if (key == "rear_aero.StandardWing.mass")
       catalog.rearStandardWing.mass = std::stod(val);
     else if (key == "rear_aero.StandardWing.downforce")
@@ -712,6 +814,14 @@ bool LoadPartCatalog(const std::string &filename, PartCatalog &catalog) {
       catalog.rearStandardWing.dragCd = std::stod(val);
     else if (key == "rear_aero.StandardWing.permits_wingless")
       catalog.rearStandardWing.permitsWinglessPitch = (std::stoi(val) == 1);
+    else if (key == "rear_aero.StandardWingLowDrag.mass")
+      catalog.rearStandardWingLowDrag.mass = std::stod(val);
+    else if (key == "rear_aero.StandardWingLowDrag.downforce")
+      catalog.rearStandardWingLowDrag.downforceCl = std::stod(val);
+    else if (key == "rear_aero.StandardWingLowDrag.drag")
+      catalog.rearStandardWingLowDrag.dragCd = std::stod(val);
+    else if (key == "rear_aero.StandardWingLowDrag.permits_wingless")
+      catalog.rearStandardWingLowDrag.permitsWinglessPitch = (std::stoi(val) == 1);
     else if (key == "rear_aero.HighDownforceWing.mass")
       catalog.rearHighDownforceWing.mass = std::stod(val);
     else if (key == "rear_aero.HighDownforceWing.downforce")
@@ -720,6 +830,14 @@ bool LoadPartCatalog(const std::string &filename, PartCatalog &catalog) {
       catalog.rearHighDownforceWing.dragCd = std::stod(val);
     else if (key == "rear_aero.HighDownforceWing.permits_wingless")
       catalog.rearHighDownforceWing.permitsWinglessPitch = (std::stoi(val) == 1);
+    else if (key == "rear_aero.HighDownforceWingPlus.mass")
+      catalog.rearHighDownforceWingPlus.mass = std::stod(val);
+    else if (key == "rear_aero.HighDownforceWingPlus.downforce")
+      catalog.rearHighDownforceWingPlus.downforceCl = std::stod(val);
+    else if (key == "rear_aero.HighDownforceWingPlus.drag")
+      catalog.rearHighDownforceWingPlus.dragCd = std::stod(val);
+    else if (key == "rear_aero.HighDownforceWingPlus.permits_wingless")
+      catalog.rearHighDownforceWingPlus.permitsWinglessPitch = (std::stoi(val) == 1);
     else if (key == "rear_aero.WinglessGroundEffect.mass")
       catalog.rearWinglessGroundEffect.mass = std::stod(val);
     else if (key == "rear_aero.WinglessGroundEffect.downforce")
@@ -735,12 +853,25 @@ bool LoadPartCatalog(const std::string &filename, PartCatalog &catalog) {
       catalog.coolingSprintSlimline.dragCd = std::stod(val);
     else if (key == "cooling.SprintSlimline.dissipation")
       catalog.coolingSprintSlimline.thermalDissipationRate = std::stod(val);
+    else if (key == "cooling.SprintSlimlinePlus.mass")
+      catalog.coolingSprintSlimlinePlus.mass = std::stod(val);
+    else if (key == "cooling.SprintSlimlinePlus.drag")
+      catalog.coolingSprintSlimlinePlus.dragCd = std::stod(val);
+    else if (key == "cooling.SprintSlimlinePlus.dissipation")
+      catalog.coolingSprintSlimlinePlus.thermalDissipationRate = std::stod(val);
     else if (key == "cooling.EnduranceHeavyDuty.mass")
       catalog.coolingEnduranceHeavyDuty.mass = std::stod(val);
     else if (key == "cooling.EnduranceHeavyDuty.drag")
       catalog.coolingEnduranceHeavyDuty.dragCd = std::stod(val);
     else if (key == "cooling.EnduranceHeavyDuty.dissipation")
       catalog.coolingEnduranceHeavyDuty.thermalDissipationRate =
+          std::stod(val);
+    else if (key == "cooling.EnduranceHeavyDutyLight.mass")
+      catalog.coolingEnduranceHeavyDutyLight.mass = std::stod(val);
+    else if (key == "cooling.EnduranceHeavyDutyLight.drag")
+      catalog.coolingEnduranceHeavyDutyLight.dragCd = std::stod(val);
+    else if (key == "cooling.EnduranceHeavyDutyLight.dissipation")
+      catalog.coolingEnduranceHeavyDutyLight.thermalDissipationRate =
           std::stod(val);
     else if (key == "cooling.DuctedRacing.mass")
       catalog.coolingDuctedRacing.mass = std::stod(val);
@@ -848,6 +979,10 @@ bool LoadPartCatalog(const std::string &filename, PartCatalog &catalog) {
       catalog.fuelLeMans90L.mass = std::stod(val);
     else if (key == "fuel_system.LeMans90L.capacity")
       catalog.fuelLeMans90L.capacityLiters = std::stod(val);
+    else if (key == "fuel_system.LeMans95L.mass")
+      catalog.fuelLeMans95L.mass = std::stod(val);
+    else if (key == "fuel_system.LeMans95L.capacity")
+      catalog.fuelLeMans95L.capacityLiters = std::stod(val);
     else if (key == "fuel_system.LeMans110L.mass")
       catalog.fuelLeMans110L.mass = std::stod(val);
     else if (key == "fuel_system.LeMans110L.capacity")
@@ -862,12 +997,24 @@ bool LoadPartCatalog(const std::string &filename, PartCatalog &catalog) {
       catalog.brakeStandardCaliper.maxPressure = std::stod(val);
     else if (key == "brake.StandardCaliper.fade")
       catalog.brakeStandardCaliper.fadeUnderHeat = std::stod(val);
+    else if (key == "brake.StandardCaliperLight.mass")
+      catalog.brakeStandardCaliperLight.mass = std::stod(val);
+    else if (key == "brake.StandardCaliperLight.max_pressure")
+      catalog.brakeStandardCaliperLight.maxPressure = std::stod(val);
+    else if (key == "brake.StandardCaliperLight.fade")
+      catalog.brakeStandardCaliperLight.fadeUnderHeat = std::stod(val);
     else if (key == "brake.CarbonCeramic.mass")
       catalog.brakeCarbonCeramic.mass = std::stod(val);
     else if (key == "brake.CarbonCeramic.max_pressure")
       catalog.brakeCarbonCeramic.maxPressure = std::stod(val);
     else if (key == "brake.CarbonCeramic.fade")
       catalog.brakeCarbonCeramic.fadeUnderHeat = std::stod(val);
+    else if (key == "brake.APRacingGT3.mass")
+      catalog.brakeAPRacingGT3.mass = std::stod(val);
+    else if (key == "brake.APRacingGT3.max_pressure")
+      catalog.brakeAPRacingGT3.maxPressure = std::stod(val);
+    else if (key == "brake.APRacingGT3.fade")
+      catalog.brakeAPRacingGT3.fadeUnderHeat = std::stod(val);
     else if (key == "brake.HeavyDutyEndurance.mass")
       catalog.brakeHeavyDutyEndurance.mass = std::stod(val);
     else if (key == "brake.HeavyDutyEndurance.max_pressure")
@@ -898,6 +1045,18 @@ bool LoadPartCatalog(const std::string &filename, PartCatalog &catalog) {
       catalog.transmissionSixSpeed.gearCount = std::stoi(val);
     else if (key == "transmission.SixSpeedSequential.shift_delay")
       catalog.transmissionSixSpeed.shiftDelaySec = std::stod(val);
+    else if (key == "transmission.SixSpeedSequentialEndurance.mass")
+      catalog.transmissionSixSpeedEndurance.mass = std::stod(val);
+    else if (key == "transmission.SixSpeedSequentialEndurance.gear_count")
+      catalog.transmissionSixSpeedEndurance.gearCount = std::stoi(val);
+    else if (key == "transmission.SixSpeedSequentialEndurance.shift_delay")
+      catalog.transmissionSixSpeedEndurance.shiftDelaySec = std::stod(val);
+    else if (key == "transmission.SixSpeedSequentialShortRatio.mass")
+      catalog.transmissionSixSpeedShortRatio.mass = std::stod(val);
+    else if (key == "transmission.SixSpeedSequentialShortRatio.gear_count")
+      catalog.transmissionSixSpeedShortRatio.gearCount = std::stoi(val);
+    else if (key == "transmission.SixSpeedSequentialShortRatio.shift_delay")
+      catalog.transmissionSixSpeedShortRatio.shiftDelaySec = std::stod(val);
     else if (key == "transmission.SevenSpeedSequential.mass")
       catalog.transmissionSevenSpeed.mass = std::stod(val);
     else if (key == "transmission.SevenSpeedSequential.gear_count")
@@ -916,12 +1075,24 @@ bool LoadPartCatalog(const std::string &filename, PartCatalog &catalog) {
       catalog.transmissionXtracP1359.gearCount = std::stoi(val);
     else if (key == "transmission.XtracP1359.shift_delay")
       catalog.transmissionXtracP1359.shiftDelaySec = std::stod(val);
+    else if (key == "transmission.XtracP1359Endurance.mass")
+      catalog.transmissionXtracP1359Endurance.mass = std::stod(val);
+    else if (key == "transmission.XtracP1359Endurance.gear_count")
+      catalog.transmissionXtracP1359Endurance.gearCount = std::stoi(val);
+    else if (key == "transmission.XtracP1359Endurance.shift_delay")
+      catalog.transmissionXtracP1359Endurance.shiftDelaySec = std::stod(val);
     else if (key == "transmission.XtracP529.mass")
       catalog.transmissionXtracP529.mass = std::stod(val);
     else if (key == "transmission.XtracP529.gear_count")
       catalog.transmissionXtracP529.gearCount = std::stoi(val);
     else if (key == "transmission.XtracP529.shift_delay")
       catalog.transmissionXtracP529.shiftDelaySec = std::stod(val);
+    else if (key == "transmission.XtracP529Endurance.mass")
+      catalog.transmissionXtracP529Endurance.mass = std::stod(val);
+    else if (key == "transmission.XtracP529Endurance.gear_count")
+      catalog.transmissionXtracP529Endurance.gearCount = std::stoi(val);
+    else if (key == "transmission.XtracP529Endurance.shift_delay")
+      catalog.transmissionXtracP529Endurance.shiftDelaySec = std::stod(val);
     else if (key == "transmission.SingleSpeedEDrive.mass")
       catalog.transmissionSingleSpeedEDrive.mass = std::stod(val);
     else if (key == "transmission.SingleSpeedEDrive.gear_count")
@@ -930,6 +1101,22 @@ bool LoadPartCatalog(const std::string &filename, PartCatalog &catalog) {
       catalog.transmissionSingleSpeedEDrive.shiftDelaySec = std::stod(val);
     else if (key == "hybrid.None.mass")
       catalog.hybridNone.mass = std::stod(val);
+    else if (key == "hybrid.NoneLightweight.mass")
+      catalog.hybridNoneLightweight.mass = std::stod(val);
+    else if (key == "hybrid.NoneLightweight.deploy_kw")
+      catalog.hybridNoneLightweight.deployPowerKW = std::stod(val);
+    else if (key == "hybrid.NoneLightweight.regen_rate")
+      catalog.hybridNoneLightweight.regenRate = std::stod(val);
+    else if (key == "hybrid.NoneLightweight.stint_budget_mj")
+      catalog.hybridNoneLightweight.stintDeployBudgetMJ = std::stod(val);
+    else if (key == "hybrid.NoneEndurance.mass")
+      catalog.hybridNoneEndurance.mass = std::stod(val);
+    else if (key == "hybrid.NoneEndurance.deploy_kw")
+      catalog.hybridNoneEndurance.deployPowerKW = std::stod(val);
+    else if (key == "hybrid.NoneEndurance.regen_rate")
+      catalog.hybridNoneEndurance.regenRate = std::stod(val);
+    else if (key == "hybrid.NoneEndurance.stint_budget_mj")
+      catalog.hybridNoneEndurance.stintDeployBudgetMJ = std::stod(val);
     else if (key == "hybrid.LMDh500kW.mass")
       catalog.hybridLMDh500kW.mass = std::stod(val);
     else if (key == "hybrid.LMDh500kW.deploy_kw")
@@ -965,14 +1152,22 @@ bool LoadPartCatalog(const std::string &filename, PartCatalog &catalog) {
       TransmissionPart *tp = nullptr;
       if (variant == "SixSpeedSequential")
         tp = &catalog.transmissionSixSpeed;
+      else if (variant == "SixSpeedSequentialEndurance")
+        tp = &catalog.transmissionSixSpeedEndurance;
+      else if (variant == "SixSpeedSequentialShortRatio")
+        tp = &catalog.transmissionSixSpeedShortRatio;
       else if (variant == "SevenSpeedSequential")
         tp = &catalog.transmissionSevenSpeed;
       else if (variant == "EightSpeedPaddle")
         tp = &catalog.transmissionEightSpeed;
       else if (variant == "XtracP1359")
         tp = &catalog.transmissionXtracP1359;
+      else if (variant == "XtracP1359Endurance")
+        tp = &catalog.transmissionXtracP1359Endurance;
       else if (variant == "XtracP529")
         tp = &catalog.transmissionXtracP529;
+      else if (variant == "XtracP529Endurance")
+        tp = &catalog.transmissionXtracP529Endurance;
       else if (variant == "SingleSpeedEDrive")
         tp = &catalog.transmissionSingleSpeedEDrive;
       if (!tp)

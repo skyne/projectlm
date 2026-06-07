@@ -206,6 +206,10 @@ ChassisPart GetChassisStats(EChassis type, const PartCatalog &catalog) {
     return catalog.chassisLMDhLigier;
   case EChassis::Oreca07:
     return catalog.chassisOreca07;
+  case EChassis::Oreca07Endurance:
+    return catalog.chassisOreca07Endurance;
+  case EChassis::Oreca07Sprint:
+    return catalog.chassisOreca07Sprint;
   case EChassis::GT3Oreca:
     return catalog.chassisGT3Oreca;
   case EChassis::GT3PrattMiller:
@@ -223,8 +227,12 @@ ChassisPart GetChassisStats(EChassis type, const PartCatalog &catalog) {
 
 FrontAeroPart GetFrontAeroStats(EFrontAero type, const PartCatalog &catalog) {
   switch (type) {
+  case EFrontAero::LowDragNoseSlim:
+    return catalog.frontLowDragNoseSlim;
   case EFrontAero::HighDownforceSplitter:
     return catalog.frontHighDownforceSplitter;
+  case EFrontAero::HighDownforceSplitterPlus:
+    return catalog.frontHighDownforceSplitterPlus;
   default:
     return catalog.frontLowDragNose;
   }
@@ -232,8 +240,12 @@ FrontAeroPart GetFrontAeroStats(EFrontAero type, const PartCatalog &catalog) {
 
 RearAeroPart GetRearAeroStats(ERearAero type, const PartCatalog &catalog) {
   switch (type) {
+  case ERearAero::StandardWingLowDrag:
+    return catalog.rearStandardWingLowDrag;
   case ERearAero::HighDownforceWing:
     return catalog.rearHighDownforceWing;
+  case ERearAero::HighDownforceWingPlus:
+    return catalog.rearHighDownforceWingPlus;
   case ERearAero::WinglessGroundEffect:
     return catalog.rearWinglessGroundEffect;
   default:
@@ -245,6 +257,10 @@ CoolingPart GetCoolingStats(ECoolingPack type, const PartCatalog &catalog) {
   switch (type) {
   case ECoolingPack::SprintSlimline:
     return catalog.coolingSprintSlimline;
+  case ECoolingPack::SprintSlimlinePlus:
+    return catalog.coolingSprintSlimlinePlus;
+  case ECoolingPack::EnduranceHeavyDutyLight:
+    return catalog.coolingEnduranceHeavyDutyLight;
   case ECoolingPack::DuctedRacing:
     return catalog.coolingDuctedRacing;
   case ECoolingPack::MaxFlowEndurance:
@@ -270,14 +286,22 @@ TirePart GetTireStats(ETireCompound type, const PartCatalog &catalog) {
 WheelPackagePart GetWheelPackageStats(EWheelPackage type,
                                       const PartCatalog &catalog) {
   switch (type) {
+  case EWheelPackage::Hypercar18Balanced:
+    return catalog.wheelHypercar18Balanced;
   case EWheelPackage::Hypercar18WideRear:
     return catalog.wheelHypercar18WideRear;
   case EWheelPackage::Hypercar18LowDrag:
     return catalog.wheelHypercar18LowDrag;
   case EWheelPackage::LMP2Oreca18:
     return catalog.wheelLMP2Oreca18;
+  case EWheelPackage::LMP2Oreca18Wide:
+    return catalog.wheelLMP2Oreca18Wide;
+  case EWheelPackage::LMP2Oreca18Endurance:
+    return catalog.wheelLMP2Oreca18Endurance;
   case EWheelPackage::GT3Front20Rear21:
     return catalog.wheelGT3Front20Rear21;
+  case EWheelPackage::GT3Front20Rear21Endurance:
+    return catalog.wheelGT3Front20Rear21Endurance;
   case EWheelPackage::GT3WideRear21:
     return catalog.wheelGT3WideRear21;
   default:
@@ -288,18 +312,30 @@ WheelPackagePart GetWheelPackageStats(EWheelPackage type,
 SuspensionPart GetSuspensionStats(ESuspensionLayout type,
                                   const PartCatalog &catalog) {
   switch (type) {
+  case ESuspensionLayout::PushrodDoubleWishboneEndurance:
+    return catalog.suspensionPushrodDoubleWishboneEndurance;
   case ESuspensionLayout::PullrodDoubleWishbone:
     return catalog.suspensionPullrodDoubleWishbone;
+  case ESuspensionLayout::PullrodDoubleWishboneLowDrag:
+    return catalog.suspensionPullrodDoubleWishboneLowDrag;
   case ESuspensionLayout::DoubleWishboneHeaveSpring:
     return catalog.suspensionDoubleWishboneHeaveSpring;
   case ESuspensionLayout::MultilinkRearHypercar:
     return catalog.suspensionMultilinkRearHypercar;
   case ESuspensionLayout::MacPhersonStrutGT3:
     return catalog.suspensionMacPhersonStrutGT3;
+  case ESuspensionLayout::MacPhersonStrutGT3Light:
+    return catalog.suspensionMacPhersonStrutGT3Light;
   case ESuspensionLayout::DoubleWishboneGT3:
     return catalog.suspensionDoubleWishboneGT3;
+  case ESuspensionLayout::DoubleWishboneGT3Stiff:
+    return catalog.suspensionDoubleWishboneGT3Stiff;
+  case ESuspensionLayout::DoubleWishboneGT3Endurance:
+    return catalog.suspensionDoubleWishboneGT3Endurance;
   case ESuspensionLayout::OrecaLMP2Spec:
     return catalog.suspensionOrecaLMP2Spec;
+  case ESuspensionLayout::OrecaLMP2SpecEndurance:
+    return catalog.suspensionOrecaLMP2SpecEndurance;
   default:
     return catalog.suspensionPushrodDoubleWishbone;
   }
@@ -320,6 +356,8 @@ FuelSystemPart GetFuelSystemStats(EFuelSystem type, const PartCatalog &catalog) 
     return catalog.fuelLargeTank;
   case EFuelSystem::LeMans90L:
     return catalog.fuelLeMans90L;
+  case EFuelSystem::LeMans95L:
+    return catalog.fuelLeMans95L;
   case EFuelSystem::LeMans110L:
     return catalog.fuelLeMans110L;
   case EFuelSystem::HydrogenTank:
@@ -331,10 +369,14 @@ FuelSystemPart GetFuelSystemStats(EFuelSystem type, const PartCatalog &catalog) 
 
 BrakePart GetBrakeStats(EBrakeSystem type, const PartCatalog &catalog) {
   switch (type) {
+  case EBrakeSystem::StandardCaliperLight:
+    return catalog.brakeStandardCaliperLight;
   case EBrakeSystem::CarbonCeramic:
     return catalog.brakeCarbonCeramic;
   case EBrakeSystem::HeavyDutyEndurance:
     return catalog.brakeHeavyDutyEndurance;
+  case EBrakeSystem::APRacingGT3:
+    return catalog.brakeAPRacingGT3;
   case EBrakeSystem::BremboHypercar:
     return catalog.brakeBremboHypercar;
   case EBrakeSystem::AkebonoHypercar:
@@ -349,14 +391,22 @@ BrakePart GetBrakeStats(EBrakeSystem type, const PartCatalog &catalog) {
 TransmissionPart GetTransmissionStats(ETransmission type,
                                     const PartCatalog &catalog) {
   switch (type) {
+  case ETransmission::SixSpeedSequentialEndurance:
+    return catalog.transmissionSixSpeedEndurance;
+  case ETransmission::SixSpeedSequentialShortRatio:
+    return catalog.transmissionSixSpeedShortRatio;
   case ETransmission::SevenSpeedSequential:
     return catalog.transmissionSevenSpeed;
   case ETransmission::EightSpeedPaddle:
     return catalog.transmissionEightSpeed;
   case ETransmission::XtracP1359:
     return catalog.transmissionXtracP1359;
+  case ETransmission::XtracP1359Endurance:
+    return catalog.transmissionXtracP1359Endurance;
   case ETransmission::XtracP529:
     return catalog.transmissionXtracP529;
+  case ETransmission::XtracP529Endurance:
+    return catalog.transmissionXtracP529Endurance;
   case ETransmission::SingleSpeedEDrive:
     return catalog.transmissionSingleSpeedEDrive;
   default:
@@ -366,6 +416,10 @@ TransmissionPart GetTransmissionStats(ETransmission type,
 
 HybridPart GetHybridStats(EHybridSystem type, const PartCatalog &catalog) {
   switch (type) {
+  case EHybridSystem::NoneLightweight:
+    return catalog.hybridNoneLightweight;
+  case EHybridSystem::NoneEndurance:
+    return catalog.hybridNoneEndurance;
   case EHybridSystem::LMDh500kW:
     return catalog.hybridLMDh500kW;
   case EHybridSystem::HypercarHV:

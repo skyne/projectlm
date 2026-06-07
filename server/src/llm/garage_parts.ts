@@ -1,4 +1,7 @@
 import type { CarBuildPayload } from "../ws_protocol";
+import {
+  filterPartsForClass,
+} from "../game/class_rules";
 import { loadGameCatalog, type PartSlot } from "../game/catalog";
 
 export const BUILD_PART_FIELDS: Array<keyof CarBuildPayload> = [
@@ -82,14 +85,15 @@ export function compactCatalogForGarage(
 ): Record<string, string[]> {
   const catalog = loadGameCatalog(repoRoot);
   const unlocked = new Set(unlockedParts);
+  const classInfo = catalog.classes.find((c) => c.id === classId);
   const out: Record<string, string[]> = {};
   for (const [slot, parts] of Object.entries(catalog.partsBySlot)) {
-    out[slot] = parts.map((p) => {
+    const visible = filterPartsForClass(classInfo, slot as PartSlot, parts);
+    out[slot] = visible.map((p) => {
       const locked = isRdLocked(p.fullId, unlocked);
       return `${p.partType} (${p.displayName}, ${p.mass}kg)${locked ? " [R&D LOCKED]" : ""}`;
     });
   }
-  const classInfo = catalog.classes.find((c) => c.id === classId);
   return {
     class: [classInfo?.displayName ?? classId],
     powerCapHp: [String(classInfo?.powerCapHp ?? 0)],

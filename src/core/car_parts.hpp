@@ -22,6 +22,8 @@ enum class EChassis {
   LMDhLigier,
   // LMP2
   Oreca07,
+  Oreca07Endurance,
+  Oreca07Sprint,
   // LMGT3 homologated constructors
   GT3Spaceframe,
   GT3Oreca,
@@ -29,11 +31,24 @@ enum class EChassis {
   GT3McLaren,
   GT3Multimatic
 };
-enum class EFrontAero { LowDragNose, HighDownforceSplitter };
-enum class ERearAero { StandardWing, HighDownforceWing, WinglessGroundEffect };
+enum class EFrontAero {
+  LowDragNose,
+  LowDragNoseSlim,
+  HighDownforceSplitter,
+  HighDownforceSplitterPlus
+};
+enum class ERearAero {
+  StandardWing,
+  StandardWingLowDrag,
+  HighDownforceWing,
+  HighDownforceWingPlus,
+  WinglessGroundEffect
+};
 enum class ECoolingPack {
   SprintSlimline,
+  SprintSlimlinePlus,
   EnduranceHeavyDuty,
+  EnduranceHeavyDutyLight,
   DuctedRacing,
   MaxFlowEndurance
 };
@@ -42,46 +57,70 @@ enum class ETyreTread { Slick, Intermediate, Wet };
 
 enum class EWheelPackage {
   Hypercar18Standard,
+  Hypercar18Balanced,
   Hypercar18WideRear,
   Hypercar18LowDrag,
   LMP2Oreca18,
+  LMP2Oreca18Wide,
+  LMP2Oreca18Endurance,
   GT3Front20Rear21,
+  GT3Front20Rear21Endurance,
   GT3WideRear21,
 };
 
 enum class ESuspensionLayout {
   PushrodDoubleWishbone,
+  PushrodDoubleWishboneEndurance,
   PullrodDoubleWishbone,
+  PullrodDoubleWishboneLowDrag,
   DoubleWishboneHeaveSpring,
   MultilinkRearHypercar,
   MacPhersonStrutGT3,
+  MacPhersonStrutGT3Light,
   DoubleWishboneGT3,
+  DoubleWishboneGT3Stiff,
+  DoubleWishboneGT3Endurance,
   OrecaLMP2Spec,
+  OrecaLMP2SpecEndurance,
 };
 enum class EFuelSystem {
   StandardTank,
   LargeTank,
   LeMans90L,
+  LeMans95L,
   LeMans110L,
   HydrogenTank
 };
 enum class EBrakeSystem {
   StandardCaliper,
+  StandardCaliperLight,
   CarbonCeramic,
   HeavyDutyEndurance,
+  APRacingGT3,
   BremboHypercar,
   AkebonoHypercar,
   APRacingPrototype
 };
 enum class ETransmission {
   SixSpeedSequential,
+  SixSpeedSequentialEndurance,
+  SixSpeedSequentialShortRatio,
   SevenSpeedSequential,
   EightSpeedPaddle,
   XtracP1359,
+  XtracP1359Endurance,
   XtracP529,
+  XtracP529Endurance,
   SingleSpeedEDrive
 };
-enum class EHybridSystem { None, LMDh500kW, HypercarHV, LMDh50kW };
+enum class EHybridSystem {
+  None,
+  NoneLightweight,
+  NoneEndurance,
+  LMDh500kW,
+  HypercarHV,
+  LMDh50kW
+};
 
 struct ChassisPart {
   double mass = 0.0;
@@ -180,18 +219,26 @@ struct PartCatalog {
   ChassisPart chassisLMDhMultimatic{77.0, 1.26, 0.008};
   ChassisPart chassisLMDhLigier{76.0, 1.23, 0.010};
   ChassisPart chassisOreca07{74.0, 1.22, 0.010};
+  ChassisPart chassisOreca07Endurance{75.5, 1.20, 0.010};
+  ChassisPart chassisOreca07Sprint{72.5, 1.24, 0.009};
   ChassisPart chassisGT3Spaceframe{95.0, 0.95, 0.018};
   ChassisPart chassisGT3Oreca{94.0, 0.96, 0.017};
   ChassisPart chassisGT3PrattMiller{96.0, 0.94, 0.019};
   ChassisPart chassisGT3McLaren{93.0, 0.97, 0.016};
   ChassisPart chassisGT3Multimatic{95.0, 0.95, 0.018};
   FrontAeroPart frontLowDragNose{8.0, 0.5, 0.04};
+  FrontAeroPart frontLowDragNoseSlim{7.0, 0.45, 0.035};
   FrontAeroPart frontHighDownforceSplitter{15.0, 1.2, 0.12};
+  FrontAeroPart frontHighDownforceSplitterPlus{16.5, 1.28, 0.13};
   RearAeroPart rearStandardWing{18.0, 1.0, 0.14, false};
+  RearAeroPart rearStandardWingLowDrag{16.0, 0.88, 0.12, false};
   RearAeroPart rearHighDownforceWing{25.0, 1.8, 0.22, false};
+  RearAeroPart rearHighDownforceWingPlus{26.5, 1.92, 0.23, false};
   RearAeroPart rearWinglessGroundEffect{10.0, 1.3, 0.08, true};
   CoolingPart coolingSprintSlimline{10.0, 0.03, 0.8};
+  CoolingPart coolingSprintSlimlinePlus{12.0, 0.034, 1.05};
   CoolingPart coolingEnduranceHeavyDuty{25.0, 0.09, 1.5};
+  CoolingPart coolingEnduranceHeavyDutyLight{21.0, 0.065, 1.32};
   CoolingPart coolingDuctedRacing{22.0, 0.095, 1.95};
   CoolingPart coolingMaxFlowEndurance{38.0, 0.14, 2.4};
   TirePart tireSoft{12.0, 1.15, 0.08, 85.0};
@@ -201,17 +248,26 @@ struct PartCatalog {
   FuelSystemPart fuelStandardTank{35.0, 100.0};
   FuelSystemPart fuelLargeTank{50.0, 140.0};
   FuelSystemPart fuelLeMans90L{42.0, 90.0};
+  FuelSystemPart fuelLeMans95L{43.5, 95.0};
   FuelSystemPart fuelLeMans110L{48.0, 110.0};
   FuelSystemPart fuelHydrogenTank{62.0, 75.0};
   BrakePart brakeStandardCaliper{8.0, 0.70, 0.15};
+  BrakePart brakeStandardCaliperLight{7.0, 0.68, 0.16};
   BrakePart brakeCarbonCeramic{12.0, 0.85, 0.05};
   BrakePart brakeHeavyDutyEndurance{18.0, 0.75, 0.08};
+  BrakePart brakeAPRacingGT3{10.0, 0.84, 0.06};
   BrakePart brakeBremboHypercar{11.0, 0.92, 0.04};
   BrakePart brakeAkebonoHypercar{10.5, 0.90, 0.045};
   BrakePart brakeAPRacingPrototype{11.5, 0.91, 0.042};
   TransmissionPart transmissionSixSpeed{45.0, 6,
                                         {4.5, 2.5, 1.85, 1.35, 1.05, 0.82},
                                         {18.0, 38.0, 55.0, 72.0, 88.0}, 0.08};
+  TransmissionPart transmissionSixSpeedEndurance{
+      47.0, 6, {3.15, 2.02, 1.53, 1.20, 0.97, 0.77},
+      {21.0, 40.0, 56.0, 72.0, 86.0}, 0.065};
+  TransmissionPart transmissionSixSpeedShortRatio{
+      45.0, 6, {3.35, 2.15, 1.62, 1.28, 1.03, 0.82},
+      {20.0, 38.0, 54.0, 70.0, 84.0}, 0.058};
   TransmissionPart transmissionSevenSpeed{
       48.0, 7, {4.2, 2.6, 1.9, 1.45, 1.15, 0.92, 0.75},
       {16.0, 34.0, 50.0, 66.0, 80.0, 94.0}, 0.06};
@@ -221,42 +277,70 @@ struct PartCatalog {
   TransmissionPart transmissionXtracP1359{
       49.0, 7, {3.0, 2.0, 1.52, 1.20, 0.96, 0.78, 0.60},
       {20.0, 38.0, 54.0, 68.0, 82.0, 94.0}, 0.050};
+  TransmissionPart transmissionXtracP1359Endurance{
+      50.0, 7, {2.95, 1.98, 1.50, 1.18, 0.94, 0.76, 0.58},
+      {19.0, 36.0, 52.0, 66.0, 80.0, 92.0}, 0.054};
   TransmissionPart transmissionXtracP529{
       46.0, 6, {3.2, 2.05, 1.55, 1.22, 0.98, 0.78},
       {22.0, 42.0, 58.0, 74.0, 88.0}, 0.060};
+  TransmissionPart transmissionXtracP529Endurance{
+      47.0, 6, {3.15, 2.02, 1.53, 1.20, 0.97, 0.77},
+      {21.0, 40.0, 56.0, 72.0, 86.0}, 0.055};
   TransmissionPart transmissionSingleSpeedEDrive{
       38.0, 1, {3.2, 0, 0, 0, 0, 0, 0, 0},
       {200.0, 0, 0, 0, 0, 0, 0}, 0.0};
   HybridPart hybridNone{0.0, 0.0, 0.0, 0.0};
+  HybridPart hybridNoneLightweight{-2.0, 0.0, 0.0, 0.0};
+  HybridPart hybridNoneEndurance{6.0, 0.0, 0.0, 0.0};
   HybridPart hybridLMDh500kW{85.0, 500.0, 0.30, 8.0};
   HybridPart hybridHypercarHV{95.0, 200.0, 0.50, 3.5};
   HybridPart hybridLMDh50kW{92.0, 50.0, 0.35, 8.0};
   WheelPackagePart wheelHypercar18Standard{22.0, 0.457, 0.457, 305.0, 310.0,
                                            1.0, 1.0, 0.012, 8.0};
+  WheelPackagePart wheelHypercar18Balanced{23.0, 0.457, 0.457, 305.0, 322.0,
+                                           1.03, 1.06, 0.015, 8.8};
   WheelPackagePart wheelHypercar18WideRear{24.0, 0.457, 0.457, 305.0, 335.0,
                                            1.06, 1.12, 0.018, 9.5};
   WheelPackagePart wheelHypercar18LowDrag{20.0, 0.457, 0.457, 295.0, 300.0,
                                           0.96, 0.92, 0.008, 7.0};
   WheelPackagePart wheelLMP2Oreca18{21.0, 0.457, 0.457, 300.0, 305.0, 1.0, 1.0,
                                     0.011, 7.5};
+  WheelPackagePart wheelLMP2Oreca18Wide{22.5, 0.457, 0.457, 300.0, 315.0, 1.04,
+                                        1.08, 0.013, 8.0};
+  WheelPackagePart wheelLMP2Oreca18Endurance{
+      21.5, 0.457, 0.457, 300.0, 308.0, 0.99, 0.94, 0.010, 7.8};
   WheelPackagePart wheelGT3Front20Rear21{26.0, 0.508, 0.533, 325.0, 340.0, 1.04,
                                          1.05, 0.016, 10.0};
+  WheelPackagePart wheelGT3Front20Rear21Endurance{
+      27.0, 0.508, 0.533, 325.0, 345.0, 1.02, 0.96, 0.017, 10.5};
   WheelPackagePart wheelGT3WideRear21{28.0, 0.508, 0.533, 325.0, 355.0, 1.08,
                                       1.14, 0.022, 11.0};
   SuspensionPart suspensionPushrodDoubleWishbone{
       14.0, 135000.0, 150000.0, 0.040, 1.0, 1.0, 1.0, 1.0};
+  SuspensionPart suspensionPushrodDoubleWishboneEndurance{
+      14.5, 128000.0, 143000.0, 0.041, 0.97, 1.02, 1.02, 1.03};
   SuspensionPart suspensionPullrodDoubleWishbone{
       13.0, 132000.0, 148000.0, 0.038, 1.02, 1.08, 0.95, 1.02};
+  SuspensionPart suspensionPullrodDoubleWishboneLowDrag{
+      12.5, 130000.0, 146000.0, 0.036, 1.0, 1.14, 0.93, 0.98};
   SuspensionPart suspensionDoubleWishboneHeaveSpring{
       16.0, 142000.0, 158000.0, 0.041, 1.08, 1.12, 1.05, 1.04};
   SuspensionPart suspensionMultilinkRearHypercar{
       15.0, 138000.0, 162000.0, 0.039, 1.05, 1.10, 1.02, 1.03};
   SuspensionPart suspensionMacPhersonStrutGT3{
       11.0, 118000.0, 132000.0, 0.048, 0.92, 0.95, 1.08, 0.94};
+  SuspensionPart suspensionMacPhersonStrutGT3Light{
+      10.0, 114000.0, 128000.0, 0.049, 0.88, 0.93, 1.12, 0.92};
   SuspensionPart suspensionDoubleWishboneGT3{
       13.0, 122000.0, 138000.0, 0.045, 1.0, 1.0, 1.0, 1.0};
+  SuspensionPart suspensionDoubleWishboneGT3Stiff{
+      13.5, 128000.0, 145000.0, 0.044, 1.06, 1.02, 0.98, 0.97};
+  SuspensionPart suspensionDoubleWishboneGT3Endurance{
+      12.8, 116000.0, 132000.0, 0.046, 0.96, 0.98, 1.03, 1.03};
   SuspensionPart suspensionOrecaLMP2Spec{
       12.0, 128000.0, 142000.0, 0.042, 0.98, 1.0, 0.98, 0.98};
+  SuspensionPart suspensionOrecaLMP2SpecEndurance{
+      12.5, 122000.0, 136000.0, 0.043, 0.94, 1.01, 1.01, 1.02};
   std::map<std::string, std::string> attachmentPoints;
 };
 

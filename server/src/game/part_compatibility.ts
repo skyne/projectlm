@@ -148,9 +148,10 @@ export function validateAssemblyCompatibility(
 
   if (
     build.rear_aero_type === "WinglessGroundEffect" &&
-    build.front_aero_type !== "LowDragNose"
+    build.front_aero_type !== "LowDragNose" &&
+    build.front_aero_type !== "LowDragNoseSlim"
   ) {
-    return "Wingless rear package requires Low Drag Nose";
+    return "Wingless rear package requires a low-drag nose";
   }
 
   return validateFuelSystemPowertrain(build);
