@@ -1,8 +1,24 @@
 #include "car_parts.hpp"
 #include "class_rules.hpp"
 #include "config_loader.hpp"
+#include "part_catalog.hpp"
 #include "../helpers/paths.hpp"
 #include <catch_amalgamated.hpp>
+
+TEST_CASE("LoadPartCatalog parses catalog entries generically",
+          "[unit][car][catalog]") {
+  PartCatalog catalog;
+  REQUIRE(LoadPartCatalog(ConfigPath("part_catalog.txt"), catalog));
+
+  REQUIRE(catalog.HasPart("chassis", "LMHInHouse"));
+  REQUIRE(catalog.HasPart("transmission", "XtracP1359"));
+  REQUIRE(catalog.HasPart("hybrid", "LMDh50kW"));
+
+  const PartStats *stats = catalog.FindStats("chassis", "LMHInHouse");
+  REQUIRE(stats != nullptr);
+  REQUIRE(PartStatD(*stats, "mass") == Catch::Approx(72.0));
+  REQUIRE(PartStatD(*stats, "rigidity") == Catch::Approx(1.35));
+}
 
 TEST_CASE("CompileCarArchitecture produces sane hypercar", "[unit][car]") {
   PartCatalog catalog;
@@ -32,9 +48,9 @@ TEST_CASE("CompileCarArchitecture applies hybrid and transmission stats",
   REQUIRE(LoadAssemblyConfig(ConfigPath("physics_config.txt"), assembly));
 
   CarConfig car;
-  car.hybridSystemChoice = EHybridSystem::LMDh50kW;
-  car.transmissionChoice = ETransmission::XtracP1359;
-  car.brakeSystemChoice = EBrakeSystem::BremboHypercar;
+  car.hybridSystemId = "LMDh50kW";
+  car.transmissionId = "XtracP1359";
+  car.brakeSystemId = "BremboHypercar";
   CompileCarArchitecture(car, catalog, assembly);
 
   REQUIRE(car.hybridDeployPowerKW == Catch::Approx(50.0));

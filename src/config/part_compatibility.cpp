@@ -12,159 +12,6 @@ static std::string Trim(const std::string &s) {
   return s.substr(start, end - start);
 }
 
-static std::string ChassisToString(EChassis type) {
-  switch (type) {
-  case EChassis::Spaceframe:
-    return "Spaceframe";
-  case EChassis::LMHInHouse:
-    return "LMHInHouse";
-  case EChassis::LMHDallaraBuilt:
-    return "LMHDallaraBuilt";
-  case EChassis::LMHMultimaticBuilt:
-    return "LMHMultimaticBuilt";
-  case EChassis::LMHMonocoque:
-    return "LMHMonocoque";
-  case EChassis::LMDhDallara:
-    return "LMDhDallara";
-  case EChassis::LMDhOreca:
-    return "LMDhOreca";
-  case EChassis::LMDhMultimatic:
-    return "LMDhMultimatic";
-  case EChassis::LMDhLigier:
-    return "LMDhLigier";
-  case EChassis::Oreca07:
-    return "Oreca07";
-  case EChassis::GT3Oreca:
-    return "GT3Oreca";
-  case EChassis::GT3PrattMiller:
-    return "GT3PrattMiller";
-  case EChassis::GT3McLaren:
-    return "GT3McLaren";
-  case EChassis::GT3Multimatic:
-    return "GT3Multimatic";
-  case EChassis::GT3Spaceframe:
-    return "GT3Spaceframe";
-  default:
-    return "CarbonMonocoque";
-  }
-}
-
-static std::string FrontAeroToString(EFrontAero type) {
-  switch (type) {
-  case EFrontAero::HighDownforceSplitter:
-    return "HighDownforceSplitter";
-  default:
-    return "LowDragNose";
-  }
-}
-
-static std::string RearAeroToString(ERearAero type) {
-  switch (type) {
-  case ERearAero::HighDownforceWing:
-    return "HighDownforceWing";
-  case ERearAero::WinglessGroundEffect:
-    return "WinglessGroundEffect";
-  default:
-    return "StandardWing";
-  }
-}
-
-static std::string CoolingToString(ECoolingPack type) {
-  switch (type) {
-  case ECoolingPack::SprintSlimline:
-    return "SprintSlimline";
-  case ECoolingPack::DuctedRacing:
-    return "DuctedRacing";
-  case ECoolingPack::MaxFlowEndurance:
-    return "MaxFlowEndurance";
-  default:
-    return "EnduranceHeavyDuty";
-  }
-}
-
-static std::string FuelSystemToString(EFuelSystem type) {
-  switch (type) {
-  case EFuelSystem::LargeTank:
-    return "LargeTank";
-  case EFuelSystem::LeMans90L:
-    return "LeMans90L";
-  case EFuelSystem::LeMans110L:
-    return "LeMans110L";
-  case EFuelSystem::HydrogenTank:
-    return "HydrogenTank";
-  default:
-    return "StandardTank";
-  }
-}
-
-static std::string BrakeSystemToString(EBrakeSystem type) {
-  switch (type) {
-  case EBrakeSystem::CarbonCeramic:
-    return "CarbonCeramic";
-  case EBrakeSystem::HeavyDutyEndurance:
-    return "HeavyDutyEndurance";
-  case EBrakeSystem::BremboHypercar:
-    return "BremboHypercar";
-  case EBrakeSystem::AkebonoHypercar:
-    return "AkebonoHypercar";
-  case EBrakeSystem::APRacingPrototype:
-    return "APRacingPrototype";
-  default:
-    return "StandardCaliper";
-  }
-}
-
-static std::string TransmissionToString(ETransmission type) {
-  switch (type) {
-  case ETransmission::SevenSpeedSequential:
-    return "SevenSpeedSequential";
-  case ETransmission::EightSpeedPaddle:
-    return "EightSpeedPaddle";
-  case ETransmission::XtracP1359:
-    return "XtracP1359";
-  case ETransmission::XtracP529:
-    return "XtracP529";
-  case ETransmission::SingleSpeedEDrive:
-    return "SingleSpeedEDrive";
-  default:
-    return "SixSpeedSequential";
-  }
-}
-
-static std::string HybridSystemToString(EHybridSystem type) {
-  switch (type) {
-  case EHybridSystem::LMDh500kW:
-    return "LMDh500kW";
-  case EHybridSystem::HypercarHV:
-    return "HypercarHV";
-  case EHybridSystem::LMDh50kW:
-    return "LMDh50kW";
-  default:
-    return "None";
-  }
-}
-
-static std::string PartChoiceForSlot(const CarConfig &car,
-                                     const std::string &slot) {
-  if (slot == "chassis")
-    return ChassisToString(car.chassisChoice);
-  if (slot == "front_aero")
-    return FrontAeroToString(car.frontAeroChoice);
-  if (slot == "rear_aero")
-    return RearAeroToString(car.rearAeroChoice);
-  if (slot == "cooling")
-    return CoolingToString(car.coolingChoice);
-  if (slot == "fuel_system")
-    return FuelSystemToString(car.fuelSystemChoice);
-  if (slot == "brake_system")
-    return BrakeSystemToString(car.brakeSystemChoice);
-  if (slot == "transmission")
-    return TransmissionToString(car.transmissionChoice);
-  if (slot == "hybrid_system")
-    return HybridSystemToString(car.hybridSystemChoice);
-  return "";
-}
-
 static void FinalizeRule(CompatibilityRule &rule,
                          std::vector<CompatibilityRule> &rules) {
   if (rule.ifSlot.empty() || rule.ifPart.empty())
@@ -205,7 +52,7 @@ LoadPartCompatibility(const std::string &filename) {
     else if (key == "requires_slot") {
       current.kind = CompatibilityRule::Kind::Requires;
       current.otherSlot = value;
-    }     else if (key == "requires_part")
+    } else if (key == "requires_part")
       current.otherPart = value;
     else if (key == "requires_any_parts") {
       current.kind = CompatibilityRule::Kind::RequiresAny;
@@ -230,8 +77,7 @@ LoadPartCompatibility(const std::string &filename) {
 bool ValidatePartCompatibility(const CarConfig &car,
                                const std::vector<CompatibilityRule> &rules,
                                std::string *errorOut) {
-  if (car.fuelSystemChoice == EFuelSystem::HydrogenTank &&
-      car.engine.fuelType != "Hydrogen") {
+  if (car.fuelSystemId == "HydrogenTank" && car.engine.fuelType != "Hydrogen") {
     if (errorOut) {
       *errorOut =
           "fuel_system.HydrogenTank requires Hydrogen fuel in the powertrain";
