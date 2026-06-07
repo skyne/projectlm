@@ -21,8 +21,8 @@ TEST_CASE("ValidatePartCompatibility accepts default hypercar build",
 TEST_CASE("WinglessGroundEffect requires LowDragNose front",
           "[unit][compat]") {
   CarConfig car;
-  car.rearAeroChoice = ERearAero::WinglessGroundEffect;
-  car.frontAeroChoice = EFrontAero::HighDownforceSplitter;
+  car.rearAeroId = "WinglessGroundEffect";
+  car.frontAeroId = "HighDownforceSplitter";
 
   CompatibilityRule rule;
   rule.ifSlot = "rear_aero";
@@ -39,8 +39,8 @@ TEST_CASE("WinglessGroundEffect requires LowDragNose front",
 TEST_CASE("CarbonCeramic brakes require carbon-class chassis",
           "[unit][compat]") {
   CarConfig car;
-  car.brakeSystemChoice = EBrakeSystem::CarbonCeramic;
-  car.chassisChoice = EChassis::Spaceframe;
+  car.brakeSystemId = "CarbonCeramic";
+  car.chassisId = "Spaceframe";
 
   const auto rules = LoadPartCompatibility(ConfigPath("part_compatibility.txt"));
   std::string error;
@@ -50,7 +50,7 @@ TEST_CASE("CarbonCeramic brakes require carbon-class chassis",
 
 TEST_CASE("HydrogenTank requires Hydrogen fuel in powertrain", "[unit][compat]") {
   CarConfig car;
-  car.fuelSystemChoice = EFuelSystem::HydrogenTank;
+  car.fuelSystemId = "HydrogenTank";
   car.engine.fuelType = "Gasoline";
 
   std::string error;

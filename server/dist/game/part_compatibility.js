@@ -153,8 +153,9 @@ function validateAssemblyCompatibility(build, rules) {
         }
     }
     if (build.rear_aero_type === "WinglessGroundEffect" &&
-        build.front_aero_type !== "LowDragNose") {
-        return "Wingless rear package requires Low Drag Nose";
+        build.front_aero_type !== "LowDragNose" &&
+        build.front_aero_type !== "LowDragNoseSlim") {
+        return "Wingless rear package requires a low-drag nose";
     }
     return validateFuelSystemPowertrain(build);
 }

@@ -13,6 +13,11 @@ import { fleetRulesPayload } from "./fleet";
 import { cylindersForLayout } from "./engine_model";
 import { sponsorOffersPayload } from "./economy";
 import { loadAssemblyRules, type AssemblyRule } from "./part_compatibility";
+import {
+  loadParsedClassRules,
+  type ClassLegalParts,
+  type ParsedClassRule,
+} from "./class_rules";
 
 export type PartSlot =
   | "chassis"
@@ -35,6 +40,7 @@ export interface ClassInfo {
   maxWeightKg: number;
   maxStintHours: number;
   templateCarPath: string;
+  legalParts: ClassLegalParts;
 }
 
 export interface PartOption {
@@ -162,46 +168,21 @@ function parsePartCatalog(repoRoot: string): Map<string, PartOption> {
 }
 
 function parseClassRules(repoRoot: string): ClassInfo[] {
-  const rulesPath = path.join(repoRoot, "configs/class_rules.txt");
-  if (!fs.existsSync(rulesPath)) return [];
+  return loadParsedClassRules(repoRoot).map(classRuleToInfo);
+}
 
-  const classes: ClassInfo[] = [];
-  let current: Partial<ClassInfo> & { legal?: Record<string, string[]> } = {};
-
-  const flush = () => {
-    if (!current.id) return;
-    classes.push({
-      id: current.id,
-      displayName: current.displayName ?? current.id,
-      description: CLASS_DESCRIPTIONS[current.id] ?? "",
-      powerCapHp: current.powerCapHp ?? 0,
-      minWeightKg: current.minWeightKg ?? 0,
-      maxWeightKg: current.maxWeightKg ?? 0,
-      maxStintHours: current.maxStintHours ?? 0,
-      templateCarPath: current.templateCarPath ?? "",
-    });
+function classRuleToInfo(rule: ParsedClassRule): ClassInfo {
+  return {
+    id: rule.id,
+    displayName: rule.displayName,
+    description: rule.description ?? CLASS_DESCRIPTIONS[rule.id] ?? "",
+    powerCapHp: rule.powerCapHp,
+    minWeightKg: rule.minWeightKg,
+    maxWeightKg: rule.maxWeightKg,
+    maxStintHours: rule.maxStintHours,
+    templateCarPath: rule.templateCarPath,
+    legalParts: rule.legalParts,
   };
-
-  for (const line of fs.readFileSync(rulesPath, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    const val = trimmed.slice(eq + 1).trim();
-
-    if (key === "class") {
-      flush();
-      current = { id: val, legal: {} };
-    } else if (key === "display_name") current.displayName = val;
-    else if (key === "power_cap_hp") current.powerCapHp = parseFloat(val);
-    else if (key === "min_weight_kg") current.minWeightKg = parseFloat(val);
-    else if (key === "max_weight_kg") current.maxWeightKg = parseFloat(val);
-    else if (key === "max_driver_stint_hours") current.maxStintHours = parseFloat(val);
-    else if (key === "template_car") current.templateCarPath = val;
-  }
-  flush();
-  return classes;
 }
 
 const STAFF_POOL: Array<{ role: string; names: string[] }> = [
@@ -344,6 +325,7 @@ export function defaultBuildForClass(
 }
 
 export { CAR_FIELD_BY_SLOT, SLOT_FROM_PREFIX };
+export type { ClassLegalParts } from "./class_rules";
 
 export function defaultWheelPackageForClass(classId: string): string {
   if (classId === "LMGT3") return "GT3Front20Rear21";

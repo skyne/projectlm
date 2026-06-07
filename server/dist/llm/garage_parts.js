@@ -4,6 +4,7 @@ exports.BUILD_PART_FIELDS = void 0;
 exports.resolvePartTypeForField = resolvePartTypeForField;
 exports.compactCatalogForGarage = compactCatalogForGarage;
 exports.normalizeGarageChanges = normalizeGarageChanges;
+const class_rules_1 = require("../game/class_rules");
 const catalog_1 = require("../game/catalog");
 exports.BUILD_PART_FIELDS = [
     "chassis_type",
@@ -67,14 +68,15 @@ function resolvePartTypeForField(repoRoot, field, rawValue, unlockedParts) {
 function compactCatalogForGarage(repoRoot, classId, unlockedParts) {
     const catalog = (0, catalog_1.loadGameCatalog)(repoRoot);
     const unlocked = new Set(unlockedParts);
+    const classInfo = catalog.classes.find((c) => c.id === classId);
     const out = {};
     for (const [slot, parts] of Object.entries(catalog.partsBySlot)) {
-        out[slot] = parts.map((p) => {
+        const visible = (0, class_rules_1.filterPartsForClass)(classInfo, slot, parts);
+        out[slot] = visible.map((p) => {
             const locked = isRdLocked(p.fullId, unlocked);
             return `${p.partType} (${p.displayName}, ${p.mass}kg)${locked ? " [R&D LOCKED]" : ""}`;
         });
     }
-    const classInfo = catalog.classes.find((c) => c.id === classId);
     return {
         class: [classInfo?.displayName ?? classId],
         powerCapHp: [String(classInfo?.powerCapHp ?? 0)],
