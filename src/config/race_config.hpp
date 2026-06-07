@@ -35,6 +35,7 @@ struct RaceConfig {
   double wxWetRatePerSecond = 0.0015;
   double wxDryRatePerSecond = 0.00008;
   /** race | practice | qualifying */
+  std::string carConditionsPath;
   std::string sessionMode = "race";
 };
 

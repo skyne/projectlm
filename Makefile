@@ -9,6 +9,8 @@ CORE_SRCS = \
   src/core/car_parts.cpp \
   src/core/cooling_layout.cpp \
   src/core/powertrain_traits.cpp \
+  src/core/part_damage.cpp \
+  src/core/car_condition_io.cpp \
   src/core/simulation.cpp \
   src/core/weather.cpp \
   src/core/track.cpp \
@@ -38,6 +40,7 @@ TEST_SRCS = \
   tests/unit/test_track.cpp \
   tests/unit/test_track_sampler.cpp \
   tests/unit/test_simulation.cpp \
+  tests/unit/test_part_damage.cpp \
   tests/unit/test_car_parts.cpp \
   tests/unit/test_part_compatibility.cpp \
   tests/unit/test_sim_bridge.cpp \

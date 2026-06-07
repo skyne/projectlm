@@ -46,6 +46,8 @@ bool LoadRaceConfig(const std::string &filename, RaceConfig &config) {
       config.entriesPath = val;
     else if (key == "class_rules")
       config.classRulesPath = val;
+    else if (key == "car_conditions")
+      config.carConditionsPath = val;
     else if (key == "staff_config")
       config.staffConfigPath = val;
     else if (key == "driver_config")

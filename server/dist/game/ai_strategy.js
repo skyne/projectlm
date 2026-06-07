@@ -61,6 +61,16 @@ function maxWheelWear(snap) {
     ].filter((v) => typeof v === "number" && Number.isFinite(v));
     return wheels.length ? Math.max(...wheels) : snap.tireWear;
 }
+function deflatedWheels(snap) {
+    const td = snap.tyreDeflation ?? {};
+    return Object.entries(td)
+        .filter(([, v]) => v === "flat" || v === "soft")
+        .map(([w]) => w.toUpperCase());
+}
+function needsLimpPit(snap) {
+    const limp = snap.limpMode ?? "none";
+    return limp !== "none" && limp !== "reduced_power";
+}
 function nextDriverIndex(snap) {
     const roster = snap.driverRoster ?? [];
     if (roster.length < 2)
@@ -86,15 +96,20 @@ function pickCompound(stint, profile, plan) {
 }
 function buildPitCommand(options) {
     const parts = ["pit", `fuel=${Math.max(0, Math.round(options.fuelLiters))}`];
-    if (options.changeTyres) {
+    if (options.tyreWheels?.length) {
+        parts.push(`compound=${options.compound}`, `tires=${options.tyreWheels.join(",")}`);
+    }
+    else if (options.changeTyres) {
         parts.push(`compound=${options.compound}`, "tires=all");
     }
     else {
         parts.push("tires=");
     }
-    if (options.repairEngine) {
-        parts.push("repairs=engine");
-    }
+    const repairs = [...(options.repairs ?? [])];
+    if (options.repairEngine && !repairs.includes("engine"))
+        repairs.push("engine");
+    if (repairs.length)
+        parts.push(`repairs=${repairs.join(",")}`);
     if (options.driverChange && options.driverIndex >= 0) {
         parts.push("driver_change=true", `driver_index=${options.driverIndex}`);
     }
@@ -162,10 +177,14 @@ function evaluateAiPitStop(snap, state, ctx, plan) {
         (snap.driverRoster?.length ?? 0) >= 2;
     const needsDriver = needsRegulatoryDriverSwap(snap) || planDriverSwap;
     const repairEngine = (snap.engineHealth ?? 100) <= ENGINE_REPAIR_HEALTH;
+    const flatWheels = deflatedWheels(snap);
+    const limpStop = needsLimpPit(snap);
     const mustStop = criticalFuel ||
         lowFuel ||
         needsDriver ||
         tiresWorn ||
+        flatWheels.length > 0 ||
+        limpStop ||
         (scheduledStop && snap.fuel <= tank * 0.55) ||
         (repairEngine && (lowFuel || tiresWorn || scheduledStop || needsDriver));
     if (!mustStop)

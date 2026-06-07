@@ -1,0 +1,500 @@
+#include "part_damage.hpp"
+#include "simulation.hpp"
+#include <algorithm>
+#include <cmath>
+
+namespace {
+constexpr int kPartCount = static_cast<int>(DamagePart::Count);
+
+void SetProfile(PartDamageProfile &p, double repairSec, double restore,
+                double irreparableBelow, double wearResistance) {
+  p.baseRepairSec = repairSec;
+  p.restoreAmount = restore;
+  p.irreparableBelow = irreparableBelow;
+  p.wearResistance = wearResistance;
+}
+
+double CornerSeverityFor(const PartDamageState &state,
+                         const TyreDeflationStateArr &tyres, int wheelIdx) {
+  const DamagePart body = BodyPartForWheel(wheelIdx);
+  const DamagePart susp = SuspPartForWheel(wheelIdx);
+  const double bodyH = PartHealth(state, body);
+  const double suspH = PartHealth(state, susp);
+  double cornerScore = 1.0 - std::min(bodyH, suspH) / 100.0;
+  const auto defl = tyres.state[wheelIdx];
+  const double deflationBonus =
+      defl == TyreDeflationState::Flat ? 0.40
+      : defl == TyreDeflationState::Soft ? 0.15
+                                         : 0.0;
+  const bool suspIrrep =
+      state.irreparable[DamagePartIndex(susp)];
+  const double irreparableBonus = suspIrrep ? 0.35 : 0.0;
+  return std::clamp(cornerScore + deflationBonus + irreparableBonus, 0.0, 1.0);
+}
+
+int CountIrreparableCorners(const PartDamageState &state) {
+  int count = 0;
+  for (int w = 0; w < 4; ++w) {
+    if (state.irreparable[DamagePartIndex(SuspPartForWheel(w))])
+      ++count;
+  }
+  return count;
+}
+
+bool DiagonalPairDamaged(const double cornerSeverity[4]) {
+  const bool flRr = cornerSeverity[0] > 0.5 && cornerSeverity[3] > 0.5;
+  const bool frRl = cornerSeverity[1] > 0.5 && cornerSeverity[2] > 0.5;
+  return flRr || frRl;
+}
+
+bool SameSidePairDamaged(const double cornerSeverity[4]) {
+  const bool left = cornerSeverity[0] > 0.5 && cornerSeverity[1] > 0.5;
+  const bool right = cornerSeverity[2] > 0.5 && cornerSeverity[3] > 0.5;
+  return left || right;
+}
+} // namespace
+
+PartDamageState::PartDamageState() {
+  InitPartDamageState(*this);
+}
+
+int DamagePartIndex(DamagePart part) { return static_cast<int>(part); }
+
+std::string DamagePartToken(DamagePart part) {
+  switch (part) {
+  case DamagePart::Engine: return "engine";
+  case DamagePart::Gearbox: return "gearbox";
+  case DamagePart::Cooling: return "cooling";
+  case DamagePart::Brakes: return "brakes";
+  case DamagePart::Hybrid: return "hybrid";
+  case DamagePart::AeroFront: return "aero_front";
+  case DamagePart::AeroRear: return "aero_rear";
+  case DamagePart::BodyFL: return "body_fl";
+  case DamagePart::BodyFR: return "body_fr";
+  case DamagePart::BodyRL: return "body_rl";
+  case DamagePart::BodyRR: return "body_rr";
+  case DamagePart::SuspFL: return "susp_fl";
+  case DamagePart::SuspFR: return "susp_fr";
+  case DamagePart::SuspRL: return "susp_rl";
+  case DamagePart::SuspRR: return "susp_rr";
+  default: return "";
+  }
+}
+
+DamagePart DamagePartFromToken(const std::string &token) {
+  if (token == "engine") return DamagePart::Engine;
+  if (token == "gearbox") return DamagePart::Gearbox;
+  if (token == "cooling") return DamagePart::Cooling;
+  if (token == "brakes") return DamagePart::Brakes;
+  if (token == "hybrid") return DamagePart::Hybrid;
+  if (token == "aero_front" || token == "front_aero") return DamagePart::AeroFront;
+  if (token == "aero_rear" || token == "rear_aero") return DamagePart::AeroRear;
+  if (token == "body_fl") return DamagePart::BodyFL;
+  if (token == "body_fr") return DamagePart::BodyFR;
+  if (token == "body_rl") return DamagePart::BodyRL;
+  if (token == "body_rr") return DamagePart::BodyRR;
+  if (token == "body" || token == "bodywork") return DamagePart::BodyFL;
+  if (token == "susp_fl") return DamagePart::SuspFL;
+  if (token == "susp_fr") return DamagePart::SuspFR;
+  if (token == "susp_rl") return DamagePart::SuspRL;
+  if (token == "susp_rr") return DamagePart::SuspRR;
+  return DamagePart::Count;
+}
+
+bool IsBodyDamagePart(DamagePart part) {
+  return part >= DamagePart::BodyFL && part <= DamagePart::BodyRR;
+}
+
+bool IsSuspDamagePart(DamagePart part) {
+  return part >= DamagePart::SuspFL && part <= DamagePart::SuspRR;
+}
+
+DamagePart BodyPartForWheel(int wheelIdx) {
+  switch (wheelIdx) {
+  case 0: return DamagePart::BodyFL;
+  case 1: return DamagePart::BodyFR;
+  case 2: return DamagePart::BodyRL;
+  default: return DamagePart::BodyRR;
+  }
+}
+
+DamagePart SuspPartForWheel(int wheelIdx) {
+  switch (wheelIdx) {
+  case 0: return DamagePart::SuspFL;
+  case 1: return DamagePart::SuspFR;
+  case 2: return DamagePart::SuspRL;
+  default: return DamagePart::SuspRR;
+  }
+}
+
+int WheelIndexForBodyPart(DamagePart part) {
+  switch (part) {
+  case DamagePart::BodyFL: return 0;
+  case DamagePart::BodyFR: return 1;
+  case DamagePart::BodyRL: return 2;
+  case DamagePart::BodyRR: return 3;
+  default: return -1;
+  }
+}
+
+int WheelIndexForSuspPart(DamagePart part) {
+  switch (part) {
+  case DamagePart::SuspFL: return 0;
+  case DamagePart::SuspFR: return 1;
+  case DamagePart::SuspRL: return 2;
+  case DamagePart::SuspRR: return 3;
+  default: return -1;
+  }
+}
+
+void BuildCarDamageProfiles(const CarConfig &car, const PartCatalog &catalog,
+                            CarDamageProfiles &out) {
+  const ChassisPart chassis = GetChassisStats(car.chassisChoice, catalog);
+  const double chassisRel = std::max(0.5, chassis.structuralRigidity);
+  const TransmissionPart trans =
+      GetTransmissionStats(car.transmissionChoice, catalog);
+  const double transRel = 0.95 + (trans.gearCount >= 7 ? 0.05 : 0.0);
+
+  SetProfile(out.profiles[DamagePartIndex(DamagePart::Engine)], 12.0, 25.0, 5.0,
+             chassisRel * car.engineStressMult);
+  SetProfile(out.profiles[DamagePartIndex(DamagePart::Gearbox)], 45.0, 25.0, 8.0,
+             chassisRel * transRel);
+  SetProfile(out.profiles[DamagePartIndex(DamagePart::Cooling)], 18.0, 30.0, 10.0,
+             chassisRel);
+  SetProfile(out.profiles[DamagePartIndex(DamagePart::Brakes)], 22.0, 30.0, 12.0,
+             chassisRel);
+  SetProfile(out.profiles[DamagePartIndex(DamagePart::Hybrid)], 60.0, 30.0, 5.0,
+             chassisRel);
+  SetProfile(out.profiles[DamagePartIndex(DamagePart::AeroFront)], 28.0, 35.0,
+             12.0, chassisRel);
+  SetProfile(out.profiles[DamagePartIndex(DamagePart::AeroRear)], 35.0, 40.0,
+             10.0, chassisRel);
+  for (DamagePart p = DamagePart::BodyFL; p <= DamagePart::BodyRR;
+       p = static_cast<DamagePart>(DamagePartIndex(p) + 1)) {
+    SetProfile(out.profiles[DamagePartIndex(p)], 6.0, 20.0, 0.0, chassisRel);
+  }
+  for (DamagePart p = DamagePart::SuspFL; p <= DamagePart::SuspRR;
+       p = static_cast<DamagePart>(DamagePartIndex(p) + 1)) {
+    SetProfile(out.profiles[DamagePartIndex(p)], 55.0, 40.0, 15.0, chassisRel);
+  }
+  (void)car;
+}
+
+void InitPartDamageState(PartDamageState &state) {
+  for (int i = 0; i < kPartCount; ++i) {
+    state.health[i] = 100.0;
+    state.irreparable[i] = false;
+  }
+  state.hiddenFaults.clear();
+}
+
+double PartHealth(const PartDamageState &state, DamagePart part) {
+  const int idx = DamagePartIndex(part);
+  if (idx < 0 || idx >= kPartCount)
+    return 100.0;
+  return state.health[idx];
+}
+
+void SyncDerivedEngineHealth(SimulationState &state, const CarConfig &car) {
+  double minHealth = PartHealth(state.partDamage, DamagePart::Engine);
+  minHealth = std::min(minHealth, PartHealth(state.partDamage, DamagePart::Gearbox));
+  minHealth = std::min(minHealth, PartHealth(state.partDamage, DamagePart::Cooling));
+  if (car.hybridDeployPowerKW > 0.0)
+    minHealth = std::min(minHealth, PartHealth(state.partDamage, DamagePart::Hybrid));
+  state.engineHealth = minHealth;
+}
+
+void ApplyPartWear(PartDamageState &state, DamagePart part, double amount,
+                   const PartDamageProfile &profile) {
+  const int idx = DamagePartIndex(part);
+  if (idx < 0 || idx >= kPartCount || amount <= 0.0)
+    return;
+  const double scale = 1.0 / std::max(0.35, profile.wearResistance);
+  state.health[idx] = std::max(0.0, state.health[idx] - amount * scale);
+}
+
+void ApplyPartDamageHit(PartDamageState &state, DamagePart part, double amount,
+                        const PartDamageProfile &profile) {
+  const int idx = DamagePartIndex(part);
+  if (idx < 0 || idx >= kPartCount || amount <= 0.0)
+    return;
+  state.health[idx] = std::max(0.0, state.health[idx] - amount);
+  if (profile.irreparableBelow > 0.0 &&
+      state.health[idx] <= profile.irreparableBelow)
+    state.irreparable[idx] = true;
+}
+
+void ApplyCollisionDamage(PartDamageState &state, const CarDamageProfiles &profiles,
+                          double impact, CollisionSide side, bool hasHybrid) {
+  if (impact <= 0.0)
+    return;
+
+  const auto hit = [&](DamagePart part, double amt) {
+    ApplyPartDamageHit(state, part, amt,
+                       profiles.profiles[DamagePartIndex(part)]);
+  };
+
+  const int leftWheels[] = {0, 2};
+  const int rightWheels[] = {1, 3};
+  const int *sideWheels = side == CollisionSide::Left ? leftWheels : rightWheels;
+  const int sideCount = 2;
+
+  if (impact < 7.0) {
+    const int w = side == CollisionSide::Left ? 0 : (side == CollisionSide::Right ? 1 : 0);
+    hit(BodyPartForWheel(w), 4.0 + impact * 0.8);
+    return;
+  }
+
+  if (impact < 10.0) {
+    for (int i = 0; i < sideCount; ++i) {
+      const int w = (side == CollisionSide::Unknown) ? i : sideWheels[i];
+      hit(BodyPartForWheel(w), 6.0 + impact * 0.9);
+      hit(SuspPartForWheel(w), 4.0 + impact * 0.5);
+    }
+    if (impact > 8.0)
+      hit(DamagePart::AeroFront, impact * 0.6);
+    return;
+  }
+
+  for (int i = 0; i < sideCount; ++i) {
+    const int w = (side == CollisionSide::Unknown) ? i : sideWheels[i];
+    hit(BodyPartForWheel(w), 10.0 + impact * 1.1);
+    hit(SuspPartForWheel(w), 8.0 + impact * 1.0);
+  }
+  hit(DamagePart::AeroRear, impact * 0.9);
+  hit(DamagePart::Engine, impact * 0.35);
+  if (hasHybrid)
+    hit(DamagePart::Hybrid, impact * 0.25);
+}
+
+
+std::vector<int> CollisionPunctureWheels(double impact, CollisionSide side) {
+  std::vector<int> wheels;
+  if (impact <= 12.0)
+    return wheels;
+  const int leftWheels[] = {0, 2};
+  const int rightWheels[] = {1, 3};
+  if (side == CollisionSide::Left) {
+    wheels.push_back(leftWheels[0]);
+  } else if (side == CollisionSide::Right) {
+    wheels.push_back(rightWheels[0]);
+  } else {
+    wheels.push_back(0);
+    wheels.push_back(1);
+  }
+  return wheels;
+}
+
+void ApplyHiddenFaultBleed(PartDamageState &state, double deltaTime) {
+  for (HiddenFault &fault : state.hiddenFaults) {
+    if (fault.revealed)
+      continue;
+    fault.severity = std::min(100.0, fault.severity + 0.4 * deltaTime);
+    const int idx = DamagePartIndex(fault.linkedPart);
+    if (idx >= 0 && idx < kPartCount) {
+      state.health[idx] = std::max(
+          0.0, state.health[idx] - 0.15 * deltaTime * (fault.severity / 100.0));
+    }
+  }
+}
+
+void RevealEscalatedHiddenFaults(PartDamageState &state) {
+  for (HiddenFault &fault : state.hiddenFaults) {
+    if (fault.revealed)
+      continue;
+    const double linked = PartHealth(state, fault.linkedPart);
+    if (fault.severity >= 90.0 || linked < 75.0) {
+      fault.revealed = true;
+      ApplyPartDamageHit(state, fault.linkedPart, 8.0, {10.0, 20.0, 0.0, 1.0});
+    }
+  }
+}
+
+double ComputeStructuralSeverity(const PartDamageState &state,
+                                 const TyreDeflationStateArr &tyres) {
+  double cornerSeverity[4];
+  for (int w = 0; w < 4; ++w)
+    cornerSeverity[w] = CornerSeverityFor(state, tyres, w);
+
+  double worst = 0.0;
+  double sumTop2 = 0.0;
+  for (int w = 0; w < 4; ++w)
+    worst = std::max(worst, cornerSeverity[w]);
+  double sorted[4] = {cornerSeverity[0], cornerSeverity[1], cornerSeverity[2],
+                      cornerSeverity[3]};
+  std::sort(sorted, sorted + 4, std::greater<double>());
+  sumTop2 = sorted[0] + sorted[1];
+
+  double severity = worst * 40.0 + sumTop2 * 12.5;
+  if (DiagonalPairDamaged(cornerSeverity))
+    severity += 20.0;
+  else if (SameSidePairDamaged(cornerSeverity))
+    severity += 10.0;
+  severity += CountIrreparableCorners(state) * 12.0;
+  return std::clamp(severity, 0.0, 100.0);
+}
+
+LimpMode EvaluateLimpMode(const PartDamageState &state, const CarConfig &car,
+                          const TyreDeflationStateArr &tyres, double batteryMJ) {
+  const double structural = ComputeStructuralSeverity(state, tyres);
+  const int irrepCorners = CountIrreparableCorners(state);
+  if (structural >= 85.0 || irrepCorners >= 3)
+    return LimpMode::Immobilized;
+  if (structural >= 55.0)
+    return LimpMode::BarelyDriveable;
+
+  const double engineH = PartHealth(state, DamagePart::Engine);
+  const double gearboxH = PartHealth(state, DamagePart::Gearbox);
+  const bool iceDead =
+      state.irreparable[DamagePartIndex(DamagePart::Engine)] ||
+      state.irreparable[DamagePartIndex(DamagePart::Gearbox)] ||
+      (engineH < 8.0 && gearboxH < 12.0);
+  if (iceDead && car.hybridDeployPowerKW > 0.0 && batteryMJ > 8.0)
+    return LimpMode::HybridOnly;
+  if (engineH < 20.0 || gearboxH < 20.0)
+    return LimpMode::ReducedPower;
+  return LimpMode::None;
+}
+
+CollisionSide CollisionSideFromLateral(double lateralOffset) {
+  if (lateralOffset < -0.08)
+    return CollisionSide::Left;
+  if (lateralOffset > 0.08)
+    return CollisionSide::Right;
+  return CollisionSide::Unknown;
+}
+
+void TickTyreDeflationRisk(SimulationState &state, const CarConfig &car,
+                           double deltaTime, double punctureWearThreshold) {
+  (void)car;
+  for (int i = 0; i < 4; ++i) {
+    if (state.tyreDeflation.state[i] == TyreDeflationState::Flat)
+      continue;
+    if (state.tyreDeflation.state[i] == TyreDeflationState::Soft) {
+      state.tyreDeflation.progress[i] += deltaTime * 0.04;
+      if (state.tyreDeflation.progress[i] >= 1.0)
+        state.tyreDeflation.state[i] = TyreDeflationState::Flat;
+      continue;
+    }
+    if (state.tireWear[i] < punctureWearThreshold)
+      continue;
+    const double wearExcess = (state.tireWear[i] - punctureWearThreshold) / 0.12;
+    const double roll = std::fmod(
+        std::sin((state.elapsedRaceTime + i * 17.3) * 0.31) * 43758.5453, 1.0);
+    if (roll < wearExcess * 0.00008 * deltaTime) {
+      state.tyreDeflation.state[i] = TyreDeflationState::Soft;
+      state.tyreDeflation.progress[i] = 0.2;
+    }
+  }
+}
+
+void TickDeflatedTyreBodyDamage(SimulationState &state,
+                                const CarDamageProfiles &profiles,
+                                double deltaTime, double minSpeedMs) {
+  if (state.currentSpeed < minSpeedMs)
+    return;
+  for (int i = 0; i < 4; ++i) {
+    const auto defl = state.tyreDeflation.state[i];
+    if (defl == TyreDeflationState::Normal)
+      continue;
+    const double speedFactor = std::min(1.5, state.currentSpeed / 25.0);
+    const double rate =
+        (defl == TyreDeflationState::Flat ? 2.2 : 0.7) * speedFactor * deltaTime;
+    ApplyPartDamageHit(state.partDamage, BodyPartForWheel(i), rate,
+                       profiles.profiles[DamagePartIndex(BodyPartForWheel(i))]);
+    if (defl == TyreDeflationState::Flat) {
+      ApplyPartDamageHit(state.partDamage, SuspPartForWheel(i), rate * 0.35,
+                         profiles.profiles[DamagePartIndex(SuspPartForWheel(i))]);
+    }
+  }
+}
+
+void ApplyTyrePuncture(SimulationState &state, int wheelIdx, bool instantFlat) {
+  if (wheelIdx < 0 || wheelIdx > 3)
+    return;
+  if (instantFlat) {
+    state.tyreDeflation.state[wheelIdx] = TyreDeflationState::Flat;
+    state.tyreDeflation.progress[wheelIdx] = 1.0;
+  } else if (state.tyreDeflation.state[wheelIdx] == TyreDeflationState::Normal) {
+    state.tyreDeflation.state[wheelIdx] = TyreDeflationState::Soft;
+    state.tyreDeflation.progress[wheelIdx] = 0.35;
+  }
+}
+
+void ClearTyreDeflation(SimulationState &state, int wheelIdx) {
+  if (wheelIdx < 0 || wheelIdx > 3)
+    return;
+  state.tyreDeflation.state[wheelIdx] = TyreDeflationState::Normal;
+  state.tyreDeflation.progress[wheelIdx] = 0.0;
+}
+
+bool RepairPartInPit(PartDamageState &state, DamagePart part,
+                     const PartDamageProfile &profile) {
+  const int idx = DamagePartIndex(part);
+  if (idx < 0 || idx >= kPartCount)
+    return false;
+  if (state.irreparable[idx])
+    return false;
+  if (profile.irreparableBelow > 0.0 &&
+      state.health[idx] <= profile.irreparableBelow)
+    return false;
+  state.health[idx] =
+      std::min(100.0, state.health[idx] + profile.restoreAmount);
+  return true;
+}
+
+bool RepairPartToken(PartDamageState &state, const std::string &token,
+                     const CarDamageProfiles &profiles) {
+  if (token == "body" || token == "bodywork") {
+    bool any = false;
+    for (DamagePart p = DamagePart::BodyFL; p <= DamagePart::BodyRR;
+         p = static_cast<DamagePart>(DamagePartIndex(p) + 1)) {
+      any = RepairPartInPit(state, p, profiles.profiles[DamagePartIndex(p)]) ||
+            any;
+    }
+    return any;
+  }
+  const DamagePart part = DamagePartFromToken(token);
+  if (part == DamagePart::Count)
+    return false;
+  return RepairPartInPit(state, part, profiles.profiles[DamagePartIndex(part)]);
+}
+
+PartDamageRepairSpec RepairSpecForPart(DamagePart part) {
+  switch (part) {
+  case DamagePart::Engine: return {12.0, 25.0};
+  case DamagePart::Gearbox: return {45.0, 25.0};
+  case DamagePart::Cooling: return {18.0, 30.0};
+  case DamagePart::Brakes: return {22.0, 30.0};
+  case DamagePart::Hybrid: return {60.0, 30.0};
+  case DamagePart::AeroFront: return {28.0, 35.0};
+  case DamagePart::AeroRear: return {35.0, 40.0};
+  case DamagePart::BodyFL:
+  case DamagePart::BodyFR:
+  case DamagePart::BodyRL:
+  case DamagePart::BodyRR: return {6.0, 20.0};
+  case DamagePart::SuspFL:
+  case DamagePart::SuspFR:
+  case DamagePart::SuspRL:
+  case DamagePart::SuspRR: return {55.0, 40.0};
+  default: return {10.0, 15.0};
+  }
+}
+
+const char *LimpModeLabel(LimpMode mode) {
+  switch (mode) {
+  case LimpMode::ReducedPower: return "reduced_power";
+  case LimpMode::HybridOnly: return "hybrid_only";
+  case LimpMode::BarelyDriveable: return "barely_driveable";
+  case LimpMode::Immobilized: return "immobilized";
+  default: return "none";
+  }
+}
+
+const char *TyreDeflationLabel(TyreDeflationState state) {
+  switch (state) {
+  case TyreDeflationState::Soft: return "soft";
+  case TyreDeflationState::Flat: return "flat";
+  default: return "normal";
+  }
+}

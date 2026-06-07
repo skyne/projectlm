@@ -93,6 +93,13 @@ export interface CarSnapshot {
   fuelTankCapacity?: number;
   driverStintSeconds?: number;
   maxDriverStintSeconds?: number;
+  partHealth?: Record<string, number>;
+  partIrreparable?: string[];
+  tyreDeflation?: Record<string, "soft" | "flat">;
+  limpMode?: string;
+  limpReason?: string;
+  structuralSeverity?: number;
+  suspectedIssues?: boolean;
 }
 
 export type SimEventType =
@@ -431,6 +438,31 @@ export interface TrackSetupPresetPayload {
 export type CarAffiliation = "manufacturer" | "privateer";
 export type CarAcquisition = "build" | "privateer";
 
+export interface HiddenFaultPayload {
+  id: string;
+  kind: string;
+  linkedPart: string;
+  severity: number;
+  revealed: boolean;
+}
+
+export interface CarConditionPayload {
+  partHealth: Record<string, number>;
+  irreparable: string[];
+  hiddenFaults?: HiddenFaultPayload[];
+  limpMode?: string;
+  structuralSeverity?: number;
+  damagedCorners?: string[];
+  updatedAtRound?: number;
+  updatedAfterSession?: WeekendSessionType;
+}
+
+export interface RepairCarConditionPayload {
+  carId: string;
+  parts?: string[];
+  rebuild?: boolean;
+}
+
 export interface FleetCarPayload {
   id: string;
   carNumber: string;
@@ -445,6 +477,7 @@ export interface FleetCarPayload {
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
   /** Indices into meta.driverRoster assigned to this car for race stints. */
   assignedDriverIndices?: number[];
+  carCondition?: CarConditionPayload;
 }
 
 export interface CarPlatformPayload {
@@ -843,7 +876,8 @@ export type ClientMessageType =
   | "save_track_setup"
   | "ask_engineer"
   | "get_engineer_status"
-  | "ask_garage_engineer";
+  | "ask_garage_engineer"
+  | "repair_car_condition";
 
 export interface ServerMessage<T = unknown> {
   protocol: typeof PROTOCOL_VERSION;
@@ -901,6 +935,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       "ask_engineer",
       "get_engineer_status",
       "ask_garage_engineer",
+      "repair_car_condition",
     ];
     if (!allowed.includes(msg.type)) return null;
     return msg;

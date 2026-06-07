@@ -111,6 +111,19 @@ function buildMistakeTelemetryHtml(snap: CarSnapshot): string {
   return parts.join("");
 }
 
+function damageSummary(snap: CarSnapshot): string {
+  const parts = Object.entries(snap.partHealth ?? {})
+    .filter(([, h]) => h < 90)
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, 3)
+    .map(([p, h]) => `${p} ${h.toFixed(0)}%`);
+  const flats = Object.entries(snap.tyreDeflation ?? {})
+    .filter(([, v]) => v === "flat" || v === "soft")
+    .map(([w, v]) => `${w} ${v}`);
+  const limp = snap.limpMode && snap.limpMode !== "none" ? snap.limpMode : "";
+  return [...parts, ...flats, limp].filter(Boolean).join(" · ");
+}
+
 function pitStatusLabel(snap: CarSnapshot): string {
   if (snap.inPit) return `In pit · ${(snap.pitRemainingSec ?? 0).toFixed(0)}s`;
   if (snap.pitQueued) return "Pit queued";
@@ -288,6 +301,7 @@ export function buildTelemetryCardHtml(
     </div>
     <div class="telemetry-row"><span>Engine temp</span><strong class="${coolantBand === "hot" || coolantBand === "overheat" ? "coolant-alert" : ""}">${escapeHtml(coolantLabel)} <span class="telemetry-hint">(limit ${COOLANT_OVERHEAT_C}°C)</span></strong></div>
     <div class="telemetry-row"><span>Engine health</span><strong class="${engineHealth < 90 ? "health-warn" : engineHealth < 75 ? "health-critical" : ""}">${engineHealth.toFixed(0)}%</strong></div>
+    ${damageSummary(snap) ? `<div class="telemetry-row telemetry-warn"><span>Damage</span><strong>${escapeHtml(damageSummary(snap))}</strong></div>` : ""}
     ${tyrePanel}
     <div class="telemetry-row"><span>Status</span><strong class="pit-state">${escapeHtml(pitLabel)}</strong></div>
   `;

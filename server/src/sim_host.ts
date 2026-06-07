@@ -98,6 +98,7 @@ export class SimHost {
   private runtimePlayerEntryId = "entry-1";
   private runtimeManagedEntryIds: string[] = ["entry-1"];
   private activeRoundNumber = 0;
+  private fleetEntryMap = new Map<string, string>();
   private readonly aiStrategy = new AiStrategyManager();
   private readonly aiStintGuide = new AiStintGuide();
 
@@ -252,6 +253,11 @@ export class SimHost {
       carNumber: e.carNumber,
       classId: e.classId,
     }));
+    this.fleetEntryMap = new Map(
+      built.entries
+        .filter((e) => e.fleetCarId)
+        .map((e) => [e.entryId, e.fleetCarId!]),
+    );
 
     this.runtimeManagedEntryIds = built.managedEntryIds;
     this.runtimePlayerEntryId = built.playerEntryId;
@@ -286,7 +292,25 @@ export class SimHost {
       sessionType === "qualifying"
         ? collectQualifyingResults(results)
         : undefined;
+    this.persistFleetCarConditions(sessionType);
     return this.meta.completeWeekendSession(sessionType, qualiResults);
+  }
+
+  persistFleetCarConditions(sessionType: WeekendSessionType): void {
+    const snapshots = this.getSnapshots();
+    if (!snapshots.length || this.fleetEntryMap.size === 0) return;
+    this.meta.persistSessionCarConditions(
+      snapshots,
+      this.fleetEntryMap,
+      sessionType,
+    );
+  }
+
+  repairCarCondition(
+    carId: string,
+    options?: { parts?: string[]; rebuild?: boolean },
+  ): MetaStatePayload | { error: string } {
+    return this.meta.repairCarCondition(carId, options);
   }
 
   getNextWeekendSessionAfter(
@@ -339,6 +363,7 @@ export class SimHost {
   }
 
   completeRound(position: number, classId: string): MetaStatePayload {
+    this.persistFleetCarConditions("race");
     return this.meta.completeRound(position, classId);
   }
 

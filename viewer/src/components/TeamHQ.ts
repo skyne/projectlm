@@ -1,6 +1,7 @@
 import type {
   BuyCarPayload,
   CarAffiliation,
+  CarConditionPayload,
   GameCatalogPayload,
   MetaStatePayload,
   StaffMemberPayload,
@@ -38,6 +39,7 @@ export interface TeamHQHandlers {
   onRemoveCar?: (carId: string) => void;
   onSaveTeamColors?: (colors: { primary: string; secondary: string }) => void;
   onNewGame?: () => void;
+  onRepairCarCondition?: (carId: string, rebuild?: boolean) => void;
 }
 
 type HqTab = "fleet" | "livery" | "commercial" | "crew" | "rd" | "season";
@@ -55,6 +57,21 @@ const RD_UNLOCKS = [
   { partId: "tire.Soft", label: "Soft Tyres", cost: 15, desc: "Peak grip compound for qualifying and sprint stints" },
   { partId: "brake.CarbonCeramic", label: "Carbon Brakes", cost: 25, desc: "Higher thermal capacity for endurance traffic" },
 ] as const;
+
+function hasCarDamage(condition?: CarConditionPayload): boolean {
+  if (!condition) return false;
+  return Object.keys(condition.partHealth ?? {}).length > 0 || (condition.irreparable?.length ?? 0) > 0;
+}
+
+function formatCarCondition(condition?: CarConditionPayload): string {
+  if (!hasCarDamage(condition)) return "";
+  const worst = Object.entries(condition?.partHealth ?? {})
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, 2)
+    .map(([p, h]) => `${p} ${h.toFixed(0)}%`);
+  const ir = (condition?.irreparable?.length ?? 0) > 0 ? `${condition!.irreparable!.length} beyond pit repair` : "";
+  return `<p class="fleet-car-condition">${[...worst, ir].filter(Boolean).join(" · ")}</p>`;
+}
 
 export class TeamHQ {
   readonly root: HTMLElement;
@@ -358,8 +375,10 @@ export class TeamHQ {
             ${isPlayer ? '<span class="fleet-badge-player">Player</span>' : ""}
           </div>
           <span class="fleet-car-name">${escapeHtml(car.build.carName)}</span>
+          ${formatCarCondition(car.carCondition)}
           <div class="fleet-car-actions">
             <button type="button" class="secondary-btn fleet-edit-btn">Configure</button>
+            ${hasCarDamage(car.carCondition) ? '<button type="button" class="secondary-btn fleet-repair-btn">Workshop repair</button>' : ""}
             <button type="button" class="secondary-btn fleet-remove-btn">Sell</button>
           </div>
         `;
@@ -367,6 +386,10 @@ export class TeamHQ {
         li.querySelector(".fleet-edit-btn")!.addEventListener("click", () => {
           this.handlers.onSetActiveCar?.(car.id);
           this.handlers.onOpenGarage?.();
+        });
+        const repairBtn = li.querySelector(".fleet-repair-btn");
+        repairBtn?.addEventListener("click", () => {
+          this.handlers.onRepairCarCondition?.(car.id, true);
         });
         li.querySelector(".fleet-remove-btn")!.addEventListener("click", () => {
           if (fleet.length <= 1) return;

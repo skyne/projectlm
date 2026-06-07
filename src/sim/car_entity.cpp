@@ -1,4 +1,5 @@
 #include "car_entity.hpp"
+#include "part_damage.hpp"
 #include "car_parts.hpp"
 #include "driver.hpp"
 #include "track.hpp"
@@ -130,6 +131,7 @@ void Car::setDrivers(DriverState drivers) {
 
 void Car::resetForRestart() {
   state_ = SimulationState{};
+  InitPartDamageState(state_.partDamage);
   state_.fuelRemaining = config_.fuelTankCapacity;
   state_.hybridDeployRemainingMJ = config_.hybridStintDeployBudgetMJ;
   state_.batteryChargeMJ = config_.hybridStintDeployBudgetMJ;
@@ -381,10 +383,18 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
       mods.draftThrottleBoost = traffic->draftThrottleBoost;
     if (traffic->collisionDamage > 0.0) {
       if (collisionCooldown_ <= 0.0) {
-        state_.engineHealth = std::max(
-            0.0, state_.engineHealth - traffic->collisionDamage);
+        static const PartCatalog kCatalog{};
+        CarDamageProfiles profiles;
+        BuildCarDamageProfiles(config_, kCatalog, profiles);
+        const CollisionSide side = CollisionSideFromLateral(lateralOffset_);
+        ApplyCollisionDamage(state_.partDamage, profiles, traffic->collisionDamage,
+                             side, config_.hybridDeployPowerKW > 0.0);
+        for (int w : CollisionPunctureWheels(traffic->collisionDamage, side))
+          ApplyTyrePuncture(state_, w, true);
+        SyncDerivedEngineHealth(state_, config_);
         collisionCooldown_ = 3.0;
         setupFeedback_ = "Contact — check bodywork";
+        setupFeedbackTimer_ = 6.0;
       }
       if (state_.engineHealth < 30.0)
         mods.throttleMultiplier *= 0.82;
@@ -491,6 +501,45 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
     setupFeedbackTimer_ = 6.0;
   }
 
+  static const PartCatalog kLimpCatalog{};
+  CarDamageProfiles limpProfiles;
+  BuildCarDamageProfiles(config_, kLimpCatalog, limpProfiles);
+  for (int i = 0; i < 4; ++i) {
+    const auto defl = state_.tyreDeflation.state[i];
+    if (defl == TyreDeflationState::Flat)
+      mods.wearSpikePerWheel[i] += 0.5;
+    else if (defl == TyreDeflationState::Soft)
+      mods.wearSpikePerWheel[i] += 0.12;
+  }
+
+  const LimpMode limp = EvaluateLimpMode(
+      state_.partDamage, config_, state_.tyreDeflation,
+      state_.batteryChargeMJ > 0.0 ? state_.batteryChargeMJ
+                                   : state_.hybridDeployRemainingMJ);
+  const double structural = ComputeStructuralSeverity(state_.partDamage,
+                                                      state_.tyreDeflation);
+  if (limp == LimpMode::Immobilized) {
+    mods.speedCapMs = std::max(mods.speedCapMs, 4.0);
+    mods.throttleMultiplier *= 0.15;
+    if (!pit_.pendingEnter && !pit_.inPit)
+      pit_.pendingEnter = true;
+  } else if (limp == LimpMode::BarelyDriveable) {
+    const double capMs = std::max(11.0, 28.0 - structural * 0.18);
+    mods.speedCapMs = mods.speedCapMs > 0.0 ? std::min(mods.speedCapMs, capMs) : capMs;
+    mods.throttleMultiplier *= 0.55;
+    if (!pit_.pendingEnter && !pit_.inPit)
+      pit_.pendingEnter = true;
+  } else if (limp == LimpMode::HybridOnly) {
+    mods.throttleMultiplier *= 0.05;
+    mods.hybridDeployScale = std::max(mods.hybridDeployScale, 0.35);
+    mods.speedCapMs = mods.speedCapMs > 0.0 ? std::min(mods.speedCapMs, 36.0) : 36.0;
+    if (!pit_.pendingEnter && !pit_.inPit)
+      pit_.pendingEnter = true;
+  } else if (limp == LimpMode::ReducedPower) {
+    mods.throttleMultiplier *= 0.45;
+    mods.speedCapMs = mods.speedCapMs > 0.0 ? std::min(mods.speedCapMs, 50.0) : 50.0;
+  }
+
   TickSimulation(config_, track, state_, deltaTime, physics, &telemetry_, mods);
 
   if (state_.fuelRemaining <= 0.0) {
@@ -583,6 +632,33 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const 
   snap.hybridBudgetMJ = config_.hybridStintDeployBudgetMJ;
   snap.hybridStrategy = HybridStrategyLabel(driver_.hybridStrategy);
   snap.engineHealth = state_.engineHealth;
+  snap.structuralSeverity =
+      ComputeStructuralSeverity(state_.partDamage, state_.tyreDeflation);
+  const LimpMode limpSnap = EvaluateLimpMode(
+      state_.partDamage, config_, state_.tyreDeflation,
+      state_.batteryChargeMJ > 0.0 ? state_.batteryChargeMJ
+                                   : state_.hybridDeployRemainingMJ);
+  snap.limpMode = LimpModeLabel(limpSnap);
+  snap.partHealth.clear();
+  for (int pi = 0; pi < static_cast<int>(DamagePart::Count); ++pi) {
+    const DamagePart part = static_cast<DamagePart>(pi);
+    const double h = PartHealth(state_.partDamage, part);
+    if (h < 99.5)
+      snap.partHealth[DamagePartToken(part)] = h;
+    if (state_.partDamage.irreparable[pi])
+      snap.partIrreparable.push_back(DamagePartToken(part));
+  }
+  snap.tyreDeflation.clear();
+  static const char *kWheel[] = {"FL", "FR", "RL", "RR"};
+  for (int i = 0; i < 4; ++i) {
+    if (state_.tyreDeflation.state[i] != TyreDeflationState::Normal)
+      snap.tyreDeflation[kWheel[i]] =
+          TyreDeflationLabel(state_.tyreDeflation.state[i]);
+  }
+  for (const HiddenFault &fault : state_.partDamage.hiddenFaults) {
+    if (!fault.revealed && fault.severity > 45.0)
+      snap.suspectedIssues = true;
+  }
   snap.sectorIndex = static_cast<int>(state_.currentTrackNodeIndex);
   snap.racePosition = racePosition;
   snap.inGarage = garageHold_;

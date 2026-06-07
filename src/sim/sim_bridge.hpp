@@ -71,6 +71,7 @@ public:
   RaceControlState getRaceControl() const;
 
   bool submitCommand(const std::string &entryId, const std::string &command);
+  void applyCarConditions(const std::string &conditionsPath);
   const TeamConfig &teamConfig() const { return teamConfig_; }
 
 private:

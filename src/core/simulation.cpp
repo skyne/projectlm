@@ -1,3 +1,4 @@
+#include "part_damage.hpp"
 #include "simulation.hpp"
 #include "telemetry.hpp"
 #include <algorithm>
@@ -568,23 +569,43 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       state.tireWear[i] = 1.0;
   }
 
+  static const PartCatalog kDamageCatalog{};
+  CarDamageProfiles damageProfiles;
+  BuildCarDamageProfiles(car, kDamageCatalog, damageProfiles);
+
   double currentVibrationStrain =
       car.vibrationIndex * car.engineStressMult *
       (state.currentRPM / std::max(1.0, static_cast<double>(car.engine.maxRPM)));
+  SyncDerivedEngineHealth(state, car);
   const double healthFactor =
       std::clamp(state.engineHealth / 100.0, 0.35, 1.0);
-  state.engineHealth -=
+  const double vibWear =
       ((currentVibrationStrain / car.structuralRigidityFactor) *
        p.vibrationDamageRate * healthFactor) *
       deltaTime;
+  ApplyPartWear(state.partDamage, DamagePart::Engine, vibWear * 0.82,
+                damageProfiles.profiles[DamagePartIndex(DamagePart::Engine)]);
+  ApplyPartWear(state.partDamage, DamagePart::Gearbox, vibWear * 0.18,
+                damageProfiles.profiles[DamagePartIndex(DamagePart::Gearbox)]);
 
   if (state.currentThermalLoad > p.thermalOverheat) {
     const double overheat = state.currentThermalLoad - p.thermalOverheat;
     const double thermalScale = 1.0 / (1.0 + overheat * 0.08);
-    state.engineHealth -=
+    const double thermalWear =
         (p.thermalDamageRate * overheat * thermalScale * healthFactor) *
         deltaTime;
+    ApplyPartWear(state.partDamage, DamagePart::Engine, thermalWear * 0.65,
+                  damageProfiles.profiles[DamagePartIndex(DamagePart::Engine)]);
+    ApplyPartWear(state.partDamage, DamagePart::Cooling, thermalWear * 0.35,
+                  damageProfiles.profiles[DamagePartIndex(DamagePart::Cooling)]);
   }
+
+  ApplyHiddenFaultBleed(state.partDamage, deltaTime);
+  RevealEscalatedHiddenFaults(state.partDamage);
+  TickTyreDeflationRisk(state, car, deltaTime, p.punctureWearThreshold);
+  TickDeflatedTyreBodyDamage(state, damageProfiles, deltaTime,
+                             p.tireWearSpeedThreshold * 0.5);
+  SyncDerivedEngineHealth(state, car);
 
   state.currentDistance += state.currentSpeed * deltaTime;
   state.elapsedRaceTime += deltaTime;

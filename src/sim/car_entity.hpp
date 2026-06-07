@@ -9,6 +9,7 @@
 #include "telemetry.hpp"
 #include "track.hpp"
 #include "traffic.hpp"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -119,6 +120,13 @@ struct CarSnapshot {
   double fuelTankCapacity = 100.0;
   double driverStintSeconds = 0.0;
   double maxDriverStintSeconds = 0.0;
+  std::map<std::string, double> partHealth;
+  std::vector<std::string> partIrreparable;
+  std::map<std::string, std::string> tyreDeflation;
+  std::string limpMode = "none";
+  std::string limpReason;
+  double structuralSeverity = 0.0;
+  bool suspectedIssues = false;
 };
 
 class Car {
