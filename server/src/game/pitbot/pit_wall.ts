@@ -33,6 +33,7 @@ export interface CarPitState {
 export interface PitBotContext {
   phase: WeekendSessionType;
   wet: number;
+  rivalPitAggression?: (teamName: string) => number;
 }
 
 export interface PitBotAction {
@@ -269,6 +270,7 @@ export function tickPitBot(
         tyreTread: st.tyreTread,
         setupWing: setupWing(s),
         setupBias: setupBias(s),
+        pitAggression: ctx.rivalPitAggression?.(s.teamName) ?? 1,
       },
       st.fuelAtLastPit,
     );

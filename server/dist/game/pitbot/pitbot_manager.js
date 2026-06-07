@@ -44,7 +44,11 @@ class PitBotManager {
             }
             this.gridSetupDone = true;
         }
-        actions.push(...(0, pit_wall_1.tickPitBot)(snapshots, opponents, this.carState, { phase, wet }, submitCommand));
+        actions.push(...(0, pit_wall_1.tickPitBot)(snapshots, opponents, this.carState, {
+            phase,
+            wet,
+            rivalPitAggression: ctx.rivalPitAggression,
+        }, submitCommand));
         return actions;
     }
 }

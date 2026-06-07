@@ -535,6 +535,51 @@ export interface MetaStatePayload {
   driverMarket?: DriverMarketListingPayload[];
   driverMarketRefreshCount?: number;
   driverMarketRound?: number;
+  /** Lightweight off-week state for AI rival teams (budget, form, standings). */
+  aiRivalSeason?: AiRivalSeasonPayload;
+}
+
+export type AiRivalArc =
+  | "hot_streak"
+  | "rebuilding"
+  | "defending_champion"
+  | "underdog"
+  | null;
+
+export interface AiRivalTeamPayload {
+  teamName: string;
+  primaryClassId: string;
+  budget: number;
+  rdTier: number;
+  engineerSkill: number;
+  form: number;
+  championshipPoints: number;
+  racesScored: number;
+  arc: AiRivalArc;
+  lastRoundPoints: number;
+  driversSigned: number;
+  isPlayerTeam?: boolean;
+}
+
+export interface AiRivalSeasonPayload {
+  seasonYear: number;
+  teams: AiRivalTeamPayload[];
+  drivers: DriverChampionshipPayload[];
+  rosterOverrides?: Record<string, DriverProfilePayload[]>;
+  marketSignedListingIds?: string[];
+  lastMarketNote?: string;
+}
+
+export interface DriverChampionshipPayload {
+  driverKey: string;
+  name: string;
+  nationality: string;
+  teamName: string;
+  classId: string;
+  championshipPoints: number;
+  lastRoundPoints: number;
+  racesScored: number;
+  isPlayerDriver?: boolean;
 }
 
 export interface ClassInfoPayload {

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { planPitStop, type PlannerSnap } from "./pit_planner";
+import {
+  planPitStop,
+  scaledFuelThresholds,
+  type PlannerSnap,
+} from "./pit_planner";
 
 function snap(overrides: Partial<PlannerSnap>): PlannerSnap {
   const base = {
@@ -146,5 +150,21 @@ describe("planPitStop class fuel thresholds", () => {
     );
     assert.ok(plan);
     assert.ok(plan?.services.fuel);
+  });
+});
+
+describe("pit_planner rival aggression", () => {
+  it("raises fuel thresholds when aggression is high", () => {
+    const base = scaledFuelThresholds(1, { low: 0.3, critical: 0.14 });
+    const aggressive = scaledFuelThresholds(1.15, { low: 0.3, critical: 0.14 });
+    assert.ok(aggressive.low > base.low);
+    assert.ok(aggressive.critical > base.critical);
+  });
+
+  it("lowers fuel thresholds when aggression is low", () => {
+    const base = scaledFuelThresholds(1, { low: 0.3, critical: 0.14 });
+    const conservative = scaledFuelThresholds(0.85, { low: 0.3, critical: 0.14 });
+    assert.ok(conservative.low < base.low);
+    assert.ok(conservative.critical < base.critical);
   });
 });

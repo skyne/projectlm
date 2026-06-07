@@ -116,3 +116,17 @@ const baseCtx = {
         strict_1.default.ok(plan?.services.fuel);
     });
 });
+(0, node_test_1.describe)("pit_planner rival aggression", () => {
+    (0, node_test_1.it)("raises fuel thresholds when aggression is high", () => {
+        const base = (0, pit_planner_1.scaledFuelThresholds)(1, { low: 0.3, critical: 0.14 });
+        const aggressive = (0, pit_planner_1.scaledFuelThresholds)(1.15, { low: 0.3, critical: 0.14 });
+        strict_1.default.ok(aggressive.low > base.low);
+        strict_1.default.ok(aggressive.critical > base.critical);
+    });
+    (0, node_test_1.it)("lowers fuel thresholds when aggression is low", () => {
+        const base = (0, pit_planner_1.scaledFuelThresholds)(1, { low: 0.3, critical: 0.14 });
+        const conservative = (0, pit_planner_1.scaledFuelThresholds)(0.85, { low: 0.3, critical: 0.14 });
+        strict_1.default.ok(conservative.low < base.low);
+        strict_1.default.ok(conservative.critical < base.critical);
+    });
+});

@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import type { MetaStatePayload } from "../ws_protocol";
 import { materializeAiGridConfigs } from "./track_ai_setup";
+import { rivalModifiersForTeam } from "./ai_rival_season";
 import { regulationForRound } from "./regulations";
 import { generateGrid, writeEntriesFile, type GeneratedEntry } from "./grid_generator";
 import { writeAllFleetConfigs } from "./car_builder";
@@ -143,7 +144,12 @@ export function buildRaceForRound(
     fs.copyFileSync(src, dest);
     entry.carConfigPath = rel;
   }
-  materializeAiGridConfigs(repoRoot, entries, round.trackId);
+  materializeAiGridConfigs(
+    repoRoot,
+    entries,
+    round.trackId,
+    (teamName) => rivalModifiersForTeam(teamName, meta.aiRivalSeason),
+  );
 
   const playerFleetEntry = entries.find((e) => e.fleetCarId === playerCarId);
   const resolvedPlayerEntryId =
@@ -190,6 +196,7 @@ export function buildRaceForRound(
 
   const driverConfigPath = exportRuntimeDrivers(repoRoot, {
     playerEntries: playerDriverEntries,
+    rosterOverrides: meta.aiRivalSeason?.rosterOverrides,
   });
 
   const calendarEvent =

@@ -135,6 +135,39 @@ export interface FleetCarPayload {
   classId: string;
 }
 
+export interface DriverProfilePayload {
+  name: string;
+  nationality: string;
+  tier: string;
+}
+
+export interface AiRivalTeamPayload {
+  teamName: string;
+  primaryClassId: string;
+  championshipPoints: number;
+  lastRoundPoints: number;
+  form: number;
+  isPlayerTeam?: boolean;
+}
+
+export interface DriverChampionshipPayload {
+  driverKey: string;
+  name: string;
+  nationality: string;
+  teamName: string;
+  classId: string;
+  championshipPoints: number;
+  lastRoundPoints: number;
+  isPlayerDriver?: boolean;
+}
+
+export interface AiRivalSeasonPayload {
+  seasonYear: number;
+  teams: AiRivalTeamPayload[];
+  drivers: DriverChampionshipPayload[];
+  lastMarketNote?: string;
+}
+
 export interface MetaStatePayload {
   teamName: string;
   budget: number;
@@ -145,6 +178,8 @@ export interface MetaStatePayload {
   setupComplete?: boolean;
   weekendProgress?: WeekendProgressPayload;
   fleet?: FleetCarPayload[];
+  driverRoster?: DriverProfilePayload[];
+  aiRivalSeason?: AiRivalSeasonPayload;
   calendar?: Array<{
     round: number;
     trackId: string;

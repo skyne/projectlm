@@ -42,6 +42,7 @@ const track_loader_1 = require("./game/track_loader");
 const catalog_1 = require("./game/catalog");
 const config_parser_1 = require("./config_parser");
 const pitbot_manager_1 = require("./game/pitbot/pitbot_manager");
+const ai_rival_season_1 = require("./game/ai_rival_season");
 const mock_session_1 = require("./mock_session");
 const weekend_sessions_1 = require("./game/weekend_sessions");
 const DEFAULT_RACE_CONFIG = "configs/race_config_web.txt";
@@ -283,8 +284,8 @@ class SimHost {
     investRd(partId, points) {
         return this.meta.investRd(partId, points);
     }
-    completeRound(position, classId) {
-        return this.meta.completeRound(position, classId);
+    completeRound(position, classId, raceResults) {
+        return this.meta.completeRound(position, classId, raceResults);
     }
     signSponsor(offerId) {
         return this.meta.signSponsor(offerId);
@@ -491,9 +492,11 @@ class SimHost {
             return;
         const snapshots = this.session.getSnapshots();
         const raceControl = this.getRaceControl();
+        const rivalSeason = this.meta.getState().aiRivalSeason;
         this.pitBot.tick(snapshots, this.runtimeManagedEntryIds, {
             trackWetness: raceControl?.trackWetness,
             weekendSessionType: this.sessionExtra.weekendSessionType,
+            rivalPitAggression: (teamName) => (0, ai_rival_season_1.rivalModifiersForTeam)(teamName, rivalSeason).pitAggression,
         }, (entryId, command) => this.session.submitCommand(entryId, command));
     }
     step() {
@@ -537,6 +540,7 @@ class SimHost {
                     classId: s.classId,
                     position: s.racePosition,
                     bestLapTime: s.bestLapTime ?? 0,
+                    driverName: s.driverName,
                 })), this.getWeekendSessionType());
                 this.paused = true;
             }
