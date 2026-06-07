@@ -19,7 +19,13 @@ import {
   type WeatherProfile,
   type WeatherState,
 } from "./weather_model";
-import { parseCarNumber } from "./config_parser";
+import { parseCarNumber, parseEntries as parseEntriesFromConfig } from "./config_parser";
+import {
+  normalizeTyreTread,
+  tyreCompoundId,
+  tyreGripScale,
+  type TyreTread,
+} from "./tyre_grip";
 
 interface Vec3 {
   x: number;
@@ -108,9 +114,11 @@ interface CarState {
   hybridDeployMJ: number;
   hybridBudgetMJ: number;
   pitCount: number;
+  totalPitSeconds: number;
   fuelTankCapacity: number;
   maxDriverStintSeconds: number;
   startingCompound?: "soft" | "medium" | "hard";
+  tyreTread: "slick" | "intermediate" | "wet";
   inGarage: boolean;
 }
 
@@ -119,9 +127,9 @@ const PIT_LANE_SPEED_MS = 60 / 3.6;
 const PIT_LATERAL_OFFSET_M = 10;
 
 const TANK_LITERS: Record<string, number> = {
-  Hypercar: 90,
-  LMGT3: 120,
-  LMP2: 75,
+  Hypercar: 110,
+  LMGT3: 100,
+  LMP2: 100,
   solo: 100,
 };
 
@@ -138,12 +146,16 @@ function tankForClass(classId: string): number {
 function parsePitCommand(command: string): {
   fuelLiters: number;
   changeTyres: boolean;
+  compound: "soft" | "medium" | "hard";
+  tyreTread: TyreTread;
   driverChange: boolean;
   driverIndex: number;
   repairEngine: boolean;
 } {
   let fuelLiters = 0;
   let changeTyres = false;
+  let compound: "soft" | "medium" | "hard" = "medium";
+  let tyreTread: TyreTread = "slick";
   let driverChange = false;
   let driverIndex = -1;
   let repairEngine = false;
@@ -154,13 +166,23 @@ function parsePitCommand(command: string): {
     const val = segment.slice(eq + 1).trim();
     if (key === "fuel") fuelLiters = parseFloat(val) || 0;
     else if (key === "tires" && (val === "all" || val === "full")) changeTyres = true;
+    else if (key === "compound") {
+      const c = val.toLowerCase();
+      if (c === "soft" || c === "hard" || c === "medium") compound = c;
+    } else if (key === "tyre_tread" || key === "tire_tread")
+      tyreTread = normalizeTyreTread(val);
+    else if (key === "wet_tyres" || key === "wet_tires")
+      tyreTread = val === "1" || val.toLowerCase() === "true" ? "wet" : "slick";
+    else if (key === "intermediate_tyres" || key === "intermediate_tires")
+      tyreTread =
+        val === "1" || val.toLowerCase() === "true" ? "intermediate" : "slick";
     else if (key === "driver_change" || key === "driver")
       driverChange = val === "1" || val.toLowerCase() === "true";
     else if (key === "driver_index") driverIndex = parseInt(val, 10);
     else if (key === "repairs" && val.toLowerCase().includes("engine"))
       repairEngine = true;
   }
-  return { fuelLiters, changeTyres, driverChange, driverIndex, repairEngine };
+  return { fuelLiters, changeTyres, compound, tyreTread, driverChange, driverIndex, repairEngine };
 }
 
 function sectorAtDistance(
@@ -265,6 +287,7 @@ function makeCarState(
     hybridDeployMJ: entry.classId === "Hypercar" ? 4.5 : 0,
     hybridBudgetMJ: entry.classId === "Hypercar" ? 4.5 : 0,
     pitCount: 0,
+    totalPitSeconds: 0,
     fuelTankCapacity: tank,
     maxDriverStintSeconds: MAX_STINT_SECONDS[entry.classId] ?? 3 * 3600,
     driverRoster: [
@@ -273,6 +296,7 @@ function makeCarState(
       { name: `${entry.teamName} #3`, active: false },
     ],
     stintTimeSec: 0,
+    tyreTread: "slick",
     inGarage: false,
   };
 }
@@ -598,28 +622,7 @@ function parseRaceConfig(repoRoot: string, configPath: string): RaceConfig {
 }
 
 function parseEntries(repoRoot: string, entriesPath: string) {
-  const rows: Array<{
-    entryId: string;
-    teamName: string;
-    carNumber: string;
-    classId: string;
-  }> = [];
-  for (const line of fs.readFileSync(path.join(repoRoot, entriesPath), "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#") || !trimmed.startsWith("entry=")) continue;
-    const parts = trimmed.slice(6).split(",");
-    if (parts.length < 4) continue;
-    const grid = parseInt(parts[3].trim(), 10);
-    if (!Number.isFinite(grid) || grid <= 0) continue;
-    const carNumber = parseCarNumber(parts[4], grid);
-    rows.push({
-      entryId: `entry-${grid}`,
-      teamName: parts[0].trim(),
-      carNumber,
-      classId: parts[2].trim(),
-    });
-  }
-  return rows;
+  return parseEntriesFromConfig(repoRoot, entriesPath);
 }
 
 export class MockSimSession {
@@ -673,6 +676,7 @@ export class MockSimSession {
       this.weather.trackWetness = p.baseWetness;
       this.weather.rainIntensity = this.weather.trackWetness * p.maxRainIntensity;
     }
+    this.applyGridTyresForWeather();
   }
 
   private tickWeather(deltaTime: number): void {
@@ -792,8 +796,36 @@ export class MockSimSession {
           car.startingCompound = compound;
         }
       }
+      if (
+        lower.startsWith("tyre_tread=") ||
+        lower.startsWith("tire_tread=") ||
+        lower.startsWith("wet_tyres=") ||
+        lower.startsWith("wet_tires=") ||
+        lower.startsWith("intermediate_tyres=") ||
+        lower.startsWith("intermediate_tires=")
+      ) {
+        if (this.raceTime > 0.5 || car.distance > 5) continue;
+        const eq = pending.command.indexOf("=");
+        const val = eq === -1 ? "" : pending.command.slice(eq + 1).trim();
+        const key = eq === -1 ? "" : lower.slice(0, eq);
+        if (key === "tyre_tread" || key === "tire_tread") {
+          car.tyreTread = normalizeTyreTread(val);
+        } else if (key === "intermediate_tyres" || key === "intermediate_tires") {
+          car.tyreTread =
+            val === "1" || val.toLowerCase() === "true" ? "intermediate" : "slick";
+        } else {
+          car.tyreTread = val === "1" || val.toLowerCase() === "true" ? "wet" : "slick";
+        }
+      }
     }
     this.pendingCommands = [];
+  }
+
+  private applyGridTyresForWeather(): void {
+    const wetness = this.weather.trackWetness;
+    if (wetness < 0.15) return;
+    const tread: TyreTread = wetness >= 0.35 ? "wet" : "intermediate";
+    for (const car of this.cars) car.tyreTread = tread;
   }
 
   private finishPitStop(car: CarState, plan: ReturnType<typeof parsePitCommand>): void {
@@ -807,6 +839,8 @@ export class MockSimSession {
       car.tireWearFR = 0;
       car.tireWearRL = 0;
       car.tireWearRR = 0;
+      car.startingCompound = plan.compound;
+      car.tyreTread = plan.tyreTread;
     }
     if (plan.driverChange && car.driverRoster.length >= 2) {
       const idx =
@@ -836,6 +870,7 @@ export class MockSimSession {
       if (car.retired) continue;
 
       if (car.inPit) {
+        car.totalPitSeconds += deltaTime;
         if (tickPitLane(car, deltaTime, this.lapLength)) {
           if (car.pendingPitPlan) {
             this.finishPitStop(car, car.pendingPitPlan);
@@ -958,6 +993,13 @@ export class MockSimSession {
 
       const throttleLoad =
         car.driverMode === "push" ? 1.05 : car.driverMode === "conserve" ? 0.9 : 1.0;
+      const baseSpeed = CLASS_SPEED[car.classId] ?? 85;
+      const grip = tyreGripScale(
+        car.tyreTread,
+        this.weather.trackWetness,
+        this.weather.ambientTempC,
+      );
+      car.speed = baseSpeed * throttleLoad * Math.max(0.15, grip);
 
       if (car.hybridBudgetMJ > 0) {
         const deployScale =
@@ -1076,6 +1118,7 @@ export class MockSimSession {
         tireWearFR: car.tireWearFR,
         tireWearRL: car.tireWearRL,
         tireWearRR: car.tireWearRR,
+        tireCompound: tyreCompoundId(car.startingCompound ?? "medium", car.tyreTread),
         tireTempC: car.tireTempC,
         coolantTempC: car.coolantTempC,
         hybridDeployMJ: car.hybridBudgetMJ > 0 ? car.hybridDeployMJ : undefined,
@@ -1089,6 +1132,7 @@ export class MockSimSession {
         inPit: car.inPit,
         pitQueued: car.pitQueued,
         pitRemainingSec: car.inPit ? car.pitRemainingSec : 0,
+        pitLaneDistance: car.inPit ? car.pitLaneDistance : undefined,
         driverName: car.driverRoster[car.activeDriverIndex]?.name ?? car.teamName,
         driverStamina: car.driverStamina,
         activeDriverIndex: car.activeDriverIndex,
@@ -1132,6 +1176,7 @@ export class MockSimSession {
         },
         tangent: { x: sample.tangentX, y: 0, z: sample.tangentZ },
         pitCount: car.pitCount,
+        totalPitSeconds: car.totalPitSeconds,
         fuelTankCapacity: car.fuelTankCapacity,
         driverStintSeconds: car.stintTimeSec,
         maxDriverStintSeconds: car.maxDriverStintSeconds,
@@ -1185,7 +1230,21 @@ export class MockSimSession {
       ? parseEntries(this.repoRoot, this.raceConfig.entriesPath)
       : [{ entryId: "solo-1", teamName: "Solo Entry", carNumber: "1", classId: "solo" }];
 
-    this.cars = entries.map((e) => makeCarState(e));
+    const previousByEntry = new Map(
+      this.cars.map((car) => [car.entryId, car] as const),
+    );
+    this.cars = entries.map((e) => {
+      const car = makeCarState(e);
+      const prev = previousByEntry.get(e.entryId);
+      if (prev?.driverRoster?.length) {
+        car.driverRoster = prev.driverRoster.map((d) => ({ ...d }));
+        car.activeDriverIndex = 0;
+        car.driverStamina = 100;
+        car.driverMode = "normal";
+        car.stintTimeSec = 0;
+      }
+      return car;
+    });
     if (isOpenSessionMode(this.raceConfig.sessionMode)) {
       for (const car of this.cars) {
         placeCarInGarage(car, this.lapLength);

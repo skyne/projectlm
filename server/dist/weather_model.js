@@ -5,6 +5,11 @@ exports.advanceWeatherDeterministic = advanceWeatherDeterministic;
 exports.tickWeatherState = tickWeatherState;
 exports.initWeatherState = initWeatherState;
 exports.buildWeatherForecast = buildWeatherForecast;
+function defaultRainEpisodeDuration(profile, random) {
+    const minSec = profile.maxRainIntensity > 0.72 ? 1800 : 900;
+    const spanSec = profile.maxRainIntensity > 0.72 ? 5400 : 2700;
+    return minSec + random() * spanSec;
+}
 function weatherProfileForId(profileId) {
     if (profileId === "hot_dry") {
         return {
@@ -61,15 +66,17 @@ function weatherProfileForId(profileId) {
     };
 }
 function resolveWeatherPhase(weather) {
+    if (weather.phase === "Drying")
+        return;
     if (weather.trackWetness >= 0.55)
         weather.phase = "HeavyRain";
     else if (weather.trackWetness >= 0.25 || weather.rainIntensity >= 0.1) {
         weather.phase = "LightRain";
     }
-    else if (weather.trackWetness >= 0.08 && weather.phase !== "Drying") {
+    else if (weather.trackWetness >= 0.08) {
         weather.phase = "Cloudy";
     }
-    else if (weather.trackWetness < 0.08 && weather.phase !== "Drying") {
+    else {
         weather.phase = "Dry";
     }
 }
@@ -85,20 +92,29 @@ function advanceWeatherDeterministic(weather, profile, elapsedRaceTime, deltaTim
         weather.phase = "LightRain";
         weather.rainIntensity = Math.max(weather.rainIntensity, 0.2);
         weather.forecastRainInSeconds = -1;
+        if (weather.rainEpisodeEndTime < 0) {
+            weather.rainEpisodeEndTime = elapsedRaceTime + 2400;
+        }
     }
     if (weather.phase === "LightRain" || weather.phase === "HeavyRain") {
-        weather.rainIntensity = Math.min(profile.maxRainIntensity, weather.rainIntensity + profile.wetRatePerSecond * deltaTime * 4);
-        weather.trackWetness = Math.min(1, weather.trackWetness +
-            profile.wetRatePerSecond * deltaTime * (1 + weather.rainIntensity));
-        if (weather.trackWetness >= 0.55)
-            weather.phase = "HeavyRain";
+        if (weather.rainEpisodeEndTime > 0 && elapsedRaceTime >= weather.rainEpisodeEndTime) {
+            weather.phase = "Drying";
+            weather.rainEpisodeEndTime = -1;
+        }
+        else {
+            weather.rainIntensity = Math.min(profile.maxRainIntensity, weather.rainIntensity + profile.wetRatePerSecond * deltaTime * 2.5);
+            weather.trackWetness = Math.min(1, weather.trackWetness +
+                profile.wetRatePerSecond * deltaTime * (0.35 + weather.rainIntensity * 0.65));
+            if (weather.trackWetness >= 0.55)
+                weather.phase = "HeavyRain";
+        }
     }
-    else if (weather.phase === "Drying" ||
+    if (weather.phase === "Drying" ||
         (weather.trackWetness > profile.baseWetness + 0.02 && weather.rainIntensity < 0.08)) {
         weather.phase = "Drying";
-        weather.rainIntensity = Math.max(0, weather.rainIntensity - profile.dryRatePerSecond * deltaTime * 3);
+        weather.rainIntensity = Math.max(0, weather.rainIntensity - profile.dryRatePerSecond * deltaTime * 5);
         weather.trackWetness = Math.max(profile.baseWetness, weather.trackWetness -
-            profile.dryRatePerSecond * deltaTime * (1.2 + elapsedRaceTime / 7200));
+            profile.dryRatePerSecond * deltaTime * (2.5 + elapsedRaceTime / 5400));
         if (weather.trackWetness <= profile.baseWetness + 0.03 && weather.rainIntensity <= 0.05) {
             weather.phase = weather.trackWetness > 0.08 ? "Cloudy" : "Dry";
         }
@@ -118,6 +134,8 @@ function tickWeatherState(weather, profile, elapsedRaceTime, deltaTime, random) 
             weather.phase = "LightRain";
             weather.rainIntensity = Math.max(weather.rainIntensity, 0.2);
             weather.forecastRainInSeconds = -1;
+            weather.rainEpisodeEndTime =
+                elapsedRaceTime + defaultRainEpisodeDuration(profile, random);
         }
         else if (weather.trackWetness <= profile.baseWetness + 0.001 &&
             random() < rainRollChance * 0.5 &&
@@ -152,6 +170,7 @@ function initWeatherState(profileId, configuredWetness, configuredTempC) {
         trackGripEvolution: 1,
         phase,
         forecastRainInSeconds: -1,
+        rainEpisodeEndTime: -1,
         profileId,
     };
 }

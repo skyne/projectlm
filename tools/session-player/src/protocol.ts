@@ -29,7 +29,13 @@ export interface CarSnapshot {
   currentSectorTime: number;
   lastLapTime: number;
   bestLapTime: number;
+  lastLapTime?: number;
   gapToLeader: number;
+  classPosition?: number;
+  inGarage?: boolean;
+  pitQueued?: boolean;
+  driverMode?: string;
+  fuelTankCapacity?: number;
   position: Vec3;
   tangent: Vec3;
 }
@@ -54,12 +60,25 @@ export interface SimEvent {
   message: string;
 }
 
+export type WeekendSessionType = "practice" | "qualifying" | "race";
+
+export interface WeekendProgressPayload {
+  round: number;
+  completedSessions: WeekendSessionType[];
+  qualiResults?: Array<{
+    entryId: string;
+    classId: string;
+    bestLapTime: number;
+  }>;
+}
+
 export interface SessionInitPayload {
   trackName: string;
   targetLaps: number;
   targetDurationSeconds?: number;
   raceFormat?: string;
   roundNumber?: number;
+  weekendSessionType?: WeekendSessionType;
   simTimestep: number;
   entries: Array<{
     entryId: string;
@@ -124,6 +143,7 @@ export interface MetaStatePayload {
   seasonYear: number;
   currentRound: number;
   setupComplete?: boolean;
+  weekendProgress?: WeekendProgressPayload;
   fleet?: FleetCarPayload[];
   calendar?: Array<{
     round: number;
@@ -153,7 +173,12 @@ export interface RaceCompletePayload {
     carNumber: string | number;
     classId: string;
     position: number;
+    bestLapTime?: number;
+    lastLapTime?: number;
   }>;
+  weekendSessionType?: WeekendSessionType;
+  nextWeekendSession?: WeekendSessionType | null;
+  championshipPoints?: number;
 }
 
 export interface StaffMemberPayload {
@@ -246,6 +271,7 @@ export type ClientMessageType =
   | "reload_definitions"
   | "submit_command"
   | "start_round"
+  | "continue_weekend_session"
   | "set_player_entry"
   | "create_team"
   | "new_game";

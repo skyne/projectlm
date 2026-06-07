@@ -38,6 +38,7 @@ enum class ECoolingPack {
   MaxFlowEndurance
 };
 enum class ETireCompound { Soft, Medium, Hard, MichelinEndurance };
+enum class ETyreTread { Slick, Intermediate, Wet };
 
 enum class EWheelPackage {
   Hypercar18Standard,
@@ -309,6 +310,7 @@ struct CarConfig {
   bool hasCustomCoolingLayout = false;
   double ductAirflowFactor = 1.0;
   ETireCompound tireChoice = ETireCompound::Medium;
+  ETyreTread tyreTread = ETyreTread::Slick;
   EWheelPackage wheelPackageChoice = EWheelPackage::Hypercar18Standard;
   ESuspensionLayout suspensionChoice = ESuspensionLayout::PushrodDoubleWishbone;
   ESuspensionLayout frontSuspensionChoice = ESuspensionLayout::PushrodDoubleWishbone;
@@ -423,6 +425,24 @@ WheelPackagePart GetWheelPackageStats(EWheelPackage type,
                                       const PartCatalog &catalog);
 SuspensionPart GetSuspensionStats(ESuspensionLayout type,
                                   const PartCatalog &catalog);
+inline const char *TireCompoundId(ETireCompound compound,
+                                  ETyreTread tread = ETyreTread::Slick) {
+  if (tread == ETyreTread::Wet)
+    return "wet";
+  if (tread == ETyreTread::Intermediate)
+    return "intermediate";
+  switch (compound) {
+  case ETireCompound::Soft:
+    return "soft";
+  case ETireCompound::Hard:
+    return "hard";
+  case ETireCompound::MichelinEndurance:
+    return "endurance";
+  default:
+    return "medium";
+  }
+}
+
 void ApplyTireCompoundStats(CarConfig &car, ETireCompound compound,
                             const PartCatalog &catalog);
 FuelSystemPart GetFuelSystemStats(EFuelSystem type, const PartCatalog &catalog);

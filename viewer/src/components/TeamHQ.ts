@@ -32,6 +32,7 @@ export interface TeamHQHandlers {
   onSignSponsor?: (offerId: string) => void;
   onDropSponsor?: (offerId: string) => void;
   onOpenGarage?: () => void;
+  onConfigureCar?: (carId: string) => void;
   onBuyCar?: (payload: BuyCarPayload) => void;
   onSetActiveCar?: (carId: string) => void;
   onSetPlayerEntry?: (carId: string) => void;
@@ -207,6 +208,10 @@ export class TeamHQ {
     }
   }
 
+  showTab(tab: HqTab): void {
+    this.setActiveTab(tab);
+  }
+
   private setActiveTab(tab: HqTab): void {
     this.activeTab = tab;
     for (const btn of this.tabsEl.querySelectorAll<HTMLButtonElement>(".hq-tab")) {
@@ -365,8 +370,12 @@ export class TeamHQ {
         `;
 
         li.querySelector(".fleet-edit-btn")!.addEventListener("click", () => {
-          this.handlers.onSetActiveCar?.(car.id);
-          this.handlers.onOpenGarage?.();
+          if (this.handlers.onConfigureCar) {
+            this.handlers.onConfigureCar(car.id);
+          } else {
+            this.handlers.onSetActiveCar?.(car.id);
+            this.handlers.onOpenGarage?.();
+          }
         });
         li.querySelector(".fleet-remove-btn")!.addEventListener("click", () => {
           if (fleet.length <= 1) return;

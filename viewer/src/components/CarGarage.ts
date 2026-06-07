@@ -59,7 +59,7 @@ import { GarageEngineerPanel } from "./GarageEngineerPanel";
 import type { CarBuildVisual } from "../graphics/visualCatalog";
 
 export interface CarGarageHandlers {
-  onSaveBuild: (build: CarBuildPayload) => void;
+  onSaveBuild: (build: CarBuildPayload, carId?: string) => void;
   onVisualBuildChange?: (build: CarBuildVisual) => void;
   onAskGarageEngineer?: (payload: {
     classId: string;
@@ -232,6 +232,8 @@ export class CarGarage {
   private activeSlot: BuildSlot = "engine";
   private buildGuideActive = false;
   private buildGuideStepIndex = 0;
+  /** Fleet car being edited — overrides meta.activeCarId until server confirms. */
+  private editingCarId: string | null = null;
   private statusEl!: HTMLElement;
   private partGridEl!: HTMLElement;
   private guideEl!: HTMLElement;
@@ -529,7 +531,7 @@ export class CarGarage {
     }
     this.build = normalizeCarBuild(this.build, classId, this.catalog?.partsBySlot);
     if (pendingMessage) this.setStatus(pendingMessage);
-    this.handlers.onSaveBuild(this.build);
+    this.handlers.onSaveBuild(this.build, this.resolvedFleetCar()?.id);
   }
 
   private renderBuildGuide(): void {
@@ -568,26 +570,28 @@ export class CarGarage {
     this.render();
   }
 
+  /** Open garage for a specific fleet car (multiclass teams). */
+  openForCar(carId: string): void {
+    this.editingCarId = carId;
+    this.applyEditingCarBuild();
+    this.render();
+  }
+
+  /** Use meta.activeCarId instead of a pinned editing car (e.g. header Garage nav). */
+  clearEditingCar(): void {
+    this.editingCarId = null;
+    if (this.meta) this.applyEditingCarBuild();
+  }
+
   update(meta: MetaStatePayload): void {
     this.meta = meta;
-    const activeCar =
-      meta.fleet?.find((c) => c.id === meta.activeCarId) ?? meta.fleet?.[0];
-    if (activeCar?.build) {
-      this.build = normalizeCarBuild(
-        { ...activeCar.build },
-        activeCar.classId ?? meta.playerClassId ?? "Hypercar",
-        this.catalog?.partsBySlot,
-      );
-    } else if (meta.carBuild) {
-      this.build = normalizeCarBuild(
-        { ...meta.carBuild },
-        meta.playerClassId ?? "Hypercar",
-        this.catalog?.partsBySlot,
-      );
-    } else if (!this.build) {
-      this.build = defaultBuild(meta);
+    if (
+      this.editingCarId &&
+      meta.activeCarId === this.editingCarId
+    ) {
+      // Server confirmed the active car — keep editingCarId as the source of truth in garage.
     }
-    this.ensureEngine(activeCar?.classId ?? meta.playerClassId ?? "Hypercar");
+    this.applyEditingCarBuild();
     this.applyLivery(meta);
     if (meta.carBuildGuidePending && !this.buildGuideActive) {
       this.startBuildGuide();
@@ -744,10 +748,38 @@ export class CarGarage {
     }
   }
 
+  private resolvedFleetCar() {
+    if (!this.meta?.fleet?.length) return null;
+    const preferredId = this.editingCarId ?? this.meta.activeCarId;
+    return (
+      this.meta.fleet.find((c) => c.id === preferredId) ??
+      this.meta.fleet[0]
+    );
+  }
+
+  private applyEditingCarBuild(): void {
+    if (!this.meta) return;
+    const activeCar = this.resolvedFleetCar();
+    if (activeCar?.build) {
+      this.build = normalizeCarBuild(
+        { ...activeCar.build },
+        activeCar.classId ?? this.meta.playerClassId ?? "Hypercar",
+        this.catalog?.partsBySlot,
+      );
+    } else if (this.meta.carBuild) {
+      this.build = normalizeCarBuild(
+        { ...this.meta.carBuild },
+        this.meta.playerClassId ?? "Hypercar",
+        this.catalog?.partsBySlot,
+      );
+    } else if (!this.build) {
+      this.build = defaultBuild(this.meta);
+    }
+    this.ensureEngine(activeCar?.classId ?? this.meta.playerClassId ?? "Hypercar");
+  }
+
   private activeClassId(): string {
-    const activeCar =
-      this.meta?.fleet?.find((c) => c.id === this.meta?.activeCarId) ??
-      this.meta?.fleet?.[0];
+    const activeCar = this.resolvedFleetCar();
     return activeCar?.classId ?? this.meta?.playerClassId ?? "Hypercar";
   }
 
@@ -1538,9 +1570,7 @@ export class CarGarage {
     this.root.querySelector(".garage-mass-note")!.textContent =
       `Sim mass: ${Math.round(currentCompiled.calculatedTotalMass)} kg · Engine ${powerNote}${hybridNote} · Grip ×${effectiveGripScore(currentCompiled).toFixed(2)} · Corner ×${effectiveCorneringScore(currentCompiled).toFixed(2)}`;
 
-    const activeCar =
-      this.meta?.fleet?.find((c) => c.id === this.meta?.activeCarId) ??
-      this.meta?.fleet?.[0];
+    const activeCar = this.resolvedFleetCar();
     const cls = activeCar?.classId ?? this.meta?.playerClassId ?? "Hypercar";
     const carNum = activeCar ? `#${activeCar.carNumber}` : "";
     const subtitle = this.root.querySelector(".mm-panel-subtitle");

@@ -15,12 +15,55 @@ export interface ParsedEntry {
   teamName: string;
   carNumber: string;
   classId: string;
+  fleetCarId?: string;
 }
 
 export function parseCarNumber(raw: string | undefined, fallbackGrid: number): string {
   const trimmed = raw?.trim() ?? "";
   if (/^\d+$/.test(trimmed) && trimmed !== "0") return trimmed;
   return String(fallbackGrid);
+}
+
+/** Legacy id when entry_id column is absent — unique only for global grid slots. */
+export function legacyEntryIdFromGrid(grid: number): string {
+  return `entry-${grid}`;
+}
+
+export interface ParsedEntryFields {
+  teamName: string;
+  carConfigPath: string;
+  classId: string;
+  grid: number;
+  carNumber: string;
+  entryId: string;
+}
+
+/** Parse `entry=team,path,class,grid,car_number[,entry_id]` */
+export function parseEntryFields(line: string): ParsedEntryFields | null {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("#") || !trimmed.startsWith("entry=")) {
+    return null;
+  }
+  const parts = trimmed.slice("entry=".length).split(",");
+  if (parts.length < 4) return null;
+  const grid = parseInt(parts[3].trim(), 10);
+  if (!Number.isFinite(grid) || grid <= 0) return null;
+
+  const teamName = parts[0].trim();
+  const carConfigPath = parts[1].trim();
+  const classId = parts[2].trim();
+  if (!teamName || !carConfigPath || !classId) return null;
+
+  const carNumber = parseCarNumber(parts[4], grid);
+  const explicitId = parts[5]?.trim();
+  const entryId =
+    explicitId && explicitId.length > 0 ? explicitId : legacyEntryIdFromGrid(grid);
+
+  return { teamName, carConfigPath, classId, grid, carNumber, entryId };
+}
+
+export function formatEntryLine(fields: ParsedEntryFields): string {
+  return `entry=${fields.teamName},${fields.carConfigPath},${fields.classId},${fields.grid},${fields.carNumber},${fields.entryId}`;
 }
 
 export function parseRaceConfig(
@@ -69,19 +112,13 @@ export function parseEntries(
   const rows: ParsedEntry[] = [];
 
   for (const line of fs.readFileSync(abs, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    if (!trimmed.startsWith("entry=")) continue;
-    const parts = trimmed.slice("entry=".length).split(",");
-    if (parts.length < 4) continue;
-    const grid = parseInt(parts[3].trim(), 10);
-    if (!Number.isFinite(grid) || grid <= 0) continue;
-    const carNumber = parseCarNumber(parts[4], grid);
+    const parsed = parseEntryFields(line);
+    if (!parsed) continue;
     rows.push({
-      entryId: `entry-${grid}`,
-      teamName: parts[0].trim(),
-      carNumber,
-      classId: parts[2].trim(),
+      entryId: parsed.entryId,
+      teamName: parsed.teamName,
+      carNumber: parsed.carNumber,
+      classId: parsed.classId,
     });
   }
 

@@ -75,6 +75,9 @@ struct DriverState {
                                      const SuspensionSetupDelta &suspension =
                                          SuspensionSetupDelta{}) const;
   bool rollMistake(double deltaTime, double raceTime, bool underAttack);
+
+  /** Reset stint/runtime state for session restart; keeps roster profiles. */
+  void resetForRestart();
 };
 
 const char *DriverMistakeKindLabel(DriverMistakeKind kind);

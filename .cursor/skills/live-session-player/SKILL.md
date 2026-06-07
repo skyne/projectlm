@@ -123,6 +123,17 @@ $PLAYER events --seconds 5
 ./scripts/session-player.sh pit
 ```
 
+**Run a full WEC weekend (practice → quali → race)**
+```bash
+# Co-op: host clicks Continue between sessions (default --advance host)
+./scripts/session-player.sh weekend --name "PitBot" --role player
+
+# Solo: agent auto-advances
+./scripts/session-player.sh weekend --name "PitBot" --role host
+```
+
+See [multiplayer-agent-player](../multiplayer-agent-player/SKILL.md) for co-op vs solo host setup.
+
 ## Entry lookup
 
 During an active race, resolve cars by:

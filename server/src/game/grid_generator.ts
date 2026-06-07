@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import { parseCarNumber } from "../config_parser";
+import { formatEntryLine, parseCarNumber } from "../config_parser";
 import type { FleetCarPayload } from "../ws_protocol";
 
 export interface GridTemplate {
@@ -224,9 +224,16 @@ export function writeEntriesFile(
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   const lines = [
     "# Generated grid — 2026 Le Mans entry list with player fleet merged",
-    ...entries.map(
-      (e) =>
-        `entry=${e.teamName},${e.carConfigPath},${e.classId},${e.grid},${e.carNumber}`,
+    "# entry=team,config,class,class_grid,car_number,entry_id",
+    ...entries.map((e) =>
+      formatEntryLine({
+        teamName: e.teamName,
+        carConfigPath: e.carConfigPath,
+        classId: e.classId,
+        grid: e.grid,
+        carNumber: e.carNumber,
+        entryId: e.entryId,
+      }),
     ),
   ];
   fs.writeFileSync(abs, lines.join("\n") + "\n");

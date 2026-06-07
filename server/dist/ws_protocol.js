@@ -26,6 +26,7 @@ function parseClientMessage(raw) {
             "rd_invest",
             "complete_round",
             "start_round",
+            "continue_weekend_session",
             "create_team",
             "save_team_creation_draft",
             "save_car_build",

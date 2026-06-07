@@ -589,10 +589,15 @@ class MetaStateManager {
         this.state.playerCarId = carId;
         return this.persist();
     }
-    saveCarBuild(build) {
-        const active = (0, fleet_1.activeFleetCar)(this.state);
+    saveCarBuild(build, carId) {
+        const fleet = this.state.fleet ?? [];
+        const active = carId
+            ? fleet.find((c) => c.id === carId) ?? null
+            : (0, fleet_1.activeFleetCar)(this.state);
         if (!active)
             return { error: "No active car in your fleet" };
+        if (carId)
+            this.state.activeCarId = carId;
         const err = (0, car_builder_1.validateCarBuild)(this.repoRoot, active.classId, build, this.state.unlockedParts);
         if (err)
             return { error: err };

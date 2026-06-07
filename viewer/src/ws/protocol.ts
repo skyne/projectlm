@@ -30,6 +30,7 @@ export interface CarSnapshot {
   tireWearFR?: number;
   tireWearRL?: number;
   tireWearRR?: number;
+  tireCompound?: string;
   tireTempC?: number;
   tireTempFL?: number;
   tireTempFR?: number;
@@ -76,6 +77,8 @@ export interface CarSnapshot {
   overtaking?: boolean;
   blocked?: boolean;
   pitRemainingSec?: number;
+  /** Meters along pit lane spline when {@link inPit} is true. */
+  pitLaneDistance?: number;
   setupFeedback?: string;
   wingAngle?: number;
   brakeBias?: number;
@@ -90,6 +93,7 @@ export interface CarSnapshot {
   serviceabilityFactor?: number;
   driverChangeFactor?: number;
   pitCount?: number;
+  totalPitSeconds?: number;
   fuelTankCapacity?: number;
   driverStintSeconds?: number;
   maxDriverStintSeconds?: number;
@@ -163,7 +167,10 @@ export interface WeekendProgressPayload {
   qualiResults?: QualifyingResultPayload[];
 }
 
+export type SimBackend = "native" | "mock";
+
 export interface SessionInitPayload {
+  simBackend?: SimBackend;
   trackName: string;
   targetLaps: number;
   targetDurationSeconds?: number;
@@ -176,6 +183,7 @@ export interface SessionInitPayload {
     teamName: string;
     carNumber: string;
     classId: string;
+    fleetCarId?: string;
   }>;
   carNumberByEntryId: Record<string, string>;
   playerEntryId?: string;
@@ -426,6 +434,11 @@ export interface CarBuildPayload {
   transmission: string;
   hybrid_system: string;
   engine?: EngineBuildPayload;
+}
+
+export interface SaveCarBuildPayload {
+  build: CarBuildPayload;
+  carId?: string;
 }
 
 /** Per-track race weekend baseline — merged onto garage build at session start. */

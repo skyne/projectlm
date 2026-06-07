@@ -1,3 +1,4 @@
+#include "driver.hpp"
 #include "sim_bridge.hpp"
 #include "../helpers/paths.hpp"
 #include <algorithm>
@@ -58,6 +59,30 @@ TEST_CASE("SimBridge restartRace resets progress", "[unit][sim_bridge]") {
   REQUIRE(bridge.restartRace());
   REQUIRE(bridge.getSnapshots().front().distance == Catch::Approx(0.0));
   REQUIRE_FALSE(bridge.isRaceComplete());
+}
+
+TEST_CASE("DriverState resetForRestart keeps roster profiles", "[unit][sim_bridge]") {
+  DriverState drivers = MakeDefaultDrivers("AF Corse", 3, 42);
+  drivers.roster[0].name = "Alessandro Pier Guidi";
+  drivers.roster[1].name = "James Calado";
+  drivers.roster[2].name = "Antonio Fuoco";
+  drivers.activeIndex = 2;
+  drivers.mode = DriverMode::Push;
+  drivers.stintTimeSeconds = 3600.0;
+  drivers.fatigue = 0.42;
+  drivers.pressure = 0.8;
+
+  drivers.resetForRestart();
+
+  REQUIRE(drivers.roster.size() == 3);
+  REQUIRE(drivers.roster[0].name == "Alessandro Pier Guidi");
+  REQUIRE(drivers.roster[1].name == "James Calado");
+  REQUIRE(drivers.roster[2].name == "Antonio Fuoco");
+  REQUIRE(drivers.activeIndex == 0);
+  REQUIRE(drivers.mode == DriverMode::Normal);
+  REQUIRE(drivers.stintTimeSeconds == Catch::Approx(0.0));
+  REQUIRE(drivers.fatigue == Catch::Approx(0.0));
+  REQUIRE(drivers.pressure == Catch::Approx(0.0));
 }
 
 TEST_CASE("SimBridge reloadDefinitions refreshes session", "[unit][sim_bridge]") {

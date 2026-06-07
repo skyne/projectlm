@@ -12,6 +12,8 @@ import {
   catalogSummary,
   type TeamPresetId,
 } from "./team_presets.js";
+import { runFullSeason, runFullWeekend } from "./weekend_orchestrator.js";
+import { resolveNextSession } from "./weekend_sessions.js";
 
 interface GlobalOptions {
   url: string;
@@ -96,6 +98,12 @@ Commands:
   time-scale <n>           Set time scale multiplier
   restart                  Restart the race
   start-round              Start the current calendar round (game mode)
+  continue-weekend         Start the next weekend session (practice/quali/race)
+  weekend                  Run full weekend (practice → quali → race)
+                             Co-op default: --advance host (you click Continue)
+                             Solo host: --advance auto
+  season                   Run all remaining calendar rounds to season end
+                             Co-op: --role player --advance auto
   new-game                 Reset career to team-creation lobby
   catalog                  Summarize game_catalog (classes, platforms, staff)
   create-team              Found a team (--preset lmp2-privateer, --name, etc.)
@@ -124,6 +132,9 @@ Reconnect E2E options:
 Global join:
   --name <displayName>      join_session display name (default: Session Player)
   --role <host|player|spectator>  Requested role (default: host)
+
+Weekend orchestration (weekend command):
+  --advance <auto|host>     Who starts the next session (default: auto if host, host if player)
 
 Player car selection (pit / submit / car):
   --entry <entryId>        Defaults to session playerEntryId when possible
@@ -559,6 +570,74 @@ async function main(): Promise<void> {
           };
         });
         printJson(result, opts.pretty);
+        return;
+      }
+
+      case "continue-weekend": {
+        const result = await withPlayer(opts, async (player) => {
+          const errorsBefore = player.state.errors.length;
+          const canContinue = player.state.clientAssignment?.permissions.includes(
+            "continue_weekend_session",
+          );
+          const canStart = player.state.clientAssignment?.permissions.includes("start_round");
+          if (canContinue) {
+            player.send("continue_weekend_session", {});
+          } else if (canStart) {
+            player.send("start_round", {});
+          } else {
+            return { ok: false, error: "No permission to start weekend session" };
+          }
+          await player.sleep(800);
+          return {
+            ok: player.state.errors.length === errorsBefore,
+            session: player.state.sessionInit,
+            nextFromMeta: player.state.metaState
+              ? resolveNextSession(player.state.metaState)
+              : null,
+            errors: player.state.errors,
+          };
+        });
+        printJson(result, opts.pretty);
+        process.exit(result.ok ? 0 : 1);
+      }
+
+      case "weekend": {
+        try {
+          const advanceRaw = options.advance;
+          const advance =
+            advanceRaw === "auto" || advanceRaw === "host" ? advanceRaw : undefined;
+          await runFullWeekend({
+            url: opts.url,
+            displayName: opts.displayName,
+            role: opts.requestedRole,
+            advance,
+          });
+          printJson({ ok: true }, opts.pretty);
+        } catch (err) {
+          fail(err instanceof Error ? err.message : String(err));
+        }
+        return;
+      }
+
+      case "season": {
+        try {
+          const advanceRaw = options.advance;
+          const advance =
+            advanceRaw === "auto" || advanceRaw === "host"
+              ? advanceRaw
+              : opts.requestedRole === "host"
+                ? "auto"
+                : "auto";
+          await runFullSeason({
+            url: opts.url,
+            displayName: opts.displayName,
+            role: opts.requestedRole,
+            advance,
+          });
+          printJson({ ok: true }, opts.pretty);
+        } catch (err) {
+          fail(err instanceof Error ? err.message : String(err));
+        }
         return;
       }
 

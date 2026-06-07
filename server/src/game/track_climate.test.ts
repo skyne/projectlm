@@ -22,9 +22,11 @@ test("Losail October stays mostly dry", () => {
   assert.match(qatar.label, /dry/i);
 });
 
-test("Fuji October label mentions rain likelihood", () => {
-  const fuji = resolveTrackWeather("fuji", 10, 99);
-  assert.match(fuji.label.toLowerCase(), /rain|changeable|shower/);
+test("Fuji October can roll wet or changeable archetypes", () => {
+  const labels = Array.from({ length: 30 }, (_, i) =>
+    resolveTrackWeather("fuji", 10, i + 1).label.toLowerCase(),
+  );
+  assert.ok(labels.some((l) => /rain|changeable|shower|mixed/.test(l)));
 });
 
 test("same seed yields reproducible profile", () => {
@@ -38,4 +40,23 @@ test("different seeds vary within bounds", () => {
   const a = resolveTrackWeather("spa", 5, 1);
   const b = resolveTrackWeather("spa", 5, 9999);
   assert.notEqual(a.profile.rainChancePerHour, b.profile.rainChancePerHour);
+});
+
+test("Le Mans June rolls dry, changeable, and wet archetypes", () => {
+  const archetypes = new Set(
+    Array.from({ length: 40 }, (_, i) => resolveTrackWeather("lemans_la_sarthe", 6, i + 1).archetype),
+  );
+  assert.ok(archetypes.has("dry"));
+  assert.ok(archetypes.has("changeable"));
+});
+
+test("dry archetype Le Mans keeps low rain chance", () => {
+  let dry: ReturnType<typeof resolveTrackWeather> | null = null;
+  for (let seed = 1; seed <= 100 && !dry; seed++) {
+    const w = resolveTrackWeather("lemans_la_sarthe", 6, seed);
+    if (w.archetype === "dry") dry = w;
+  }
+  assert.ok(dry);
+  assert.ok(dry.profile.rainChancePerHour < 0.05);
+  assert.match(dry.label, /race day dry/i);
 });

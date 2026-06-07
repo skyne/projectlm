@@ -10,6 +10,12 @@ const PIT_OR_SETUP = /^(pit|setup)\|/i;
 const SETUP_KEYS = new Set([
     "fuel",
     "compound",
+    "tyre_tread",
+    "tire_tread",
+    "intermediate_tyres",
+    "intermediate_tires",
+    "wet_tyres",
+    "wet_tires",
     "tires",
     "repairs",
     "driver_change",
@@ -33,7 +39,8 @@ exports.ENGINEER_COMMAND_HELP = `Valid commands (setup changes apply in pit only
 - driver_mode=push | driver_mode=normal | driver_mode=conserve
 - hybrid_strategy=balanced | hybrid_strategy=deploy | hybrid_strategy=harvest | hybrid_strategy=hold
 - cancel_pit
-- pit|fuel=<liters>|compound=soft|medium|hard|tires=FL,FR,RL,RR|wing=<delta>|brake_bias=<delta>|front_ride_height=<m>|rear_ride_height=<m>|front_spring=<N/m>|rear_spring=<N/m>|front_arb=<mult>|rear_arb=<mult>|front_damper_bump=<clicks>|front_damper_rebound=<clicks>|rear_damper_bump=<clicks>|rear_damper_rebound=<clicks>
+- pit|fuel=<liters>|compound=soft|medium|hard|tyre_tread=slick|intermediate|wet|tires=FL,FR,RL,RR|wing=<delta>|brake_bias=<delta>|front_ride_height=<m>|rear_ride_height=<m>|front_spring=<N/m>|rear_spring=<N/m>|front_arb=<mult>|rear_arb=<mult>|front_damper_bump=<clicks>|front_damper_rebound=<clicks>|rear_damper_bump=<clicks>|rear_damper_rebound=<clicks>
+- tyre_tread=slick|intermediate|wet (grid only, before green flag; legacy: wet_tyres / intermediate_tyres)
 - setup|wing=<delta>|brake_bias=<delta>|front_ride_height=<m>|rear_ride_height=<m>|... (same setup keys, pit lane only)
 
 Typical deltas: wing ±0.05, brake_bias ±0.02, ride_height ±0.002 m (2 mm), spring ±5000 N/m, ARB ±0.05, damper ±1 click.

@@ -14,6 +14,10 @@
     <link rel="stylesheet" href="/src/game-theme.css" />
   </head>
   <body>
+    <div id="mock-mode-banner" class="mock-mode-banner hidden" role="alert" aria-live="polite">
+      <strong>MOCK SIM ACTIVE</strong>
+      <span>— TypeScript physics fallback. Tyre/weather behaviour is approximate, not the real C++ race sim.</span>
+    </div>
     <div id="app">
       <header class="header header-wec">
         <div class="header-brand">
@@ -28,6 +32,7 @@
           <div id="audio-controls-container"></div>
           <div id="session-roster-container" class="header-roster-slot"></div>
           <span class="header-endurance-tag">24H · 6H · 12H</span>
+          <span id="session-type-badge" class="session-type-badge hidden">Race</span>
           <span id="race-lap-counter" class="race-lap-counter hidden">Lap —</span>
           <span id="status" class="status">Connecting…</span>
           <button type="button" id="change-identity-btn" class="change-identity-btn hidden" title="Change display name or role">Identity</button>

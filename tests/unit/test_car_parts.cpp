@@ -91,6 +91,7 @@ TEST_CASE("ApplyClassBoP Hypercar faster than LMP2 on power", "[unit][car][bop]"
   ApplyClassBoP(lmp2, rules.at("LMP2"));
 
   REQUIRE(hypercar.peakHorsepower > lmp2.peakHorsepower);
+  REQUIRE(lmp2.peakHorsepower > rules.at("LMGT3").powerCapHP);
   REQUIRE(lmp2.peakHorsepower >= rules.at("LMGT3").powerCapHP * 0.85);
 }
 

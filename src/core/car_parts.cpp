@@ -672,4 +672,7 @@ void ApplyClassBoP(CarConfig &car, const ClassRule &rule) {
     car.totalDownforceCl *= rule.aeroBalanceModifier;
   if (rule.dragModifier > 0.0)
     car.totalDragCd *= rule.dragModifier;
+
+  if (rule.fuelBurnModifier > 0.0)
+    car.fuelBurnRate *= rule.fuelBurnModifier;
 }

@@ -8,8 +8,8 @@
     "build": "tsc",
     "test": "npm run test:climate && npm run test:weather && npm run test:setup",
     "test:climate": "node --import tsx --test src/game/track_climate.test.ts",
-    "test:weather": "node --import tsx --test src/weather_model.test.ts",
-    "test:setup": "node --import tsx --test src/game/chassis_setup.test.ts src/game/weekend_setup.test.ts src/game/weekend_sessions.test.ts src/llm/engineer_commands.test.ts"
+    "test:weather": "node --import tsx --test src/weather_model.test.ts src/tyre_grip.test.ts",
+    "test:setup": "node --import tsx --test src/config_parser.test.ts src/game/chassis_setup.test.ts src/game/weekend_setup.test.ts src/game/weekend_sessions.test.ts src/llm/engineer_commands.test.ts"
   },
   "dependencies": {
     "@projectlm/native": "file:../bindings/node",

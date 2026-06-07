@@ -98,9 +98,12 @@ export function estimateDriverChangeSeconds(
   return PIT_DRIVER_CHANGE_SEC * mechanicFactor * driverSwapScale;
 }
 
+export type PitTyreTread = "slick" | "intermediate" | "wet";
+
 export interface PitStopOptions {
   fuel: number;
   compound: string;
+  tyreTread?: PitTyreTread;
   tires: string[];
   repairs: string[];
   driverChange: boolean;
@@ -109,10 +112,12 @@ export interface PitStopOptions {
 }
 
 export function buildPitCommand(options: PitStopOptions): string {
+  const tread = options.tyreTread ?? "slick";
   const parts = [
     "pit",
     `fuel=${options.fuel}`,
     `compound=${options.compound}`,
+    `tyre_tread=${tread}`,
     `tires=${options.tires.join(",")}`,
   ];
   if (options.repairs.length) parts.push(`repairs=${options.repairs.join(",")}`);

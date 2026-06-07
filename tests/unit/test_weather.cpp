@@ -4,18 +4,31 @@
 
 TEST_CASE("CompoundCrossoverGrip favors wet tyres on a wet track", "[unit][weather]") {
   const double wetGrip =
-      CompoundCrossoverGrip(ETireCompound::Medium, true, 0.6, 18.0);
+      CompoundCrossoverGrip(ETireCompound::Medium, ETyreTread::Wet, 0.6, 18.0);
   const double dryGrip =
-      CompoundCrossoverGrip(ETireCompound::Medium, false, 0.6, 18.0);
+      CompoundCrossoverGrip(ETireCompound::Medium, ETyreTread::Slick, 0.6, 18.0);
   REQUIRE(wetGrip > dryGrip);
 }
 
 TEST_CASE("CompoundCrossoverGrip favors slicks on a dry track", "[unit][weather]") {
   const double slickGrip =
-      CompoundCrossoverGrip(ETireCompound::Soft, false, 0.05, 24.0);
+      CompoundCrossoverGrip(ETireCompound::Soft, ETyreTread::Slick, 0.05, 24.0);
   const double wetTyreGrip =
-      CompoundCrossoverGrip(ETireCompound::Soft, true, 0.05, 24.0);
+      CompoundCrossoverGrip(ETireCompound::Soft, ETyreTread::Wet, 0.05, 24.0);
   REQUIRE(slickGrip > wetTyreGrip);
+}
+
+TEST_CASE("CompoundCrossoverGrip peaks intermediate in damp conditions",
+          "[unit][weather]") {
+  const double interGrip =
+      CompoundCrossoverGrip(ETireCompound::Medium, ETyreTread::Intermediate, 0.3,
+                            20.0);
+  const double slickGrip =
+      CompoundCrossoverGrip(ETireCompound::Medium, ETyreTread::Slick, 0.3, 20.0);
+  const double wetGrip =
+      CompoundCrossoverGrip(ETireCompound::Medium, ETyreTread::Wet, 0.3, 20.0);
+  REQUIRE(interGrip > slickGrip);
+  REQUIRE(interGrip > wetGrip);
 }
 
 TEST_CASE("TickWeatherState can build wetness under changeable profile",
@@ -76,4 +89,19 @@ TEST_CASE("Changeable profile keeps base wetness eligible for forecast",
 
   REQUIRE(weather.trackWetness == Catch::Approx(profile.baseWetness));
   REQUIRE(weather.trackWetness <= profile.baseWetness + 0.001);
+}
+
+TEST_CASE("Rain episode ends and drying phase is preserved", "[unit][weather]") {
+  WeatherState weather;
+  InitWeatherState(weather, "changeable", 0.05, 21.0);
+  weather.phase = WeatherPhase::LightRain;
+  weather.rainIntensity = 0.45;
+  weather.trackWetness = 0.35;
+  weather.rainEpisodeEndTime = 100.0;
+  const WeatherProfile profile = WeatherProfileForId("changeable");
+
+  AdvanceWeatherDeterministic(weather, profile, 120.0, 20.0);
+
+  REQUIRE(weather.phase == WeatherPhase::Drying);
+  REQUIRE(weather.rainEpisodeEndTime < 0.0);
 }
