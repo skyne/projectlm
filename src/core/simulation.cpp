@@ -438,6 +438,8 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
         1.0 - std::pow(rpmPercent - peakRatio, 2) * falloff;
     if (torqueCurveMultiplier < p.torqueMinFloor)
       torqueCurveMultiplier = p.torqueMinFloor;
+    if (car.isElectricDrive)
+      torqueCurveMultiplier = 1.0;
 
     const double lagTau = std::max(0.01, car.throttleLagTau);
     state.throttleBlend +=
@@ -446,7 +448,25 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     double engineForce = 0.0;
     if (car.isElectricDrive) {
       double electricalKw = car.electricalDeployKW;
-      if (car.isGeneratorOnly) {
+      if (car.isFuelCell) {
+        const double demandKw =
+            (car.peakHorsepower / 1.34) * torqueCurveMultiplier *
+            state.throttleBlend;
+        const double stackOutKw =
+            std::min(car.electricalDeployKW * state.throttleBlend *
+                         torqueCurveMultiplier,
+                     demandKw);
+        electricalKw = stackOutKw;
+        generatorFuelKw = stackOutKw / std::max(0.25, car.drivetrainEfficiency);
+        if (state.hybridDeployRemainingMJ > 0.0 && demandKw > stackOutKw) {
+          const double burstKw =
+              std::min(demandKw - stackOutKw, car.hybridDeployPowerKW);
+          electricalKw += burstKw;
+          const double burstMJ = (burstKw * 1000.0 * deltaTime) / 1.0e6;
+          state.hybridDeployRemainingMJ =
+              std::max(0.0, state.hybridDeployRemainingMJ - burstMJ);
+        }
+      } else if (car.isGeneratorOnly) {
         const double demandKw =
             (car.peakHorsepower / 1.34) *
             torqueCurveMultiplier * state.throttleBlend;
@@ -496,14 +516,18 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     }
 
     const double revLimiterFactor =
-        RevLimiterTorqueFactor(kinematicRPM, car.engine.maxRPM);
+        car.isElectricDrive
+            ? 1.0
+            : RevLimiterTorqueFactor(kinematicRPM, car.engine.maxRPM);
     engineForce *= revLimiterFactor;
 
-    const double maxSpeedInGear = MaxSpeedForGear(
-        car.engine.maxRPM, gearRatio, drivenWheelRadius, finalDrive);
-    if (state.currentSpeed >= maxSpeedInGear - 0.2 && engineForce > 0.0 &&
-        state.currentGearIndex >= maxGear - 1)
-      engineForce = 0.0;
+    if (!car.isElectricDrive) {
+      const double maxSpeedInGear = MaxSpeedForGear(
+          car.engine.maxRPM, gearRatio, drivenWheelRadius, finalDrive);
+      if (state.currentSpeed >= maxSpeedInGear - 0.2 && engineForce > 0.0 &&
+          state.currentGearIndex >= maxGear - 1)
+        engineForce = 0.0;
+    }
 
     if (onStraight && car.hybridDeployPowerKW > 0.0 &&
         state.hybridDeployRemainingMJ > 0.0 &&
@@ -530,7 +554,12 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
   }
 
   if (!outOfFuel) {
-    if (car.isGeneratorOnly) {
+    if (car.isFuelCell) {
+      state.fuelRemaining -=
+          (generatorFuelKw * 0.000046 * car.powertrainFuelBurnMult *
+           mods.fuelMultiplier) *
+          deltaTime;
+    } else if (car.isGeneratorOnly) {
       state.fuelRemaining -=
           (generatorFuelKw * 0.00032 * car.powertrainFuelBurnMult *
            mods.fuelMultiplier) *
@@ -548,7 +577,9 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       throttleLoad = std::max(throttleLoad, state.throttleBlend * 0.35);
     }
     const double thermalLoad =
-        rpmPercent * std::max(throttleLoad, p.thermalOverrunFraction) *
+        (car.isFuelCell
+             ? std::max(throttleLoad, p.thermalOverrunFraction * 0.65)
+             : rpmPercent * std::max(throttleLoad, p.thermalOverrunFraction)) *
         car.powertrainThermalMult;
     const double velocityCoolingFactor =
         (state.currentSpeed / p.coolingVelocityFactor) + p.coolingBaseFactor;
@@ -626,6 +657,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
   CarDamageProfiles damageProfiles;
   BuildCarDamageProfiles(car, kDamageCatalog, damageProfiles);
 
+  if (!car.isFuelCell) {
   double currentVibrationStrain =
       car.vibrationIndex *
       (state.currentRPM / std::max(1.0, static_cast<double>(car.engine.maxRPM)));
@@ -651,6 +683,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                   damageProfiles.profiles[DamagePartIndex(DamagePart::Engine)]);
     ApplyPartWear(state.partDamage, DamagePart::Cooling, thermalWear * 0.35,
                   damageProfiles.profiles[DamagePartIndex(DamagePart::Cooling)]);
+  }
   }
 
   ApplyHiddenFaultBleed(state.partDamage, deltaTime);

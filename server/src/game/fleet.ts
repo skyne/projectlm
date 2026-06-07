@@ -168,6 +168,8 @@ function rawToEngine(raw: Record<string, string>): EngineBuildPayload | undefine
     base_vibration: parseFloat(raw.base_vibration ?? "1.0"),
     aspiration: raw.aspiration,
     drivetrain: raw.drivetrain,
+    energy_converter: raw.energy_converter,
+    buffer_size: raw.buffer_size ? parseFloat(raw.buffer_size) : undefined,
     generator_kw: raw.generator_kw ? parseFloat(raw.generator_kw) : undefined,
   };
 }

@@ -136,6 +136,21 @@ function validateFuelSystemPowertrain(build) {
         build.engine?.fuel_type !== "Hydrogen") {
         return "Hydrogen tank requires Hydrogen fuel in the powertrain";
     }
+    const eng = build.engine;
+    if (eng?.fuel_type === "Hydrogen" && eng.energy_converter === "FuelCell") {
+        if (build.hybrid_system && build.hybrid_system !== "None") {
+            return "Fuel cell powertrain cannot use a separate hybrid system";
+        }
+        if (build.transmission && build.transmission !== "SingleSpeedEDrive") {
+            return "Hydrogen fuel cell requires SingleSpeedEDrive transmission";
+        }
+        if (eng.drivetrain && eng.drivetrain !== "FullEV") {
+            return "Hydrogen fuel cell requires FullEV drivetrain";
+        }
+    }
+    if (eng?.fuel_type === "Hydrogen" && eng.drivetrain === "RangeExtender") {
+        return "Hydrogen range-extender is not supported; use fuel cell instead";
+    }
     return null;
 }
 function validateAssemblyCompatibility(build, rules) {

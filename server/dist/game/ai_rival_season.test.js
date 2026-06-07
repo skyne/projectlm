@@ -43,6 +43,27 @@ const node_test_1 = require("node:test");
 const ai_rival_season_1 = require("./ai_rival_season");
 const driver_catalog_1 = require("./driver_catalog");
 const repoRoot = path.resolve(process.cwd(), "..");
+function sessionRostersForResults(raceResults, options) {
+    const playerEntries = (options.playerFleet ?? []).flatMap((car) => {
+        const roster = (0, driver_catalog_1.resolveCarDriverRoster)(options.playerRoster ?? [], car.assignedDriverIds);
+        if (!roster.length)
+            return [];
+        return [
+            {
+                teamName: options.playerTeamName,
+                carNumber: car.carNumber,
+                roster,
+            },
+        ];
+    });
+    const all = (0, driver_catalog_1.buildSessionEntryRosters)(repoRoot, {
+        playerTeamName: options.playerTeamName,
+        playerRoster: options.playerRoster,
+        playerEntries,
+        rosterOverrides: options.rosterOverrides,
+    });
+    return (0, driver_catalog_1.rostersForCompetingEntries)(raceResults, all);
+}
 (0, node_test_1.describe)("ai_rival_season", () => {
     (0, node_test_1.it)("seeds rivals from the Le Mans entry list excluding the player", () => {
         const season = (0, ai_rival_season_1.initAiRivalSeason)(repoRoot, "SkyTech", 2026);
@@ -186,21 +207,22 @@ const repoRoot = path.resolve(process.cwd(), "..");
     });
     (0, node_test_1.it)("awards drivers championship points to full entry rosters", () => {
         const season = (0, ai_rival_season_1.initAiRivalSeason)(repoRoot, "SkyTech", 2026);
+        const raceResults = [
+            {
+                entryId: "toyota-7",
+                teamName: "Toyota Racing",
+                carNumber: "7",
+                classId: "Hypercar",
+                position: 1,
+            },
+        ];
         (0, ai_rival_season_1.resolveDriverChampionshipTick)(season, {
-            repoRoot,
             scoring: true,
             playerTeamName: "SkyTech",
-            playerRoster: [],
-            playerFleet: [],
-            raceResults: [
-                {
-                    entryId: "toyota-7",
-                    teamName: "Toyota Racing",
-                    carNumber: "7",
-                    classId: "Hypercar",
-                    position: 1,
-                },
-            ],
+            raceResults,
+            sessionEntryRosters: sessionRostersForResults(raceResults, {
+                playerTeamName: "SkyTech",
+            }),
         });
         const buemi = season.drivers.find((d) => d.name.includes("Buemi"));
         strict_1.default.ok(buemi);
@@ -251,37 +273,94 @@ const repoRoot = path.resolve(process.cwd(), "..");
         const key = playerDriver.id;
         const row = season.drivers.find((d) => d.driverKey === key);
         strict_1.default.ok(row?.isPlayerDriver);
+        const raceResults = [
+            {
+                entryId: "h1",
+                teamName: "A",
+                carNumber: "1",
+                classId: "Hypercar",
+                position: 1,
+            },
+            {
+                entryId: "h2",
+                teamName: "B",
+                carNumber: "2",
+                classId: "Hypercar",
+                position: 2,
+            },
+            {
+                entryId: "player-1",
+                teamName: "SkyTech",
+                carNumber: "42",
+                classId: "Hypercar",
+                position: 5,
+            },
+        ];
         (0, ai_rival_season_1.resolveDriverChampionshipTick)(season, {
-            repoRoot,
             scoring: true,
             playerTeamName: "SkyTech",
-            playerRoster: [playerDriver],
-            playerFleet,
-            raceResults: [
-                {
-                    entryId: "h1",
-                    teamName: "A",
-                    carNumber: "1",
-                    classId: "Hypercar",
-                    position: 1,
-                },
-                {
-                    entryId: "h2",
-                    teamName: "B",
-                    carNumber: "2",
-                    classId: "Hypercar",
-                    position: 2,
-                },
-                {
-                    entryId: "player-1",
-                    teamName: "SkyTech",
-                    carNumber: "42",
-                    classId: "Hypercar",
-                    position: 5,
-                },
-            ],
+            raceResults,
+            sessionEntryRosters: sessionRostersForResults(raceResults, {
+                playerTeamName: "SkyTech",
+                playerRoster: [playerDriver],
+                playerFleet,
+            }),
         });
         strict_1.default.equal(row.championshipPoints, 15);
+    });
+    (0, node_test_1.it)("scores poached drivers only on the car they actually drove", () => {
+        const catalog = (0, driver_catalog_1.loadLeMansDriverCatalog)(repoRoot);
+        const toyotaRoster = catalog.get("Toyota Racing#7");
+        strict_1.default.ok(toyotaRoster?.length);
+        const buemiRaw = toyotaRoster.find((d) => d.name.includes("Buemi"));
+        strict_1.default.ok(buemiRaw);
+        const buemi = (0, driver_catalog_1.ensureCatalogDriverId)(buemiRaw);
+        const season = (0, ai_rival_season_1.initAiRivalSeason)(repoRoot, "SkyTech", 2026);
+        const playerFleet = [
+            {
+                id: "car-1",
+                carNumber: "42",
+                classId: "Hypercar",
+                affiliation: "privateer",
+                acquisition: "privateer",
+                build: { carName: "SkyTech 42" },
+                carConfigPath: "configs/runtime/test.txt",
+                assignedDriverIds: [buemi.id],
+            },
+        ];
+        (0, ai_rival_season_1.syncPlayerDriversToStandings)(season, "SkyTech", [buemi], playerFleet);
+        const raceResults = [
+            {
+                entryId: "toyota-7",
+                teamName: "Toyota Racing",
+                carNumber: "7",
+                classId: "Hypercar",
+                position: 1,
+            },
+            {
+                entryId: "player-1",
+                teamName: "SkyTech",
+                carNumber: "42",
+                classId: "Hypercar",
+                position: 5,
+            },
+        ];
+        (0, ai_rival_season_1.resolveDriverChampionshipTick)(season, {
+            scoring: true,
+            playerTeamName: "SkyTech",
+            raceResults,
+            sessionEntryRosters: sessionRostersForResults(raceResults, {
+                playerTeamName: "SkyTech",
+                playerRoster: [buemi],
+                playerFleet,
+            }),
+        });
+        const row = season.drivers.find((d) => d.driverKey === buemi.id);
+        strict_1.default.ok(row);
+        strict_1.default.equal(row.lastRoundPoints, 18);
+        strict_1.default.equal(row.championshipPoints, 18);
+        strict_1.default.equal(row.teamName, "SkyTech");
+        strict_1.default.ok(!season.drivers.some((d) => d.driverKey === buemi.id && d.lastRoundPoints === 25));
     });
     (0, node_test_1.it)("records player team in rival standings after a round", () => {
         const season = (0, ai_rival_season_1.initAiRivalSeason)(repoRoot, "SkyTech", 2026);

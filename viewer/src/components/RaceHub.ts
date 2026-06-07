@@ -18,10 +18,13 @@ import {
   weekendScheduleActive,
   WEEKEND_STEPS,
 } from "../utils/weekendSessions";
+import { isSeasonFinished } from "../utils/seasonState";
 
 export interface RaceHubHandlers {
   onStartRace: () => void;
   onOpenGarage?: () => void;
+  onViewSeasonResults?: () => void;
+  onStartNextSeason?: () => void;
 }
 
 function escapeHtml(text: string): string {
@@ -89,6 +92,18 @@ export class RaceHub {
         </div>
       </div>
 
+      <div class="season-complete-card hidden">
+        <div class="season-complete-body">
+          <span class="mm-badge mm-badge-wec">Season Complete</span>
+          <h3>Championship settled</h3>
+          <p class="season-complete-copy"></p>
+          <div class="season-complete-actions">
+            <button type="button" class="primary-btn season-results-btn">View Results &amp; Payouts</button>
+            <button type="button" class="secondary-btn season-next-btn">Start Next Season</button>
+          </div>
+        </div>
+      </div>
+
       <div class="calendar-section">
         <h3 class="mm-section-title">Season Calendar</h3>
         <ul class="calendar-grid"></ul>
@@ -122,6 +137,14 @@ export class RaceHub {
     this.root.querySelector(".garage-link-btn")!.addEventListener("click", () => {
       this.handlers.onOpenGarage?.();
     });
+
+    this.root.querySelector(".season-results-btn")!.addEventListener("click", () => {
+      this.handlers.onViewSeasonResults?.();
+    });
+
+    this.root.querySelector(".season-next-btn")!.addEventListener("click", () => {
+      this.handlers.onStartNextSeason?.();
+    });
   }
 
   setSessionInfo(info: SessionInitPayload | null): void {
@@ -136,9 +159,51 @@ export class RaceHub {
 
   private syncHostControls(): void {
     const meta = this.latestMeta;
+    const seasonComplete = meta ? isSeasonFinished(meta) : false;
+    const roundCard = this.root.querySelector(".current-round-card");
+    const completeCard = this.root.querySelector(".season-complete-card");
+    if (roundCard instanceof HTMLElement) {
+      roundCard.classList.toggle("hidden", seasonComplete);
+    }
+    if (completeCard instanceof HTMLElement) {
+      completeCard.classList.toggle("hidden", !seasonComplete);
+    }
+
+    if (seasonComplete && meta?.seasonSummary) {
+      const copy = completeCard?.querySelector(".season-complete-copy");
+      const nextBtn = completeCard?.querySelector(".season-next-btn");
+      const positions = Object.entries(meta.seasonSummary.playerTeamPositions)
+        .map(([cls, pos]) => `${cls} P${pos}`)
+        .join(" · ");
+      const payout = meta.seasonSummary.totalPayout;
+      if (copy instanceof HTMLElement) {
+        copy.textContent = positions
+          ? `${positions} · $${payout.toLocaleString()} season payouts credited`
+          : `$${payout.toLocaleString()} season payouts credited`;
+      }
+      if (nextBtn instanceof HTMLButtonElement) {
+        nextBtn.textContent = `Start Season ${meta.seasonYear + 1}`;
+        nextBtn.disabled = !this.hostControlsEnabled;
+      }
+      const resultsBtn = completeCard?.querySelector(".season-results-btn");
+      if (resultsBtn instanceof HTMLButtonElement) {
+        resultsBtn.disabled = !this.hostControlsEnabled;
+      }
+    } else if (seasonComplete && completeCard instanceof HTMLElement) {
+      const copy = completeCard.querySelector(".season-complete-copy");
+      if (copy instanceof HTMLElement) {
+        copy.textContent =
+          "All rounds complete — open results to view standings and payouts.";
+      }
+    }
+
     const current = meta?.calendar.find((e) => e.round === meta.currentRound);
     const blocked =
-      !meta?.setupComplete || !current || current.completed || !this.hostControlsEnabled;
+      seasonComplete ||
+      !meta?.setupComplete ||
+      !current ||
+      current.completed ||
+      !this.hostControlsEnabled;
     this.startBtn.disabled = blocked;
     this.garageBtn.disabled = !this.hostControlsEnabled;
 
@@ -183,7 +248,9 @@ export class RaceHub {
       const li = document.createElement("li");
       li.className = "calendar-card";
       if (event.completed) li.classList.add("completed");
-      if (event.round === meta.currentRound) li.classList.add("current");
+      if (event.round === meta.currentRound && !isSeasonFinished(meta)) {
+        li.classList.add("current");
+      }
 
       const status = event.completed
         ? `${event.championshipPoints} pts · $${(event.prizeMoney ?? 0).toLocaleString()}`
@@ -431,7 +498,7 @@ export class RaceHub {
     if (!container) return;
 
     const current = meta.calendar.find((e) => e.round === meta.currentRound);
-    if (!current || !weekendScheduleActive(current)) {
+    if (!current || !weekendScheduleActive(current) || current.completed || isSeasonFinished(meta)) {
       container.classList.add("hidden");
       container.replaceChildren();
       return;

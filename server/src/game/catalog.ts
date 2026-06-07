@@ -203,6 +203,8 @@ const ENGINE_KEYS = new Set([
   "base_vibration",
   "aspiration",
   "drivetrain",
+  "energy_converter",
+  "buffer_size",
   "generator_kw",
 ]);
 
@@ -241,6 +243,8 @@ export function parseEngineFromTemplate(
     base_vibration: parseFloat(raw.base_vibration ?? "1.0"),
     aspiration: raw.aspiration,
     drivetrain: raw.drivetrain,
+    energy_converter: raw.energy_converter,
+    buffer_size: raw.buffer_size ? parseFloat(raw.buffer_size) : undefined,
     generator_kw: raw.generator_kw ? parseFloat(raw.generator_kw) : undefined,
   };
 }

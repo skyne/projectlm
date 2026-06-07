@@ -9,7 +9,7 @@ import { writeAllFleetConfigs } from "./car_builder";
 import { loadCarPlatforms } from "./car_marketplace";
 import { validateFleetRegulations } from "./fleet";
 import { writeCarConditionsFile } from "./car_condition";
-import { exportRuntimeDrivers, resolveCarDriverRoster } from "./driver_catalog";
+import { exportRuntimeDrivers, resolveCarDriverRoster, buildSessionEntryRosters, rostersForCompetingEntries, type SessionEntryRosters } from "./driver_catalog";
 import {
   formatToDurationSeconds,
   trackDisplayName,
@@ -39,6 +39,8 @@ export interface BuiltRace {
   entries: GeneratedEntry[];
   playerEntryId: string;
   managedEntryIds: string[];
+  /** Driver rosters for entries that actually started this session. */
+  sessionEntryRosters: SessionEntryRosters;
   weatherContext: {
     trackId: string;
     month: number;
@@ -195,12 +197,19 @@ export function buildRaceForRound(
     })
     .filter((e): e is NonNullable<typeof e> => e !== null);
 
-  const driverConfigPath = exportRuntimeDrivers(repoRoot, {
+  const driverExportOptions = {
     playerTeamName: meta.teamName,
     playerRoster: teamRoster,
     playerEntries: playerDriverEntries,
     rosterOverrides: meta.aiRivalSeason?.rosterOverrides,
-  });
+  };
+  const allSessionRosters = buildSessionEntryRosters(repoRoot, driverExportOptions);
+  const driverConfigPath = exportRuntimeDrivers(
+    repoRoot,
+    driverExportOptions,
+    allSessionRosters,
+  );
+  const sessionEntryRosters = rostersForCompetingEntries(entries, allSessionRosters);
 
   const calendarEvent =
     WEC_2026_CALENDAR.find((e) => e.round === round.round) ?? null;
@@ -260,6 +269,7 @@ export function buildRaceForRound(
     entries,
     playerEntryId: resolvedPlayerEntryId,
     managedEntryIds,
+    sessionEntryRosters,
     weatherContext: {
       trackId: round.trackId,
       month: raceMonth,

@@ -24,6 +24,8 @@ struct PowertrainTraits {
   double drivetrainEfficiency = 1.0;
   bool isGeneratorOnly = false;
   bool isElectricDrive = false;
+  bool isFuelCell = false;
+  double stackKw = 0.0;
 };
 
 PowertrainTraits ResolvePowertrainTraits(const EngineConfig &engine);

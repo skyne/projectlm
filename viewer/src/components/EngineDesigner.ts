@@ -6,6 +6,7 @@ import {
   encodePowertrainBuild,
   decodePowertrainUi,
   effectiveHorsepower,
+  fuelCellBufferTraits,
   FUEL_BY_CLASS,
   FUEL_TYPES,
   isComboLegal,
@@ -16,6 +17,7 @@ import {
   traitChips,
   type AspirationId,
   type DrivetrainId,
+  type EnergyConverterId,
   type FuelType,
   type LayoutId,
   type PowertrainUiState,
@@ -72,15 +74,20 @@ export class EngineDesigner {
         <span class="engine-field-label">Fuel</span>
         <div class="pt-picker-row pt-fuel-row"></div>
       </div>
-      <div class="pt-section">
+      <div class="pt-section pt-h2-system-section hidden">
+        <span class="engine-field-label">H₂ system</span>
+        <p class="pt-h2-hint engine-designer-hint"></p>
+        <div class="pt-picker-row pt-h2-system-row"></div>
+      </div>
+      <div class="pt-section pt-arch-section">
         <span class="engine-field-label">Arch</span>
         <div class="engine-layout-grid pt-arch-grid"></div>
       </div>
-      <div class="pt-section">
+      <div class="pt-section pt-boost-section">
         <span class="engine-field-label">Boost</span>
         <div class="pt-picker-row pt-aspiration-row"></div>
       </div>
-      <div class="pt-section">
+      <div class="pt-section pt-drive-section">
         <span class="engine-field-label">Drive</span>
         <div class="pt-picker-row pt-drivetrain-row"></div>
       </div>
@@ -145,7 +152,14 @@ export class EngineDesigner {
 
   private fixComboViolations(): void {
     if (!this.ui) return;
-    let err = isComboLegal(this.classId, this.ui.layout, this.ui.aspiration, this.ui.drivetrain, this.ui.fuel);
+    let err = isComboLegal(
+      this.classId,
+      this.ui.layout,
+      this.ui.aspiration,
+      this.ui.drivetrain,
+      this.ui.fuel,
+      this.ui.energyConverter,
+    );
     if (!err) return;
     if (this.ui.aspiration === "EBoost" && this.ui.drivetrain === "Mechanical") {
       this.ui.drivetrain = "ParallelHybrid";
@@ -153,7 +167,14 @@ export class EngineDesigner {
     if (this.ui.layout === "Rotary" && this.ui.aspiration === "Quad") {
       this.ui.aspiration = "TwinSequential";
     }
-    err = isComboLegal(this.classId, this.ui.layout, this.ui.aspiration, this.ui.drivetrain, this.ui.fuel);
+    err = isComboLegal(
+      this.classId,
+      this.ui.layout,
+      this.ui.aspiration,
+      this.ui.drivetrain,
+      this.ui.fuel,
+      this.ui.energyConverter,
+    );
     if (err && this.ui.drivetrain === "FullEV" && this.ui.fuel === "Diesel") {
       this.ui.fuel = "Gasoline";
     }
@@ -161,9 +182,41 @@ export class EngineDesigner {
 
   private renderPickers(): void {
     this.renderFuelRow();
+    this.renderH2SystemRow();
     this.renderArchGrid();
     this.renderAspirationRow();
     this.renderDrivetrainRow();
+  }
+
+  private isH2FuelCell(): boolean {
+    return this.ui?.fuel === "Hydrogen" && this.ui?.energyConverter === "FuelCell";
+  }
+
+  private renderH2SystemRow(): void {
+    const row = this.root.querySelector(".pt-h2-system-row")!;
+    row.replaceChildren();
+    const options: Array<{ id: EnergyConverterId; label: string; hint: string }> = [
+      { id: "Combustion", label: "Combustion", hint: "Turbocharged H₂ engine" },
+      { id: "FuelCell", label: "Fuel cell", hint: "Stack → battery → e-drive" },
+    ];
+    for (const opt of options) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "pt-chip-btn";
+      btn.dataset.h2System = opt.id;
+      btn.textContent = opt.label;
+      btn.title = opt.hint;
+      btn.addEventListener("click", () => {
+        if (!this.ui) return;
+        const energyConverter = opt.id;
+        const drivetrain =
+          energyConverter === "FuelCell" ? "FullEV" : this.ui.drivetrain === "FullEV" ? "Mechanical" : this.ui.drivetrain;
+        this.ui = { ...this.ui, energyConverter, drivetrain };
+        this.fixComboViolations();
+        this.emitChange();
+      });
+      row.appendChild(btn);
+    }
   }
 
   private renderFuelRow(): void {
@@ -182,7 +235,14 @@ export class EngineDesigner {
       }
       btn.addEventListener("click", () => {
         if (!this.ui || btn.disabled) return;
-        this.ui = { ...this.ui, fuel };
+        const fuel = btn.dataset.fuel as FuelType;
+        const energyConverter =
+          fuel === "Hydrogen" ? this.ui.energyConverter : "Combustion";
+        const drivetrain =
+          fuel === "Hydrogen" && energyConverter === "FuelCell"
+            ? "FullEV"
+            : this.ui.drivetrain;
+        this.ui = { ...this.ui, fuel, energyConverter, drivetrain };
         this.fixComboViolations();
         this.emitChange();
       });
@@ -276,6 +336,7 @@ export class EngineDesigner {
       { key: "revCharacter", label: "Rev character", step: 0.01 },
       { key: "blockSize", label: "Block size", step: 0.01 },
       { key: "generatorSize", label: "Generator size", step: 0.01 },
+      { key: "bufferSize", label: "Buffer size", step: 0.01 },
     ];
 
     for (const def of defs) {
@@ -317,9 +378,13 @@ export class EngineDesigner {
     const revWrap = this.root.querySelector('[data-slider-key="revCharacter"]');
     const blockWrap = this.root.querySelector('[data-slider-key="blockSize"]');
     const genWrap = this.root.querySelector('[data-slider-key="generatorSize"]');
+    const bufferWrap = this.root.querySelector('[data-slider-key="bufferSize"]');
 
     if (powerWrap) {
-      const show = this.ui.drivetrain !== "FullEV" && this.ui.drivetrain !== "RangeExtender";
+      const show =
+        !this.isH2FuelCell() &&
+        this.ui.drivetrain !== "FullEV" &&
+        this.ui.drivetrain !== "RangeExtender";
       powerWrap.classList.toggle("hidden", !show);
       const slider = powerWrap.querySelector<HTMLInputElement>(".engine-slider")!;
       slider.min = String(band.min);
@@ -332,7 +397,7 @@ export class EngineDesigner {
     if (revWrap) {
       const isRex = this.ui.drivetrain === "RangeExtender";
       const isEv = this.ui.drivetrain === "FullEV";
-      revWrap.classList.toggle("hidden", isEv);
+      revWrap.classList.toggle("hidden", isEv || this.isH2FuelCell());
       const nameEl = revWrap.querySelector(".engine-slider-name")!;
       nameEl.textContent = isRex ? "Generator RPM" : "Rev character";
       const engine = encodePowertrainBuild(this.ui, this.classId);
@@ -345,7 +410,10 @@ export class EngineDesigner {
     }
 
     if (blockWrap) {
-      const hide = this.ui.drivetrain === "FullEV" || this.ui.drivetrain === "RangeExtender";
+      const hide =
+        this.isH2FuelCell() ||
+        this.ui.drivetrain === "FullEV" ||
+        this.ui.drivetrain === "RangeExtender";
       blockWrap.classList.toggle("hidden", hide);
       const engine = encodePowertrainBuild(this.ui, this.classId);
       const disp = engine.bore > 0 ? (engine.cylinders * Math.PI * (engine.bore / 2) ** 2 * engine.stroke * 1000) : 0;
@@ -358,15 +426,20 @@ export class EngineDesigner {
     }
 
     if (genWrap) {
-      const show = this.ui.drivetrain === "RangeExtender";
-      genWrap.classList.toggle("hidden", !show);
+      const showFc = this.isH2FuelCell();
+      const showRex = this.ui.drivetrain === "RangeExtender";
+      genWrap.classList.toggle("hidden", !showFc && !showRex);
       const traits = this.ui
         ? resolvePowertrainTraits(encodePowertrainBuild(this.ui, this.classId), this.classId)
         : null;
       const valEl = genWrap.querySelector(".engine-slider-value")!;
       if (traits) {
-        const disp = traits.displacementL > 0 ? `${traits.displacementL.toFixed(1)} L ICE` : "";
-        valEl.textContent = `${Math.round(traits.generatorKw)} kW gen · ${Math.round(traits.deployKw)} kW burst${disp ? ` · ${disp}` : ""}`;
+        if (showFc) {
+          valEl.textContent = `${Math.round(traits.generatorKw)} kW stack · ${Math.round(traits.peakHp)} hp sustained`;
+        } else {
+          const disp = traits.displacementL > 0 ? `${traits.displacementL.toFixed(1)} L ICE` : "";
+          valEl.textContent = `${Math.round(traits.generatorKw)} kW gen · ${Math.round(traits.deployKw)} kW burst${disp ? ` · ${disp}` : ""}`;
+        }
       } else {
         valEl.textContent = "—";
       }
@@ -375,7 +448,40 @@ export class EngineDesigner {
       slider.max = "1";
       slider.value = String(this.ui.generatorSize);
       const nameEl = genWrap.querySelector(".engine-slider-name")!;
-      nameEl.textContent = "Generator size";
+      nameEl.textContent = showFc ? "Stack power" : "Generator size";
+    }
+
+    if (bufferWrap) {
+      const show = this.isH2FuelCell();
+      bufferWrap.classList.toggle("hidden", !show);
+      const traits = this.ui
+        ? resolvePowertrainTraits(encodePowertrainBuild(this.ui, this.classId), this.classId)
+        : null;
+      const valEl = bufferWrap.querySelector(".engine-slider-value")!;
+      valEl.textContent = traits
+        ? `${Math.round(traits.deployKw)} kW · ~${(traits.stintBudgetMj / Math.max(traits.deployKw / 1000, 0.01)).toFixed(1)}s @ full · +${Math.round(fuelCellBufferTraits(this.ui.bufferSize, traits.generatorKw).bufferMassKg)} kg buffer`
+        : "—";
+      const slider = bufferWrap.querySelector<HTMLInputElement>(".engine-slider")!;
+      slider.min = "0";
+      slider.max = "1";
+      slider.value = String(this.ui.bufferSize);
+      const nameEl = bufferWrap.querySelector(".engine-slider-name")!;
+      nameEl.textContent = "Buffer battery";
+    }
+  }
+
+  private updateSectionVisibility(): void {
+    const h2 = this.ui?.fuel === "Hydrogen";
+    const fc = this.isH2FuelCell();
+    this.root.querySelector(".pt-h2-system-section")?.classList.toggle("hidden", !h2);
+    this.root.querySelector(".pt-arch-section")?.classList.toggle("hidden", fc);
+    this.root.querySelector(".pt-boost-section")?.classList.toggle("hidden", fc);
+    this.root.querySelector(".pt-drive-section")?.classList.toggle("hidden", fc);
+    const hint = this.root.querySelector(".pt-h2-hint");
+    if (hint) {
+      hint.textContent = fc
+        ? "Fuel cell — stack → battery → e-drive"
+        : "Combustion — turbocharged H₂ engine";
     }
   }
 
@@ -393,6 +499,9 @@ export class EngineDesigner {
     for (const btn of this.root.querySelectorAll<HTMLButtonElement>(".pt-chip-btn[data-drivetrain]")) {
       btn.classList.toggle("active", btn.dataset.drivetrain === this.ui!.drivetrain);
     }
+    for (const btn of this.root.querySelectorAll<HTMLButtonElement>(".pt-chip-btn[data-h2-system]")) {
+      btn.classList.toggle("active", btn.dataset.h2System === this.ui!.energyConverter);
+    }
   }
 
   private renderRegNote(): void {
@@ -401,7 +510,14 @@ export class EngineDesigner {
       el.classList.add("hidden");
       return;
     }
-    const err = isComboLegal(this.classId, this.ui.layout, this.ui.aspiration, this.ui.drivetrain, this.ui.fuel);
+    const err = isComboLegal(
+      this.classId,
+      this.ui.layout,
+      this.ui.aspiration,
+      this.ui.drivetrain,
+      this.ui.fuel,
+      this.ui.energyConverter,
+    );
     if (err) {
       el.textContent = err;
       el.classList.remove("hidden");
@@ -429,11 +545,24 @@ export class EngineDesigner {
 
   private renderEnergyFlow(): void {
     if (!this.ui) return;
-    const show = this.ui.drivetrain === "RangeExtender" || this.ui.drivetrain === "FullEV";
+    const fc = this.isH2FuelCell();
+    const show = fc || this.ui.drivetrain === "RangeExtender" || this.ui.drivetrain === "FullEV";
     this.energyFlowEl.classList.toggle("hidden", !show);
     if (!show) return;
 
-    if (this.ui.drivetrain === "RangeExtender") {
+    if (fc) {
+      this.energyFlowEl.innerHTML = `
+        <span class="pt-flow-node">H₂ tank</span>
+        <span class="pt-flow-arrow">→</span>
+        <span class="pt-flow-node">Stack</span>
+        <span class="pt-flow-arrow">→</span>
+        <span class="pt-flow-node">Buffer</span>
+        <span class="pt-flow-arrow">→</span>
+        <span class="pt-flow-node">E-motors</span>
+        <span class="pt-flow-arrow">→</span>
+        <span class="pt-flow-node">Wheels</span>
+      `;
+    } else if (this.ui.drivetrain === "RangeExtender") {
       this.energyFlowEl.innerHTML = `
         <span class="pt-flow-node">ICE gen</span>
         <span class="pt-flow-arrow">→</span>
@@ -499,6 +628,7 @@ export class EngineDesigner {
 
   private renderAll(): void {
     this.syncPickerActive();
+    this.updateSectionVisibility();
     this.updateSliderLabels();
     this.renderRegNote();
     this.renderTraitChips();
@@ -516,6 +646,7 @@ export class EngineDesigner {
     }
     if (traits.fuelSystemHint) suggestions.fuel_system = traits.fuelSystemHint;
     if (traits.transmissionHint) suggestions.transmission = traits.transmissionHint;
+    if (traits.isFuelCell) suggestions.hybrid_system = "None";
     return suggestions;
   }
 

@@ -2402,12 +2402,21 @@ body.mock-sim-active #app {
 .post-race-card {
   width: min(560px, 100%);
   max-height: 90vh;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: linear-gradient(180deg, #1a2030 0%, #12151e 100%);
   border: 1px solid var(--border-bright);
   border-radius: 14px;
   padding: 1.5rem;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+.post-race-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.15rem;
 }
 
 .post-race-header {
@@ -2623,10 +2632,74 @@ body.mock-sim-active #app {
   color: var(--accent-bright);
 }
 
+.post-race-fleet-summary {
+  margin: 0 0 1rem;
+}
+
+.post-race-fleet-panel {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(74, 127, 212, 0.08);
+}
+
+.post-race-fleet-panel .mm-section-title {
+  margin: 0 0 0.65rem;
+}
+
+.post-race-fleet-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.post-race-fleet-car {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+  font-size: 0.9rem;
+}
+
+.post-race-fleet-car.is-dnf {
+  opacity: 0.92;
+}
+
+.fleet-car-num {
+  font-weight: 700;
+  min-width: 2.5rem;
+}
+
+.fleet-car-pos {
+  font-weight: 600;
+  color: var(--accent-bright);
+}
+
+.fleet-car-lap {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.fleet-dnf-reason,
+.post-race-dnf-reason {
+  font-size: 0.82rem;
+  color: #fca5a5;
+}
+
+.post-race-fleet-footnote {
+  margin: 0.65rem 0 0;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
 .post-race-results-wrap {
-  max-height: 320px;
+  max-height: 280px;
   overflow: auto;
-  margin-bottom: 1rem;
+  margin-bottom: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
 }
@@ -2657,16 +2730,14 @@ body.mock-sim-active #app {
 }
 
 .post-race-actions {
-  position: sticky;
-  bottom: 0;
+  flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 1rem;
   padding-top: 1rem;
-  background: linear-gradient(180deg, transparent 0%, #12151e 35%);
+  background: #12151e;
   border-top: 1px solid var(--border);
-  z-index: 1;
 }
 
 .post-race-actions .btn-weekend-next {
@@ -3475,6 +3546,103 @@ body.mock-sim-active #app {
   .championship-card {
     width: 100%;
   }
+}
+
+/* ── Season complete ── */
+
+.season-complete-card {
+  margin-top: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(212, 168, 67, 0.12), rgba(26, 42, 68, 0.5));
+  border: 1px solid rgba(212, 168, 67, 0.35);
+}
+
+.season-complete-body h3 {
+  margin: 0.5rem 0 0.35rem;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+}
+
+.season-complete-copy {
+  margin: 0 0 1rem;
+  color: var(--text-muted);
+}
+
+.season-complete-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.season-end-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(6, 10, 18, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.season-end-overlay.hidden {
+  display: none;
+}
+
+.season-end-card {
+  width: min(920px, 100%);
+  max-height: min(90vh, 900px);
+  overflow: auto;
+  padding: 1.5rem;
+}
+
+.season-end-header h2 {
+  margin: 0.35rem 0;
+  font-family: var(--font-display);
+}
+
+.season-end-subtitle {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.season-end-class-block {
+  margin-top: 1.25rem;
+}
+
+.season-end-standings-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.season-end-standing-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr auto;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.season-end-player-row {
+  background: rgba(212, 168, 67, 0.08);
+  border-radius: var(--radius-sm);
+  padding-inline: 0.5rem;
+}
+
+.season-end-payouts {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.season-end-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
 }
 
 /* ── Team Creation Wizard (MM2-inspired) ── */
@@ -4458,6 +4626,16 @@ body.mock-sim-active #app {
   color: var(--warning);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.part-incompat-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.62rem;
+  color: #c9a0a0;
+  line-height: 1.35;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .garage-stats-col {
@@ -7639,4 +7817,151 @@ body.mock-sim-active #app {
   margin: 0.2rem 0;
   font-size: 0.75rem;
   color: #fbbf24;
+}
+
+.post-race-dev-tools {
+  padding: 0.75rem 1.25rem 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.session-log-dev {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.session-log-dev.hidden {
+  display: none;
+}
+
+.session-log-dev-card {
+  width: min(1100px, 96vw);
+  max-height: 90vh;
+  background: #10131a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.session-log-dev-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.session-log-dev-sub {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.session-log-dev-close {
+  font-size: 1.5rem;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.session-log-dev-body {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 420px;
+  max-height: calc(90vh - 88px);
+}
+
+.session-log-dev-list-wrap {
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.75rem;
+  overflow: auto;
+}
+
+.session-log-dev-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.session-log-dev-item {
+  width: 100%;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 0.45rem;
+  color: inherit;
+  cursor: pointer;
+}
+
+.session-log-dev-item.active {
+  border-color: rgba(251, 191, 36, 0.55);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.session-log-dev-item-title {
+  display: block;
+  font-size: 0.85rem;
+}
+
+.session-log-dev-item-meta {
+  display: block;
+  font-size: 0.72rem;
+  opacity: 0.7;
+  margin-top: 0.2rem;
+}
+
+.session-log-dev-detail {
+  padding: 1rem 1.25rem;
+  overflow: auto;
+}
+
+.session-log-dev-events {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.session-log-dev-events li {
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.session-log-ev-type {
+  display: inline-block;
+  min-width: 5.5rem;
+  font-weight: 600;
+  color: #fbbf24;
+}
+
+.session-log-dev-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.session-log-dev-table th,
+.session-log-dev-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+.session-log-dev-id {
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  opacity: 0.7;
 }

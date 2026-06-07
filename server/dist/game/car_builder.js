@@ -94,6 +94,10 @@ function engineToConfigLines(engine) {
         lines.push(`aspiration=${engine.aspiration}`);
     if (engine.drivetrain)
         lines.push(`drivetrain=${engine.drivetrain}`);
+    if (engine.energy_converter)
+        lines.push(`energy_converter=${engine.energy_converter}`);
+    if (engine.buffer_size != null)
+        lines.push(`buffer_size=${engine.buffer_size}`);
     if (engine.generator_kw)
         lines.push(`generator_kw=${engine.generator_kw}`);
     return lines;

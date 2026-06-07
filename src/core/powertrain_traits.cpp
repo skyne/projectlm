@@ -147,5 +147,31 @@ PowertrainTraits ResolvePowertrainTraits(const EngineConfig &engine) {
   t.drivetrainEfficiency = drv.efficiency;
   t.generatorKw =
       engine.generatorKw > 0.0 ? engine.generatorKw : drv.defaultGeneratorKw;
+
+  if (engine.fuelType == "Hydrogen" && engine.energyConverter == "FuelCell") {
+    const double stackKw =
+        engine.generatorKw > 0.0 ? engine.generatorKw : 420.0;
+    const double buffer = std::clamp(engine.bufferSize, 0.0, 1.0);
+    const double burstKw = 75.0 + buffer * 75.0;
+    const double bufferMassKg = 14.0 + buffer * 42.0;
+    t.isFuelCell = true;
+    t.isElectricDrive = true;
+    t.isGeneratorOnly = false;
+    t.stackKw = stackKw;
+    t.generatorKw = stackKw;
+    t.deployKw = burstKw;
+    t.regenRate = 0.45 - buffer * 0.08;
+    t.stintBudgetMj = 3.0 + buffer * 5.5;
+    t.drivetrainExtraMassKg = 162.0 + stackKw * 0.062 + bufferMassKg;
+    t.stressMult = 0.2;
+    t.thermalMult = 0.70;
+    t.fuelBurnMult = 0.86 + buffer * 0.16;
+    t.throttleMult = 1.06;
+    t.serviceabilityMult = 0.90 - buffer * 0.08;
+    t.throttleLagTau = 0.04;
+    t.drivetrainEfficiency = 0.55;
+    t.torquePeakRatio = 0.85;
+    t.torqueFalloff = 0.8;
+  }
   return t;
 }

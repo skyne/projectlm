@@ -369,6 +369,14 @@ export class ViewerClient {
     this.send(clientMessage("new_game", {}));
   }
 
+  startNextSeason(): void {
+    this.send(clientMessage("start_next_season", {}));
+  }
+
+  finalizeSeason(): void {
+    this.send(clientMessage("finalize_season", {}));
+  }
+
   setWeekendTireCompound(compound: string): void {
     this.send(clientMessage("set_weekend_tire_compound", { compound }));
   }

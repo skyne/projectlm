@@ -136,7 +136,12 @@ export const SIM_STAT_BARS: SimStatBarDef[] = [
     label: "Mass",
     color: "#fbbf24",
     lowerIsBetter: true,
-    formatValue: (c) => `${Math.round(c.calculatedTotalMass)} kg`,
+    formatValue: (c) => {
+      const raw = Math.round(c.rawTotalMass);
+      const race = Math.round(c.calculatedTotalMass);
+      if (race > raw) return `${raw} kg (${race} race)`;
+      return `${raw} kg`;
+    },
   },
   {
     id: "braking",
@@ -196,6 +201,9 @@ export interface CompiledCarStats {
   corneringFactor: number;
   /** Front/rear width balance — understeer & turn-in */
   tyreBalanceFactor: number;
+  /** Sum of parts + powertrain before class weight BoP. */
+  rawTotalMass: number;
+  /** Mass after min/max weight BoP (what the sim races at). */
   calculatedTotalMass: number;
   brakeMaxPressure: number;
   brakeFadeResistance: number;
@@ -312,14 +320,15 @@ export function compileCarStats(
     : 0;
   const torque = engine ? peakTorqueNm(engine) : 0;
 
-  let totalMass =
+  let rawTotalMass =
     partMass + unsprungMass + engMass + ASSEMBLY.baseVehicleMass;
 
+  let raceMassKg = rawTotalMass;
   if (options.minWeightKg && options.minWeightKg > 0) {
-    totalMass = Math.max(totalMass, options.minWeightKg);
+    raceMassKg = Math.max(raceMassKg, options.minWeightKg);
   }
   if (options.maxWeightKg && options.maxWeightKg > 0) {
-    totalMass = Math.min(totalMass, options.maxWeightKg);
+    raceMassKg = Math.min(raceMassKg, options.maxWeightKg);
   }
 
   const brakePressure = bp ? num(bp.stats, "max_pressure", 0.72) : 0.72;
@@ -354,7 +363,8 @@ export function compileCarStats(
     gripIndex,
     corneringFactor: corneringWithCg,
     tyreBalanceFactor,
-    calculatedTotalMass: totalMass,
+    calculatedTotalMass: raceMassKg,
+    rawTotalMass,
     brakeMaxPressure: brakePressure,
     brakeFadeResistance: 1 - brakeFade,
     shiftDelaySec: shiftDelay,
@@ -391,7 +401,7 @@ export function toBarValues(compiled: CompiledCarStats): Record<SimBarId, number
     cornering: lerpNorm(corneringScore, 0.82, 1.08),
     downforce: lerpNorm(compiled.totalDownforceCl, 2.0, 5.5),
     drag: lerpNorm(compiled.totalDragCd, 0.42, 0.62, true),
-    mass: lerpNorm(compiled.calculatedTotalMass, 1120, 920, true),
+    mass: lerpNorm(compiled.rawTotalMass, 1120, 920, true),
     braking: lerpNorm(
       compiled.brakeMaxPressure * compiled.brakeFadeResistance,
       0.58,
@@ -426,7 +436,7 @@ function rawNumericValue(id: SimBarId, compiled: CompiledCarStats): number {
     case "drag":
       return compiled.totalDragCd;
     case "mass":
-      return compiled.calculatedTotalMass;
+      return compiled.rawTotalMass;
     case "braking":
       return compiled.brakeMaxPressure * compiled.brakeFadeResistance;
     case "shiftTime":
@@ -668,7 +678,7 @@ export function formatPartStatLines(lines: PartStatLine[]): string {
 
 export function formatCompiledSummary(compiled: CompiledCarStats): string {
   return [
-    `${Math.round(compiled.calculatedTotalMass)} kg`,
+    `${Math.round(compiled.rawTotalMass)} kg`,
     `${Math.round(compiled.peakHorsepower)} hp`,
     compiled.hybridDeployKw > 0 ? `+${compiled.hybridDeployKw} kW hybrid` : null,
     `Cl ${compiled.totalDownforceCl.toFixed(2)}`,

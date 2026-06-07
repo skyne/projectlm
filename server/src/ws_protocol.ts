@@ -392,10 +392,12 @@ export interface EngineBuildPayload {
   base_vibration: number;
   aspiration?: string;
   drivetrain?: string;
+  energy_converter?: string;
   power_target?: number;
   rev_character?: number;
   block_size?: number;
   generator_size?: number;
+  buffer_size?: number;
   generator_kw?: number;
 }
 
@@ -606,6 +608,37 @@ export interface MetaStatePayload {
   driverMarketRound?: number;
   /** Lightweight off-week state for AI rival teams (budget, form, standings). */
   aiRivalSeason?: AiRivalSeasonPayload;
+  /** True when every scoring round on the calendar is finished. */
+  seasonComplete?: boolean;
+  /** Championship standings and end-of-season payouts (set once when season completes). */
+  seasonSummary?: SeasonSummaryPayload;
+}
+
+export interface SeasonStandingEntryPayload {
+  position: number;
+  teamName: string;
+  classId: string;
+  championshipPoints: number;
+  isPlayerTeam?: boolean;
+}
+
+export interface DriverStandingEntryPayload {
+  position: number;
+  name: string;
+  teamName: string;
+  classId: string;
+  championshipPoints: number;
+  isPlayerDriver?: boolean;
+}
+
+export interface SeasonSummaryPayload {
+  seasonYear: number;
+  teamStandings: Record<string, SeasonStandingEntryPayload[]>;
+  driverStandings: Record<string, DriverStandingEntryPayload[]>;
+  playerTeamPositions: Record<string, number>;
+  racePointsEarned: number;
+  payouts: FinanceLineItemPayload[];
+  totalPayout: number;
 }
 
 export type AiRivalArc =
@@ -805,6 +838,8 @@ export interface RaceCompletePayload {
   championshipPoints?: number;
   finances?: RaceFinancesPayload;
   weekendSessionType?: WeekendSessionType;
+  /** Saved session log id (dev tools / post-mortem). */
+  sessionLogId?: string;
   /** Next session in the weekend, or null when the weekend is finished. */
   nextWeekendSession?: WeekendSessionType | null;
   results: Array<{
@@ -814,6 +849,8 @@ export interface RaceCompletePayload {
     classId: string;
     position: number;
     bestLapTime?: number;
+    retired?: boolean;
+    retireReason?: string;
   }>;
 }
 
@@ -1000,7 +1037,9 @@ export type ClientMessageType =
   | "ask_engineer"
   | "get_engineer_status"
   | "ask_garage_engineer"
-  | "repair_car_condition";
+  | "repair_car_condition"
+  | "start_next_season"
+  | "finalize_season";
 
 export interface ServerMessage<T = unknown> {
   protocol: typeof PROTOCOL_VERSION;
@@ -1060,6 +1099,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       "get_engineer_status",
       "ask_garage_engineer",
       "repair_car_condition",
+      "start_next_season",
+      "finalize_season",
     ];
     if (!allowed.includes(msg.type)) return null;
     return msg;

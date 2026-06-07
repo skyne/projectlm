@@ -1,6 +1,7 @@
 import * as path from "path";
 import { normalizeEvent, normalizeTrackGeometry } from "./adapters";
 import { MetaStateManager } from "./meta_state";
+import type { SessionEntryRosters } from "./game/driver_catalog";
 import { buildRaceForRound } from "./game/race_builder";
 import { loadTrackGeometryById } from "./game/track_loader";
 import { loadGameCatalog } from "./game/catalog";
@@ -13,9 +14,14 @@ import {
   type ParsedEntry,
 } from "./config_parser";
 import { PitBotManager } from "./game/pitbot/pitbot_manager";
+import {
+  applyRaceClassification,
+  snapshotsToRaceResults,
+} from "./game/race_classification";
 import { AiStintGuide } from "./llm/ai_stint_guide";
 import { rivalModifiersForTeam } from "./game/ai_rival_season";
 import { MockSimSession } from "./mock_session";
+import { SessionLogWriter } from "./session_log";
 import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceCompletePayload, RaceControlPayload, SessionInitPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload, WeekendSessionType } from "./ws_protocol";
 import { collectQualifyingResults } from "./game/weekend_sessions";
 
@@ -103,6 +109,7 @@ export class SimHost {
   private readonly pitBot = new PitBotManager();
   private readonly stintGuide = new AiStintGuide();
   private lastRaceComplete: RaceCompletePayload | null = null;
+  private sessionEntryRosters: SessionEntryRosters = {};
 
   private onTick?: (raceTime: number, snapshots: CarSnapshot[]) => void;
   private onEvents?: (events: SimEvent[]) => void;
@@ -116,15 +123,20 @@ export class SimHost {
       position: number;
       bestLapTime: number;
       driverName?: string;
+      retired?: boolean;
+      retireReason?: string;
     }>,
     weekendSessionType: WeekendSessionType,
+    sessionLogId?: string,
   ) => void;
 
   readonly meta: MetaStateManager;
+  readonly sessionLog: SessionLogWriter;
 
   constructor(options: SimHostOptions = {}) {
     this.repoRoot = resolveRepoRoot(options.repoRoot);
     this.meta = new MetaStateManager(this.repoRoot);
+    this.sessionLog = new SessionLogWriter(this.repoRoot);
     const rel = options.raceConfigPath ?? DEFAULT_RACE_CONFIG;
     this.raceConfigPath = path.isAbsolute(rel)
       ? rel
@@ -228,6 +240,9 @@ export class SimHost {
     const blocked = this.sessionStartBlockedReason();
     if (blocked) return blocked;
 
+    const seasonBlocked = this.meta.seasonStartBlockedReason();
+    if (seasonBlocked) return seasonBlocked;
+
     this.sessionStartInProgress = true;
     try {
       if (this.inRaceSession) {
@@ -305,6 +320,15 @@ export class SimHost {
     this.pitBot.reset();
     this.stintGuide.reset();
     this.lastRaceComplete = null;
+    this.sessionEntryRosters = built.sessionEntryRosters;
+
+    this.sessionLog.startSession({
+      trackName: built.trackName,
+      roundNumber: built.roundNumber,
+      weekendSessionType: built.sessionType,
+      raceFormat: built.raceFormat,
+      teamName: this.meta.getState().teamName,
+    });
 
     this.inRaceSession = true;
     this.paused = true;
@@ -408,7 +432,20 @@ export class SimHost {
     raceResults?: import("./game/ai_rival_season").RaceResultForSeason[],
   ): MetaStatePayload {
     this.persistFleetCarConditions("race");
-    return this.meta.completeRound(position, classId, raceResults);
+    return this.meta.completeRound(
+      position,
+      classId,
+      raceResults,
+      this.sessionEntryRosters,
+    );
+  }
+
+  startNextSeason(): MetaStatePayload | { error: string } {
+    return this.meta.startNextSeason();
+  }
+
+  finalizeSeasonIfReady(): MetaStatePayload | { error: string } {
+    return this.meta.finalizeSeasonIfReady();
   }
 
   signSponsor(offerId: string): MetaStatePayload | { error: string } {
@@ -758,20 +795,21 @@ export class SimHost {
     );
 
     if (events.length > 0) {
+      this.sessionLog.recordEvents(events);
       this.onEvents?.(events);
       if (events.some((e) => e.type === "RaceComplete")) {
+        const lapLength = this.getTrackGeometry().lapLength ?? 0;
+        let finalSnaps = snapshots;
+        if (this.getWeekendSessionType() === "race") {
+          finalSnaps = applyRaceClassification(finalSnaps, lapLength);
+        }
+        const results = snapshotsToRaceResults(finalSnaps);
+        const logEntry = this.sessionLog.finishSession(raceTime, results);
         this.onRaceComplete?.(
           raceTime,
-          snapshots.map((s) => ({
-            entryId: s.entryId,
-            teamName: s.teamName,
-            carNumber: s.carNumber,
-            classId: s.classId,
-            position: s.racePosition,
-            bestLapTime: s.bestLapTime ?? 0,
-            driverName: s.driverName,
-          })),
+          results,
           this.getWeekendSessionType(),
+          logEntry?.id,
         );
         this.paused = true;
       }

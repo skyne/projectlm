@@ -209,10 +209,22 @@ void TickRace(RaceSession &session, double deltaTime) {
 
     if (car.inPitLane()) {
       if (car.processPitLaneTick(session.track, deltaTime, session.staff)) {
-        EmitRaceEvent(SimEventType::PitExit, car, car.state().currentLap,
+        if (car.isRetired()) {
+          EmitRaceEvent(SimEventType::Retirement, car, car.state().currentLap,
+                        static_cast<int>(car.state().currentTrackNodeIndex),
+                        session.elapsedRaceTime,
+                        car.teamName() + " retired: " + car.retireReason());
+        } else {
+          EmitRaceEvent(SimEventType::PitExit, car, car.state().currentLap,
+                        static_cast<int>(car.state().currentTrackNodeIndex),
+                        session.elapsedRaceTime,
+                        car.teamName() + " exited pit lane");
+        }
+      } else if (car.isRetired()) {
+        EmitRaceEvent(SimEventType::Retirement, car, car.state().currentLap,
                       static_cast<int>(car.state().currentTrackNodeIndex),
                       session.elapsedRaceTime,
-                      car.teamName() + " exited pit lane");
+                      car.teamName() + " retired: " + car.retireReason());
       }
       continue;
     }

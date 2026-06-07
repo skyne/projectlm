@@ -5,6 +5,7 @@ export const ENGINE_WEIGHT_COEFF = 35;
 export const ENGINE_WEIGHT_CYL_FACTOR = 5;
 
 export type FuelType = "Gasoline" | "Diesel" | "Hydrogen";
+export type EnergyConverterId = "Combustion" | "FuelCell";
 export type AspirationId =
   | "NA"
   | "Single"
@@ -76,6 +77,7 @@ export interface PowertrainTraits extends TraitModifiers {
   stintBudgetMj: number;
   isGeneratorOnly: boolean;
   isElectricDrive: boolean;
+  isFuelCell: boolean;
   generatorKw: number;
   drivetrainEfficiency: number;
   cgCorneringBonus: number;
@@ -86,6 +88,7 @@ export interface PowertrainTraits extends TraitModifiers {
 
 export interface PowertrainUiState {
   fuel: FuelType;
+  energyConverter: EnergyConverterId;
   layout: LayoutId;
   aspiration: AspirationId;
   drivetrain: DrivetrainId;
@@ -93,6 +96,7 @@ export interface PowertrainUiState {
   revCharacter: number;
   blockSize: number;
   generatorSize: number;
+  bufferSize: number;
 }
 
 export const FUEL_TYPES: FuelType[] = ["Gasoline", "Diesel", "Hydrogen"];
@@ -190,6 +194,26 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+/** Fuel-cell buffer sizing: burst power vs mass, burn, and burst duration. */
+export function fuelCellBufferTraits(buffer: number, stackKw = 420) {
+  const t = Math.max(0, Math.min(1, buffer));
+  const burstKw = 75 + t * 75;
+  const bufferMassKg = 14 + t * 42;
+  const stintBudgetMj = 3.0 + t * 5.5;
+  const stackMassKg = 52 + stackKw * 0.088;
+  return {
+    burstKw,
+    bufferMassKg,
+    stackMassKg,
+    fuelBurnMult: 0.86 + t * 0.16,
+    serviceabilityMult: 0.9 - t * 0.08,
+    regenRate: 0.45 - t * 0.08,
+    stintBudgetMj,
+    drivetrainExtraMassKg: 162 + stackKw * 0.062 + bufferMassKg,
+    burstSecondsAtFull: burstKw > 0 ? stintBudgetMj / (burstKw / 1000) : 0,
+  };
+}
+
 function layoutDef(id: LayoutId): LayoutDef {
   return LAYOUTS.find((l) => l.id === id) ?? LAYOUTS[2];
 }
@@ -225,7 +249,13 @@ export function isComboLegal(
   aspiration: AspirationId,
   drivetrain: DrivetrainId,
   fuel: FuelType,
+  energyConverter: EnergyConverterId = "Combustion",
 ): string | null {
+  if (fuel === "Hydrogen" && energyConverter === "FuelCell") {
+    if (classId !== "Hypercar") return "Fuel cell is Hypercar only";
+    if (drivetrain !== "FullEV") return "Fuel cell requires e-drive (FullEV)";
+    return null;
+  }
   if (!isChoiceLegal(classId, "layout", layout)) return "Layout not legal in this class";
   if (!isChoiceLegal(classId, "fuel", fuel)) return "Fuel not legal in this class";
   if (!isChoiceLegal(classId, "aspiration", aspiration)) return "Aspiration not legal in this class";
@@ -233,8 +263,8 @@ export function isComboLegal(
   if (layout === "Rotary" && aspiration === "Quad") return "Rotary cannot run quad turbos";
   if (aspiration === "EBoost" && drivetrain === "Mechanical") return "E-Boost needs a battery (hybrid or REX drivetrain)";
   if (drivetrain === "FullEV" && fuel === "Diesel") return "Diesel full-EV is not supported";
-  if (fuel === "Hydrogen" && drivetrain === "Mechanical" && classId === "Hypercar") {
-    // allowed but needs tank — no hard block
+  if (fuel === "Hydrogen" && drivetrain === "RangeExtender") {
+    return "Hydrogen range-extender is not supported; use fuel cell instead";
   }
   return null;
 }
@@ -244,6 +274,7 @@ export function defaultUiState(classId: string): PowertrainUiState {
   const layouts = LAYOUT_BY_CLASS[classId] ?? LAYOUT_BY_CLASS.Hypercar;
   return {
     fuel: "Gasoline",
+    energyConverter: "Combustion",
     layout: layouts.includes("V6") ? "V6" : layouts[0],
     aspiration: classId === "LMP2" ? "NA" : "TwinParallel",
     drivetrain: "Mechanical",
@@ -251,6 +282,7 @@ export function defaultUiState(classId: string): PowertrainUiState {
     revCharacter: 0.55,
     blockSize: 0.5,
     generatorSize: 0.5,
+    bufferSize: 0.5,
   };
 }
 
@@ -269,22 +301,63 @@ function derivePowerTargetHp(engine: EngineBuildPayload, classId: string): numbe
 
 export function decodePowertrainUi(engine: EngineBuildPayload, classId: string): PowertrainUiState {
   const layout = (engine.engine_layout as LayoutId) || "V6";
+  const energyConverter: EnergyConverterId =
+    engine.energy_converter === "FuelCell" ? "FuelCell" : "Combustion";
+  const stackKw = engine.generator_kw ?? 420;
+  const bufferSize =
+    energyConverter === "FuelCell" && engine.buffer_size != null
+      ? engine.buffer_size
+      : 0.5;
   return {
     fuel: (engine.fuel_type as FuelType) || "Gasoline",
+    energyConverter,
     layout: LAYOUTS.some((l) => l.id === layout) ? layout : "V6",
     aspiration: (engine.aspiration as AspirationId) || (classId === "LMP2" ? "NA" : "TwinParallel"),
     drivetrain: (engine.drivetrain as DrivetrainId) || "Mechanical",
     powerTargetHp: derivePowerTargetHp(engine, classId),
-    revCharacter: engine.rev_character ?? 0.55,
+    revCharacter: engine.rev_character ?? 0.5,
     blockSize: engine.block_size ?? 0.5,
     generatorSize: engine.generator_size ?? 0.5,
+    bufferSize,
   };
+}
+
+export function isFuelCellBuild(engine: EngineBuildPayload): boolean {
+  return engine.fuel_type === "Hydrogen" && engine.energy_converter === "FuelCell";
 }
 
 export function encodePowertrainBuild(
   ui: PowertrainUiState,
   classId: string,
 ): EngineBuildPayload {
+  const band = CLASS_POWER_BAND[classId] ?? CLASS_POWER_BAND.Hypercar;
+  const targetHp = Math.min(ui.powerTargetHp, band.cap > 0 ? band.cap : ui.powerTargetHp);
+
+  if (ui.fuel === "Hydrogen" && ui.energyConverter === "FuelCell") {
+    const stackKw = Math.round(lerp(320, 520, ui.generatorSize));
+    const burstKw = Math.round(fuelCellBufferTraits(ui.bufferSize, stackKw).burstKw);
+    return {
+      engine_layout: "V6",
+      fuel_type: "Hydrogen",
+      energy_converter: "FuelCell",
+      cylinders: 6,
+      bore: 0.08,
+      stroke: 0.06,
+      max_rpm: 12000,
+      peak_torque_nm: Math.round(burstKw * 4.2),
+      peak_torque_rpm: 10200,
+      base_vibration: 0.2,
+      aspiration: "NA",
+      drivetrain: "FullEV",
+      power_target: targetHp,
+      rev_character: ui.revCharacter,
+      block_size: ui.blockSize,
+      generator_size: ui.generatorSize,
+      buffer_size: ui.bufferSize,
+      generator_kw: stackKw,
+    };
+  }
+
   const lay = layoutDef(ui.layout);
   const fuel = FUEL_MOD[ui.fuel];
   const asp = ASPIRATION_MOD[ui.aspiration];
@@ -359,6 +432,49 @@ export function resolvePowertrainTraits(
   engine: EngineBuildPayload,
   classId = "Hypercar",
 ): PowertrainTraits {
+  if (isFuelCellBuild(engine)) {
+    const stackKw = engine.generator_kw ?? 420;
+    const buffer = engine.buffer_size ?? 0.5;
+    const buf = fuelCellBufferTraits(buffer, stackKw);
+    const peakHp = stackKw * 1.34;
+    return {
+      layout: "V6",
+      fuel: "Hydrogen",
+      aspiration: "NA",
+      drivetrain: "FullEV",
+      displacementL: 0,
+      maxRpm: engine.max_rpm,
+      peakTorqueNm: engine.peak_torque_nm,
+      peakTorqueRpm: engine.peak_torque_rpm,
+      peakHp,
+      engineMassKg: buf.stackMassKg,
+      drivetrainExtraMassKg: buf.drivetrainExtraMassKg,
+      massMult: 0.88,
+      torqueMult: 0.94,
+      revMult: 1.06,
+      fuelBurnMult: buf.fuelBurnMult,
+      throttleMult: 1.06,
+      thermalMult: 0.7,
+      stressMult: 0.2,
+      torquePeakRatio: 0.85,
+      torqueFalloff: 0.8,
+      throttleLagTau: 0.04,
+      serviceabilityMult: buf.serviceabilityMult,
+      deployKw: buf.burstKw,
+      regenRate: buf.regenRate,
+      stintBudgetMj: buf.stintBudgetMj,
+      isGeneratorOnly: false,
+      isElectricDrive: true,
+      isFuelCell: true,
+      generatorKw: stackKw,
+      drivetrainEfficiency: 0.55,
+      cgCorneringBonus: 1,
+      fuelSystemHint: "HydrogenTank",
+      hybridHint: "None",
+      transmissionHint: "SingleSpeedEDrive",
+    };
+  }
+
   const ui = decodePowertrainUi(engine, classId);
   const lay = layoutDef(ui.layout);
   const fuel = FUEL_MOD[ui.fuel];
@@ -425,6 +541,7 @@ export function resolvePowertrainTraits(
     stintBudgetMj: drv.stintBudgetMj,
     isGeneratorOnly: drv.isGeneratorOnly,
     isElectricDrive: drv.isElectricDrive,
+    isFuelCell: false,
     generatorKw,
     drivetrainEfficiency: drv.efficiency,
     cgCorneringBonus: lay.cgBonus,
@@ -436,6 +553,25 @@ export function resolvePowertrainTraits(
 
 export function traitChips(traits: PowertrainTraits): Array<{ label: string; tone: "pro" | "con" | "neutral" }> {
   const chips: Array<{ label: string; tone: "pro" | "con" | "neutral" }> = [];
+  if (traits.isFuelCell) {
+    chips.push({ label: "H₂ fuel cell", tone: "neutral" });
+    chips.push({ label: `${Math.round(traits.generatorKw)} kW stack`, tone: "neutral" });
+    chips.push({ label: "No ICE wear", tone: "pro" });
+    if (traits.fuelBurnMult < 0.9) chips.push({ label: "Efficient H₂", tone: "pro" });
+    if (traits.fuelBurnMult >= 0.98) chips.push({ label: "Buffer overhead", tone: "con" });
+    if (traits.deployKw > 0) {
+      const burstSec =
+        traits.deployKw > 0 ? traits.stintBudgetMj / (traits.deployKw / 1000) : 0;
+      chips.push({
+        label: `+${Math.round(traits.deployKw)} kW · ~${burstSec.toFixed(0)}s burst`,
+        tone: "pro",
+      });
+    }
+    if (traits.stintBudgetMj >= 7) chips.push({ label: "Long burst window", tone: "pro" });
+    if (traits.drivetrainExtraMassKg > 195) chips.push({ label: "Heavy buffer", tone: "con" });
+    if (traits.serviceabilityMult < 0.86) chips.push({ label: "Slow pit work", tone: "con" });
+    return chips;
+  }
   if (traits.throttleMult >= 1.05) chips.push({ label: "Sharp throttle", tone: "pro" });
   if (traits.throttleMult < 0.92) chips.push({ label: "Turbo lag", tone: "con" });
   if (traits.fuelBurnMult < 0.85) chips.push({ label: "Long stints", tone: "pro" });

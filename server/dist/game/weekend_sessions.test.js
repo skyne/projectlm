@@ -47,7 +47,7 @@ function entry(entryId, classId, grid) {
         ]);
         strict_1.default.deepEqual(sorted.map((r) => r.entryId), ["fast", "mid", "slow", "none"]);
     });
-    (0, node_test_1.it)("applyQualifyingGrid sorts by best lap per class", () => {
+    (0, node_test_1.it)("applyQualifyingGrid assigns unique overall grid slots by best lap", () => {
         const entries = [
             entry("e1", "Hypercar", 1),
             entry("e2", "Hypercar", 2),
@@ -60,11 +60,13 @@ function entry(entryId, classId, grid) {
             { entryId: "e3", classId: "GT3", bestLapTime: 102.1 },
             { entryId: "e4", classId: "GT3", bestLapTime: 101.4 },
         ]);
-        const hyper = reordered.filter((e) => e.classId === "Hypercar");
-        const gt3 = reordered.filter((e) => e.classId === "GT3");
-        strict_1.default.equal(hyper[0].entryId, "e2");
-        strict_1.default.equal(hyper[0].grid, 1);
-        strict_1.default.equal(gt3[0].entryId, "e4");
-        strict_1.default.equal(gt3[0].grid, 1);
+        strict_1.default.deepEqual(reordered.map((e) => ({ id: e.entryId, grid: e.grid })), [
+            { id: "e2", grid: 1 },
+            { id: "e1", grid: 2 },
+            { id: "e4", grid: 3 },
+            { id: "e3", grid: 4 },
+        ]);
+        const grids = reordered.map((e) => e.grid);
+        strict_1.default.equal(new Set(grids).size, grids.length);
     });
 });

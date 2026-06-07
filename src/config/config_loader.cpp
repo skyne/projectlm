@@ -61,6 +61,10 @@ bool LoadCarConfig(const std::string &filename, CarConfig &car) {
         car.engine.aspiration = value;
       else if (key == "drivetrain")
         car.engine.drivetrain = value;
+      else if (key == "energy_converter")
+        car.engine.energyConverter = value;
+      else if (key == "buffer_size")
+        car.engine.bufferSize = std::stod(value);
       else if (key == "generator_kw")
         car.engine.generatorKw = std::stod(value);
       else if (key == "chassis_type")

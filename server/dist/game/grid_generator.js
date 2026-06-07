@@ -194,7 +194,7 @@ function writeEntriesFile(repoRoot, relPath, entries) {
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     const lines = [
         "# Generated grid — 2026 Le Mans entry list with player fleet merged",
-        "# entry=team,config,class,class_grid,car_number,entry_id",
+        "# entry=team,config,class,start_grid,car_number,entry_id",
         ...entries.map((e) => (0, config_parser_1.formatEntryLine)({
             teamName: e.teamName,
             carConfigPath: e.carConfigPath,

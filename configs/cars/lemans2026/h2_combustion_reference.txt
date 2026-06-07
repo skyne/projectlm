@@ -1,0 +1,26 @@
+# Reference H₂ combustion ICE for balance tests (V6 twin-turbo + HV hybrid)
+car_name=H2 Combustion Reference
+engine_layout=V6
+fuel_type=Hydrogen
+energy_converter=Combustion
+cylinders=6
+bore=0.086
+stroke=0.075
+max_rpm=8500
+peak_torque_nm=700
+peak_torque_rpm=6500
+base_vibration=1.0
+aspiration=TwinParallel
+drivetrain=FrontAxleHybrid
+
+chassis_type=LMHInHouse
+front_aero_type=LowDragNose
+rear_aero_type=StandardWing
+cooling_pack=MaxFlowEndurance
+wheel_package=Hypercar18Standard
+suspension_layout=PullrodDoubleWishbone
+starting_tire_compound=Medium
+fuel_system=HydrogenTank
+brake_system=APRacingPrototype
+transmission=XtracP1359
+hybrid_system=HypercarHV

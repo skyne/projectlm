@@ -103,7 +103,7 @@ const grid_generator_1 = require("./game/grid_generator");
             { entryId: "entry-34", classId: "LMGT3", bestLapTime: 104.0 },
         ]);
         strict_1.default.equal(reordered.find((e) => e.entryId === "entry-9")?.grid, 1);
-        strict_1.default.equal(reordered.find((e) => e.entryId === "entry-34")?.grid, 1);
+        strict_1.default.equal(reordered.find((e) => e.entryId === "entry-34")?.grid, 2);
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), "plm-entries-"));
         const rel = "entries_test.txt";
         (0, grid_generator_1.writeEntriesFile)(dir, rel, reordered);

@@ -590,7 +590,8 @@ transmission.XtracP529Endurance.shift_5=86.0
 transmission.SingleSpeedEDrive.mass=38.0
 transmission.SingleSpeedEDrive.gear_count=1
 transmission.SingleSpeedEDrive.shift_delay=0.0
-transmission.SingleSpeedEDrive.gear_1=3.2
+# Top-gear equivalent for Hypercar final drive ~3.5 → ~300 km/h at 12k motor rpm
+transmission.SingleSpeedEDrive.gear_1=1.05
 
 # =====================
 # HYBRID / ERS (FIA LMDh / Hypercar HV limits)

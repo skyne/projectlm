@@ -571,15 +571,8 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
       (car.engine.cylinders * ac.engineWeightCylFactor);
   if (car.engine.fuelType == "Diesel")
     engineWeight *= ac.dieselWeightMult;
-  if (pt.isElectricDrive && car.engine.drivetrain == "FullEV")
+  if (pt.isElectricDrive && car.engine.drivetrain == "FullEV" && !pt.isFuelCell)
     engineWeight = 12.0;
-
-  car.calculatedTotalMass = ch.mass + fa.mass + ra.mass + coolingCompiled.massKg +
-                            wp.mass +
-                            ((frontSp.mass + rearSp.mass) * 0.5) + fs.mass +
-                            bp.mass + tr.mass + hp.mass +
-                            car.unsprungMassKg + engineWeight +
-                            pt.drivetrainExtraMassKg + ac.baseVehicleMass;
 
   double boreStrokeRatio =
       car.engine.stroke > 0.0 ? car.engine.bore / car.engine.stroke : 1.1;
@@ -601,7 +594,20 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   car.peakHorsepower =
       (car.peakTorque * peakTorqueRpm) / ac.hpConversion;
 
-  if (pt.isGeneratorOnly && pt.generatorKw > 0.0) {
+  if (pt.isFuelCell) {
+    const double stackKw =
+        pt.stackKw > 0.0 ? pt.stackKw : pt.generatorKw;
+    const double burstKw = pt.deployKw;
+    car.peakHorsepower = stackKw * 1.34;
+    car.electricalDeployKW = stackKw;
+    car.isFuelCell = true;
+    car.isElectricDrive = true;
+    car.isGeneratorOnly = false;
+    car.hybridDeployPowerKW = burstKw;
+    car.hybridRegenRate = pt.regenRate;
+    car.hybridStintDeployBudgetMJ = pt.stintBudgetMj;
+    engineWeight = 52.0 + stackKw * 0.088;
+  } else if (pt.isGeneratorOnly && pt.generatorKw > 0.0) {
     const double elecKw = pt.generatorKw * pt.drivetrainEfficiency;
     car.peakHorsepower = elecKw * 1.34;
     car.electricalDeployKW = elecKw + pt.deployKw;
@@ -621,6 +627,7 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   car.drivetrainExtraMassKg = pt.drivetrainExtraMassKg;
   car.isGeneratorOnly = pt.isGeneratorOnly;
   car.isElectricDrive = pt.isElectricDrive;
+  car.isFuelCell = pt.isFuelCell;
   car.generatorPowerKW = pt.generatorKw;
   car.drivetrainEfficiency = pt.drivetrainEfficiency;
   car.powertrainServiceabilityMult = pt.serviceabilityMult;
@@ -637,14 +644,26 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
     car.hybridStintDeployBudgetMJ = pt.stintBudgetMj;
   }
 
-  car.vibrationIndex = car.engineStressMult *
-                       (car.engine.stroke / ac.referenceStroke) *
-                       (car.engine.maxRPM / ac.referenceRPM);
-  car.fuelBurnRate = (displacementLiters * ac.fuelBurnCoeff) *
-                     (car.engine.maxRPM / ac.fuelRefRPM) *
-                     car.powertrainFuelBurnMult;
-  if (car.isElectricDrive && car.engine.drivetrain == "FullEV")
+  if (car.isFuelCell) {
+    car.vibrationIndex = 0.0;
     car.fuelBurnRate = 0.0;
+  } else {
+    car.vibrationIndex = car.engineStressMult *
+                         (car.engine.stroke / ac.referenceStroke) *
+                         (car.engine.maxRPM / ac.referenceRPM);
+    car.fuelBurnRate = (displacementLiters * ac.fuelBurnCoeff) *
+                       (car.engine.maxRPM / ac.fuelRefRPM) *
+                       car.powertrainFuelBurnMult;
+    if (car.isElectricDrive && car.engine.drivetrain == "FullEV")
+      car.fuelBurnRate = 0.0;
+  }
+
+  car.calculatedTotalMass = ch.mass + fa.mass + ra.mass + coolingCompiled.massKg +
+                            wp.mass +
+                            ((frontSp.mass + rearSp.mass) * 0.5) + fs.mass +
+                            bp.mass + tr.mass + hp.mass +
+                            car.unsprungMassKg + engineWeight +
+                            car.drivetrainExtraMassKg + ac.baseVehicleMass;
 }
 
 void ApplyClassBoP(CarConfig &car, const ClassRule &rule) {

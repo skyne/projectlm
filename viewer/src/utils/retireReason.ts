@@ -8,3 +8,13 @@ export function resolveRetireReason(snap: CarSnapshot): string {
   if (snap.fuel <= 0) return "Out of fuel";
   return "Retired from race";
 }
+
+export function resolveResultRetireReason(result: {
+  retired?: boolean;
+  retireReason?: string;
+}): string | null {
+  if (!result.retired) return null;
+  const explicit = result.retireReason?.trim();
+  if (explicit) return explicit;
+  return "Retired from race";
+}
