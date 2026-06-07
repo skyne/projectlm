@@ -105,3 +105,39 @@ TEST_CASE("Rain episode ends and drying phase is preserved", "[unit][weather]") 
   REQUIRE(weather.phase == WeatherPhase::Drying);
   REQUIRE(weather.rainEpisodeEndTime < 0.0);
 }
+
+TEST_CASE("Dry phase track temp exceeds air temp", "[unit][weather]") {
+  WeatherState weather;
+  InitWeatherState(weather, "hot_dry", 0.0, 32.0);
+  const WeatherProfile profile = WeatherProfileForId("hot_dry");
+
+  for (int i = 0; i < 360; ++i)
+    AdvanceWeatherDeterministic(weather, profile, i * 10.0, 10.0);
+
+  REQUIRE(weather.trackTempC > weather.ambientTempC);
+  REQUIRE(weather.visibilityKm >= 8.0);
+}
+
+TEST_CASE("CompoundCrossoverGrip favors warm track on dry slicks",
+          "[unit][weather]") {
+  const double warm =
+      CompoundCrossoverGrip(ETireCompound::Medium, ETyreTread::Slick, 0.05,
+                            24.0, 42.0);
+  const double cold =
+      CompoundCrossoverGrip(ETireCompound::Medium, ETyreTread::Slick, 0.05,
+                            24.0, 10.0);
+  REQUIRE(warm > cold);
+}
+
+TEST_CASE("Heavy rain reduces visibility", "[unit][weather]") {
+  WeatherState weather;
+  InitWeatherState(weather, "wet", 0.4, 16.0);
+  weather.phase = WeatherPhase::HeavyRain;
+  weather.rainIntensity = 0.85;
+  const WeatherProfile profile = WeatherProfileForId("wet");
+  const double visBefore = weather.visibilityKm;
+
+  AdvanceWeatherDeterministic(weather, profile, 600.0, 600.0);
+
+  REQUIRE(weather.visibilityKm < visBefore);
+}

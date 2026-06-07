@@ -48,6 +48,12 @@ function main() {
     function sendBootstrap(ws) {
         const sessionInit = host.getSessionInit();
         ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("session_init", sessionInit)));
+        if (sessionInit.raceActive && sessionInit.raceComplete) {
+            const lastComplete = host.getLastRaceComplete();
+            if (lastComplete) {
+                ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("race_complete", lastComplete)));
+            }
+        }
         if (sessionInit.raceActive) {
             const catchUp = {
                 raceTime: host.getRaceTime(),
@@ -533,7 +539,14 @@ function main() {
             : undefined;
         let updatedMeta = meta;
         if (isRaceSession && playerResult && event && !event.completed) {
-            updatedMeta = host.completeRound(playerResult.position, playerResult.classId);
+            updatedMeta = host.completeRound(playerResult.position, playerResult.classId, results.map((r) => ({
+                entryId: r.entryId,
+                teamName: r.teamName,
+                carNumber: r.carNumber,
+                classId: r.classId,
+                position: r.position,
+                driverName: r.driverName,
+            })));
         }
         else if (!isRaceSession) {
             updatedMeta = host.completeWeekendSession(weekendSessionType, results);
@@ -555,6 +568,7 @@ function main() {
             weekendSessionType,
             nextWeekendSession: nextSession,
         };
+        host.setLastRaceComplete(payload);
         broadcast(clients, (0, ws_protocol_1.serverMessage)("race_complete", payload));
         if (updatedMeta !== meta) {
             broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", updatedMeta));

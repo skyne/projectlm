@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MAX_DRIVER_ROSTER = exports.DRIVER_MARKET_REFRESH_COST = void 0;
 exports.computeDriverSigningFee = computeDriverSigningFee;
+exports.validateDriverMarketSigning = validateDriverMarketSigning;
 exports.buildDriverMarket = buildDriverMarket;
 exports.buildDriverMarketPreview = buildDriverMarketPreview;
 exports.marketSeedForRound = marketSeedForRound;
@@ -183,20 +184,44 @@ function computeDriverSigningFee(driver, source) {
     return { signingFee, salaryPerRace };
 }
 function normalizeDriver(driver) {
-    return {
+    return (0, driver_catalog_1.ensureCatalogDriverId)({
         ...driver,
         tier: (0, driver_catalog_1.inferTier)(driver),
-    };
+    });
 }
-function rosterNameSet(roster) {
-    return new Set(roster.map((d) => d.name.trim().toLowerCase()).filter(Boolean));
+function rosterIdSet(roster) {
+    return new Set(roster
+        .map((d) => d.id?.trim())
+        .filter((id) => Boolean(id)));
+}
+/** Validate that a market signing does not violate global driver contracts. */
+function validateDriverMarketSigning(listing, signingTeam, roster, repoRoot, rosterOverrides) {
+    const driver = normalizeDriver(listing.driver);
+    const driverId = driver.id;
+    if (roster.some((d) => d.id === driverId)) {
+        return `${driver.name} is already on your roster`;
+    }
+    const contracts = (0, driver_catalog_1.buildDriverContractMap)(repoRoot, {
+        playerTeamName: signingTeam,
+        playerRoster: roster,
+        rosterOverrides,
+    });
+    const holder = contracts.get(driverId);
+    if (listing.source === "wec_active")
+        return null;
+    if (holder && holder.toLowerCase() !== signingTeam.trim().toLowerCase()) {
+        return `${driver.name} is under contract with ${holder}`;
+    }
+    return null;
 }
 function buildDriverMarket(repoRoot, options) {
     const rnd = seeded(options.seed);
-    const taken = rosterNameSet([
-        ...(options.existingRoster ?? []),
-        ...(options.marketRoster ?? []),
-    ]);
+    const contracts = (0, driver_catalog_1.buildDriverContractMap)(repoRoot, {
+        playerTeamName: options.playerTeamName,
+        playerRoster: options.existingRoster,
+        rosterOverrides: options.rosterOverrides,
+    });
+    const takenIds = rosterIdSet(options.existingRoster ?? []);
     const listings = [];
     const lemans = (0, driver_catalog_1.loadLeMansDriverCatalog)(repoRoot);
     const wecPool = [];
@@ -207,10 +232,14 @@ function buildDriverMarket(repoRoot, options) {
             continue;
         }
         for (const driver of roster) {
-            const nameKey = driver.name.trim().toLowerCase();
-            if (taken.has(nameKey))
+            const normalized = normalizeDriver(driver);
+            const driverId = normalized.id;
+            if (takenIds.has(driverId))
                 continue;
-            wecPool.push({ team, driver: normalizeDriver(driver) });
+            const holder = contracts.get(driverId);
+            if (holder && holder.toLowerCase() !== team.toLowerCase())
+                continue;
+            wecPool.push({ team, driver: normalized });
         }
     }
     for (const entry of shuffle(wecPool, rnd).slice(0, MARKET_WEC_SLOTS)) {
@@ -224,13 +253,18 @@ function buildDriverMarket(repoRoot, options) {
             ...fees,
             tagline: `Under contract with ${entry.team} — buyout required`,
         });
-        taken.add(entry.driver.name.trim().toLowerCase());
+        takenIds.add(entry.driver.id);
     }
     for (const legend of shuffle(RETIRED_WEC_LEGENDS, rnd).slice(0, MARKET_RETIRED_SLOTS)) {
         const driver = normalizeDriver({ ...legend.driver });
-        const nameKey = driver.name.trim().toLowerCase();
-        if (taken.has(nameKey))
+        const driverId = driver.id;
+        if (takenIds.has(driverId))
             continue;
+        const holder = contracts.get(driverId);
+        if (holder &&
+            holder.toLowerCase() !== options.playerTeamName.trim().toLowerCase()) {
+            continue;
+        }
         const fees = computeDriverSigningFee(driver, "wec_retired");
         listings.push({
             id: `retired-${slugId(driver.name)}`,
@@ -239,18 +273,23 @@ function buildDriverMarket(repoRoot, options) {
             ...fees,
             tagline: legend.tagline,
         });
-        taken.add(nameKey);
+        takenIds.add(driverId);
     }
     for (let i = 0; i < MARKET_PROSPECT_SLOTS; i++) {
         const seed = (options.seed + i * 7919) >>> 0;
         let driver = normalizeDriver((0, driver_catalog_1.generateRandomDriver)(seed));
         let attempts = 0;
-        while (taken.has(driver.name.trim().toLowerCase()) && attempts < 8) {
+        while (takenIds.has(driver.id) && attempts < 8) {
             driver = normalizeDriver((0, driver_catalog_1.generateRandomDriver)(seed + attempts * 997));
             attempts++;
         }
-        if (taken.has(driver.name.trim().toLowerCase()))
+        if (takenIds.has(driver.id))
             continue;
+        const holder = contracts.get(driver.id);
+        if (holder &&
+            holder.toLowerCase() !== options.playerTeamName.trim().toLowerCase()) {
+            continue;
+        }
         const fees = computeDriverSigningFee(driver, "prospect");
         listings.push({
             id: `prospect-${slugId(driver.name)}-${seed.toString(36)}`,
@@ -259,7 +298,7 @@ function buildDriverMarket(repoRoot, options) {
             ...fees,
             tagline: "Free agent · scouting report from driver market",
         });
-        taken.add(driver.name.trim().toLowerCase());
+        takenIds.add(driver.id);
     }
     return listings.sort((a, b) => b.signingFee - a.signingFee);
 }

@@ -1,0 +1,10 @@
+Engine loops from OpenGameArt and Meehdrescher Studios (CC0).
+
+GT V8: generic V8 engine sound — Acc_05570.wav
+  https://opengameart.org/content/generic-v8-engine-sound
+
+GT Flat-6: generic Flat 6 engine sound — acc_5500.wav
+  https://opengameart.org/content/generic-flat-6-engine-sound
+
+Prototype / I4 / Hybrid: racing car engine loops by qubodup
+  https://opengameart.org/content/racing-car-engine-sound-loops

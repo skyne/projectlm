@@ -149,11 +149,11 @@ int WheelIndexForSuspPart(DamagePart part) {
 
 void BuildCarDamageProfiles(const CarConfig &car, const PartCatalog &catalog,
                             CarDamageProfiles &out) {
-  const ChassisPart chassis = GetChassisStats(car.chassisChoice, catalog);
+  const ChassisPart chassis = GetChassisStats(catalog, car.chassisId);
   // Stock WEC endurance: gradual wear should not breach 85% over 24h alone.
   const double chassisRel = std::max(0.85, chassis.structuralRigidity) * 1.35;
   const TransmissionPart trans =
-      GetTransmissionStats(car.transmissionChoice, catalog);
+      GetTransmissionStats(catalog, car.transmissionId);
   const double transRel = 0.95 + (trans.gearCount >= 7 ? 0.05 : 0.0);
 
   SetProfile(out.profiles[DamagePartIndex(DamagePart::Engine)], 12.0, 25.0, 5.0,

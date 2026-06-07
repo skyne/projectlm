@@ -3,6 +3,7 @@
  * Cost model mirrors viewer/src/utils/pitCommands.ts and src/sim/pit_stop.cpp.
  */
 import type { CarSnapshot, WeekendSessionType } from "../../ws_protocol";
+import type { AiStintPlan } from "../../llm/stint_plan";
 import {
   desiredTyreTread,
   needsWeatherTyreSwap,
@@ -25,7 +26,10 @@ export type PlannerSnap = CarSnapshot & {
 };
 
 function tankCapacity(s: PlannerSnap): number {
-  return s.fuelTankCapacity ?? (s.classId === "Hypercar" ? 110 : 100);
+  if (s.fuelTankCapacity != null && s.fuelTankCapacity > 0) {
+    return s.fuelTankCapacity;
+  }
+  return profileFor(s.classId).defaultTank;
 }
 
 function fuelToAdd(s: PlannerSnap): number {
@@ -42,22 +46,55 @@ const PIT_DRIVER_CHANGE_SEC = 15;
 const PIT_SETUP_SEC = 6;
 const DEFAULT_LAP_LENGTH_M = 13_600;
 
-const FUEL_THRESHOLD = 0.2;
-const FUEL_CRITICAL = 0.12;
-const TIRE_WEAR_THRESHOLD = 0.72;
+interface ClassFuelProfile {
+  fuelLow: number;
+  fuelCritical: number;
+  tireWear: number;
+  minLapsBetweenStops: number;
+  defaultTank: number;
+  burnPerLap: number;
+}
+
+/** Per-class stint thresholds — see docs/BALANCE_EQUALIZATION_PLAN.md Phase 0b. */
+const CLASS_PROFILES: Record<string, ClassFuelProfile> = {
+  Hypercar: {
+    fuelLow: 0.30,
+    fuelCritical: 0.14,
+    tireWear: 0.72,
+    minLapsBetweenStops: 3,
+    defaultTank: 110,
+    burnPerLap: 2.6,
+  },
+  LMP2: {
+    fuelLow: 0.38,
+    fuelCritical: 0.18,
+    tireWear: 0.74,
+    minLapsBetweenStops: 3,
+    defaultTank: 110,
+    burnPerLap: 2.0,
+  },
+  LMGT3: {
+    fuelLow: 0.36,
+    fuelCritical: 0.18,
+    tireWear: 0.68,
+    minLapsBetweenStops: 2,
+    defaultTank: 100,
+    burnPerLap: 2.3,
+  },
+};
+
+const DEFAULT_PROFILE: ClassFuelProfile = CLASS_PROFILES.LMP2;
+
+function profileFor(classId: string): ClassFuelProfile {
+  return CLASS_PROFILES[classId] ?? DEFAULT_PROFILE;
+}
+
 const ENGINE_REPAIR_HEALTH = 78;
 const DRIVER_STINT_SWAP_FRACTION = 0.88;
 const DRIVER_STAMINA_THRESHOLD = 35;
 
 /** Bundle a soon need if it hits within this many laps. */
 const BUNDLE_LOOKAHEAD_LAPS = 5;
-const MIN_LAPS_BETWEEN_STOPS = 3;
-
-const CLASS_FUEL_BURN_L: Record<string, number> = {
-  Hypercar: 2.6,
-  LMGT3: 1.9,
-  LMP2: 2.2,
-};
 
 export interface PitPlannerContext {
   phase: WeekendSessionType;
@@ -67,6 +104,10 @@ export interface PitPlannerContext {
   tyreTread: TyreTread;
   setupWing?: number;
   setupBias?: number;
+  /** >1 pits earlier; <1 stretches stints (rival season form). */
+  pitAggression?: number;
+  /** LLM/heuristic stint plan from AiStintGuide. */
+  stintPlan?: AiStintPlan;
 }
 
 export interface PitServiceFlags {
@@ -134,7 +175,7 @@ function burnPerLap(s: PlannerSnap, sincePit: number, fuelAtLastPit: number): nu
   if (sincePit > 0 && fuelAtLastPit > s.fuel) {
     return (fuelAtLastPit - s.fuel) / sincePit;
   }
-  return CLASS_FUEL_BURN_L[s.classId] ?? 2.2;
+  return CLASS_PROFILES[s.classId]?.burnPerLap ?? DEFAULT_PROFILE.burnPerLap;
 }
 
 function lapsUntilFuelBelow(
@@ -151,7 +192,10 @@ function lapsUntilFuelBelow(
   return Math.floor((s.fuel - target) / burn);
 }
 
-function driverSwapState(s: PlannerSnap): {
+function driverSwapState(
+  s: PlannerSnap,
+  stintPlan?: AiStintPlan,
+): {
   needed: boolean;
   urgent: boolean;
   lapsUntil: number;
@@ -161,6 +205,31 @@ function driverSwapState(s: PlannerSnap): {
   const maxStint = s.maxDriverStintSeconds ?? 0;
   const stint = s.driverStintSeconds ?? 0;
   const lapSec = lapTimeSec(s);
+
+  if (stintPlan && stintPlan.targetStintSeconds > 0) {
+    const target = stintPlan.targetStintSeconds;
+    if (stint >= target * 0.98) {
+      return { needed: true, urgent: true, lapsUntil: 0 };
+    }
+    if (
+      stintPlan.driverChangeNextStop &&
+      stint >= target * 0.88
+    ) {
+      return { needed: true, urgent: false, lapsUntil: 0 };
+    }
+    if (stint >= target * 0.92) {
+      return { needed: true, urgent: false, lapsUntil: 0 };
+    }
+    const remaining = target * 0.92 - stint;
+    if (remaining > 0) {
+      return {
+        needed: false,
+        urgent: false,
+        lapsUntil: Math.ceil(remaining / lapSec),
+      };
+    }
+  }
+
   if (maxStint > 0) {
     if (stint >= maxStint * 0.98) return { needed: true, urgent: true, lapsUntil: 0 };
     const swapAt = maxStint * DRIVER_STINT_SWAP_FRACTION;
@@ -189,16 +258,17 @@ function needsLimpPit(s: PlannerSnap): boolean {
 
 function tyresWorn(s: PlannerSnap): boolean {
   const wear = s.tireWear ?? 0;
-  return wear >= TIRE_WEAR_THRESHOLD;
+  return wear >= profileFor(s.classId).tireWear;
 }
 
 function lapsUntilTyreWorn(s: PlannerSnap): number {
   const wear = s.tireWear ?? 0;
-  if (wear >= TIRE_WEAR_THRESHOLD) return 0;
+  const threshold = profileFor(s.classId).tireWear;
+  if (wear >= threshold) return 0;
   const lap = Math.max(1, s.lap);
   const rate = wear / lap;
   if (rate <= 0) return 99;
-  return Math.ceil((TIRE_WEAR_THRESHOLD - wear) / rate);
+  return Math.ceil((threshold - wear) / rate);
 }
 
 function nextDriverIndex(s: PlannerSnap): number {
@@ -222,7 +292,10 @@ function buildParts(
   driverIndex: number,
 ): string[] {
   const tread = desiredTyreTread(ctx.wet);
-  const compound = tread === "slick" ? slickCompound(ctx.wet) : "medium";
+  const compound =
+    tread === "slick"
+      ? ctx.stintPlan?.compound ?? slickCompound(ctx.wet)
+      : "medium";
   const parts: string[] = [];
 
   if (services.fuel) parts.push(`fuel=${fuelToAdd(s)}`);
@@ -259,28 +332,69 @@ function serviceLabel(services: PitServiceFlags): string {
   return bits.join("+") || "stop";
 }
 
+/** Scale fuel pit windows — higher aggression pits earlier. */
+export function scaledFuelThresholds(
+  pitAggression = 1,
+  base?: { low: number; critical: number },
+): { low: number; critical: number } {
+  const agg = Math.max(0.85, Math.min(1.15, pitAggression));
+  const lowBase = base?.low ?? CLASS_PROFILES.Hypercar.fuelLow;
+  const critBase = base?.critical ?? CLASS_PROFILES.Hypercar.fuelCritical;
+  return {
+    low: lowBase * agg,
+    critical: critBase * agg,
+  };
+}
+
 /** Decide bundled pit stop (or defer). */
 export function planPitStop(
   s: PlannerSnap,
   ctx: PitPlannerContext,
   fuelAtLastPit: number,
 ): PitStopPlan | null {
+  const profile = profileFor(s.classId);
+  const fuelBase = {
+    low: ctx.stintPlan?.fuelStopFraction ?? profile.fuelLow,
+    critical: ctx.stintPlan?.fuelStopFraction
+      ? Math.min(profile.fuelCritical, ctx.stintPlan.fuelStopFraction * 0.55)
+      : profile.fuelCritical,
+  };
+  const { low: fuelLow, critical: fuelCrit } = scaledFuelThresholds(
+    ctx.pitAggression,
+    fuelBase,
+  );
   const fuelPct = s.fuel / tankCapacity(s);
   const weatherTyres = needsWeatherTyreSwap(ctx.tyreTread, ctx.wet);
   const driver =
     ctx.phase === "race"
-      ? driverSwapState(s)
+      ? driverSwapState(s, ctx.stintPlan)
       : { needed: false, urgent: false, lapsUntil: 99 };
   const engine = (s.engineHealth ?? 100) <= ENGINE_REPAIR_HEALTH;
   const flatWheels = deflatedWheels(s);
   const limp = needsLimpPit(s);
   const worn = tyresWorn(s) || flatWheels.length > 0;
 
-  const lapsFuelLow = lapsUntilFuelBelow(s, FUEL_THRESHOLD, ctx.sincePit, fuelAtLastPit);
-  const lapsFuelCrit = lapsUntilFuelBelow(s, FUEL_CRITICAL, ctx.sincePit, fuelAtLastPit);
+  // Lap 1: only emergency fuel / weather / engine — avoid routine bundling on out-lap.
+  if (
+    s.lap < 2 &&
+    fuelPct >= fuelCrit &&
+    !driver.urgent &&
+    !engine &&
+    !(ctx.wet >= WET_TYRE_THRESHOLD && weatherTyres)
+  ) {
+    return null;
+  }
+
+  const lapsFuelLow = lapsUntilFuelBelow(s, fuelLow, ctx.sincePit, fuelAtLastPit);
+  const lapsFuelCrit = lapsUntilFuelBelow(
+    s,
+    fuelCrit,
+    ctx.sincePit,
+    fuelAtLastPit,
+  );
   const lapsTyres = lapsUntilTyreWorn(s);
 
-  const fuelNow = fuelPct < FUEL_THRESHOLD;
+  const fuelNow = fuelPct < fuelLow;
   const fuelSoon = lapsFuelLow <= BUNDLE_LOOKAHEAD_LAPS;
   const tyresNow = weatherTyres || worn;
   const tyresSoon = weatherTyres || lapsTyres <= BUNDLE_LOOKAHEAD_LAPS;
@@ -288,7 +402,7 @@ export function planPitStop(
   const driverSoon = driver.needed || driver.lapsUntil <= BUNDLE_LOOKAHEAD_LAPS;
 
   const critical =
-    fuelPct < FUEL_CRITICAL ||
+    fuelPct < fuelCrit ||
     driver.urgent ||
     engine ||
     limp ||
@@ -324,16 +438,17 @@ export function planPitStop(
 
   if (!anyNow && !bundleSoon && !critical) return null;
 
-  const minLaps = driver.urgent || fuelPct < FUEL_CRITICAL ? 1 : MIN_LAPS_BETWEEN_STOPS;
+  const minLaps =
+    driver.urgent || fuelPct < fuelCrit ? 1 : profile.minLapsBetweenStops;
   if (ctx.sincePit < minLaps && !critical) return null;
 
-  if (!critical && !driver.urgent && ctx.sincePit < MIN_LAPS_BETWEEN_STOPS + 2) {
+  if (!critical && !driver.urgent && ctx.sincePit < profile.minLapsBetweenStops + 2) {
     const loneFuel = fuelNow && !driverSoon && !tyresSoon && !engine;
     const loneTyres = tyresNow && !fuelSoon && !driverSoon && !engine;
     const loneDriver = driverNow && !fuelSoon && !tyresSoon && !engine;
-    if (loneFuel || loneTyres || loneDriver) {
+    // Never defer an active low-fuel stop to wait for tyre/driver bundling.
+    if (loneTyres || loneDriver) {
       const waitFor = Math.min(
-        fuelNow ? lapsFuelLow : 99,
         tyresNow ? lapsTyres : 99,
         driverNow ? driver.lapsUntil : 99,
       );
@@ -345,7 +460,7 @@ export function planPitStop(
 
   const bundleServices: PitServiceFlags = {
     setup: !ctx.setupDone && ctx.phase === "race",
-    fuel: fuelNow || fuelSoon || fuelPct < 0.35,
+    fuel: fuelNow || fuelSoon || fuelPct < fuelLow + 0.03,
     tyres: tyresNow || tyresSoon,
     driver: driverNow || driverSoon,
     engine,
@@ -436,7 +551,7 @@ export function planPitStop(
       bundleServices.tyres = false;
       bundleServices.driver = false;
     } else if (driver.urgent || driverNow) {
-      bundleServices.fuel = fuelPct < 0.25;
+      bundleServices.fuel = fuelPct < fuelCrit + 0.07;
       bundleServices.tyres = weatherTyres;
       bundleServices.engine = false;
     } else if (fuelNow) {

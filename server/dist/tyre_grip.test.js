@@ -16,3 +16,8 @@ const tyre_grip_1 = require("./tyre_grip");
 (0, node_test_1.default)("wet tyres beat slicks on a soaked track", () => {
     strict_1.default.ok((0, tyre_grip_1.tyreGripScale)("wet", 0.7, 18) > (0, tyre_grip_1.tyreGripScale)("slick", 0.7, 18));
 });
+(0, node_test_1.default)("warm track surface improves dry slick grip vs cold track", () => {
+    const warm = (0, tyre_grip_1.tyreGripScale)("slick", 0.05, 24, 42);
+    const cold = (0, tyre_grip_1.tyreGripScale)("slick", 0.05, 24, 10);
+    strict_1.default.ok(warm > cold);
+});

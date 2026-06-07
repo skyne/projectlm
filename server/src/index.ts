@@ -97,6 +97,12 @@ function main(): void {
   function sendBootstrap(ws: WebSocket): SessionInitPayload {
     const sessionInit: SessionInitPayload = host.getSessionInit();
     ws.send(JSON.stringify(serverMessage("session_init", sessionInit)));
+    if (sessionInit.raceActive && sessionInit.raceComplete) {
+      const lastComplete = host.getLastRaceComplete();
+      if (lastComplete) {
+        ws.send(JSON.stringify(serverMessage("race_complete", lastComplete)));
+      }
+    }
     if (sessionInit.raceActive) {
       const catchUp: TickPayload = {
         raceTime: host.getRaceTime(),
@@ -400,7 +406,7 @@ function main(): void {
       } else if (msg.type === "save_driver_roster") {
         const payload = msg.payload as {
           roster?: import("./ws_protocol").DriverProfilePayload[];
-          assignments?: Record<string, number[]>;
+          assignments?: Record<string, string[]>;
         };
         const result = host.saveDriverRoster(
           payload.roster ?? [],
@@ -666,6 +672,14 @@ function main(): void {
         updatedMeta = host.completeRound(
           playerResult.position,
           playerResult.classId,
+          results.map((r) => ({
+            entryId: r.entryId,
+            teamName: r.teamName,
+            carNumber: r.carNumber,
+            classId: r.classId,
+            position: r.position,
+            driverName: r.driverName,
+          })),
         );
       } else if (!isRaceSession) {
         updatedMeta = host.completeWeekendSession(weekendSessionType, results);
@@ -691,6 +705,7 @@ function main(): void {
         weekendSessionType,
         nextWeekendSession: nextSession,
       };
+      host.setLastRaceComplete(payload);
       broadcast(clients, serverMessage("race_complete", payload));
       if (updatedMeta !== meta) {
         broadcast(clients, serverMessage("meta_state", updatedMeta));

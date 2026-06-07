@@ -44,6 +44,7 @@ const weekend_setup_1 = require("./game/weekend_setup");
 const weekend_sessions_1 = require("./game/weekend_sessions");
 const driver_catalog_1 = require("./game/driver_catalog");
 const driver_market_1 = require("./game/driver_market");
+const ai_rival_season_1 = require("./game/ai_rival_season");
 const car_condition_1 = require("./game/car_condition");
 const economy_1 = require("./game/economy");
 const track_catalog_1 = require("./game/track_catalog");
@@ -212,6 +213,9 @@ class MetaStateManager {
         this.repoRoot = repoRoot;
         /** Round completed by the most recent finish; cleared on start_round or reopen. */
         this.lastCompletedRound = null;
+        /** Snapshots taken before off-week AI resolution — restored on reopenRound. */
+        this.preRoundAiRivalSeason = null;
+        this.preRoundDriverMarket = null;
         this.store = new game_state_1.GameStateStore(repoRoot);
         const defaults = parseConfigFile(repoRoot);
         this.state = (0, fleet_1.migrateLegacyMeta)(this.store.load(defaults));
@@ -224,16 +228,62 @@ class MetaStateManager {
         syncLegacyFields(this.state);
     }
     getState() {
-        if (this.ensureDriverMarketChanged()) {
+        let changed = false;
+        if (this.ensureDriverMarketChanged())
+            changed = true;
+        const before = this.state.aiRivalSeason?.teams.length ?? 0;
+        this.ensureAiRivalSeason();
+        if ((this.state.aiRivalSeason?.teams.length ?? 0) !== before)
+            changed = true;
+        if (changed)
             this.store.save(this.state);
-        }
         return structuredClone(this.state);
     }
     persist() {
         syncLegacyFields(this.state);
+        this.ensureAiRivalSeason();
         this.ensureDriverMarketChanged();
         this.store.save(this.state);
         return structuredClone(this.state);
+    }
+    ensureAiRivalSeason() {
+        if (!this.state.setupComplete)
+            return;
+        if (!this.state.aiRivalSeason ||
+            this.state.aiRivalSeason.seasonYear !== this.state.seasonYear) {
+            this.state.aiRivalSeason = (0, ai_rival_season_1.initAiRivalSeason)(this.repoRoot, this.state.teamName, this.state.seasonYear);
+        }
+        if (!this.state.aiRivalSeason.drivers?.length) {
+            this.state.aiRivalSeason.drivers = (0, ai_rival_season_1.initDriverStandings)(this.repoRoot, this.state.teamName, this.state.driverRoster ?? [], this.state.fleet ?? []);
+        }
+        (0, ai_rival_season_1.syncPlayerDriversToStandings)(this.state.aiRivalSeason, this.state.teamName, this.state.driverRoster ?? [], this.state.fleet ?? []);
+    }
+    resolveAiOffWeek(raceResults, eventFormat, scoring, completingRound) {
+        this.ensureAiRivalSeason();
+        const season = this.state.aiRivalSeason;
+        if (raceResults?.length) {
+            (0, ai_rival_season_1.resolveAiSeasonTick)(season, {
+                playerTeamName: this.state.teamName,
+                raceResults,
+                eventFormat,
+                scoring,
+            });
+            (0, ai_rival_season_1.resolveDriverChampionshipTick)(season, {
+                repoRoot: this.repoRoot,
+                raceResults,
+                scoring,
+                playerTeamName: this.state.teamName,
+                playerRoster: this.state.driverRoster ?? [],
+                playerFleet: this.state.fleet ?? [],
+            });
+        }
+        const refreshCount = this.state.driverMarketRefreshCount ?? 0;
+        const seed = (0, driver_market_1.marketSeedForRound)(this.state.teamName, completingRound, refreshCount + 1000);
+        const resolved = (0, ai_rival_season_1.resolveAiDriverMarketBids)(this.repoRoot, season, this.state.driverMarket ?? [], seed);
+        this.state.driverMarket = resolved.market;
+        if (resolved.signedIds.length > 0) {
+            console.log(`[ai_rivals] ${resolved.note}`);
+        }
     }
     regenerateDriverMarket() {
         const refreshCount = this.state.driverMarketRefreshCount ?? 0;
@@ -242,6 +292,7 @@ class MetaStateManager {
             seed,
             playerTeamName: this.state.teamName,
             existingRoster: this.state.driverRoster ?? [],
+            rosterOverrides: this.state.aiRivalSeason?.rosterOverrides,
         });
         this.state.driverMarketRound = this.state.currentRound;
     }
@@ -400,10 +451,20 @@ class MetaStateManager {
         this.state.currentRound = round;
         this.state.weekendProgress = undefined;
         this.lastCompletedRound = null;
-        this.regenerateDriverMarket();
+        if (this.preRoundAiRivalSeason) {
+            this.state.aiRivalSeason = structuredClone(this.preRoundAiRivalSeason);
+            this.preRoundAiRivalSeason = null;
+        }
+        if (this.preRoundDriverMarket) {
+            this.state.driverMarket = structuredClone(this.preRoundDriverMarket);
+            this.preRoundDriverMarket = null;
+        }
+        else {
+            this.regenerateDriverMarket();
+        }
         return this.persist();
     }
-    completeRound(position, classId) {
+    completeRound(position, classId, raceResults) {
         const completingRound = this.state.currentRound;
         const event = this.state.calendar.find((e) => e.round === completingRound);
         if (!event || event.completed)
@@ -422,7 +483,14 @@ class MetaStateManager {
             this.state.currentRound = nextRound;
         }
         this.lastCompletedRound = completingRound;
+        this.ensureAiRivalSeason();
+        if (scoring) {
+            (0, ai_rival_season_1.applyPlayerTeamRoundResult)(this.state.aiRivalSeason, this.state.teamName, classId, finances.championshipPoints);
+        }
         this.regenerateDriverMarket();
+        this.preRoundAiRivalSeason = structuredClone(this.state.aiRivalSeason);
+        this.preRoundDriverMarket = structuredClone(this.state.driverMarket ?? []);
+        this.resolveAiOffWeek(raceResults, event.format, scoring, completingRound);
         return this.persist();
     }
     signSponsor(offerId) {
@@ -505,10 +573,10 @@ class MetaStateManager {
         this.state.activeCarId = firstCar.id;
         this.state.playerCarId = firstCar.id;
         this.state.playerEntryId = "entry-1";
-        this.state.driverRoster = payload.driverRoster.map((d) => ({ ...d }));
-        const driverIndices = (0, driver_catalog_1.allDriverIndices)(this.state.driverRoster.length);
+        this.state.driverRoster = (0, driver_catalog_1.ensureDriverIds)(payload.driverRoster.map((d) => ({ ...d })));
+        const assignments = (0, driver_catalog_1.defaultDriverAssignments)(this.state.driverRoster, firstCars);
         for (const car of firstCars) {
-            car.assignedDriverIndices = [...driverIndices];
+            car.assignedDriverIds = assignments[car.id] ?? [];
         }
         this.state.setupComplete = true;
         this.state.teamCreationDraft = null;
@@ -522,6 +590,8 @@ class MetaStateManager {
         (0, car_builder_1.writeAllFleetConfigs)(this.repoRoot, this.state, platformTemplateMap(this.repoRoot));
         (0, car_builder_1.writePlayerCarConfig)(this.repoRoot, this.state);
         this.state.driverMarketRefreshCount = 0;
+        this.state.aiRivalSeason = (0, ai_rival_season_1.initAiRivalSeason)(this.repoRoot, name, this.state.seasonYear);
+        (0, ai_rival_season_1.syncPlayerDriversToStandings)(this.state.aiRivalSeason, name, this.state.driverRoster, this.state.fleet);
         this.regenerateDriverMarket();
         return this.persist();
     }
@@ -577,9 +647,19 @@ class MetaStateManager {
         this.state.fleet = [...(this.state.fleet ?? []), ...cars];
         if (!this.state.activeCarId)
             this.state.activeCarId = cars[0].id;
-        const driverIndices = (0, driver_catalog_1.allDriverIndices)(this.state.driverRoster?.length ?? 0);
+        const driverUpdates = (0, driver_catalog_1.assignUnassignedDriversToCars)(this.state.driverRoster ?? [], this.state.fleet ?? [], cars.map((c) => c.id));
         for (const car of cars) {
-            car.assignedDriverIndices = [...driverIndices];
+            const extra = driverUpdates[car.id];
+            if (extra?.length) {
+                car.assignedDriverIds = [
+                    ...(0, driver_catalog_1.sanitizeAssignedDriverIds)(car.assignedDriverIds, this.state.driverRoster ?? []),
+                    ...extra,
+                ];
+            }
+            else {
+                car.assignedDriverIds =
+                    (0, driver_catalog_1.sanitizeAssignedDriverIds)(car.assignedDriverIds, this.state.driverRoster ?? []);
+            }
         }
         const templates = platformTemplateMap(this.repoRoot);
         for (const car of cars) {
@@ -666,25 +746,32 @@ class MetaStateManager {
             if (err)
                 return { error: err };
         }
-        this.state.driverRoster = roster.map((d) => ({ ...d }));
+        this.state.driverRoster = (0, driver_catalog_1.ensureDriverIds)(roster.map((d) => ({ ...d })));
         if (assignments && this.state.fleet?.length) {
             for (const car of this.state.fleet) {
                 if (!(car.id in assignments))
                     continue;
-                const sanitized = (0, driver_catalog_1.sanitizeAssignedIndices)(assignments[car.id], roster.length);
+                const sanitized = (0, driver_catalog_1.sanitizeAssignedDriverIds)(assignments[car.id], this.state.driverRoster);
                 if (sanitized.length < 1) {
                     return {
                         error: `Car #${car.carNumber} must have at least one assigned driver`,
                     };
                 }
-                car.assignedDriverIndices = sanitized;
+                car.assignedDriverIds = sanitized;
             }
+            const exclusiveErr = (0, driver_catalog_1.validateExclusiveDriverAssignments)(this.state.fleet, this.state.driverRoster);
+            if (exclusiveErr)
+                return { error: exclusiveErr };
         }
         else if (this.state.fleet?.length) {
             for (const car of this.state.fleet) {
-                car.assignedDriverIndices = (0, driver_catalog_1.sanitizeAssignedIndices)(car.assignedDriverIndices, roster.length);
-                if (!car.assignedDriverIndices.length) {
-                    car.assignedDriverIndices = (0, driver_catalog_1.allDriverIndices)(roster.length);
+                car.assignedDriverIds = (0, driver_catalog_1.sanitizeAssignedDriverIds)(car.assignedDriverIds, this.state.driverRoster);
+            }
+            const exclusiveErr = (0, driver_catalog_1.validateExclusiveDriverAssignments)(this.state.fleet, this.state.driverRoster);
+            if (exclusiveErr) {
+                const defaults = (0, driver_catalog_1.defaultDriverAssignments)(this.state.driverRoster, this.state.fleet);
+                for (const car of this.state.fleet) {
+                    car.assignedDriverIds = defaults[car.id] ?? car.assignedDriverIds ?? [];
                 }
             }
         }
@@ -719,10 +806,9 @@ class MetaStateManager {
         if (roster.length >= driver_market_1.MAX_DRIVER_ROSTER) {
             return { error: `Roster full (${driver_market_1.MAX_DRIVER_ROSTER} drivers maximum)` };
         }
-        const nameKey = listing.driver.name.trim().toLowerCase();
-        if (roster.some((d) => d.name.trim().toLowerCase() === nameKey)) {
-            return { error: `${listing.driver.name} is already on your roster` };
-        }
+        const contractErr = (0, driver_market_1.validateDriverMarketSigning)(listing, this.state.teamName, roster, this.repoRoot, this.state.aiRivalSeason?.rosterOverrides);
+        if (contractErr)
+            return { error: contractErr };
         if (this.state.budget < listing.signingFee) {
             return {
                 error: `Insufficient budget (need $${listing.signingFee.toLocaleString()} signing fee)`,
@@ -732,16 +818,18 @@ class MetaStateManager {
         if (statErr)
             return { error: statErr };
         this.state.budget -= listing.signingFee;
-        roster.push({ ...listing.driver, tier: (0, driver_catalog_1.inferTier)(listing.driver) });
-        this.state.driverRoster = roster;
+        const signed = (0, driver_catalog_1.ensureCatalogDriverId)(listing.driver);
+        roster.push({
+            ...signed,
+            tier: (0, driver_catalog_1.inferTier)(signed),
+        });
+        this.state.driverRoster = (0, driver_catalog_1.ensureDriverIds)(roster);
         this.state.driverMarket = (this.state.driverMarket ?? []).filter((l) => l.id !== listingId);
-        const newIdx = roster.length - 1;
         for (const car of this.state.fleet ?? []) {
-            const indices = (0, driver_catalog_1.sanitizeAssignedIndices)(car.assignedDriverIndices, roster.length);
-            if (!indices.includes(newIdx))
-                indices.push(newIdx);
-            car.assignedDriverIndices = [...indices].sort((a, b) => a - b);
+            car.assignedDriverIds = (0, driver_catalog_1.sanitizeAssignedDriverIds)(car.assignedDriverIds, this.state.driverRoster);
         }
+        this.ensureAiRivalSeason();
+        (0, ai_rival_season_1.syncPlayerDriversToStandings)(this.state.aiRivalSeason, this.state.teamName, this.state.driverRoster, this.state.fleet ?? []);
         return this.persist();
     }
     setWeekendTireCompound(compound) {

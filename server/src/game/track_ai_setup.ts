@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import type { AiRivalModifiers } from "./ai_rival_season";
 import { defaultTrackPreset } from "./weekend_setup";
 
 /** Patch an on-disk car config with AI grid baseline for this track. */
@@ -8,6 +9,7 @@ export function applyAiTrackSetupToConfig(
   carConfigPath: string,
   trackId: string,
   classId: string,
+  rivalModifiers?: AiRivalModifiers,
 ): void {
   const abs = path.join(repoRoot, carConfigPath);
   if (!fs.existsSync(abs)) return;
@@ -95,7 +97,24 @@ export function applyAiTrackSetupToConfig(
     setLine("rear_arb_stiffness", preset.rearArbStiffness.toFixed(2));
   }
   if (preset.frontDamperBump != null) {
-    setLine("front_damper_bump", String(preset.frontDamperBump));
+    const damperRival = rivalModifiers?.damperBumpDelta ?? 0;
+    const jitter = classId === "LMGT3" ? 0 : classId === "LMP2" ? 1 : 2;
+    setLine(
+      "front_damper_bump",
+      String(
+        Math.min(15, Math.max(4, preset.frontDamperBump + jitter + damperRival)),
+      ),
+    );
+  } else {
+    const jitter = classId === "LMGT3" ? 0 : classId === "LMP2" ? 1 : 2;
+    const damperRival = rivalModifiers?.damperBumpDelta ?? 0;
+    if (!replaced.has("front_damper_bump")) {
+      const base = readNumeric(lines, "front_damper_bump") ?? 8;
+      setLine(
+        "front_damper_bump",
+        String(Math.min(15, Math.max(4, base + jitter + damperRival))),
+      );
+    }
   }
   if (preset.frontDamperRebound != null) {
     setLine("front_damper_rebound", String(preset.frontDamperRebound));
@@ -109,18 +128,17 @@ export function applyAiTrackSetupToConfig(
   if (preset.ductAirflow != null) {
     setLine("duct_airflow", preset.ductAirflow.toFixed(2));
   }
-  if (preset.wingBaseline != null) {
-    setLine("starting_wing_delta", preset.wingBaseline.toFixed(3));
-  }
+  const wingBase = preset.wingBaseline ?? 0;
+  const wingDelta = rivalModifiers?.wingDelta ?? 0;
+  setLine("starting_wing_delta", (wingBase + wingDelta).toFixed(3));
+
   if (preset.brakeBiasBaseline != null) {
     setLine("starting_brake_bias", preset.brakeBiasBaseline.toFixed(3));
   }
 
-  // Class-specific small jitter so AI cars aren't identical
-  const jitter = classId === "LMGT3" ? 0 : classId === "LMP2" ? 1 : 2;
-  if (!replaced.has("front_damper_bump") && jitter) {
-    const base = readNumeric(lines, "front_damper_bump") ?? 8;
-    setLine("front_damper_bump", String(Math.min(15, base + jitter)));
+  if (rivalModifiers?.ductAirflowDelta) {
+    const base = readNumeric(lines, "duct_airflow") ?? preset.ductAirflow ?? 1;
+    setLine("duct_airflow", (base + rivalModifiers.ductAirflowDelta).toFixed(2));
   }
 
   out.push(`# AI track setup: ${trackId}`);
@@ -140,8 +158,14 @@ function readNumeric(lines: string[], key: string): number | null {
 /** Apply per-track AI baselines to runtime grid configs. */
 export function materializeAiGridConfigs(
   repoRoot: string,
-  entries: Array<{ carConfigPath: string; classId: string; isPlayer: boolean }>,
+  entries: Array<{
+    carConfigPath: string;
+    classId: string;
+    isPlayer: boolean;
+    teamName: string;
+  }>,
   trackId: string,
+  rivalModifiersForTeam?: (teamName: string) => AiRivalModifiers | undefined,
 ): void {
   for (const entry of entries) {
     if (entry.isPlayer) continue;
@@ -150,6 +174,7 @@ export function materializeAiGridConfigs(
       entry.carConfigPath,
       trackId,
       entry.classId,
+      rivalModifiersForTeam?.(entry.teamName),
     );
   }
 }

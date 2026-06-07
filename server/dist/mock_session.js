@@ -517,6 +517,12 @@ function parseRaceConfig(repoRoot, configPath) {
             config.resolvedProfile.wetRatePerSecond = parseFloat(val);
         else if (key === "weather_dry_rate")
             config.resolvedProfile.dryRatePerSecond = parseFloat(val);
+        else if (key === "weather_base_wind_ms")
+            config.resolvedProfile.baseWindSpeedMs = parseFloat(val);
+        else if (key === "weather_base_visibility_km")
+            config.resolvedProfile.baseVisibilityKm = parseFloat(val);
+        else if (key === "weather_track_solar_gain_c")
+            config.resolvedProfile.trackSolarGainC = parseFloat(val);
     }
     if (!config.weatherResolved) {
         config.resolvedProfile = (0, weather_model_1.weatherProfileForId)(config.weatherProfile);
@@ -565,14 +571,9 @@ class MockSimSession {
         this.rngSeed = cfg?.rngSeed ?? 20260306;
         this.rngState = this.rngSeed;
         const ambient = cfg?.ambientTempC ?? 0;
-        this.weather = (0, weather_model_1.initWeatherState)(this.weatherProfileId, 0, ambient);
-        if (cfg?.weatherResolved) {
-            const p = this.weatherProfileData;
-            this.weather.profileId = this.weatherProfileId;
-            this.weather.ambientTempC = ambient > 0 ? ambient : p.baseTempC;
-            this.weather.trackWetness = p.baseWetness;
-            this.weather.rainIntensity = this.weather.trackWetness * p.maxRainIntensity;
-        }
+        const profile = this.weatherProfileData;
+        const wetness = cfg?.weatherResolved ? profile.baseWetness : 0;
+        this.weather = (0, weather_model_1.initWeatherStateFromProfile)(profile, this.weatherProfileId, wetness, ambient, () => this.random());
         this.applyGridTyresForWeather();
     }
     tickWeather(deltaTime) {
@@ -870,7 +871,7 @@ class MockSimSession {
             }
             const throttleLoad = car.driverMode === "push" ? 1.05 : car.driverMode === "conserve" ? 0.9 : 1.0;
             const baseSpeed = CLASS_SPEED[car.classId] ?? 85;
-            const grip = (0, tyre_grip_1.tyreGripScale)(car.tyreTread, this.weather.trackWetness, this.weather.ambientTempC);
+            const grip = (0, tyre_grip_1.tyreGripScale)(car.tyreTread, this.weather.trackWetness, this.weather.ambientTempC, this.weather.trackTempC);
             car.speed = baseSpeed * throttleLoad * Math.max(0.15, grip);
             if (car.hybridBudgetMJ > 0) {
                 const deployScale = car.hybridStrategy === "deploy"
@@ -1124,8 +1125,12 @@ class MockSimSession {
             scActive: false,
             trackWetness: this.weather.trackWetness,
             ambientTempC: this.weather.ambientTempC,
+            trackTempC: this.weather.trackTempC,
             trackGripEvolution: this.weather.trackGripEvolution,
             rainIntensity: this.weather.rainIntensity,
+            windSpeedMs: this.weather.windSpeedMs,
+            windDirectionDeg: this.weather.windDirectionDeg,
+            visibilityKm: this.weather.visibilityKm,
             weatherPhase: this.weather.phase,
             forecastRainInSeconds: this.weather.forecastRainInSeconds,
             forecast,

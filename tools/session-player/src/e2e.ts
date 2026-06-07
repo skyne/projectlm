@@ -109,6 +109,25 @@ export async function runE2E(
             classId: c.classId,
           })),
           setupComplete: meta.setupComplete,
+          aiRivalTeams: meta.aiRivalSeason?.teams.length ?? 0,
+          aiRivalDrivers: meta.aiRivalSeason?.drivers.length ?? 0,
+        }),
+      );
+      if (!meta.aiRivalSeason?.teams.length || !meta.aiRivalSeason.drivers.length) {
+        steps.push(
+          step(
+            "rival_season_seeded",
+            false,
+            undefined,
+            "aiRivalSeason missing teams or drivers after create_team",
+          ),
+        );
+        return finalize(false, steps, player, { failedAt: "rival_season_seeded" });
+      }
+      steps.push(
+        step("rival_season_seeded", true, {
+          teams: meta.aiRivalSeason.teams.length,
+          drivers: meta.aiRivalSeason.drivers.length,
         }),
       );
     }

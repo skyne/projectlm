@@ -348,7 +348,7 @@ export class ViewerClient {
 
   saveDriverRoster(
     roster: DriverProfilePayload[],
-    assignments?: Record<string, number[]>,
+    assignments?: Record<string, string[]>,
   ): void {
     this.send(clientMessage("save_driver_roster", { roster, assignments }));
   }

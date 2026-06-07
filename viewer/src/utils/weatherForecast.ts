@@ -6,6 +6,10 @@ export interface ForecastStep {
   trackWetness: number;
   rainIntensity: number;
   ambientTempC: number;
+  trackTempC: number;
+  windSpeedMs: number;
+  windDirectionDeg: number;
+  visibilityKm: number;
 }
 
 /** Client-side projection of track weather for the next ~2 hours. */
@@ -20,6 +24,10 @@ export function projectWeatherForecast(
   let rain = rc.rainIntensity ?? 0;
   let phase = rc.weatherPhase ?? (wetness > 0.35 ? "LightRain" : wetness > 0.08 ? "Cloudy" : "Dry");
   let temp = rc.ambientTempC;
+  let trackTemp = rc.trackTempC ?? temp + 8;
+  let wind = rc.windSpeedMs ?? 4;
+  let windDir = rc.windDirectionDeg ?? 270;
+  let visibility = rc.visibilityKm ?? 10;
   let rainInSec = rc.forecastRainInSeconds ?? -1;
 
   const out: ForecastStep[] = [
@@ -29,11 +37,18 @@ export function projectWeatherForecast(
       trackWetness: wetness,
       rainIntensity: rain,
       ambientTempC: temp,
+      trackTempC: trackTemp,
+      windSpeedMs: wind,
+      windDirectionDeg: windDir,
+      visibilityKm: visibility,
     },
   ];
 
   for (let i = 1; i <= steps; i++) {
     temp -= 0.015 * stepMinutes;
+    trackTemp += (temp + 8 - trackTemp) * 0.08 * stepMinutes;
+    wind = Math.min(14, Math.max(1, wind + (Math.sin(i * 0.7) * 0.15)));
+    visibility = Math.max(0.5, visibility - rain * 0.08 * stepMinutes);
 
     const prevRainInSec = rainInSec;
     if (rainInSec > 0) {
@@ -53,6 +68,8 @@ export function projectWeatherForecast(
       rain = Math.min(0.95, rain + 0.035 * stepMinutes);
       wetness = Math.min(1, wetness + 0.022 * stepMinutes * (1 + rain));
       phase = wetness >= 0.55 ? "HeavyRain" : "LightRain";
+      trackTemp = Math.max(temp - 2, trackTemp - 0.12 * stepMinutes);
+      visibility = Math.max(0.5, visibility - 0.25 * stepMinutes);
     } else if (phase === "Drying") {
       rain = Math.max(0, rain - 0.025 * stepMinutes);
       wetness = Math.max(0.02, wetness - 0.012 * stepMinutes);
@@ -69,6 +86,10 @@ export function projectWeatherForecast(
       trackWetness: wetness,
       rainIntensity: rain,
       ambientTempC: temp,
+      trackTempC: trackTemp,
+      windSpeedMs: wind,
+      windDirectionDeg: windDir,
+      visibilityKm: visibility,
     });
   }
 

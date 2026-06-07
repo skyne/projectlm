@@ -93,6 +93,19 @@ export class RaceHub {
         <h3 class="mm-section-title">Season Calendar</h3>
         <ul class="calendar-grid"></ul>
       </div>
+
+      <div class="rival-standings-section hidden">
+        <h3 class="mm-section-title">Team Championships</h3>
+        <div class="rival-standings-grid"></div>
+        <p class="rival-offweek-headline hidden"></p>
+        <ul class="rival-offweek-events hidden"></ul>
+        <p class="rival-market-note"></p>
+      </div>
+
+      <div class="driver-standings-section hidden">
+        <h3 class="mm-section-title">Drivers' Championships</h3>
+        <div class="driver-standings-grid"></div>
+      </div>
     `;
 
     container.appendChild(this.root);
@@ -197,7 +210,158 @@ export class RaceHub {
     this.renderRoundInfo();
     this.renderWeekendSchedule(meta);
     this.renderStaffRow(meta);
+    this.renderRivalStandings(meta);
+    this.renderDriverStandings(meta);
     this.syncHostControls();
+  }
+
+  private renderRivalStandings(meta: MetaStatePayload): void {
+    const section = this.root.querySelector(".rival-standings-section");
+    const grid = this.root.querySelector(".rival-standings-grid");
+    const noteEl = this.root.querySelector(".rival-market-note");
+    if (!(section instanceof HTMLElement) || !(grid instanceof HTMLElement)) {
+      return;
+    }
+
+    const season = meta.aiRivalSeason;
+    const classes = ["Hypercar", "LMP2", "LMGT3"] as const;
+    const hasAnyClass = classes.some((classId) =>
+      (season?.teams ?? []).some((t) => t.primaryClassId === classId),
+    );
+
+    if (!season?.teams.length || !hasAnyClass) {
+      section.classList.add("hidden");
+      return;
+    }
+
+    section.classList.remove("hidden");
+    grid.replaceChildren();
+
+    for (const classId of classes) {
+      const sorted = season.teams
+        .filter((t) => t.primaryClassId === classId)
+        .sort(
+          (a, b) =>
+            b.championshipPoints - a.championshipPoints ||
+            Number(b.isPlayerTeam ?? 0) - Number(a.isPlayerTeam ?? 0) ||
+            b.form - a.form,
+        );
+      const player = sorted.find((t) => t.isPlayerTeam);
+      let rivals = sorted.slice(0, 3);
+      if (player && !rivals.some((t) => t.isPlayerTeam)) {
+        rivals = [
+          ...sorted.filter((t) => !t.isPlayerTeam).slice(0, 2),
+          player,
+        ];
+      }
+
+      if (!rivals.length) continue;
+
+      const panel = document.createElement("div");
+      panel.className = "rival-class-panel";
+      panel.innerHTML = `<h4 class="rival-class-title">${classId}</h4>`;
+
+      const list = document.createElement("ol");
+      list.className = "rival-standings-list";
+      for (const rival of rivals) {
+          const li = document.createElement("li");
+          li.className = "rival-standing-item";
+          if (rival.isPlayerTeam) li.classList.add("rival-standing-player");
+          const arc =
+            rival.arc && rival.arc !== "underdog"
+              ? ` · ${rival.arc.replace(/_/g, " ")}`
+              : "";
+          li.innerHTML = `
+            <span class="rival-standing-name">${escapeHtml(rival.teamName)}</span>
+            <span class="rival-standing-pts">${rival.championshipPoints} pts</span>
+            <span class="rival-standing-meta">form ${rival.form >= 0 ? "+" : ""}${rival.form}${arc}</span>
+          `;
+          list.appendChild(li);
+      }
+
+      panel.appendChild(list);
+      grid.appendChild(panel);
+    }
+
+    if (noteEl instanceof HTMLElement) {
+      noteEl.textContent = season.lastMarketNote ?? "";
+      noteEl.classList.toggle("hidden", !season.lastMarketNote);
+    }
+
+    const headlineEl = this.root.querySelector(".rival-offweek-headline");
+    const eventsEl = this.root.querySelector(".rival-offweek-events");
+    const headline = season.lastOffWeekHeadline ?? "";
+    const events = season.lastOffWeekEvents ?? [];
+
+    if (headlineEl instanceof HTMLElement) {
+      headlineEl.textContent = headline;
+      headlineEl.classList.toggle("hidden", !headline);
+    }
+
+    if (eventsEl instanceof HTMLElement) {
+      eventsEl.replaceChildren();
+      for (const event of events.slice(0, 5)) {
+        const li = document.createElement("li");
+        li.className = `rival-offweek-event rival-offweek-${event.type}`;
+        li.textContent = event.text;
+        eventsEl.appendChild(li);
+      }
+      eventsEl.classList.toggle("hidden", events.length === 0);
+    }
+  }
+
+  private renderDriverStandings(meta: MetaStatePayload): void {
+    const section = this.root.querySelector(".driver-standings-section");
+    const grid = this.root.querySelector(".driver-standings-grid");
+    if (!(section instanceof HTMLElement) || !(grid instanceof HTMLElement)) {
+      return;
+    }
+
+    const season = meta.aiRivalSeason;
+    const classes = ["Hypercar", "LMP2", "LMGT3"] as const;
+    const hasDrivers = (season?.drivers?.length ?? 0) > 0;
+
+    if (!hasDrivers) {
+      section.classList.add("hidden");
+      return;
+    }
+
+    section.classList.remove("hidden");
+    grid.replaceChildren();
+
+    for (const classId of classes) {
+      const drivers = (season?.drivers ?? [])
+        .filter((d) => d.classId === classId)
+        .sort(
+          (a, b) =>
+            b.championshipPoints - a.championshipPoints ||
+            a.name.localeCompare(b.name),
+        )
+        .slice(0, 3);
+
+      if (!drivers.length) continue;
+
+      const panel = document.createElement("div");
+      panel.className = "rival-class-panel";
+      panel.innerHTML = `<h4 class="rival-class-title">${classId} Drivers</h4>`;
+
+      const list = document.createElement("ol");
+      list.className = "rival-standings-list";
+      for (const driver of drivers) {
+        const li = document.createElement("li");
+        li.className = "rival-standing-item";
+        if (driver.isPlayerDriver) li.classList.add("rival-standing-player");
+        li.innerHTML = `
+          <span class="rival-standing-name">${escapeHtml(driver.name)}</span>
+          <span class="rival-standing-pts">${driver.championshipPoints} pts</span>
+          <span class="rival-standing-meta">${escapeHtml(driver.teamName)} · ${escapeHtml(driver.nationality)}</span>
+        `;
+        list.appendChild(li);
+      }
+
+      panel.appendChild(list);
+      grid.appendChild(panel);
+    }
   }
 
   private renderStaffRow(meta: MetaStatePayload): void {

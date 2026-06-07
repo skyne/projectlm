@@ -26,6 +26,10 @@ import {
   validateAssemblyCompatibility,
 } from "../utils/partCompatibility";
 import {
+  filterPartsForClass,
+  legalPartsForSlot,
+} from "../utils/classLegality";
+import {
   clampWheelSetup,
   clampSuspensionSetup,
   computeSuspensionTuningStats,
@@ -38,7 +42,6 @@ import {
   resolveWheelSetup,
   springRateRange,
   rideHeightLimitsForClass,
-  suspensionIncompatibilityReason,
   suspensionPart,
   suspensionSetupToBuildFields,
   suspensionSpringBaseline,
@@ -801,9 +804,13 @@ export class CarGarage {
 
   private legalSuspensionLayouts(classId: string): Set<string> | undefined {
     const classInfo = this.catalog?.classes.find((c) => c.id === classId);
-    if (!classInfo) return undefined;
-    const parts = this.catalog?.partsBySlot.suspension ?? [];
-    return new Set(parts.map((p) => p.partType));
+    return legalPartsForSlot(classInfo ?? null, "suspension");
+  }
+
+  /** Parts legal for the active class; assembly/drivetrain filters applied separately. */
+  private classVisibleParts(slot: PartSlot): PartOptionPayload[] {
+    const parts = this.catalog?.partsBySlot[slot] ?? [];
+    return filterPartsForClass(this.activeClassInfo(), slot, parts);
   }
 
   private renderActivePanel(): void {
@@ -905,7 +912,7 @@ export class CarGarage {
     grid.replaceChildren();
 
     const slot = this.activeSlot as PartSlot;
-    const parts = this.catalog.partsBySlot[slot] ?? [];
+    const parts = this.classVisibleParts(slot);
     const field = BUILD_FIELD[slot];
     const selected = this.build[field] as string;
 
@@ -970,7 +977,7 @@ export class CarGarage {
 
     const drivetrain = this.build.engine?.drivetrain;
     const layouts = resolveSuspensionLayouts(this.build);
-    const parts = this.catalog.partsBySlot.suspension ?? [];
+    const parts = this.classVisibleParts("suspension");
 
     const panel = document.createElement("div");
     panel.className = "chassis-setup-panel";
@@ -991,24 +998,17 @@ export class CarGarage {
           axle,
           drivetrain,
         );
-        const incompatible = !axleLegal || !drvLegal;
+        if (!axleLegal || !drvLegal) continue;
         const card = document.createElement("button");
         card.type = "button";
-        card.disabled = incompatible;
-        card.className = `part-card${part.partType === selected ? " selected" : ""}${incompatible ? " incompatible" : ""}`;
-        const reason = suspensionIncompatibilityReason(
-          part.partType,
-          axle,
-          drivetrain,
-        );
+        card.className = `part-card${part.partType === selected ? " selected" : ""}`;
         const statHtml = formatPartStatLines(partStatLines("suspension", part));
         card.innerHTML = `
           <span class="part-card-name">${escapeHtml(part.displayName)}</span>
           <div class="part-card-stats">${statHtml || '<span class="part-stat-line">Standard spec</span>'}</div>
-          ${incompatible && reason ? `<span class="part-lock-badge">${escapeHtml(reason)}</span>` : ""}
         `;
         card.addEventListener("click", () => {
-          if (!this.build || incompatible) return;
+          if (!this.build) return;
           this.captureStatSnapshot();
           const field =
             axle === "front"
@@ -1363,6 +1363,57 @@ export class CarGarage {
     const panel = document.createElement("div");
     panel.className = "chassis-setup-panel wheel-setup-panel";
 
+    const packages = this.classVisibleParts("wheel_package");
+    if (packages.length > 0) {
+      const pkgSection = document.createElement("div");
+      pkgSection.className = "chassis-setup-section";
+      pkgSection.innerHTML = `<h4 class="chassis-setup-heading">Wheel package</h4>`;
+      const pkgCards = document.createElement("div");
+      pkgCards.className = "garage-part-grid chassis-setup-grid";
+      const selectedPkg = this.build.wheel_package;
+      for (const part of packages) {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = `part-card${part.partType === selectedPkg ? " selected" : ""}`;
+        const statHtml = formatPartStatLines(partStatLines("wheel_package", part));
+        card.innerHTML = `
+          <span class="part-card-name">${escapeHtml(part.displayName)}</span>
+          <div class="part-card-stats">${statHtml || '<span class="part-stat-line">Standard spec</span>'}</div>
+        `;
+        card.addEventListener("click", () => {
+          if (!this.build || part.partType === selectedPkg) return;
+          this.captureStatSnapshot();
+          const nextBuild: CarBuildPayload = {
+            ...this.build,
+            wheel_package: part.partType,
+            front_wheel_diameter_in: undefined,
+            rear_wheel_diameter_in: undefined,
+            front_tire_width_mm: undefined,
+            rear_tire_width_mm: undefined,
+          };
+          const nextPart = part;
+          const nextSetup = clampWheelSetup(
+            resolveWheelSetup(nextBuild, classId, nextPart),
+            classId,
+          );
+          this.build = {
+            ...nextBuild,
+            ...wheelSetupToBuildFields(nextSetup),
+          };
+          this.previewBuild = null;
+          this.statusEl.textContent = "";
+          this.render();
+        });
+        pkgCards.appendChild(card);
+      }
+      pkgSection.appendChild(pkgCards);
+      panel.appendChild(pkgSection);
+    }
+
+    const tuningSection = document.createElement("div");
+    tuningSection.className = "chassis-setup-section";
+    tuningSection.innerHTML = `<h4 class="chassis-setup-heading">Tyre dimensions</h4>`;
+
     const defs: Array<{
       key: keyof WheelSetup;
       label: string;
@@ -1431,8 +1482,9 @@ export class CarGarage {
         this.updateWheelSetupSummary(classId, packagePart);
         this.renderStats();
       });
-      panel.appendChild(wrap);
+      tuningSection.appendChild(wrap);
     }
+    panel.appendChild(tuningSection);
 
     const wheelStats = computeWheelStats(setup, packagePart, classId);
     const summary = document.createElement("div");
@@ -1670,7 +1722,7 @@ export class CarGarage {
       const slot = FIELD_TO_BUILD_SLOT[buildField];
       if (!slot || typeof rawVal !== "string") continue;
 
-      const parts = this.catalog.partsBySlot[slot as PartSlot] ?? [];
+      const parts = this.classVisibleParts(slot as PartSlot);
       const needle = rawVal.trim().toLowerCase();
       const match =
         parts.find((p) => p.partType === rawVal) ??

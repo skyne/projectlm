@@ -42,6 +42,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const weekend_setup_1 = require("./weekend_setup");
 const catalog_1 = require("./catalog");
+const class_rules_1 = require("./class_rules");
 const engine_model_1 = require("./engine_model");
 const car_marketplace_1 = require("./car_marketplace");
 const fleet_1 = require("./fleet");
@@ -112,22 +113,11 @@ function validateCarBuild(repoRoot, classId, build, unlockedParts) {
     const classInfo = catalog.classes.find((c) => c.id === classId);
     if (!classInfo)
         return "Unknown class";
-    const rulesPath = path.join(repoRoot, "configs/class_rules.txt");
     const legal = {};
-    let currentClass = "";
-    for (const line of fs.readFileSync(rulesPath, "utf8").split("\n")) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith("class=")) {
-            currentClass = trimmed.slice("class=".length).trim();
-        }
-        else if (currentClass === classId && trimmed.includes("=")) {
-            const eq = trimmed.indexOf("=");
-            const key = trimmed.slice(0, eq).trim();
-            const val = trimmed.slice(eq + 1).trim();
-            if (key.startsWith("legal_")) {
-                legal[key] = new Set(val.split(",").map((s) => s.trim()));
-            }
-        }
+    for (const [slot, parts] of Object.entries(classInfo.legalParts)) {
+        const key = class_rules_1.LEGAL_KEY_BY_SLOT[slot];
+        if (key && parts?.length)
+            legal[key] = new Set(parts);
     }
     const checks = [
         ["legal_chassis", build.chassis_type, "chassis"],
@@ -141,6 +131,7 @@ function validateCarBuild(repoRoot, classId, build, unlockedParts) {
         ["legal_wheel_package", build.wheel_package, "wheel_package"],
         ["legal_suspension", build.front_suspension_layout ?? build.suspension_layout, "suspension"],
         ["legal_suspension", build.rear_suspension_layout ?? build.suspension_layout, "suspension"],
+        ["legal_fuel_system", build.fuel_system, "fuel_system"],
         ["legal_brakes", build.brake_system, "brake"],
         ["legal_transmission", build.transmission, "transmission"],
         ["legal_hybrid", build.hybrid_system, "hybrid"],

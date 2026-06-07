@@ -37,6 +37,7 @@ exports.buildRaceForRound = buildRaceForRound;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const track_ai_setup_1 = require("./track_ai_setup");
+const ai_rival_season_1 = require("./ai_rival_season");
 const regulations_1 = require("./regulations");
 const grid_generator_1 = require("./grid_generator");
 const car_builder_1 = require("./car_builder");
@@ -112,7 +113,7 @@ function buildRaceForRound(repoRoot, meta, options = {}) {
         fs.copyFileSync(src, dest);
         entry.carConfigPath = rel;
     }
-    (0, track_ai_setup_1.materializeAiGridConfigs)(repoRoot, entries, round.trackId);
+    (0, track_ai_setup_1.materializeAiGridConfigs)(repoRoot, entries, round.trackId, (teamName) => (0, ai_rival_season_1.rivalModifiersForTeam)(teamName, meta.aiRivalSeason));
     const playerFleetEntry = entries.find((e) => e.fleetCarId === playerCarId);
     const resolvedPlayerEntryId = playerFleetEntry?.entryId ??
         managedEntryIds[0] ??
@@ -130,7 +131,7 @@ function buildRaceForRound(repoRoot, meta, options = {}) {
         const car = fleetById.get(carId);
         if (!car)
             return null;
-        const roster = (0, driver_catalog_1.resolveCarDriverRoster)(teamRoster, car.assignedDriverIndices);
+        const roster = (0, driver_catalog_1.resolveCarDriverRoster)(teamRoster, car.assignedDriverIds);
         if (!roster.length)
             return null;
         return {
@@ -141,7 +142,10 @@ function buildRaceForRound(repoRoot, meta, options = {}) {
     })
         .filter((e) => e !== null);
     const driverConfigPath = (0, driver_catalog_1.exportRuntimeDrivers)(repoRoot, {
+        playerTeamName: meta.teamName,
+        playerRoster: teamRoster,
         playerEntries: playerDriverEntries,
+        rosterOverrides: meta.aiRivalSeason?.rosterOverrides,
     });
     const calendarEvent = track_catalog_1.WEC_2026_CALENDAR.find((e) => e.round === round.round) ?? null;
     const raceMonth = round.month ?? calendarEvent?.month ?? 6;

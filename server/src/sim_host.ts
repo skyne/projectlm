@@ -13,8 +13,10 @@ import {
   type ParsedEntry,
 } from "./config_parser";
 import { PitBotManager } from "./game/pitbot/pitbot_manager";
+import { AiStintGuide } from "./llm/ai_stint_guide";
+import { rivalModifiersForTeam } from "./game/ai_rival_season";
 import { MockSimSession } from "./mock_session";
-import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceControlPayload, SessionInitPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload, WeekendSessionType } from "./ws_protocol";
+import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceCompletePayload, RaceControlPayload, SessionInitPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload, WeekendSessionType } from "./ws_protocol";
 import { collectQualifyingResults } from "./game/weekend_sessions";
 
 export interface SimSessionLike {
@@ -99,6 +101,8 @@ export class SimHost {
   private activeRoundNumber = 0;
   private fleetEntryMap = new Map<string, string>();
   private readonly pitBot = new PitBotManager();
+  private readonly stintGuide = new AiStintGuide();
+  private lastRaceComplete: RaceCompletePayload | null = null;
 
   private onTick?: (raceTime: number, snapshots: CarSnapshot[]) => void;
   private onEvents?: (events: SimEvent[]) => void;
@@ -111,6 +115,7 @@ export class SimHost {
       classId: string;
       position: number;
       bestLapTime: number;
+      driverName?: string;
     }>,
     weekendSessionType: WeekendSessionType,
   ) => void;
@@ -151,6 +156,7 @@ export class SimHost {
     this.refreshEntriesFromConfig();
     this.raceTime = 0;
     this.pitBot.reset();
+    this.stintGuide.reset();
     return true;
   }
 
@@ -162,6 +168,14 @@ export class SimHost {
         { entryId: "solo-1", teamName: "Solo Entry", carNumber: "1", classId: "solo" },
       ];
     }
+  }
+
+  getLastRaceComplete(): RaceCompletePayload | null {
+    return this.lastRaceComplete;
+  }
+
+  setLastRaceComplete(payload: RaceCompletePayload): void {
+    this.lastRaceComplete = payload;
   }
 
   getSessionInit(): SessionInitPayload {
@@ -289,6 +303,8 @@ export class SimHost {
     this.activeRoundNumber = built.roundNumber;
     this.meta.clearLastCompletedRound();
     this.pitBot.reset();
+    this.stintGuide.reset();
+    this.lastRaceComplete = null;
 
     this.inRaceSession = true;
     this.paused = true;
@@ -386,9 +402,13 @@ export class SimHost {
     return this.meta.investRd(partId, points);
   }
 
-  completeRound(position: number, classId: string): MetaStatePayload {
+  completeRound(
+    position: number,
+    classId: string,
+    raceResults?: import("./game/ai_rival_season").RaceResultForSeason[],
+  ): MetaStatePayload {
     this.persistFleetCarConditions("race");
-    return this.meta.completeRound(position, classId);
+    return this.meta.completeRound(position, classId, raceResults);
   }
 
   signSponsor(offerId: string): MetaStatePayload | { error: string } {
@@ -434,7 +454,7 @@ export class SimHost {
 
   saveDriverRoster(
     roster: import("./ws_protocol").DriverProfilePayload[],
-    assignments?: Record<string, number[]>,
+    assignments?: Record<string, string[]>,
   ): MetaStatePayload | { error: string } {
     return this.meta.saveDriverRoster(roster, assignments);
   }
@@ -482,6 +502,7 @@ export class SimHost {
     this.refreshEntriesFromConfig();
     this.raceTime = 0;
     this.pitBot.reset();
+    this.stintGuide.reset();
     this.paused = true;
     if (this.timeScale === 0) this.timeScale = 1;
     this.restartTickLoop();
@@ -570,6 +591,8 @@ export class SimHost {
       weekendSessionType: undefined,
     };
     this.pitBot.reset();
+    this.stintGuide.reset();
+    this.lastRaceComplete = null;
     this.paused = true;
     if (this.timeScale === 0) this.timeScale = 1;
 
@@ -594,6 +617,7 @@ export class SimHost {
 
     this.raceTime = 0;
     this.pitBot.reset();
+    this.stintGuide.reset();
     this.paused = false;
     if (this.timeScale === 0) this.timeScale = 1;
     this.ensureTickLoop();
@@ -621,6 +645,7 @@ export class SimHost {
 
     this.raceTime = 0;
     this.pitBot.reset();
+    this.stintGuide.reset();
     this.paused = true;
     if (this.timeScale === 0) this.timeScale = 1;
     this.meta.reload();
@@ -661,12 +686,28 @@ export class SimHost {
     if (!this.session.submitCommand) return;
     const snapshots = this.session.getSnapshots();
     const raceControl = this.getRaceControl();
+    const rivalSeason = this.meta.getState().aiRivalSeason;
+    const raceTime = this.getRaceTime();
+
+    this.stintGuide.observe(
+      snapshots,
+      this.runtimeManagedEntryIds,
+      {
+        trackName: this.trackName,
+        targetDurationSeconds: this.sessionExtra.targetDurationSeconds,
+        raceTimeSec: raceTime,
+      },
+    );
+
     this.pitBot.tick(
       snapshots,
       this.runtimeManagedEntryIds,
       {
         trackWetness: raceControl?.trackWetness,
         weekendSessionType: this.sessionExtra.weekendSessionType,
+        rivalPitAggression: (teamName) =>
+          rivalModifiersForTeam(teamName, rivalSeason).pitAggression,
+        getStintPlan: (entryId) => this.stintGuide.getPlan(entryId),
       },
       (entryId, command) => this.session.submitCommand!(entryId, command),
     );
@@ -680,14 +721,26 @@ export class SimHost {
     // spike vibration damage when time compression multiplies delta in one tick.
     const frameDelta = this.simTimestep * this.timeScale;
     let remaining = frameDelta;
+    let pitBotAccumSec = 0;
+    const PITBOT_INTERVAL_SEC = 1.0;
     while (remaining > 1e-9) {
       const dt = Math.min(this.simTimestep, remaining);
       this.session.tick(dt);
       remaining -= dt;
+      pitBotAccumSec += dt;
+      if (
+        pitBotAccumSec >= PITBOT_INTERVAL_SEC &&
+        !this.session.isRaceComplete()
+      ) {
+        pitBotAccumSec = 0;
+        this.runPitBot();
+      }
     }
     this.raceTime += frameDelta;
 
-    this.runPitBot();
+    if (pitBotAccumSec > 0 && !this.session.isRaceComplete()) {
+      this.runPitBot();
+    }
 
     const snapshots = this.enrichSnapshots(this.session.getSnapshots());
     const raceTime = this.getRaceTime();
@@ -713,6 +766,7 @@ export class SimHost {
             classId: s.classId,
             position: s.racePosition,
             bestLapTime: s.bestLapTime ?? 0,
+            driverName: s.driverName,
           })),
           this.getWeekendSessionType(),
         );

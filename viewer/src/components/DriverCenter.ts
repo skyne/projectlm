@@ -12,7 +12,7 @@ import { mmPanelHeader, escapeHtml } from "../utils/mmUi";
 export interface DriverCenterHandlers {
   onSaveRoster: (
     roster: DriverProfilePayload[],
-    assignments: Record<string, number[]>,
+    assignments: Record<string, string[]>,
   ) => void;
   onRefreshMarket?: () => void;
   onSignContract?: (listingId: string) => void;
@@ -52,10 +52,19 @@ function pointCost(d: DriverProfilePayload, defs: DriverStatDefPayload[]): numbe
   return Math.round(cost + tierBonus);
 }
 
+function newDriverId(): string {
+  return crypto.randomUUID();
+}
+
+function ensureDriverId(driver: DriverProfilePayload): DriverProfilePayload {
+  return { ...driver, id: driver.id?.trim() || newDriverId() };
+}
+
 function randomDriver(): DriverProfilePayload {
   const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
   const j = (b: number, s: number) => Math.round(Math.min(96, Math.max(55, b + (Math.random() - 0.5) * s)));
   const d: DriverProfilePayload = {
+    id: newDriverId(),
     name: `${pick(FIRST)} ${pick(LAST)}`,
     nationality: pick(NATS),
     tier: "Silver",
@@ -73,6 +82,7 @@ function randomDriver(): DriverProfilePayload {
 function defaultRoster(team: string): DriverProfilePayload[] {
   return [
     {
+      id: newDriverId(),
       name: `${team} Ace`, nationality: "GB", tier: "Gold",
       dryPace: 84, wetPace: 78, consistency: 82, overtaking: 80, defending: 78,
       trafficManagement: 80, rollingStart: 78, standingStart: 76, setupFeedback: 74,
@@ -80,6 +90,7 @@ function defaultRoster(team: string): DriverProfilePayload[] {
       stamina: 80, maxStintHours: 3,
     },
     {
+      id: newDriverId(),
       name: `${team} Endurance`, nationality: "FR", tier: "Silver",
       dryPace: 78, wetPace: 74, consistency: 80, overtaking: 72, defending: 76,
       trafficManagement: 78, rollingStart: 74, standingStart: 72, setupFeedback: 70,
@@ -89,32 +100,40 @@ function defaultRoster(team: string): DriverProfilePayload[] {
   ];
 }
 
-function allDriverIndices(count: number): number[] {
-  return Array.from({ length: count }, (_, i) => i);
-}
-
-function sanitizeIndices(indices: number[] | undefined, rosterLength: number): number[] {
-  if (!indices?.length) return [];
-  const seen = new Set<number>();
-  const out: number[] = [];
-  for (const i of indices) {
-    if (i >= 0 && i < rosterLength && !seen.has(i)) {
-      seen.add(i);
-      out.push(i);
-    }
+function sanitizeDriverIds(
+  driverIds: string[] | undefined,
+  roster: DriverProfilePayload[],
+): string[] {
+  if (!driverIds?.length) return [];
+  const valid = new Set(
+    roster.map((d) => d.id?.trim()).filter((id): id is string => Boolean(id)),
+  );
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of driverIds) {
+    const trimmed = id.trim();
+    if (!valid.has(trimmed) || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
   }
   return out;
 }
 
 function assignmentsFromFleet(
   fleet: FleetCarPayload[],
-  rosterLength: number,
-): Record<string, number[]> {
-  const out: Record<string, number[]> = {};
+  roster: DriverProfilePayload[],
+): Record<string, string[]> {
+  const rosterIds = roster.map((d) => d.id!).filter(Boolean);
+  const out: Record<string, string[]> = {};
   for (const car of fleet) {
-    const sanitized = sanitizeIndices(car.assignedDriverIndices, rosterLength);
-    out[car.id] =
-      sanitized.length > 0 ? sanitized : allDriverIndices(rosterLength);
+    const sanitized = sanitizeDriverIds(car.assignedDriverIds, roster);
+    if (sanitized.length > 0) {
+      out[car.id] = sanitized;
+    } else if (fleet.length === 1) {
+      out[car.id] = [...rosterIds];
+    } else {
+      out[car.id] = [];
+    }
   }
   return out;
 }
@@ -153,7 +172,7 @@ export class DriverCenter {
   private roster: DriverProfilePayload[] = [];
   private market: DriverMarketListingPayload[] = [];
   private fleet: FleetCarPayload[] = [];
-  private assignments: Record<string, number[]> = {};
+  private assignments: Record<string, string[]> = {};
   private selected = 0;
   private activeTab: DriverTab = "roster";
   private marketFilter: MarketFilter = "all";
@@ -185,7 +204,7 @@ export class DriverCenter {
             <p class="driver-point-pool"></p>
             <fieldset class="mm-fieldset driver-assignment-fieldset">
               <legend>Car assignments</legend>
-              <p class="wizard-hint">Assign drivers to each car — pit-stop swaps only show that car's pool.</p>
+              <p class="wizard-hint">Each driver can only be assigned to one car. Pit-stop swaps use that car's pool.</p>
               <div class="driver-assignment-grid"></div>
             </fieldset>
             <div class="driver-editor-actions">
@@ -250,7 +269,7 @@ export class DriverCenter {
         return;
       }
       this.handlers.onSaveRoster(
-        this.roster.map((d) => ({ ...d, tier: inferTier(d) })),
+        this.roster.map((d) => ensureDriverId({ ...d, tier: inferTier(d) })),
         this.assignments,
       );
       this.setStatus("Saving roster…");
@@ -270,13 +289,13 @@ export class DriverCenter {
   update(meta: MetaStatePayload): void {
     this.meta = meta;
     if (meta.driverRoster?.length) {
-      this.roster = meta.driverRoster.map((d) => ({ ...d }));
+      this.roster = meta.driverRoster.map((d) => ensureDriverId({ ...d }));
     } else if (!this.roster.length) {
       this.roster = defaultRoster(meta.teamName);
     }
     this.market = (meta.driverMarket ?? []).map((l) => ({ ...l, driver: { ...l.driver } }));
     this.fleet = (meta.fleet ?? []).map((c) => ({ ...c }));
-    this.assignments = assignmentsFromFleet(this.fleet, this.roster.length);
+    this.assignments = assignmentsFromFleet(this.fleet, this.roster);
     this.selected = Math.min(this.selected, Math.max(0, this.roster.length - 1));
     this.renderIntro();
     this.render();
@@ -305,11 +324,14 @@ export class DriverCenter {
   }
 
   private syncAssignmentsAfterRosterChange(): void {
-    const all = allDriverIndices(this.roster.length);
     for (const car of this.fleet) {
-      const prev = this.assignments[car.id] ?? [];
-      const kept = prev.filter((i) => i < this.roster.length);
-      this.assignments[car.id] = kept.length > 0 ? kept : [...all];
+      this.assignments[car.id] = sanitizeDriverIds(this.assignments[car.id], this.roster);
+    }
+    if (this.fleet.length === 1) {
+      const car = this.fleet[0];
+      if (!(this.assignments[car.id]?.length)) {
+        this.assignments[car.id] = this.roster.map((d) => d.id!).filter(Boolean);
+      }
     }
   }
 
@@ -328,6 +350,17 @@ export class DriverCenter {
       const assigned = this.assignments[car.id] ?? [];
       if (assigned.length < 1) {
         return `Car #${car.carNumber} needs at least one assigned driver`;
+      }
+    }
+    const claimed = new Map<string, string>();
+    for (const car of this.fleet) {
+      for (const driverId of this.assignments[car.id] ?? []) {
+        const other = claimed.get(driverId);
+        if (other && other !== car.id) {
+          const driver = this.roster.find((d) => d.id === driverId);
+          return `${driver?.name ?? "A driver"} cannot be assigned to more than one car`;
+        }
+        claimed.set(driverId, car.id);
       }
     }
     return null;
@@ -371,8 +404,16 @@ export class DriverCenter {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const idx = Number((btn as HTMLElement).dataset.remove);
+        const removedId = this.roster[idx]?.id;
         this.roster.splice(idx, 1);
         this.selected = Math.min(this.selected, this.roster.length - 1);
+        if (removedId) {
+          for (const car of this.fleet) {
+            this.assignments[car.id] = (this.assignments[car.id] ?? []).filter(
+              (id) => id !== removedId,
+            );
+          }
+        }
         this.syncAssignmentsAfterRosterChange();
         this.render();
       });
@@ -454,10 +495,11 @@ export class DriverCenter {
         const assigned = new Set(this.assignments[car.id] ?? []);
         const checks = this.roster
           .map(
-            (d, i) => `
+            (d) => `
           <label class="driver-assignment-check">
-            <input type="checkbox" data-car="${escapeHtml(car.id)}" data-driver="${i}"
-              ${assigned.has(i) ? "checked" : ""} />
+            <input type="checkbox" data-car="${escapeHtml(car.id)}" data-driver="${escapeHtml(d.id ?? "")}"
+              ${d.id && assigned.has(d.id) ? "checked" : ""}
+              ${!d.id ? "disabled" : ""} />
             ${escapeHtml(d.name)}
           </label>
         `,
@@ -481,14 +523,24 @@ export class DriverCenter {
     )) {
       input.addEventListener("change", () => {
         const carId = input.dataset.car!;
-        const driverIdx = Number(input.dataset.driver);
-        const current = new Set(this.assignments[carId] ?? []);
+        const driverId = input.dataset.driver!;
+        if (!driverId) return;
+
         if (input.checked) {
-          current.add(driverIdx);
+          for (const otherCar of this.fleet) {
+            if (otherCar.id === carId) continue;
+            this.assignments[otherCar.id] = (this.assignments[otherCar.id] ?? []).filter(
+              (id) => id !== driverId,
+            );
+          }
+          const current = new Set(this.assignments[carId] ?? []);
+          current.add(driverId);
+          this.assignments[carId] = [...current];
         } else {
-          current.delete(driverIdx);
+          this.assignments[carId] = (this.assignments[carId] ?? []).filter(
+            (id) => id !== driverId,
+          );
         }
-        this.assignments[carId] = [...current].sort((a, b) => a - b);
         this.renderAssignments();
       });
     }

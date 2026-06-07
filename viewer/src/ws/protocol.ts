@@ -257,6 +257,8 @@ export interface DriverSnapshotPayload {
 }
 
 export interface DriverProfilePayload {
+  /** Stable roster identity for player team drivers. */
+  id?: string;
   name: string;
   nationality: string;
   tier: string;
@@ -502,8 +504,8 @@ export interface FleetCarPayload {
   carConfigPath: string;
   /** Per-track session setup sheets for this car (keyed by trackId). */
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
-  /** Indices into meta.driverRoster assigned to this car for race stints. */
-  assignedDriverIndices?: number[];
+  /** Driver roster ids assigned to this car for race stints (exclusive per driver). */
+  assignedDriverIds?: string[];
   carCondition?: CarConditionPayload;
 }
 
@@ -580,6 +582,59 @@ export interface MetaStatePayload {
   driverMarket?: DriverMarketListingPayload[];
   driverMarketRefreshCount?: number;
   driverMarketRound?: number;
+  aiRivalSeason?: AiRivalSeasonPayload;
+}
+
+export type AiRivalArc =
+  | "hot_streak"
+  | "rebuilding"
+  | "defending_champion"
+  | "underdog"
+  | null;
+
+export interface AiRivalTeamPayload {
+  teamName: string;
+  primaryClassId: string;
+  budget: number;
+  rdTier: number;
+  engineerSkill: number;
+  form: number;
+  championshipPoints: number;
+  racesScored: number;
+  arc: AiRivalArc;
+  lastRoundPoints: number;
+  driversSigned: number;
+  isPlayerTeam?: boolean;
+}
+
+export interface AiRivalSeasonPayload {
+  seasonYear: number;
+  teams: AiRivalTeamPayload[];
+  drivers: DriverChampionshipPayload[];
+  rosterOverrides?: Record<string, DriverProfilePayload[]>;
+  marketSignedListingIds?: string[];
+  lastMarketNote?: string;
+  lastOffWeekHeadline?: string;
+  lastOffWeekEvents?: AiRivalOffWeekEventPayload[];
+}
+
+export interface AiRivalOffWeekEventPayload {
+  type: "points" | "form" | "rd" | "market" | "arc" | "standings";
+  teamName: string;
+  classId?: string;
+  text: string;
+}
+
+export interface DriverChampionshipPayload {
+  driverKey: string;
+  name: string;
+  nationality: string;
+  teamName: string;
+  classId: string;
+  championshipPoints: number;
+  lastRoundPoints: number;
+  racesScored: number;
+  isPlayerDriver?: boolean;
 }
 
 export interface ClassInfoPayload {
@@ -590,6 +645,8 @@ export interface ClassInfoPayload {
   minWeightKg: number;
   maxWeightKg: number;
   maxStintHours: number;
+  /** Allowed part types per garage slot (from class_rules.txt legal_* lists). */
+  legalParts?: Partial<Record<string, string[]>>;
 }
 
 export interface PartOptionPayload {
@@ -672,6 +729,10 @@ export interface WeatherForecastStepPayload {
   trackWetness: number;
   rainIntensity: number;
   ambientTempC: number;
+  trackTempC: number;
+  windSpeedMs: number;
+  windDirectionDeg: number;
+  visibilityKm: number;
 }
 
 export interface RaceControlPayload {
@@ -679,8 +740,12 @@ export interface RaceControlPayload {
   scActive: boolean;
   trackWetness: number;
   ambientTempC: number;
+  trackTempC: number;
   trackGripEvolution: number;
   rainIntensity: number;
+  windSpeedMs: number;
+  windDirectionDeg: number;
+  visibilityKm: number;
   weatherPhase: string;
   forecastRainInSeconds: number;
   forecast: WeatherForecastStepPayload[];

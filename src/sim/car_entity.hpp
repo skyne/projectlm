@@ -9,6 +9,7 @@
 #include "telemetry.hpp"
 #include "track.hpp"
 #include "traffic.hpp"
+#include "weather.hpp"
 #include <map>
 #include <string>
 #include <vector>
@@ -184,8 +185,8 @@ public:
                      double deltaTime, double raceTime,
                      TelemetryLog *telemetry = nullptr,
                      const TrafficModifiers *traffic = nullptr,
-                     double trackWetness = 0.0, bool isNight = false,
-                     double ambientTempC = 22.0);
+                     const WeatherState &weather = WeatherState{},
+                     bool isNight = false);
 
   bool processPitEntry(double normalizedT, bool lapJustCompleted);
   bool processPitLaneTick(const TrackDefinition &track, double deltaTime,

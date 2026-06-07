@@ -49,6 +49,7 @@ const fleet_1 = require("./fleet");
 const engine_model_1 = require("./engine_model");
 const economy_1 = require("./economy");
 const part_compatibility_1 = require("./part_compatibility");
+const class_rules_1 = require("./class_rules");
 const CLASS_DESCRIPTIONS = {
     Hypercar: "Top-tier hybrid prototypes. Maximum pace, complex energy recovery, and the highest development ceiling.",
     LMP2: "Spec-balanced prototype class. Consistent lap times, lower cost, ideal for learning race strategy.",
@@ -138,53 +139,20 @@ function parsePartCatalog(repoRoot) {
     return parts;
 }
 function parseClassRules(repoRoot) {
-    const rulesPath = path.join(repoRoot, "configs/class_rules.txt");
-    if (!fs.existsSync(rulesPath))
-        return [];
-    const classes = [];
-    let current = {};
-    const flush = () => {
-        if (!current.id)
-            return;
-        classes.push({
-            id: current.id,
-            displayName: current.displayName ?? current.id,
-            description: CLASS_DESCRIPTIONS[current.id] ?? "",
-            powerCapHp: current.powerCapHp ?? 0,
-            minWeightKg: current.minWeightKg ?? 0,
-            maxWeightKg: current.maxWeightKg ?? 0,
-            maxStintHours: current.maxStintHours ?? 0,
-            templateCarPath: current.templateCarPath ?? "",
-        });
+    return (0, class_rules_1.loadParsedClassRules)(repoRoot).map(classRuleToInfo);
+}
+function classRuleToInfo(rule) {
+    return {
+        id: rule.id,
+        displayName: rule.displayName,
+        description: rule.description ?? CLASS_DESCRIPTIONS[rule.id] ?? "",
+        powerCapHp: rule.powerCapHp,
+        minWeightKg: rule.minWeightKg,
+        maxWeightKg: rule.maxWeightKg,
+        maxStintHours: rule.maxStintHours,
+        templateCarPath: rule.templateCarPath,
+        legalParts: rule.legalParts,
     };
-    for (const line of fs.readFileSync(rulesPath, "utf8").split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("#"))
-            continue;
-        const eq = trimmed.indexOf("=");
-        if (eq === -1)
-            continue;
-        const key = trimmed.slice(0, eq).trim();
-        const val = trimmed.slice(eq + 1).trim();
-        if (key === "class") {
-            flush();
-            current = { id: val, legal: {} };
-        }
-        else if (key === "display_name")
-            current.displayName = val;
-        else if (key === "power_cap_hp")
-            current.powerCapHp = parseFloat(val);
-        else if (key === "min_weight_kg")
-            current.minWeightKg = parseFloat(val);
-        else if (key === "max_weight_kg")
-            current.maxWeightKg = parseFloat(val);
-        else if (key === "max_driver_stint_hours")
-            current.maxStintHours = parseFloat(val);
-        else if (key === "template_car")
-            current.templateCarPath = val;
-    }
-    flush();
-    return classes;
 }
 const STAFF_POOL = [
     { role: "engineer", names: ["Marie Chen", "Luca Rossi", "Yuki Tanaka", "Elena Voss"] },

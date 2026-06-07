@@ -107,11 +107,12 @@ const MM_PER_M = 1000;
 const IN_TO_M = 0.0254;
 
 const REAR_ONLY_SUSPENSION = new Set(["MultilinkRearHypercar"]);
-const FRONT_ONLY_SUSPENSION = new Set(["MacPhersonStrutGT3"]);
+const FRONT_ONLY_SUSPENSION = new Set(["MacPhersonStrutGT3", "MacPhersonStrutGT3Light"]);
 
 /** Front axle layouts that cannot package a hub motor / e-axle. */
 const FRONT_E_AXLE_INCOMPATIBLE = new Set([
   "MacPhersonStrutGT3",
+  "MacPhersonStrutGT3Light",
   "MultilinkRearHypercar",
 ]);
 

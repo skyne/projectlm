@@ -304,6 +304,9 @@ WeatherProfile WeatherProfileFromConfig(const RaceConfig &config) {
   profile.maxRainIntensity = config.wxMaxRainIntensity;
   profile.wetRatePerSecond = config.wxWetRatePerSecond;
   profile.dryRatePerSecond = config.wxDryRatePerSecond;
+  profile.baseWindSpeedMs = config.wxBaseWindSpeedMs;
+  profile.baseVisibilityKm = config.wxBaseVisibilityKm;
+  profile.trackSolarGainC = config.wxTrackSolarGainC;
   return profile;
 }
 
@@ -329,7 +332,8 @@ void SimBridge::initWeatherOnSession(RaceSession &session,
   session.weatherProfile = weatherProfile_;
   session.rng = std::mt19937(rngSeed_);
   InitWeatherStateFromProfile(session.weather, weatherProfile_, weatherProfileId_,
-                              initialTrackWetness_, initialAmbientTempC_);
+                              initialTrackWetness_, initialAmbientTempC_,
+                              &session.rng);
   session.trackWetness = session.weather.trackWetness;
 }
 
@@ -338,7 +342,8 @@ void SimBridge::resetWeatherState() {
   session_.weatherProfile = weatherProfile_;
   session_.rng = std::mt19937(rngSeed_);
   InitWeatherStateFromProfile(session_.weather, weatherProfile_, weatherProfileId_,
-                              initialTrackWetness_, initialAmbientTempC_);
+                              initialTrackWetness_, initialAmbientTempC_,
+                              &session_.rng);
   session_.trackWetness = session_.weather.trackWetness;
 }
 
@@ -347,8 +352,12 @@ RaceControlState SimBridge::getRaceControl() const {
   state.fcyActive = session_.fcyActive;
   state.trackWetness = session_.weather.trackWetness;
   state.ambientTempC = session_.weather.ambientTempC;
+  state.trackTempC = session_.weather.trackTempC;
   state.trackGripEvolution = session_.weather.trackGripEvolution;
   state.rainIntensity = session_.weather.rainIntensity;
+  state.windSpeedMs = session_.weather.windSpeedMs;
+  state.windDirectionDeg = session_.weather.windDirectionDeg;
+  state.visibilityKm = session_.weather.visibilityKm;
   state.weatherPhase = WeatherPhaseName(session_.weather.phase);
   state.forecastRainInSeconds = session_.weather.forecastRainInSeconds;
   state.weatherLabel = weatherLabel_;
@@ -360,7 +369,8 @@ RaceControlState SimBridge::getRaceControl() const {
   for (const WeatherForecastStep &step : built) {
     state.forecast.push_back(
         {step.offsetMinutes, WeatherPhaseName(step.phase), step.trackWetness,
-         step.rainIntensity, step.ambientTempC});
+         step.rainIntensity, step.ambientTempC, step.trackTempC,
+         step.windSpeedMs, step.windDirectionDeg, step.visibilityKm});
   }
   return state;
 }

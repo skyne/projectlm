@@ -130,3 +130,40 @@ test("dry archetype Le Mans usually finishes with modest wetness", () => {
   assert.ok(["Dry", "Cloudy", "Drying"].includes(weather.phase));
 });
 
+test("dry phase track temp runs above air temp", () => {
+  const weather = initWeatherState("hot_dry", 0, 32);
+  const profile = weatherProfileForId("hot_dry");
+
+  for (let t = 0; t < 3600; t += 10) {
+    advanceWeatherDeterministic(weather, profile, t, 10);
+  }
+
+  assert.ok(weather.trackTempC > weather.ambientTempC);
+  assert.ok(weather.visibilityKm >= 8);
+  assert.ok(weather.windSpeedMs > 0);
+});
+
+test("rain lowers visibility and cools track toward air", () => {
+  const weather = initWeatherState("wet", 0.4, 16);
+  weather.phase = "HeavyRain";
+  weather.rainIntensity = 0.8;
+  const profile = weatherProfileForId("wet");
+  const visBefore = weather.visibilityKm;
+  const trackBefore = weather.trackTempC;
+
+  advanceWeatherDeterministic(weather, profile, 600, 600);
+
+  assert.ok(weather.visibilityKm < visBefore);
+  assert.ok(weather.trackTempC <= trackBefore + 1);
+});
+
+test("forecast includes track temp wind and visibility", () => {
+  const weather = initWeatherState("changeable", 0.05, 21);
+  const profile = weatherProfileForId("changeable");
+  const forecast = buildWeatherForecast(weather, profile, 0, 3, 10);
+
+  assert.ok(forecast[0].trackTempC != null);
+  assert.ok(forecast[0].windSpeedMs > 0);
+  assert.ok(forecast[0].visibilityKm > 0);
+});
+

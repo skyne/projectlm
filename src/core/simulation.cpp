@@ -206,7 +206,11 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
   const double cornerRadius =
       std::max(1.0 / std::max(kappa, 1e-9), p.minCornerRadiusM);
 
-  const double kTireAmbientC = p.tireAmbientTempC;
+  const double kTireAmbientC =
+      mods.tireAmbientTempC > 0.0 ? mods.tireAmbientTempC : p.tireAmbientTempC;
+  const double airDensity = p.airDensity * std::max(0.85, mods.airDensityScale);
+  const double effectiveSpeed =
+      std::max(0.0, state.currentSpeed + mods.windHeadwindMs);
   const double kTireOptimalC = car.tireOptimalTempC;
   constexpr double kTireOverheatC = 115.0;
   const double lapLength = track.lapLength();
@@ -259,11 +263,11 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
   }
 
   double dynamicDownforce =
-      0.5 * p.airDensity * (state.currentSpeed * state.currentSpeed) *
-      p.frontalArea * car.totalDownforceCl;
+      0.5 * airDensity * (effectiveSpeed * effectiveSpeed) * p.frontalArea *
+      car.totalDownforceCl;
   double dynamicDrag =
-      0.5 * p.airDensity * (state.currentSpeed * state.currentSpeed) *
-      p.frontalArea * car.totalDragCd;
+      0.5 * airDensity * (effectiveSpeed * effectiveSpeed) * p.frontalArea *
+      car.totalDragCd;
 
   double totalVerticalLoad =
       (car.calculatedTotalMass * p.gravity) + dynamicDownforce;

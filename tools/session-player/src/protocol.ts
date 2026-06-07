@@ -40,15 +40,32 @@ export interface CarSnapshot {
   tangent: Vec3;
 }
 
+export interface WeatherForecastStepPayload {
+  offsetMinutes: number;
+  phase: string;
+  trackWetness: number;
+  rainIntensity: number;
+  ambientTempC: number;
+  trackTempC?: number;
+  windSpeedMs?: number;
+  windDirectionDeg?: number;
+  visibilityKm?: number;
+}
+
 export interface RaceControlPayload {
   fcyActive: boolean;
   scActive: boolean;
   trackWetness: number;
   ambientTempC: number;
+  trackTempC?: number;
   trackGripEvolution: number;
   rainIntensity?: number;
+  windSpeedMs?: number;
+  windDirectionDeg?: number;
+  visibilityKm?: number;
   weatherPhase?: string;
   forecastRainInSeconds?: number;
+  forecast?: WeatherForecastStepPayload[];
 }
 
 export interface SimEvent {
@@ -135,6 +152,46 @@ export interface FleetCarPayload {
   classId: string;
 }
 
+export interface DriverProfilePayload {
+  name: string;
+  nationality: string;
+  tier: string;
+}
+
+export interface AiRivalTeamPayload {
+  teamName: string;
+  primaryClassId: string;
+  championshipPoints: number;
+  lastRoundPoints: number;
+  form: number;
+  isPlayerTeam?: boolean;
+}
+
+export interface DriverChampionshipPayload {
+  driverKey: string;
+  name: string;
+  nationality: string;
+  teamName: string;
+  classId: string;
+  championshipPoints: number;
+  lastRoundPoints: number;
+  isPlayerDriver?: boolean;
+}
+
+export interface AiRivalSeasonPayload {
+  seasonYear: number;
+  teams: AiRivalTeamPayload[];
+  drivers: DriverChampionshipPayload[];
+  lastMarketNote?: string;
+  lastOffWeekHeadline?: string;
+  lastOffWeekEvents?: Array<{
+    type: string;
+    teamName: string;
+    classId?: string;
+    text: string;
+  }>;
+}
+
 export interface MetaStatePayload {
   teamName: string;
   budget: number;
@@ -145,6 +202,8 @@ export interface MetaStatePayload {
   setupComplete?: boolean;
   weekendProgress?: WeekendProgressPayload;
   fleet?: FleetCarPayload[];
+  driverRoster?: DriverProfilePayload[];
+  aiRivalSeason?: AiRivalSeasonPayload;
   calendar?: Array<{
     round: number;
     trackId: string;

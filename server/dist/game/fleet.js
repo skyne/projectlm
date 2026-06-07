@@ -309,20 +309,12 @@ function createFleetCar(repoRoot, teamName, payload, fleet) {
 }
 function migrateLegacyMeta(state) {
     const withSponsors = { ...state, sponsors: state.sponsors ?? [] };
+    const roster = withSponsors.driverRoster ?? [];
     if (withSponsors.fleet && withSponsors.fleet.length > 0) {
-        const teamRoster = withSponsors.driverRoster ?? [];
-        const fleet = withSponsors.fleet.map((car) => {
-            if (car.assignedDriverIndices !== undefined)
-                return car;
-            return {
-                ...car,
-                assignedDriverIndices: teamRoster.length > 0
-                    ? (0, driver_catalog_1.allDriverIndices)(teamRoster.length)
-                    : undefined,
-            };
-        });
+        const { roster: migratedRoster, fleet } = (0, driver_catalog_1.migrateDriverAssignments)(roster, withSponsors.fleet);
         return {
             ...withSponsors,
+            driverRoster: migratedRoster,
             activeCarId: withSponsors.activeCarId ?? fleet[0].id,
             fleet,
         };

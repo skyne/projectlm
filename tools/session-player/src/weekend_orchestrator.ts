@@ -14,13 +14,16 @@ import type {
   WeekendSessionType,
 } from "./protocol.js";
 import {
-  classResults,
+  classDisplayLabel,
+  classPosition,
   fmtLap,
   gridSetup,
   initCarState,
   managedEntryIds,
   managedMinLap,
   snap,
+  sortedTeamClasses,
+  teamClassResults,
   tickPitWall,
   timeScaleFor,
 } from "./pit_strategy.js";
@@ -35,7 +38,6 @@ const ROLE = (process.argv.find((a) => a === "--role") &&
   process.argv[process.argv.indexOf("--role") + 1]) as "host" | "player" | undefined;
 const ADVANCE_FLAG = process.argv.find((a) => a === "--advance") &&
   process.argv[process.argv.indexOf("--advance") + 1];
-const TEAM = "SkyTech";
 
 export type AdvanceMode = "auto" | "host";
 
@@ -139,13 +141,18 @@ async function waitForRaceComplete(
   player: SessionPlayer,
   timeoutMs: number,
 ): Promise<RaceCompletePayload> {
-  player.state.raceComplete = null;
   const payload = await player.waitFor(
     () => player.state.raceComplete,
     timeoutMs,
     "Timed out waiting for race_complete",
   );
   return payload!;
+}
+
+function sessionAlreadyComplete(player: SessionPlayer): boolean {
+  return Boolean(
+    player.state.raceComplete || player.state.sessionInit?.raceComplete,
+  );
 }
 
 async function runSession(player: SessionPlayer, phase: WeekendSessionType): Promise<RaceCompletePayload> {
@@ -182,7 +189,7 @@ async function runSession(player: SessionPlayer, phase: WeekendSessionType): Pro
     : Math.ceil((target / scale) * 1000 * 1.8) + 120_000;
 
   while (Date.now() - startMs < maxRealMs) {
-    if (player.state.raceComplete) break;
+    if (sessionAlreadyComplete(player)) break;
     const tick = player.state.latestTick;
     if (tick && (tick.raceTime ?? 0) >= target - 2) break;
 
@@ -197,8 +204,10 @@ async function runSession(player: SessionPlayer, phase: WeekendSessionType): Pro
       lastRaceAdvanceMs = Date.now();
     }
 
-    const notes = tickPitWall(player, phase, carState);
-    for (const n of notes) console.log(`[PitBot]   ${n}`);
+    if (!sessionAlreadyComplete(player)) {
+      const notes = tickPitWall(player, phase, carState);
+      for (const n of notes) console.log(`[PitBot]   ${n}`);
+    }
 
     const now = Date.now();
     if (now - lastLog >= 12000) {
@@ -207,8 +216,8 @@ async function runSession(player: SessionPlayer, phase: WeekendSessionType): Pro
       const entries = managedEntryIds(player);
       const lines = entries.map((id) => {
         const s = snap(player, id);
-        const st = carState.get(id)!;
-        if (!s) return "";
+        const st = carState.get(id);
+        if (!s || !st) return "";
         return `#${s.carNumber} P${s.classPosition ?? "?"} ${fmtLap(st.bestLap)}`;
       }).filter(Boolean);
       console.log(
@@ -220,11 +229,16 @@ async function runSession(player: SessionPlayer, phase: WeekendSessionType): Pro
   }
 
   if (!player.state.raceComplete) {
-    const graceMs = Math.min(
-      600_000,
-      Math.max(120_000, Math.ceil((target / scale) * 250)),
-    );
-    return await waitForRaceComplete(player, graceMs);
+    if (player.state.sessionInit?.raceComplete) {
+      await player.sleep(500);
+    }
+    if (!player.state.raceComplete) {
+      const graceMs = Math.min(
+        600_000,
+        Math.max(120_000, Math.ceil((target / scale) * 250)),
+      );
+      return await waitForRaceComplete(player, graceMs);
+    }
   }
   return player.state.raceComplete!;
 }
@@ -234,46 +248,46 @@ function reportSessionComplete(
   phase: WeekendSessionType,
   payload: RaceCompletePayload,
 ): void {
-  const { hypercar, gt3 } = classResults(player, TEAM);
+  const byClass = teamClassResults(player, payload.results);
+  const ourClasses = sortedTeamClasses(byClass);
+  const managed = new Set(managedEntryIds(player));
 
   if (isTimingSession(phase)) {
     const tick = player.state.latestTick;
-    for (const cls of ["Hypercar", "LMGT3"] as const) {
+    for (const cls of ourClasses) {
       const ranked = [...(tick?.snapshots ?? [])]
         .filter((s) => s.classId === cls && (s.bestLapTime ?? 0) > 0)
         .sort((a, b) => (a.bestLapTime ?? 1e9) - (b.bestLapTime ?? 1e9));
-      const ours = ranked.filter((s) => s.teamName.includes(TEAM));
+      const ours = ranked.filter((s) => managed.has(s.entryId));
       const leader = ranked[0];
       const ourBest = ours[0];
       if (leader && ourBest) {
         const won = ourBest.entryId === leader.entryId;
         console.log(
-          `[PitBot] ${cls} ${phase}: ${won ? "POLE/LEAD" : `best #${ourBest.carNumber} ${fmtLap(ourBest.bestLapTime)}`} | leader #${leader.carNumber} ${fmtLap(leader.bestLapTime)}`,
+          `[PitBot] ${classDisplayLabel(cls)} ${phase}: ${won ? "POLE/LEAD" : `best #${ourBest.carNumber} ${fmtLap(ourBest.bestLapTime)}`} | leader #${leader.carNumber} ${fmtLap(leader.bestLapTime)}`,
         );
       }
     }
   } else {
-    for (const s of [...hypercar, ...gt3]) {
-      console.log(`[PitBot]   #${s.carNumber} (${s.classId}) class P${s.classPosition ?? "?"}`);
+    for (const cls of ourClasses) {
+      for (const s of byClass[cls]) {
+        const pos = classPosition(s) ?? "?";
+        console.log(`[PitBot]   #${s.carNumber} (${cls}) class P${pos}`);
+      }
     }
-    const hyperLead = payload.results
-      .filter((r) => r.classId === "Hypercar")
-      .sort((a, b) => a.position - b.position)[0];
-    const gt3Lead = payload.results
-      .filter((r) => r.classId === "LMGT3")
-      .sort((a, b) => a.position - b.position)[0];
-    const ourHyper = hypercar.sort((a, b) => (a.classPosition ?? 99) - (b.classPosition ?? 99))[0];
-    const ourGt3 = gt3.sort((a, b) => (a.classPosition ?? 99) - (b.classPosition ?? 99))[0];
-    if (ourHyper) {
-      const won = ourHyper.carNumber === hyperLead?.carNumber;
-      console.log(
-        `[PitBot] Hypercar: ${won ? "CLASS WIN" : `P${ourHyper.classPosition} (winner #${hyperLead?.carNumber})`}`,
+    for (const cls of ourClasses) {
+      const classLead = payload.results
+        .filter((r) => r.classId === cls)
+        .sort((a, b) => a.position - b.position)[0];
+      const ours = [...byClass[cls]].sort(
+        (a, b) => (classPosition(a) ?? 99) - (classPosition(b) ?? 99),
       );
-    }
-    if (ourGt3) {
-      const won = ourGt3.carNumber === gt3Lead?.carNumber;
+      const ourBest = ours[0];
+      if (!ourBest) continue;
+      const won = ourBest.carNumber === classLead?.carNumber;
+      const pos = classPosition(ourBest) ?? "?";
       console.log(
-        `[PitBot] GT3: ${won ? "CLASS WIN" : `P${ourGt3.classPosition} (winner #${gt3Lead?.carNumber})`}`,
+        `[PitBot] ${classDisplayLabel(cls)}: ${won ? "CLASS WIN" : `P${pos} (winner #${classLead?.carNumber})`}`,
       );
     }
   }
@@ -322,6 +336,49 @@ export async function runWeekendLoop(
 
   while (next) {
     const phase = sessionType(player);
+
+    if (
+      player.state.sessionInit?.raceActive &&
+      player.state.sessionInit.raceComplete &&
+      !player.state.raceComplete
+    ) {
+      await player.sleep(800);
+    }
+
+    if (
+      player.state.sessionInit?.raceActive &&
+      player.state.sessionInit.raceComplete &&
+      !player.state.raceComplete
+    ) {
+      console.log(
+        `[PitBot] ${phase} finished on server — waiting for race_complete…`,
+      );
+      try {
+        const payload = await waitForRaceComplete(player, 30_000);
+        reportSessionComplete(player, phase, payload);
+      } catch {
+        console.log(`[PitBot] ${phase} complete — host may have advanced already`);
+      }
+      next =
+        resolveNextSession(player.state.metaState ?? meta) ??
+        player.state.raceComplete?.nextWeekendSession ??
+        null;
+      if (!next) {
+        console.log("[PitBot] ✓ Weekend complete");
+        break;
+      }
+      const fpAfter = sessionFingerprint(player.state.sessionInit);
+      console.log(`[PitBot] → next: ${next}`);
+      if (advance === "auto") {
+        await player.sleep(1500);
+        await startNextSession(player);
+      } else {
+        await waitForHostToStartSession(player, fpAfter, next);
+      }
+      await player.sleep(500);
+      continue;
+    }
+
     const payload = await runSession(player, phase);
     reportSessionComplete(player, phase, payload);
 

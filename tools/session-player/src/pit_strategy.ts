@@ -9,6 +9,8 @@ import {
   fmtLap,
   gridSetupCommands,
   initCarState as initPitBotCarState,
+  sortedTeamClasses,
+  teamResultsByClass,
   tickPitBot,
   type CarPitState,
 } from "../../../server/src/game/pitbot/pit_wall.js";
@@ -124,7 +126,44 @@ export function gridSetup(player: SessionPlayer): void {
   }
 }
 
-export { fmtLap, classResults, isTimingSession };
+export { fmtLap, classResults, isTimingSession, sortedTeamClasses };
+
+const CLASS_LABEL: Record<string, string> = {
+  Hypercar: "Hypercar",
+  LMP2: "LMP2",
+  LMGT3: "GT3",
+};
+
+export function classDisplayLabel(classId: string): string {
+  return CLASS_LABEL[classId] ?? classId;
+}
+
+/** Team cars grouped by class — uses managed entry IDs from the connected player. */
+export function teamClassResults(
+  player: SessionPlayer,
+  fallbackResults?: Array<{
+    entryId: string;
+    teamName: string;
+    carNumber: string | number;
+    classId: string;
+    position: number;
+    bestLapTime?: number;
+    classPosition?: number;
+  }>,
+): Record<string, CarSnapshot[]> {
+  const entryIds = managedEntries(player);
+  const tickSnaps = player.state.latestTick?.snapshots;
+  const snapshots = Array.isArray(tickSnaps)
+    ? tickSnaps
+    : Array.isArray(fallbackResults)
+      ? (fallbackResults as CarSnapshot[])
+      : [];
+  return teamResultsByClass(snapshots, { entryIds });
+}
+
+export function classPosition(s: CarSnapshot & { position?: number }): number | undefined {
+  return s.classPosition ?? s.position;
+}
 
 /** Managed entry IDs for the connected player (co-op pit wall). */
 export function managedEntryIds(player: SessionPlayer): string[] {

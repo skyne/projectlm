@@ -108,3 +108,32 @@ function mulberry32(seed) {
     strict_1.default.ok(weather.trackWetness < 0.35);
     strict_1.default.ok(["Dry", "Cloudy", "Drying"].includes(weather.phase));
 });
+(0, node_test_1.default)("dry phase track temp runs above air temp", () => {
+    const weather = (0, weather_model_1.initWeatherState)("hot_dry", 0, 32);
+    const profile = (0, weather_model_1.weatherProfileForId)("hot_dry");
+    for (let t = 0; t < 3600; t += 10) {
+        (0, weather_model_1.advanceWeatherDeterministic)(weather, profile, t, 10);
+    }
+    strict_1.default.ok(weather.trackTempC > weather.ambientTempC);
+    strict_1.default.ok(weather.visibilityKm >= 8);
+    strict_1.default.ok(weather.windSpeedMs > 0);
+});
+(0, node_test_1.default)("rain lowers visibility and cools track toward air", () => {
+    const weather = (0, weather_model_1.initWeatherState)("wet", 0.4, 16);
+    weather.phase = "HeavyRain";
+    weather.rainIntensity = 0.8;
+    const profile = (0, weather_model_1.weatherProfileForId)("wet");
+    const visBefore = weather.visibilityKm;
+    const trackBefore = weather.trackTempC;
+    (0, weather_model_1.advanceWeatherDeterministic)(weather, profile, 600, 600);
+    strict_1.default.ok(weather.visibilityKm < visBefore);
+    strict_1.default.ok(weather.trackTempC <= trackBefore + 1);
+});
+(0, node_test_1.default)("forecast includes track temp wind and visibility", () => {
+    const weather = (0, weather_model_1.initWeatherState)("changeable", 0.05, 21);
+    const profile = (0, weather_model_1.weatherProfileForId)("changeable");
+    const forecast = (0, weather_model_1.buildWeatherForecast)(weather, profile, 0, 3, 10);
+    strict_1.default.ok(forecast[0].trackTempC != null);
+    strict_1.default.ok(forecast[0].windSpeedMs > 0);
+    strict_1.default.ok(forecast[0].visibilityKm > 0);
+});

@@ -11,6 +11,8 @@ import type { PlannerSnap } from "./pit_planner";
 export interface PitBotManagerContext {
   trackWetness?: number;
   weekendSessionType?: WeekendSessionType;
+  rivalPitAggression?: (teamName: string) => number;
+  getStintPlan?: (entryId: string) => import("../../llm/stint_plan").AiStintPlan | undefined;
 }
 
 /** Built-in opponent AI — PitBot pit-wall for non-player entries. */
@@ -70,6 +72,7 @@ export class PitBotManager {
         snapshots as PlannerSnap[],
         opponents,
         wet,
+        ctx.getStintPlan,
       )) {
         if (submitCommand(action.entryId, action.command)) {
           actions.push(action);
@@ -83,7 +86,12 @@ export class PitBotManager {
         snapshots as PlannerSnap[],
         opponents,
         this.carState,
-        { phase, wet },
+        {
+          phase,
+          wet,
+          rivalPitAggression: ctx.rivalPitAggression,
+          getStintPlan: ctx.getStintPlan,
+        },
         submitCommand,
       ),
     );

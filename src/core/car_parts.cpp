@@ -184,197 +184,190 @@ void ApplySuspensionSetupDelta(CarConfig &car,
   FinalizeSuspensionDerivedStats(car);
 }
 
-ChassisPart GetChassisStats(EChassis type, const PartCatalog &catalog) {
-  switch (type) {
-  case EChassis::Spaceframe:
-    return catalog.chassisSpaceframe;
-  case EChassis::LMHInHouse:
-    return catalog.chassisLMHInHouse;
-  case EChassis::LMHDallaraBuilt:
-    return catalog.chassisLMHDallaraBuilt;
-  case EChassis::LMHMultimaticBuilt:
-    return catalog.chassisLMHMultimaticBuilt;
-  case EChassis::LMHMonocoque:
-    return catalog.chassisLMHMonocoque;
-  case EChassis::LMDhDallara:
-    return catalog.chassisLMDhDallara;
-  case EChassis::LMDhOreca:
-    return catalog.chassisLMDhOreca;
-  case EChassis::LMDhMultimatic:
-    return catalog.chassisLMDhMultimatic;
-  case EChassis::LMDhLigier:
-    return catalog.chassisLMDhLigier;
-  case EChassis::Oreca07:
-    return catalog.chassisOreca07;
-  case EChassis::GT3Oreca:
-    return catalog.chassisGT3Oreca;
-  case EChassis::GT3PrattMiller:
-    return catalog.chassisGT3PrattMiller;
-  case EChassis::GT3McLaren:
-    return catalog.chassisGT3McLaren;
-  case EChassis::GT3Multimatic:
-    return catalog.chassisGT3Multimatic;
-  case EChassis::GT3Spaceframe:
-    return catalog.chassisGT3Spaceframe;
-  default:
-    return catalog.chassisCarbonMonocoque;
-  }
+namespace {
+
+const PartStats kEmptyStats{};
+
+const PartStats &LookupStats(const PartCatalog &catalog,
+                             const std::string &slot,
+                             const std::string &partId) {
+  const PartStats *stats = catalog.FindStats(slot, partId);
+  return stats ? *stats : kEmptyStats;
 }
 
-FrontAeroPart GetFrontAeroStats(EFrontAero type, const PartCatalog &catalog) {
-  switch (type) {
-  case EFrontAero::HighDownforceSplitter:
-    return catalog.frontHighDownforceSplitter;
-  default:
-    return catalog.frontLowDragNose;
-  }
+} // namespace
+
+std::string PartChoiceForSlot(const CarConfig &car, const std::string &slot) {
+  if (slot == "chassis")
+    return car.chassisId;
+  if (slot == "front_aero")
+    return car.frontAeroId;
+  if (slot == "rear_aero")
+    return car.rearAeroId;
+  if (slot == "cooling")
+    return car.hasCustomCoolingLayout ? "Custom" : car.coolingId;
+  if (slot == "fuel_system")
+    return car.fuelSystemId;
+  if (slot == "brake_system")
+    return car.brakeSystemId;
+  if (slot == "transmission")
+    return car.transmissionId;
+  if (slot == "hybrid_system")
+    return car.hybridSystemId;
+  if (slot == "wheel_package")
+    return car.wheelPackageId;
+  if (slot == "suspension")
+    return car.frontSuspensionId;
+  return "";
 }
 
-RearAeroPart GetRearAeroStats(ERearAero type, const PartCatalog &catalog) {
-  switch (type) {
-  case ERearAero::HighDownforceWing:
-    return catalog.rearHighDownforceWing;
-  case ERearAero::WinglessGroundEffect:
-    return catalog.rearWinglessGroundEffect;
-  default:
-    return catalog.rearStandardWing;
-  }
-}
-
-CoolingPart GetCoolingStats(ECoolingPack type, const PartCatalog &catalog) {
-  switch (type) {
-  case ECoolingPack::SprintSlimline:
-    return catalog.coolingSprintSlimline;
-  case ECoolingPack::DuctedRacing:
-    return catalog.coolingDuctedRacing;
-  case ECoolingPack::MaxFlowEndurance:
-    return catalog.coolingMaxFlowEndurance;
-  default:
-    return catalog.coolingEnduranceHeavyDuty;
-  }
-}
-
-TirePart GetTireStats(ETireCompound type, const PartCatalog &catalog) {
-  switch (type) {
+std::string TireCompoundCatalogId(ETireCompound compound) {
+  switch (compound) {
   case ETireCompound::Soft:
-    return catalog.tireSoft;
+    return "Soft";
   case ETireCompound::Hard:
-    return catalog.tireHard;
+    return "Hard";
   case ETireCompound::MichelinEndurance:
-    return catalog.tireMichelinEndurance;
+    return "MichelinEndurance";
   default:
-    return catalog.tireMedium;
+    return "Medium";
   }
 }
 
-WheelPackagePart GetWheelPackageStats(EWheelPackage type,
-                                      const PartCatalog &catalog) {
-  switch (type) {
-  case EWheelPackage::Hypercar18WideRear:
-    return catalog.wheelHypercar18WideRear;
-  case EWheelPackage::Hypercar18LowDrag:
-    return catalog.wheelHypercar18LowDrag;
-  case EWheelPackage::LMP2Oreca18:
-    return catalog.wheelLMP2Oreca18;
-  case EWheelPackage::GT3Front20Rear21:
-    return catalog.wheelGT3Front20Rear21;
-  case EWheelPackage::GT3WideRear21:
-    return catalog.wheelGT3WideRear21;
-  default:
-    return catalog.wheelHypercar18Standard;
-  }
+ChassisPart GetChassisStats(const PartCatalog &catalog,
+                            const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "chassis", partId);
+  ChassisPart part;
+  part.mass = PartStatD(s, "mass");
+  part.structuralRigidity = PartStatD(s, "rigidity", 1.0);
+  part.baselineDrag = PartStatD(s, "drag");
+  part.serviceability = PartStatD(s, "serviceability", 1.0);
+  part.driverChangeFactor = PartStatD(s, "driver_change", 1.0);
+  return part;
 }
 
-SuspensionPart GetSuspensionStats(ESuspensionLayout type,
-                                  const PartCatalog &catalog) {
-  switch (type) {
-  case ESuspensionLayout::PullrodDoubleWishbone:
-    return catalog.suspensionPullrodDoubleWishbone;
-  case ESuspensionLayout::DoubleWishboneHeaveSpring:
-    return catalog.suspensionDoubleWishboneHeaveSpring;
-  case ESuspensionLayout::MultilinkRearHypercar:
-    return catalog.suspensionMultilinkRearHypercar;
-  case ESuspensionLayout::MacPhersonStrutGT3:
-    return catalog.suspensionMacPhersonStrutGT3;
-  case ESuspensionLayout::DoubleWishboneGT3:
-    return catalog.suspensionDoubleWishboneGT3;
-  case ESuspensionLayout::OrecaLMP2Spec:
-    return catalog.suspensionOrecaLMP2Spec;
-  default:
-    return catalog.suspensionPushrodDoubleWishbone;
-  }
+FrontAeroPart GetFrontAeroStats(const PartCatalog &catalog,
+                                const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "front_aero", partId);
+  FrontAeroPart part;
+  part.mass = PartStatD(s, "mass");
+  part.downforceCl = PartStatD(s, "downforce");
+  part.dragCd = PartStatD(s, "drag");
+  return part;
+}
+
+RearAeroPart GetRearAeroStats(const PartCatalog &catalog,
+                              const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "rear_aero", partId);
+  RearAeroPart part;
+  part.mass = PartStatD(s, "mass");
+  part.downforceCl = PartStatD(s, "downforce");
+  part.dragCd = PartStatD(s, "drag");
+  part.permitsWinglessPitch = PartStatB(s, "permits_wingless");
+  return part;
+}
+
+CoolingPart GetCoolingStats(const PartCatalog &catalog,
+                            const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "cooling", partId);
+  CoolingPart part;
+  part.mass = PartStatD(s, "mass");
+  part.dragCd = PartStatD(s, "drag");
+  part.thermalDissipationRate = PartStatD(s, "dissipation", 1.0);
+  return part;
+}
+
+TirePart GetTireStats(const PartCatalog &catalog, const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "tire", partId);
+  TirePart part;
+  part.mass = PartStatD(s, "mass");
+  part.gripMultiplier = PartStatD(s, "grip", 1.0);
+  part.wearRate = PartStatD(s, "wear_rate");
+  part.optimalTemp = PartStatD(s, "optimal_temp", 80.0);
+  return part;
+}
+
+WheelPackagePart GetWheelPackageStats(const PartCatalog &catalog,
+                                      const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "wheel_package", partId);
+  WheelPackagePart part;
+  part.mass = PartStatD(s, "mass");
+  part.frontDiameterM = PartStatD(s, "front_diameter_m", 0.457);
+  part.rearDiameterM = PartStatD(s, "rear_diameter_m", 0.457);
+  part.frontWidthMm = PartStatD(s, "front_width_mm", 305.0);
+  part.rearWidthMm = PartStatD(s, "rear_width_mm", 310.0);
+  part.gripFactor = PartStatD(s, "grip_factor", 1.0);
+  part.wearFactor = PartStatD(s, "wear_factor", 1.0);
+  part.dragCd = PartStatD(s, "drag");
+  part.unsprungMassKg = PartStatD(s, "unsprung_mass_kg", 8.0);
+  return part;
+}
+
+SuspensionPart GetSuspensionStats(const PartCatalog &catalog,
+                                  const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "suspension", partId);
+  SuspensionPart part;
+  part.mass = PartStatD(s, "mass");
+  part.frontSpringStiffness = PartStatD(s, "front_spring", 130000.0);
+  part.rearSpringStiffness = PartStatD(s, "rear_spring", 145000.0);
+  part.rideHeightM = PartStatD(s, "ride_height", 0.040);
+  part.rollStiffness = PartStatD(s, "roll_stiffness", 1.0);
+  part.aeroPlatformStability = PartStatD(s, "aero_stability", 1.0);
+  part.unsprungFactor = PartStatD(s, "unsprung_factor", 1.0);
+  part.mechanicalGrip = PartStatD(s, "mechanical_grip", 1.0);
+  return part;
 }
 
 void ApplyTireCompoundStats(CarConfig &car, ETireCompound compound,
                             const PartCatalog &catalog) {
-  TirePart tp = GetTireStats(compound, catalog);
+  TirePart tp = GetTireStats(catalog, TireCompoundCatalogId(compound));
   car.tireChoice = compound;
   car.tireGripMultiplier = tp.gripMultiplier;
   car.tireWearRate = tp.wearRate;
   car.tireOptimalTempC = tp.optimalTemp;
 }
 
-FuelSystemPart GetFuelSystemStats(EFuelSystem type, const PartCatalog &catalog) {
-  switch (type) {
-  case EFuelSystem::LargeTank:
-    return catalog.fuelLargeTank;
-  case EFuelSystem::LeMans90L:
-    return catalog.fuelLeMans90L;
-  case EFuelSystem::LeMans110L:
-    return catalog.fuelLeMans110L;
-  case EFuelSystem::HydrogenTank:
-    return catalog.fuelHydrogenTank;
-  default:
-    return catalog.fuelStandardTank;
-  }
+FuelSystemPart GetFuelSystemStats(const PartCatalog &catalog,
+                                  const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "fuel_system", partId);
+  FuelSystemPart part;
+  part.mass = PartStatD(s, "mass");
+  part.capacityLiters = PartStatD(s, "capacity", 100.0);
+  return part;
 }
 
-BrakePart GetBrakeStats(EBrakeSystem type, const PartCatalog &catalog) {
-  switch (type) {
-  case EBrakeSystem::CarbonCeramic:
-    return catalog.brakeCarbonCeramic;
-  case EBrakeSystem::HeavyDutyEndurance:
-    return catalog.brakeHeavyDutyEndurance;
-  case EBrakeSystem::BremboHypercar:
-    return catalog.brakeBremboHypercar;
-  case EBrakeSystem::AkebonoHypercar:
-    return catalog.brakeAkebonoHypercar;
-  case EBrakeSystem::APRacingPrototype:
-    return catalog.brakeAPRacingPrototype;
-  default:
-    return catalog.brakeStandardCaliper;
-  }
+BrakePart GetBrakeStats(const PartCatalog &catalog, const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "brake", partId);
+  BrakePart part;
+  part.mass = PartStatD(s, "mass");
+  part.maxPressure = PartStatD(s, "max_pressure", 0.7);
+  part.fadeUnderHeat = PartStatD(s, "fade", 0.1);
+  return part;
 }
 
-TransmissionPart GetTransmissionStats(ETransmission type,
-                                    const PartCatalog &catalog) {
-  switch (type) {
-  case ETransmission::SevenSpeedSequential:
-    return catalog.transmissionSevenSpeed;
-  case ETransmission::EightSpeedPaddle:
-    return catalog.transmissionEightSpeed;
-  case ETransmission::XtracP1359:
-    return catalog.transmissionXtracP1359;
-  case ETransmission::XtracP529:
-    return catalog.transmissionXtracP529;
-  case ETransmission::SingleSpeedEDrive:
-    return catalog.transmissionSingleSpeedEDrive;
-  default:
-    return catalog.transmissionSixSpeed;
-  }
+TransmissionPart GetTransmissionStats(const PartCatalog &catalog,
+                                      const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "transmission", partId);
+  TransmissionPart tr;
+  tr.mass = PartStatD(s, "mass");
+  tr.gearCount = PartStatI(s, "gear_count", 6);
+  tr.shiftDelaySec = PartStatD(s, "shift_delay", 0.08);
+  for (int i = 0; i < 8; ++i)
+    tr.gearRatios[i] = PartStatD(s, "gear_" + std::to_string(i + 1));
+  for (int i = 0; i < 7; ++i)
+    tr.gearShiftSpeeds[i] = PartStatD(s, "shift_" + std::to_string(i + 1));
+  return tr;
 }
 
-HybridPart GetHybridStats(EHybridSystem type, const PartCatalog &catalog) {
-  switch (type) {
-  case EHybridSystem::LMDh500kW:
-    return catalog.hybridLMDh500kW;
-  case EHybridSystem::HypercarHV:
-    return catalog.hybridHypercarHV;
-  case EHybridSystem::LMDh50kW:
-    return catalog.hybridLMDh50kW;
-  default:
-    return catalog.hybridNone;
-  }
+HybridPart GetHybridStats(const PartCatalog &catalog,
+                          const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "hybrid", partId);
+  HybridPart part;
+  part.mass = PartStatD(s, "mass");
+  part.deployPowerKW = PartStatD(s, "deploy_kw");
+  part.regenRate = PartStatD(s, "regen_rate");
+  part.stintDeployBudgetMJ = PartStatD(s, "stint_budget_mj");
+  return part;
 }
 
 std::string GetAttachmentPoint(const PartCatalog &catalog,
@@ -407,20 +400,20 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   const int rearBumpOverride = car.rearDamperBump;
   const int rearReboundOverride = car.rearDamperRebound;
 
-  ChassisPart ch = GetChassisStats(car.chassisChoice, catalog);
-  FrontAeroPart fa = GetFrontAeroStats(car.frontAeroChoice, catalog);
-  RearAeroPart ra = GetRearAeroStats(car.rearAeroChoice, catalog);
+  ChassisPart ch = GetChassisStats(catalog, car.chassisId);
+  FrontAeroPart fa = GetFrontAeroStats(catalog, car.frontAeroId);
+  RearAeroPart ra = GetRearAeroStats(catalog, car.rearAeroId);
   CoolingCompiled coolingCompiled;
   if (car.hasCustomCoolingLayout) {
     coolingCompiled = CompileCoolingLayout(car.coolingLayout, 1.0);
   } else {
-    CoolingPart cp = GetCoolingStats(car.coolingChoice, catalog);
+    CoolingPart cp = GetCoolingStats(catalog, car.coolingId);
     coolingCompiled.massKg = cp.mass;
     coolingCompiled.dragCd = cp.dragCd;
     coolingCompiled.dissipation = cp.thermalDissipationRate;
   }
   const WheelPackagePart wpBase =
-      GetWheelPackageStats(car.wheelPackageChoice, catalog);
+      GetWheelPackageStats(catalog, car.wheelPackageId);
   WheelPackagePart wp = wpBase;
   if (car.hasCustomWheelDims) {
     if (car.customFrontWheelDiameterM > 0.0)
@@ -455,14 +448,14 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   wp.mass += (frontWidthDelta + rearWidthDelta) * 2.2 +
              (frontDiaDelta + rearDiaDelta) * 1.5;
   SuspensionPart frontSp =
-      GetSuspensionStats(car.frontSuspensionChoice, catalog);
+      GetSuspensionStats(catalog, car.frontSuspensionId);
   SuspensionPart rearSp =
-      GetSuspensionStats(car.rearSuspensionChoice, catalog);
-  FuelSystemPart fs = GetFuelSystemStats(car.fuelSystemChoice, catalog);
-  BrakePart bp = GetBrakeStats(car.brakeSystemChoice, catalog);
+      GetSuspensionStats(catalog, car.rearSuspensionId);
+  FuelSystemPart fs = GetFuelSystemStats(catalog, car.fuelSystemId);
+  BrakePart bp = GetBrakeStats(catalog, car.brakeSystemId);
   TransmissionPart tr =
-      GetTransmissionStats(car.transmissionChoice, catalog);
-  HybridPart hp = GetHybridStats(car.hybridSystemChoice, catalog);
+      GetTransmissionStats(catalog, car.transmissionId);
+  HybridPart hp = GetHybridStats(catalog, car.hybridSystemId);
 
   ApplyTireCompoundStats(car, car.tireChoice, catalog);
 

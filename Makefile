@@ -28,6 +28,7 @@ SIM_SRCS = \
 
 CONFIG_SRCS = \
   src/config/config_loader.cpp \
+  src/config/part_catalog.cpp \
   src/config/race_config.cpp \
   src/config/class_rules.cpp \
   src/config/part_compatibility.cpp \

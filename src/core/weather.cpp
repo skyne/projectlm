@@ -2,7 +2,65 @@
 #include <algorithm>
 #include <cmath>
 
-static void ResolveWeatherPhase(WeatherState &weather) {
+namespace {
+
+double SolarGainForPhase(WeatherPhase phase, const WeatherProfile &profile) {
+  switch (phase) {
+  case WeatherPhase::Dry:
+    return profile.trackSolarGainC;
+  case WeatherPhase::Cloudy:
+    return profile.trackSolarGainC * 0.35;
+  case WeatherPhase::Drying:
+    return profile.trackSolarGainC * 0.55;
+  default:
+    return 0.0;
+  }
+}
+
+double TrackTempEquilibrium(const WeatherState &weather,
+                            const WeatherProfile &profile) {
+  const double solar = SolarGainForPhase(weather.phase, profile);
+  const double rainCool = weather.rainIntensity * 6.0 + weather.trackWetness * 3.0;
+  const double windCool = weather.windSpeedMs * 0.15;
+  return weather.ambientTempC + solar - rainCool - windCool;
+}
+
+double PhaseVisibilityFactor(WeatherPhase phase) {
+  switch (phase) {
+  case WeatherPhase::HeavyRain:
+    return 0.35;
+  case WeatherPhase::LightRain:
+    return 0.55;
+  case WeatherPhase::Drying:
+    return 0.75;
+  case WeatherPhase::Cloudy:
+    return 0.82;
+  default:
+    return 1.0;
+  }
+}
+
+void UpdateVisibility(WeatherState &weather, const WeatherProfile &profile) {
+  weather.visibilityKm = std::clamp(
+      profile.baseVisibilityKm * (1.0 - weather.rainIntensity * 0.65) *
+          PhaseVisibilityFactor(weather.phase),
+      0.4, 15.0);
+}
+
+double TrackSurfaceGripFactor(double trackTempC) {
+  if (trackTempC < 15.0)
+    return std::clamp(0.92 + (trackTempC - 15.0) * 0.004, 0.88, 1.0);
+  if (trackTempC > 55.0)
+    return std::clamp(1.0 - (trackTempC - 55.0) * 0.004, 0.88, 1.0);
+  const double delta = std::abs(trackTempC - 40.0);
+  if (delta <= 5.0)
+    return 1.02;
+  if (delta <= 15.0)
+    return 1.02 - (delta - 5.0) * 0.0015;
+  return 0.98;
+}
+
+void ResolveWeatherPhase(WeatherState &weather) {
   if (weather.phase == WeatherPhase::Drying)
     return;
   if (weather.trackWetness >= 0.55)
@@ -15,10 +73,17 @@ static void ResolveWeatherPhase(WeatherState &weather) {
     weather.phase = WeatherPhase::Dry;
 }
 
+} // namespace
+
 void AdvanceWeatherDeterministic(WeatherState &weather,
                                  const WeatherProfile &profile,
                                  double elapsedRaceTime, double deltaTime) {
   weather.ambientTempC += (profile.tempDriftPerHour / 3600.0) * deltaTime;
+
+  const double dryBoost =
+      1.0 + 0.04 * std::max(0.0, weather.trackTempC - weather.ambientTempC) +
+      0.06 * weather.windSpeedMs;
+  const double effectiveDryRate = profile.dryRatePerSecond * dryBoost;
 
   const bool hadScheduledRain = weather.forecastRainInSeconds > 0.0;
   if (weather.forecastRainInSeconds > 0.0)
@@ -53,14 +118,14 @@ void AdvanceWeatherDeterministic(WeatherState &weather,
   }
 
   if (weather.phase == WeatherPhase::Drying ||
-             (weather.trackWetness > profile.baseWetness + 0.02 &&
-              weather.rainIntensity < 0.08)) {
+      (weather.trackWetness > profile.baseWetness + 0.02 &&
+       weather.rainIntensity < 0.08)) {
     weather.phase = WeatherPhase::Drying;
-    weather.rainIntensity =
-        std::max(0.0, weather.rainIntensity - profile.dryRatePerSecond * deltaTime * 5.0);
+    weather.rainIntensity = std::max(
+        0.0, weather.rainIntensity - effectiveDryRate * deltaTime * 5.0);
     weather.trackWetness =
         std::max(profile.baseWetness,
-                 weather.trackWetness - profile.dryRatePerSecond * deltaTime *
+                 weather.trackWetness - effectiveDryRate * deltaTime *
                                             (2.5 + elapsedRaceTime / 5400.0));
     if (weather.trackWetness <= profile.baseWetness + 0.03 &&
         weather.rainIntensity <= 0.05) {
@@ -70,12 +135,18 @@ void AdvanceWeatherDeterministic(WeatherState &weather,
   } else if (weather.trackWetness > profile.baseWetness) {
     weather.trackWetness =
         std::max(profile.baseWetness,
-                 weather.trackWetness - profile.dryRatePerSecond * deltaTime);
+                 weather.trackWetness - effectiveDryRate * deltaTime);
   }
 
   weather.trackGripEvolution =
       1.0 + std::min(0.06, elapsedRaceTime / 7200.0 * 0.06);
 
+  const double trackTarget = TrackTempEquilibrium(weather, profile);
+  const double trackRate = 0.0025 + weather.windSpeedMs * 0.00015;
+  weather.trackTempC +=
+      (trackTarget - weather.trackTempC) * trackRate * deltaTime;
+
+  UpdateVisibility(weather, profile);
   ResolveWeatherPhase(weather);
 }
 
@@ -86,6 +157,9 @@ WeatherProfile WeatherProfileForId(const std::string &profileId) {
     profile.tempDriftPerHour = -2.0;
     profile.baseWetness = 0.0;
     profile.rainChancePerHour = 0.02;
+    profile.baseWindSpeedMs = 3.5;
+    profile.baseVisibilityKm = 12.0;
+    profile.trackSolarGainC = 14.0;
     return profile;
   }
   if (profileId == "overcast") {
@@ -94,6 +168,9 @@ WeatherProfile WeatherProfileForId(const std::string &profileId) {
     profile.baseWetness = 0.08;
     profile.rainChancePerHour = 0.25;
     profile.maxRainIntensity = 0.55;
+    profile.baseWindSpeedMs = 6.0;
+    profile.baseVisibilityKm = 7.0;
+    profile.trackSolarGainC = 5.0;
     return profile;
   }
   if (profileId == "changeable") {
@@ -103,6 +180,9 @@ WeatherProfile WeatherProfileForId(const std::string &profileId) {
     profile.rainChancePerHour = 0.45;
     profile.maxRainIntensity = 0.75;
     profile.wetRatePerSecond = 0.0025;
+    profile.baseWindSpeedMs = 5.5;
+    profile.baseVisibilityKm = 9.0;
+    profile.trackSolarGainC = 10.0;
     return profile;
   }
   if (profileId == "wet") {
@@ -113,19 +193,26 @@ WeatherProfile WeatherProfileForId(const std::string &profileId) {
     profile.maxRainIntensity = 0.95;
     profile.wetRatePerSecond = 0.004;
     profile.dryRatePerSecond = 0.00002;
+    profile.baseWindSpeedMs = 8.0;
+    profile.baseVisibilityKm = 4.5;
+    profile.trackSolarGainC = 3.0;
     return profile;
   }
   profile.baseTempC = 24.0;
   profile.tempDriftPerHour = -1.0;
   profile.baseWetness = 0.0;
   profile.rainChancePerHour = 0.05;
+  profile.baseWindSpeedMs = 4.0;
+  profile.baseVisibilityKm = 10.0;
+  profile.trackSolarGainC = 10.0;
   return profile;
 }
 
 void InitWeatherStateFromProfile(WeatherState &weather,
                                  const WeatherProfile &profile,
                                  const std::string &profileId,
-                                 double configuredWetness, double configuredTempC) {
+                                 double configuredWetness, double configuredTempC,
+                                 std::mt19937 *rng) {
   weather.profileId = profileId;
   weather.trackWetness =
       configuredWetness > 0.0 ? configuredWetness : profile.baseWetness;
@@ -144,12 +231,24 @@ void InitWeatherStateFromProfile(WeatherState &weather,
     weather.phase = WeatherPhase::Cloudy;
   else
     weather.phase = WeatherPhase::Dry;
+
+  double windScale = 1.0;
+  double windDir = 270.0;
+  if (rng != nullptr) {
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
+    windScale = 0.75 + unit(*rng) * 0.5;
+    windDir = unit(*rng) * 360.0;
+  }
+  weather.windSpeedMs = profile.baseWindSpeedMs * windScale;
+  weather.windDirectionDeg = windDir;
+  weather.trackTempC = TrackTempEquilibrium(weather, profile);
+  UpdateVisibility(weather, profile);
 }
 
 void InitWeatherState(WeatherState &weather, const std::string &profileId,
                       double configuredWetness, double configuredTempC) {
   InitWeatherStateFromProfile(weather, WeatherProfileForId(profileId), profileId,
-                              configuredWetness, configuredTempC);
+                              configuredWetness, configuredTempC, nullptr);
 }
 
 void TickWeatherState(WeatherState &weather, const WeatherProfile &profile,
@@ -173,6 +272,21 @@ void TickWeatherState(WeatherState &weather, const WeatherProfile &profile,
     }
   }
 
+  const double windMin = profile.baseWindSpeedMs * 0.4;
+  const double windMax = profile.baseWindSpeedMs * 2.5;
+  weather.windSpeedMs = std::clamp(
+      weather.windSpeedMs + (unit(rng) - 0.5) * 0.08 * deltaTime * 60.0,
+      windMin, windMax);
+  if (weather.phase == WeatherPhase::LightRain ||
+      weather.phase == WeatherPhase::HeavyRain) {
+    weather.windSpeedMs = std::min(
+        windMax, weather.windSpeedMs + profile.baseWindSpeedMs * 0.002 * deltaTime);
+  }
+  weather.windDirectionDeg =
+      std::fmod(weather.windDirectionDeg + (unit(rng) - 0.5) * 2.0 * deltaTime +
+                    360.0,
+                360.0);
+
   AdvanceWeatherDeterministic(weather, profile, elapsedRaceTime, deltaTime);
 }
 
@@ -190,6 +304,10 @@ BuildWeatherForecast(const WeatherState &start, const WeatherProfile &profile,
     step.trackWetness = sim.trackWetness;
     step.rainIntensity = sim.rainIntensity;
     step.ambientTempC = sim.ambientTempC;
+    step.trackTempC = sim.trackTempC;
+    step.windSpeedMs = sim.windSpeedMs;
+    step.windDirectionDeg = sim.windDirectionDeg;
+    step.visibilityKm = sim.visibilityKm;
     forecast.push_back(step);
   };
 
@@ -223,7 +341,8 @@ const char *WeatherPhaseName(WeatherPhase phase) {
 }
 
 double CompoundCrossoverGrip(ETireCompound compound, ETyreTread tread,
-                             double trackWetness, double ambientTempC) {
+                             double trackWetness, double ambientTempC,
+                             double trackTempC) {
   const double wet = std::clamp(trackWetness, 0.0, 1.0);
   const double tempDelta = ambientTempC - 26.0;
 
@@ -268,21 +387,26 @@ double CompoundCrossoverGrip(ETireCompound compound, ETyreTread tread,
     }
   }
 
+  double grip = 0.0;
   switch (compound) {
   case ETireCompound::Soft:
-    return std::clamp(1.04 - std::abs(tempDelta) * 0.012, 0.88, 1.06);
+    grip = std::clamp(1.04 - std::abs(tempDelta) * 0.012, 0.88, 1.06);
+    break;
   case ETireCompound::Medium:
-    return std::clamp(1.0 - std::abs(tempDelta) * 0.008, 0.9, 1.02);
+    grip = std::clamp(1.0 - std::abs(tempDelta) * 0.008, 0.9, 1.02);
+    break;
   default:
-    return std::clamp(0.93 + ambientTempC * 0.002, 0.88, 1.0);
+    grip = std::clamp(0.93 + ambientTempC * 0.002, 0.88, 1.0);
+    break;
   }
+  return grip * TrackSurfaceGripFactor(trackTempC);
 }
 
 double WeatherTireGripScale(const WeatherState &weather, ETireCompound compound,
                             ETyreTread tread) {
   const double crossover =
       CompoundCrossoverGrip(compound, tread, weather.trackWetness,
-                            weather.ambientTempC);
+                            weather.ambientTempC, weather.trackTempC);
   const double wetPenalty = 1.0 - weather.trackWetness * 0.22;
   const double tempPenalty =
       weather.ambientTempC > 34.0
