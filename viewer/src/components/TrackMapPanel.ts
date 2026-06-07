@@ -157,6 +157,15 @@ export class TrackMapPanel {
       if (rain > 0) parts.push(`Rain ${rain}%`);
       const wetLabel = formatTrackWetnessConditions(raceControl.trackWetness);
       if (wetLabel) parts.push(wetLabel);
+      parts.push(
+        `Air ${Math.round(raceControl.ambientTempC)}°C · Track ${Math.round(raceControl.trackTempC ?? raceControl.ambientTempC)}°C`,
+      );
+      if ((raceControl.windSpeedMs ?? 0) > 0.5) {
+        parts.push(`Wind ${Math.round(raceControl.windSpeedMs)} m/s`);
+      }
+      if ((raceControl.visibilityKm ?? 10) < 8) {
+        parts.push(`Vis ${raceControl.visibilityKm!.toFixed(1)} km`);
+      }
       this.weatherEl.textContent = parts.join(" · ");
     }
 

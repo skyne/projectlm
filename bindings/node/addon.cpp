@@ -329,8 +329,12 @@ Napi::Object RaceControlToObject(Napi::Env env, const RaceControlState &rc) {
   obj.Set("scActive", rc.scActive);
   obj.Set("trackWetness", rc.trackWetness);
   obj.Set("ambientTempC", rc.ambientTempC);
+  obj.Set("trackTempC", rc.trackTempC);
   obj.Set("trackGripEvolution", rc.trackGripEvolution);
   obj.Set("rainIntensity", rc.rainIntensity);
+  obj.Set("windSpeedMs", rc.windSpeedMs);
+  obj.Set("windDirectionDeg", rc.windDirectionDeg);
+  obj.Set("visibilityKm", rc.visibilityKm);
   obj.Set("weatherPhase", rc.weatherPhase);
   obj.Set("forecastRainInSeconds", rc.forecastRainInSeconds);
   if (!rc.weatherLabel.empty())
@@ -346,6 +350,10 @@ Napi::Object RaceControlToObject(Napi::Env env, const RaceControlState &rc) {
     step.Set("trackWetness", rc.forecast[i].trackWetness);
     step.Set("rainIntensity", rc.forecast[i].rainIntensity);
     step.Set("ambientTempC", rc.forecast[i].ambientTempC);
+    step.Set("trackTempC", rc.forecast[i].trackTempC);
+    step.Set("windSpeedMs", rc.forecast[i].windSpeedMs);
+    step.Set("windDirectionDeg", rc.forecast[i].windDirectionDeg);
+    step.Set("visibilityKm", rc.forecast[i].visibilityKm);
     forecast.Set(static_cast<uint32_t>(i), step);
   }
   obj.Set("forecast", forecast);

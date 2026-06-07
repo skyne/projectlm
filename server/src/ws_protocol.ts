@@ -684,6 +684,10 @@ export interface WeatherForecastStepPayload {
   trackWetness: number;
   rainIntensity: number;
   ambientTempC: number;
+  trackTempC: number;
+  windSpeedMs: number;
+  windDirectionDeg: number;
+  visibilityKm: number;
 }
 
 export interface RaceControlPayload {
@@ -691,8 +695,12 @@ export interface RaceControlPayload {
   scActive: boolean;
   trackWetness: number;
   ambientTempC: number;
+  trackTempC: number;
   trackGripEvolution: number;
   rainIntensity: number;
+  windSpeedMs: number;
+  windDirectionDeg: number;
+  visibilityKm: number;
   weatherPhase: string;
   forecastRainInSeconds: number;
   forecast: WeatherForecastStepPayload[];

@@ -63,7 +63,9 @@ struct DriverState {
   bool swapDriver(int index);
   void setPressure(double level);
 
-  double paceFactor(double trackWetness, bool isNight) const;
+  double paceFactor(double trackWetness, bool isNight,
+                    double visibilityKm = 10.0,
+                    double windSpeedMs = 0.0) const;
   double consistencyFactor() const;
   double overtakingFactor() const;
   double defendingFactor() const;

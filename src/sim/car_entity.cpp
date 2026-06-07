@@ -367,8 +367,7 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
                       double deltaTime, double raceTime,
                       TelemetryLog *telemetry,
                       const TrafficModifiers *traffic,
-                      double trackWetness, bool isNight,
-                      double ambientTempC) {
+                      const WeatherState &weather, bool isNight) {
   CarTickResult result;
   if (retired_ || track.sectors.empty() || pit_.inPit)
     return result;
@@ -382,7 +381,9 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
   mods.throttleMultiplier = driver_.modeThrottleMultiplier();
   mods.wearMultiplier = driver_.modeWearMultiplier();
   mods.fuelMultiplier = driver_.modeFuelMultiplier();
-  mods.skillFactor = driver_.paceFactor(trackWetness, isNight);
+  mods.skillFactor = driver_.paceFactor(weather.trackWetness, isNight,
+                                        weather.visibilityKm,
+                                        weather.windSpeedMs);
   if (config_.hybridDeployPowerKW > 0.0) {
     HybridStrategyModifiers(driver_.hybridStrategy, mods.hybridDeployScale,
                             mods.hybridRegenScale);
@@ -391,13 +392,14 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
     mods.hybridRegenScale = 0.0;
   }
 
-  {
-    WeatherState weather;
-    weather.trackWetness = trackWetness;
-    weather.ambientTempC = ambientTempC;
-    mods.weatherGripScale =
-        WeatherTireGripScale(weather, config_.tireChoice, config_.tyreTread);
-  }
+  mods.weatherGripScale =
+      WeatherTireGripScale(weather, config_.tireChoice, config_.tyreTread);
+  mods.tireAmbientTempC =
+      weather.ambientTempC +
+      (weather.trackTempC - weather.ambientTempC) * 0.85;
+  mods.airDensityScale =
+      288.15 / std::max(1.0, weather.ambientTempC + 273.15);
+  mods.windHeadwindMs = weather.windSpeedMs * 0.35;
 
   if (traffic != nullptr) {
     driver_.setPressure(traffic->pressureLevel);

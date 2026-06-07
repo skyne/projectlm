@@ -16,8 +16,12 @@ struct RaceControlState {
   bool scActive = false;
   double trackWetness = 0.0;
   double ambientTempC = 22.0;
+  double trackTempC = 22.0;
   double trackGripEvolution = 1.0;
   double rainIntensity = 0.0;
+  double windSpeedMs = 3.0;
+  double windDirectionDeg = 270.0;
+  double visibilityKm = 10.0;
   std::string weatherPhase = "Dry";
   double forecastRainInSeconds = -1.0;
   std::string weatherLabel;
@@ -28,6 +32,10 @@ struct RaceControlState {
     double trackWetness = 0.0;
     double rainIntensity = 0.0;
     double ambientTempC = 22.0;
+    double trackTempC = 22.0;
+    double windSpeedMs = 3.0;
+    double windDirectionDeg = 270.0;
+    double visibilityKm = 10.0;
   };
   std::vector<ForecastStep> forecast;
 };

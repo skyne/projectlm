@@ -48,6 +48,9 @@ export class WeatherForecastPanel {
         trackWetnessBarPercent(s.trackWetness),
         Math.round(s.rainIntensity * 100),
         Math.round(s.ambientTempC),
+        Math.round(s.trackTempC ?? s.ambientTempC),
+        Math.round(s.windSpeedMs ?? 0),
+        Math.round(s.visibilityKm ?? 10),
       ]),
     });
     if (renderKey === this.lastRenderKey) return;
@@ -81,10 +84,17 @@ export class WeatherForecastPanel {
       const meta = document.createElement("span");
       meta.className = "forecast-meta";
       const wetMeta = displayTrackWetnessPercent(step.trackWetness);
+      const trackT = Math.round(step.trackTempC ?? step.ambientTempC);
+      const wind = step.windSpeedMs != null && step.windSpeedMs > 0.5
+        ? ` · ${Math.round(step.windSpeedMs)} m/s`
+        : "";
+      const vis = step.visibilityKm != null && step.visibilityKm < 8
+        ? ` · ${step.visibilityKm.toFixed(1)} km vis`
+        : "";
       meta.textContent =
         wetMeta == null
-          ? `${Math.round(step.ambientTempC)}°C`
-          : `${Math.round(step.ambientTempC)}°C · ${wetMeta}% wet`;
+          ? `${Math.round(step.ambientTempC)}°C air · ${trackT}°C track${wind}${vis}`
+          : `${Math.round(step.ambientTempC)}°C · ${trackT}°C track · ${wetMeta}% wet${wind}${vis}`;
 
       row.append(time, badge, barWrap, meta);
       this.list.appendChild(row);

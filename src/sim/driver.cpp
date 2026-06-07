@@ -60,7 +60,8 @@ void DriverState::resetForRestart() {
   lastMistakeTime = -1000.0;
 }
 
-double DriverState::paceFactor(double trackWetness, bool isNight) const {
+double DriverState::paceFactor(double trackWetness, bool isNight,
+                             double visibilityKm, double windSpeedMs) const {
   const DriverProfile &d = active();
   const double dry = d.dryPace / 100.0;
   const double wet = d.wetPace / 100.0;
@@ -74,9 +75,13 @@ double DriverState::paceFactor(double trackWetness, bool isNight) const {
   const double fatiguePenalty = fatigue * (0.14 - d.stamina / 100.0 * 0.06);
   const double pressurePenalty =
       pressure * (0.10 - d.composure / 100.0 * 0.06);
+  const double visPenalty =
+      visibilityKm < 3.0 ? ((3.0 - visibilityKm) / 3.0) * 0.03 : 0.0;
+  const double windPenalty =
+      windSpeedMs > 8.0 ? std::min(0.02, (windSpeedMs - 8.0) * 0.002) : 0.0;
 
   return std::clamp(0.82 + base * 0.16 + nightBonus - fatiguePenalty -
-                        pressurePenalty,
+                        pressurePenalty - visPenalty - windPenalty,
                     0.78, 1.06);
 }
 

@@ -206,6 +206,23 @@ function rollSessionArchetype(
   return "dry";
 }
 
+function biomeWeatherExtras(
+  biome: BiomeId,
+): Pick<WeatherProfile, "baseWindSpeedMs" | "baseVisibilityKm" | "trackSolarGainC"> {
+  switch (biome) {
+    case "maritime_temperate":
+      return { baseWindSpeedMs: 7, baseVisibilityKm: 8, trackSolarGainC: 8 };
+    case "humid_subtropical":
+      return { baseWindSpeedMs: 5, baseVisibilityKm: 7, trackSolarGainC: 11 };
+    case "continental":
+      return { baseWindSpeedMs: 4.5, baseVisibilityKm: 9, trackSolarGainC: 10 };
+    case "arid":
+      return { baseWindSpeedMs: 5, baseVisibilityKm: 12, trackSolarGainC: 15 };
+    default:
+      return { baseWindSpeedMs: 4.5, baseVisibilityKm: 10, trackSolarGainC: 11 };
+  }
+}
+
 function applyArchetypeToProfile(
   profile: WeatherProfile,
   archetype: SessionWeatherArchetype,
@@ -217,6 +234,7 @@ function applyArchetypeToProfile(
       rainChancePerHour: profile.rainChancePerHour * 0.06,
       maxRainIntensity: Math.min(profile.maxRainIntensity, 0.55),
       dryRatePerSecond: profile.dryRatePerSecond * 1.6,
+      baseVisibilityKm: Math.min(15, profile.baseVisibilityKm * 1.08),
     };
   }
   if (archetype === "wet") {
@@ -227,12 +245,16 @@ function applyArchetypeToProfile(
       maxRainIntensity: Math.min(0.98, profile.maxRainIntensity + 0.12),
       wetRatePerSecond: profile.wetRatePerSecond * 1.15,
       dryRatePerSecond: profile.dryRatePerSecond * 0.65,
+      baseWindSpeedMs: profile.baseWindSpeedMs * 1.2,
+      baseVisibilityKm: Math.max(2.5, profile.baseVisibilityKm * 0.55),
+      trackSolarGainC: profile.trackSolarGainC * 0.45,
     };
   }
   return {
     ...profile,
     rainChancePerHour: profile.rainChancePerHour * 0.38,
     dryRatePerSecond: profile.dryRatePerSecond * 1.25,
+    baseVisibilityKm: profile.baseVisibilityKm * 0.92,
   };
 }
 
@@ -292,6 +314,7 @@ export function resolveTrackWeather(
     maxRainIntensity,
     wetRatePerSecond: 0.0012 * climate.wetRateFactor * (0.7 + rainWeight * 0.6),
     dryRatePerSecond: 0.0001 * climate.dryRateFactor * (1.15 - rainWeight * 0.25),
+    ...biomeWeatherExtras(climate.biome),
   };
   const profile = applyArchetypeToProfile(rawProfile, archetype);
 
@@ -328,5 +351,8 @@ export function formatWeatherConfigLines(
     `weather_max_rain=${p.maxRainIntensity.toFixed(4)}`,
     `weather_wet_rate=${p.wetRatePerSecond.toFixed(6)}`,
     `weather_dry_rate=${p.dryRatePerSecond.toFixed(6)}`,
+    `weather_base_wind_ms=${p.baseWindSpeedMs.toFixed(2)}`,
+    `weather_base_visibility_km=${p.baseVisibilityKm.toFixed(2)}`,
+    `weather_track_solar_gain_c=${p.trackSolarGainC.toFixed(2)}`,
   ];
 }

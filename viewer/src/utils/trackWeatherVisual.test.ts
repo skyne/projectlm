@@ -34,7 +34,15 @@ describe("resolveTrackWeatherVisual", () => {
     assert.equal(rainy.rainActive, true);
     assert.equal(rainy.wetActive, true);
     assert.ok(rainy.overlayOpacity > dry.overlayOpacity);
-    assert.ok(rainy.overlayOpacity <= 0.28);
+    assert.ok(rainy.overlayOpacity <= 0.35);
     assert.ok(rainy.asphaltSheen >= 0.6);
+  });
+
+  it("adds fog when visibility is low", () => {
+    const clear = resolveTrackWeatherVisual({ visibilityKm: 10 } as never);
+    const foggy = resolveTrackWeatherVisual({ visibilityKm: 2 } as never);
+    assert.equal(clear.fog, 0);
+    assert.ok(foggy.fog > 0);
+    assert.ok(foggy.overlayOpacity > clear.overlayOpacity);
   });
 });

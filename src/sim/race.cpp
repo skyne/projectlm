@@ -257,8 +257,7 @@ void TickRace(RaceSession &session, double deltaTime) {
 
     const CarTickResult result = car.tick(
         session.track, session.physics, deltaTime, session.elapsedRaceTime,
-        nullptr, traffic, session.trackWetness, night,
-        session.weather.ambientTempC);
+        nullptr, traffic, session.weather, night);
 
     if (result.lapCompleted && car.pit().pendingEnter) {
       if (car.processPitEntry(0.0, true)) {
