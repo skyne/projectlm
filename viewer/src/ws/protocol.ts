@@ -105,6 +105,17 @@ export interface CarSnapshot {
   structuralSeverity?: number;
   suspectedIssues?: boolean;
   hiddenFaults?: HiddenFaultPayload[];
+  trackStatus?: string;
+  recoveryProgress?: number;
+  blueFlag?: boolean;
+  blueFlagStrikes?: number;
+  pendingPenalty?: string;
+  penaltyReason?: string;
+  lapsToComply?: number;
+  meatballFlag?: boolean;
+  blackFlag?: boolean;
+  collisionWarnings?: number;
+  penaltyStopSeconds?: number;
 }
 
 export type SimEventType =
@@ -117,7 +128,28 @@ export type SimEventType =
   | "Overtake"
   | "Collision"
   | "Blocked"
-  | "CommandAck";
+  | "CommandAck"
+  | "Stranded"
+  | "RecoveryDispatched"
+  | "TrackClear"
+  | "SurfaceHazard"
+  | "SurfaceCleared"
+  | "BlueFlag"
+  | "PenaltyIssued"
+  | "PenaltyWarning"
+  | "RacingIncident"
+  | "DriveThroughServed"
+  | "StopGoServed"
+  | "MeatballFlag"
+  | "BlackFlag"
+  | "Disqualified"
+  | "SlowZone"
+  | "FcyDeploy"
+  | "FcyEnd"
+  | "SafetyCarDeploy"
+  | "SafetyCarInThisLap"
+  | "GreenFlag"
+  | "WhiteFlag";
 
 export interface SimEvent {
   type: SimEventType;
@@ -735,9 +767,22 @@ export interface WeatherForecastStepPayload {
   visibilityKm: number;
 }
 
+export interface SurfaceHazardSummaryPayload {
+  sectorIndex: number;
+  kind: string;
+  gripMultiplier: number;
+}
+
 export interface RaceControlPayload {
   fcyActive: boolean;
   scActive: boolean;
+  flagPhase: string;
+  sectorFlags: number[];
+  activeIncidentEntryId?: string;
+  scLapsRemaining: number;
+  obstructionsOnTrack: number;
+  whiteFlagActive: boolean;
+  surfaceHazards: SurfaceHazardSummaryPayload[];
   trackWetness: number;
   ambientTempC: number;
   trackTempC: number;

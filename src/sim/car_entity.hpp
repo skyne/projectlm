@@ -4,6 +4,7 @@
 #include "car_parts.hpp"
 #include "commands.hpp"
 #include "driver.hpp"
+#include "race_control_common.hpp"
 #include "pit_stop.hpp"
 #include "simulation.hpp"
 #include "telemetry.hpp"
@@ -139,6 +140,17 @@ struct CarSnapshot {
     bool revealed = false;
   };
   std::vector<HiddenFaultSnapshot> hiddenFaults;
+  std::string trackStatus = "racing";
+  double recoveryProgress = 0.0;
+  bool blueFlag = false;
+  int blueFlagStrikes = 0;
+  std::string pendingPenalty = "none";
+  std::string penaltyReason;
+  int lapsToComply = 0;
+  bool meatballFlag = false;
+  bool blackFlag = false;
+  int collisionWarnings = 0;
+  double penaltyStopSeconds = 0.0;
 };
 
 class Car {
@@ -157,6 +169,9 @@ public:
   const TelemetryLog &telemetry() const { return telemetry_; }
   int gridPosition() const { return gridPosition_; }
   bool isRetired() const { return retired_; }
+  bool isOnTrackObstruction() const;
+  const CarRaceControlState &rcState() const { return rc_; }
+  CarRaceControlState &rcState() { return rc_; }
   const std::string &retireReason() const { return retireReason_; }
   DriverState &driver() { return driver_; }
   const DriverState &driver() const { return driver_; }
@@ -164,6 +179,9 @@ public:
   const PitStopState &pit() const { return pit_; }
   bool inPitLane() const { return pit_.inPit; }
   double lateralOffset() const { return lateralOffset_; }
+  void setLateralOffset(double offset) {
+    lateralOffset_ = std::clamp(offset, -1.0, 1.0);
+  }
   CarBodyDimensions bodyDimensions() const { return body_; }
   double wingAngleDelta() const { return wingAngleDelta_; }
   double brakeBias() const { return brakeBias_; }
@@ -236,6 +254,7 @@ private:
   double totalPitSeconds_ = 0.0;
   double maxDriverStintSeconds_ = 0.0;
   bool garageHold_ = false;
+  CarRaceControlState rc_;
 };
 
 double ComputeGapToLeader(const Car &car, const Car &leader, double lapLength);

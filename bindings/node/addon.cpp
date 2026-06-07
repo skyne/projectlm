@@ -27,6 +27,48 @@ const char *EventTypeName(SimEventType type) {
     return "blocked";
   case SimEventType::CommandAck:
     return "command_ack";
+  case SimEventType::Stranded:
+    return "stranded";
+  case SimEventType::RecoveryDispatched:
+    return "recovery_dispatched";
+  case SimEventType::TrackClear:
+    return "track_clear";
+  case SimEventType::SurfaceHazard:
+    return "surface_hazard";
+  case SimEventType::SurfaceCleared:
+    return "surface_cleared";
+  case SimEventType::BlueFlag:
+    return "blue_flag";
+  case SimEventType::PenaltyIssued:
+    return "penalty_issued";
+  case SimEventType::PenaltyWarning:
+    return "penalty_warning";
+  case SimEventType::RacingIncident:
+    return "racing_incident";
+  case SimEventType::DriveThroughServed:
+    return "drive_through_served";
+  case SimEventType::StopGoServed:
+    return "stop_go_served";
+  case SimEventType::MeatballFlag:
+    return "meatball_flag";
+  case SimEventType::BlackFlag:
+    return "black_flag";
+  case SimEventType::Disqualified:
+    return "disqualified";
+  case SimEventType::SlowZone:
+    return "slow_zone";
+  case SimEventType::FcyDeploy:
+    return "fcy_deploy";
+  case SimEventType::FcyEnd:
+    return "fcy_end";
+  case SimEventType::SafetyCarDeploy:
+    return "safety_car_deploy";
+  case SimEventType::SafetyCarInThisLap:
+    return "safety_car_in_this_lap";
+  case SimEventType::GreenFlag:
+    return "green_flag";
+  case SimEventType::WhiteFlag:
+    return "white_flag";
   }
   return "unknown";
 }
@@ -205,6 +247,25 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
     }
     obj.Set("hiddenFaults", hf);
   }
+  if (!snapshot.trackStatus.empty() && snapshot.trackStatus != "racing")
+    obj.Set("trackStatus", snapshot.trackStatus);
+  if (snapshot.recoveryProgress > 0.0)
+    obj.Set("recoveryProgress", snapshot.recoveryProgress);
+  if (snapshot.blueFlag)
+    obj.Set("blueFlag", true);
+  if (snapshot.blueFlagStrikes > 0)
+    obj.Set("blueFlagStrikes", snapshot.blueFlagStrikes);
+  if (!snapshot.pendingPenalty.empty() && snapshot.pendingPenalty != "none") {
+    obj.Set("pendingPenalty", snapshot.pendingPenalty);
+    if (!snapshot.penaltyReason.empty())
+      obj.Set("penaltyReason", snapshot.penaltyReason);
+    if (snapshot.lapsToComply > 0)
+      obj.Set("lapsToComply", snapshot.lapsToComply);
+  }
+  if (snapshot.meatballFlag)
+    obj.Set("meatballFlag", true);
+  if (snapshot.blackFlag)
+    obj.Set("blackFlag", true);
   return obj;
 }
 
@@ -367,6 +428,29 @@ Napi::Object RaceControlToObject(Napi::Env env, const RaceControlState &rc) {
   Napi::Object obj = Napi::Object::New(env);
   obj.Set("fcyActive", rc.fcyActive);
   obj.Set("scActive", rc.scActive);
+  obj.Set("flagPhase", rc.flagPhase);
+  obj.Set("scLapsRemaining", rc.scLapsRemaining);
+  obj.Set("obstructionsOnTrack", rc.obstructionsOnTrack);
+  obj.Set("whiteFlagActive", rc.whiteFlagActive);
+  if (!rc.activeIncidentEntryId.empty())
+    obj.Set("activeIncidentEntryId", rc.activeIncidentEntryId);
+
+  Napi::Array sectorFlags =
+      Napi::Array::New(env, rc.sectorFlags.size());
+  for (size_t i = 0; i < rc.sectorFlags.size(); ++i)
+    sectorFlags.Set(static_cast<uint32_t>(i), rc.sectorFlags[i]);
+  obj.Set("sectorFlags", sectorFlags);
+
+  Napi::Array hazards = Napi::Array::New(env, rc.surfaceHazards.size());
+  for (size_t i = 0; i < rc.surfaceHazards.size(); ++i) {
+    Napi::Object hz = Napi::Object::New(env);
+    hz.Set("sectorIndex", rc.surfaceHazards[i].sectorIndex);
+    hz.Set("kind", rc.surfaceHazards[i].kind);
+    hz.Set("gripMultiplier", rc.surfaceHazards[i].gripMultiplier);
+    hazards.Set(static_cast<uint32_t>(i), hz);
+  }
+  obj.Set("surfaceHazards", hazards);
+
   obj.Set("trackWetness", rc.trackWetness);
   obj.Set("ambientTempC", rc.ambientTempC);
   obj.Set("trackTempC", rc.trackTempC);

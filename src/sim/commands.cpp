@@ -108,6 +108,21 @@ SimCommand ParseSimCommand(const std::string &raw) {
     cmd.type = SimCommandType::CancelPit;
     return cmd;
   }
+  if (lower == "drive_through" || lower == "pit|drive_through") {
+    cmd.type = SimCommandType::PitRequest;
+    cmd.pit.driveThrough = true;
+    return cmd;
+  }
+  if (lower == "stop_go" || lower == "pit|stop_go") {
+    cmd.type = SimCommandType::PitRequest;
+    cmd.pit.stopGo = true;
+    return cmd;
+  }
+  if (lower == "penalty" || lower == "pit|penalty") {
+    cmd.type = SimCommandType::PitRequest;
+    cmd.pit.stopGo = true;
+    return cmd;
+  }
   if (lower == "release" || lower == "garage|exit" || lower == "garage|release") {
     cmd.type = SimCommandType::ReleaseGarage;
     return cmd;
@@ -203,6 +218,12 @@ SimCommand ParseSimCommand(const std::string &raw) {
         cmd.pit.changeDriver = val == "1" || ToLower(val) == "true";
       else if (key == "driver_index")
         cmd.pit.swapToDriverIndex = std::stoi(val);
+      else if (key == "drive_through")
+        cmd.pit.driveThrough = val == "1" || ToLower(val) == "true";
+      else if (key == "stop_go")
+        cmd.pit.stopGo = val == "1" || ToLower(val) == "true";
+      else if (key == "penalty")
+        cmd.pit.stopGo = true;
       else if (key == "wing")
         cmd.pit.wingAngleDelta = std::stod(val);
       else if (key == "brake_bias")

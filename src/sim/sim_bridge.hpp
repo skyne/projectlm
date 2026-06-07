@@ -14,6 +14,18 @@ struct RaceConfig;
 struct RaceControlState {
   bool fcyActive = false;
   bool scActive = false;
+  std::string flagPhase = "green";
+  std::vector<int> sectorFlags;
+  std::string activeIncidentEntryId;
+  int scLapsRemaining = 0;
+  int obstructionsOnTrack = 0;
+  bool whiteFlagActive = false;
+  struct SurfaceHazardSummary {
+    int sectorIndex = 0;
+    std::string kind;
+    double gripMultiplier = 1.0;
+  };
+  std::vector<SurfaceHazardSummary> surfaceHazards;
   double trackWetness = 0.0;
   double ambientTempC = 22.0;
   double trackTempC = 22.0;
@@ -50,7 +62,28 @@ enum class SimEventType {
   Overtake,
   Collision,
   Blocked,
-  CommandAck
+  CommandAck,
+  Stranded,
+  RecoveryDispatched,
+  TrackClear,
+  SurfaceHazard,
+  SurfaceCleared,
+  BlueFlag,
+  PenaltyIssued,
+  PenaltyWarning,
+  RacingIncident,
+  DriveThroughServed,
+  StopGoServed,
+  MeatballFlag,
+  BlackFlag,
+  Disqualified,
+  SlowZone,
+  FcyDeploy,
+  FcyEnd,
+  SafetyCarDeploy,
+  SafetyCarInThisLap,
+  GreenFlag,
+  WhiteFlag
 };
 
 struct SimEvent {

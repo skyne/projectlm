@@ -148,3 +148,42 @@ const baseCtx = {
         strict_1.default.ok(withPlan?.services.fuel);
     });
 });
+(0, node_test_1.describe)("pit_planner race control helpers", () => {
+    (0, node_test_1.it)("shouldDeferPitForRaceControl under FCY, SC, slow zone, and green", () => {
+        strict_1.default.equal((0, pit_planner_1.shouldDeferPitForRaceControl)({
+            flagPhase: "green",
+            fcyActive: false,
+            scActive: false,
+        }), false);
+        strict_1.default.equal((0, pit_planner_1.shouldDeferPitForRaceControl)({
+            flagPhase: "fcy",
+            fcyActive: true,
+            scActive: false,
+        }), true);
+        strict_1.default.equal((0, pit_planner_1.shouldDeferPitForRaceControl)({
+            flagPhase: "sc",
+            fcyActive: false,
+            scActive: true,
+        }), true);
+        strict_1.default.equal((0, pit_planner_1.shouldDeferPitForRaceControl)({
+            flagPhase: "slow_zone",
+            fcyActive: false,
+            scActive: false,
+        }), true);
+        strict_1.default.equal((0, pit_planner_1.shouldDeferPitForRaceControl)({
+            flagPhase: "sc_in_lap",
+            fcyActive: false,
+            scActive: true,
+        }), true);
+    });
+    (0, node_test_1.it)("shouldDeferPitForRaceControl returns false when race control payload missing", () => {
+        strict_1.default.equal((0, pit_planner_1.shouldDeferPitForRaceControl)(undefined), false);
+    });
+    (0, node_test_1.it)("mustServePenalty when laps remain or black flag is pending", () => {
+        strict_1.default.equal((0, pit_planner_1.mustServePenalty)(snap({ pendingPenalty: "none", lapsToComply: 3 })), false);
+        strict_1.default.equal((0, pit_planner_1.mustServePenalty)(snap({ pendingPenalty: "drive_through", lapsToComply: 0 })), false);
+        strict_1.default.equal((0, pit_planner_1.mustServePenalty)(snap({ pendingPenalty: "drive_through", lapsToComply: 2 })), true);
+        strict_1.default.equal((0, pit_planner_1.mustServePenalty)(snap({ pendingPenalty: "black", lapsToComply: 0 })), true);
+        strict_1.default.equal((0, pit_planner_1.mustServePenalty)(snap({ pendingPenalty: "stop_go", lapsToComply: 1 })), true);
+    });
+});

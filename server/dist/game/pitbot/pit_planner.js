@@ -4,6 +4,8 @@ exports.scaledFuelThresholds = scaledFuelThresholds;
 exports.planPitStop = planPitStop;
 exports.tankCapacityFor = tankCapacityFor;
 exports.fuelToAddFor = fuelToAddFor;
+exports.shouldDeferPitForRaceControl = shouldDeferPitForRaceControl;
+exports.mustServePenalty = mustServePenalty;
 const tyre_grip_1 = require("../../tyre_grip");
 function tankCapacity(s) {
     if (s.fuelTankCapacity != null && s.fuelTankCapacity > 0) {
@@ -428,4 +430,21 @@ function tankCapacityFor(s) {
 }
 function fuelToAddFor(s) {
     return fuelToAdd(s);
+}
+const DEFER_FLAG_PHASES = new Set(["fcy", "sc", "sc_in_lap", "slow_zone"]);
+/** Defer routine pit stops under full-course or safety-car conditions. */
+function shouldDeferPitForRaceControl(rc) {
+    if (!rc)
+        return false;
+    if (rc.fcyActive || rc.scActive)
+        return true;
+    const phase = (rc.flagPhase ?? "green").toLowerCase();
+    return DEFER_FLAG_PHASES.has(phase);
+}
+/** Car must enter the pits to serve a pending penalty before routine strategy. */
+function mustServePenalty(s) {
+    const penalty = s.pendingPenalty ?? "none";
+    if (penalty === "none")
+        return false;
+    return (s.lapsToComply ?? 0) > 0 || penalty === "black";
 }

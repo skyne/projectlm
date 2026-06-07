@@ -136,6 +136,21 @@ function applyPitSuccess(s, st, wet, plan) {
 function trySubmit(submitCommand, entryId, command) {
     return submitCommand(entryId, command);
 }
+function penaltyServeCommand(s) {
+    const penalty = s.pendingPenalty ?? "none";
+    if (penalty === "drive_through")
+        return "pit|drive_through";
+    if (penalty === "stop_go" || penalty === "black")
+        return "pit|stop_go";
+    return "pit|penalty";
+}
+function needsEmergencyPit(s) {
+    const limp = s.limpMode ?? "none";
+    if (limp === "barely_driveable" || limp === "hybrid_only" || limp === "immobilized") {
+        return true;
+    }
+    return s.meatballFlag === true;
+}
 /** Release cars from garage at session start (practice/qualifying). */
 function releaseFromGarage(snapshots, entryIds, carState, submitCommand) {
     for (const entryId of entryIds) {
@@ -213,6 +228,30 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
             if (hybrid)
                 trySubmit(submitCommand, entryId, hybrid);
             trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread, stintPlan));
+            continue;
+        }
+        if ((0, pit_planner_1.mustServePenalty)(s)) {
+            const cmd = penaltyServeCommand(s);
+            if (trySubmit(submitCommand, entryId, cmd)) {
+                actions.push({
+                    entryId,
+                    command: cmd,
+                    label: `Serve ${s.pendingPenalty ?? "penalty"}`,
+                });
+                continue;
+            }
+        }
+        const emergency = needsEmergencyPit(s);
+        if (!emergency &&
+            (0, pit_planner_1.shouldDeferPitForRaceControl)({
+                flagPhase: ctx.flagPhase ?? "green",
+                fcyActive: ctx.fcyActive ?? false,
+                scActive: ctx.scActive ?? false,
+            })) {
+            const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase);
+            if (hybrid)
+                trySubmit(submitCommand, entryId, hybrid);
+            trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread, ctx.getStintPlan?.(entryId)));
             continue;
         }
         const stintPlan = ctx.getStintPlan?.(entryId);

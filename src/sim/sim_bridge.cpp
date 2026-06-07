@@ -1,4 +1,5 @@
 #include "sim_bridge.hpp"
+#include "race_control.hpp"
 #include "car_condition_io.hpp"
 #include "class_rules.hpp"
 #include "commands.hpp"
@@ -98,6 +99,7 @@ bool SimBridge::initSession(const RaceSession &session) {
     return false;
 
   session_ = session;
+  InitSessionRaceControl(session_);
   pendingEvents_.clear();
   pendingCommands_.clear();
   raceCompleteEmitted_ = false;
@@ -116,9 +118,7 @@ bool SimBridge::restartRace() {
 
   session_.elapsedRaceTime = 0.0;
   session_.trafficEventCooldowns.clear();
-  session_.fcyActive = false;
-  session_.fcyEndTime = 0.0;
-  session_.nextFcyScheduleTime = 0.0;
+  InitSessionRaceControl(session_);
   resetWeatherState();
   for (Car &car : session_.cars)
     car.resetForRestart();
@@ -349,7 +349,20 @@ void SimBridge::resetWeatherState() {
 
 RaceControlState SimBridge::getRaceControl() const {
   RaceControlState state;
-  state.fcyActive = session_.fcyActive;
+  const SessionRaceControl &rc = session_.raceControl;
+  state.fcyActive = rc.fcyActive;
+  state.scActive = rc.scActive;
+  state.flagPhase = FlagPhaseName(rc.flagPhase);
+  state.sectorFlags = rc.sectorFlags;
+  state.activeIncidentEntryId = rc.activeIncidentEntryId;
+  state.scLapsRemaining = rc.scLapsRemaining;
+  state.obstructionsOnTrack = CountTrackObstructions(session_);
+  state.whiteFlagActive = rc.whiteFlagActive;
+  state.surfaceHazards.reserve(rc.hazards.size());
+  for (const TrackSurfaceHazard &hz : rc.hazards) {
+    state.surfaceHazards.push_back(
+        {hz.sectorIndex, HazardKindName(hz.kind), hz.gripMultiplier});
+  }
   state.trackWetness = session_.weather.trackWetness;
   state.ambientTempC = session_.weather.ambientTempC;
   state.trackTempC = session_.weather.trackTempC;

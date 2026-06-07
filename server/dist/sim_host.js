@@ -533,6 +533,9 @@ class SimHost {
         });
         this.pitBot.tick(snapshots, this.runtimeManagedEntryIds, {
             trackWetness: raceControl?.trackWetness,
+            flagPhase: raceControl?.flagPhase,
+            fcyActive: raceControl?.fcyActive,
+            scActive: raceControl?.scActive,
             weekendSessionType: this.sessionExtra.weekendSessionType,
             rivalPitAggression: (teamName) => (0, ai_rival_season_1.rivalModifiersForTeam)(teamName, rivalSeason).pitAggression,
             getStintPlan: (entryId) => this.stintGuide.getPlan(entryId),

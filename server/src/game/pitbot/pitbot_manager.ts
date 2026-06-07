@@ -10,6 +10,9 @@ import type { PlannerSnap } from "./pit_planner";
 
 export interface PitBotManagerContext {
   trackWetness?: number;
+  flagPhase?: string;
+  fcyActive?: boolean;
+  scActive?: boolean;
   weekendSessionType?: WeekendSessionType;
   rivalPitAggression?: (teamName: string) => number;
   getStintPlan?: (entryId: string) => import("../../llm/stint_plan").AiStintPlan | undefined;
@@ -89,6 +92,9 @@ export class PitBotManager {
         {
           phase,
           wet,
+          flagPhase: ctx.flagPhase,
+          fcyActive: ctx.fcyActive,
+          scActive: ctx.scActive,
           rivalPitAggression: ctx.rivalPitAggression,
           getStintPlan: ctx.getStintPlan,
         },

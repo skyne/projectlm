@@ -52,9 +52,22 @@ export interface WeatherForecastStepPayload {
   visibilityKm?: number;
 }
 
+export interface SurfaceHazardSummaryPayload {
+  sectorIndex: number;
+  kind: string;
+  gripMultiplier: number;
+}
+
 export interface RaceControlPayload {
   fcyActive: boolean;
   scActive: boolean;
+  flagPhase?: string;
+  sectorFlags?: number[];
+  activeIncidentEntryId?: string;
+  scLapsRemaining?: number;
+  obstructionsOnTrack?: number;
+  whiteFlagActive?: boolean;
+  surfaceHazards?: SurfaceHazardSummaryPayload[];
   trackWetness: number;
   ambientTempC: number;
   trackTempC?: number;

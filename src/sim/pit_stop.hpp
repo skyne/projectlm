@@ -24,6 +24,7 @@ struct PitStopState {
   double pitLaneDistance = 0.0;
   double pitElapsed = 0.0;
   double pitDuration = 0.0;
+  bool skipBoxService = false;
   PitStopPlan plan;
   std::string statusMessage;
 };

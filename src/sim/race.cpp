@@ -3,6 +3,7 @@
 #include "config_loader.hpp"
 #include "driver_catalog.hpp"
 #include "part_compatibility.hpp"
+#include "race_control.hpp"
 #include "sim_bridge.hpp"
 #include "traffic.hpp"
 #include "weather.hpp"
@@ -12,53 +13,6 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
-
-namespace {
-
-void UpdateFullCourseYellow(RaceSession &session) {
-  if (session.targetDurationSeconds < 3600.0)
-    return;
-
-  if (session.nextFcyScheduleTime <= 0.0)
-    session.nextFcyScheduleTime = 2400.0;
-
-  if (session.fcyActive) {
-    if (session.elapsedRaceTime >= session.fcyEndTime) {
-      session.fcyActive = false;
-      if (g_raceEventOut != nullptr) {
-        SimEvent ev;
-        ev.type = SimEventType::Blocked;
-        ev.timestamp = session.elapsedRaceTime;
-        ev.message = "Race control: Green flag — FCY ended";
-        g_raceEventOut->push_back(std::move(ev));
-      }
-    }
-    return;
-  }
-
-  if (session.elapsedRaceTime < session.nextFcyScheduleTime)
-    return;
-
-  session.nextFcyScheduleTime = session.elapsedRaceTime + 1200.0;
-  const double hours = session.elapsedRaceTime / 3600.0;
-  const double chance = std::min(0.32, 0.07 + hours * 0.035);
-  const double roll =
-      std::fmod(std::sin(session.elapsedRaceTime * 0.013) * 43758.5453, 1.0);
-  if (roll > chance)
-    return;
-
-  session.fcyActive = true;
-  session.fcyEndTime = session.elapsedRaceTime + 180.0;
-  if (g_raceEventOut != nullptr) {
-    SimEvent ev;
-    ev.type = SimEventType::Blocked;
-    ev.timestamp = session.elapsedRaceTime;
-    ev.message = "Race control: Full course yellow";
-    g_raceEventOut->push_back(std::move(ev));
-  }
-}
-
-} // namespace
 
 static std::string Trim(const std::string &s) {
   size_t start = 0;
@@ -194,21 +148,28 @@ void TickRace(RaceSession &session, double deltaTime) {
 
   const bool night = IsNightSession(session.elapsedRaceTime);
 
-  UpdateFullCourseYellow(session);
+  if (session.raceControl.sectorFlags.empty())
+    InitSessionRaceControl(session);
+
+  UpdateTrackObstructions(session, deltaTime);
+  UpdateTrackHazards(session, deltaTime);
 
   std::vector<TrafficModifiers> trafficMods;
   std::vector<TrafficEvent> trafficEvents;
   ResolveTraffic(session.cars, session.track.lapLength(), session.trackWidthM,
                  session.elapsedRaceTime, session.trafficEventCooldowns,
-                 trafficMods, trafficEvents);
+                 trafficMods, trafficEvents, session.raceControl,
+                 GetLeaderboard(session));
 
-  if (session.fcyActive) {
-    for (TrafficModifiers &mod : trafficMods) {
-      if (mod.speedCapMs <= 0.0)
-        mod.speedCapMs = 72.0;
-      else
-        mod.speedCapMs = std::min(mod.speedCapMs, 72.0);
-    }
+  UpdateRaceControl(session, trafficEvents);
+  UpdatePenalties(session, deltaTime, trafficMods);
+  ApplyFlagModifiers(session, trafficMods);
+
+  const double lapLength = session.track.lapLength();
+  for (size_t i = 0; i < session.cars.size() && i < trafficMods.size(); ++i) {
+    trafficMods[i].localGripScale =
+        LocalGripMultiplierAt(session, session.cars[i].state().currentDistance,
+                              lapLength);
   }
 
   for (const TrafficEvent &ev : trafficEvents) {
@@ -230,6 +191,10 @@ void TickRace(RaceSession &session, double deltaTime) {
   for (size_t i = 0; i < session.cars.size(); ++i) {
     Car &car = session.cars[i];
     if (car.isRetired())
+      continue;
+
+    const TrackStatus ts = car.rcState().trackStatus;
+    if (ts == TrackStatus::Stranded || ts == TrackStatus::Recovering)
       continue;
 
     const TrackPose pose =
@@ -280,6 +245,7 @@ void TickRace(RaceSession &session, double deltaTime) {
                     result.completedSectorIndex, session.elapsedRaceTime,
                     car.teamName() + " completed lap " +
                         std::to_string(result.completedLap));
+      NotifyCarLapComplete(car, session);
     }
 
     if (result.retired) {

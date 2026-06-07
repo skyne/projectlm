@@ -10,7 +10,9 @@ import {
   type TyreTread,
 } from "../../tyre_grip";
 import {
+  mustServePenalty,
   planPitStop,
+  shouldDeferPitForRaceControl,
   tankCapacityFor,
   type PlannerSnap,
 } from "./pit_planner";
@@ -36,6 +38,9 @@ export interface CarPitState {
 export interface PitBotContext {
   phase: WeekendSessionType;
   wet: number;
+  flagPhase?: string;
+  fcyActive?: boolean;
+  scActive?: boolean;
   rivalPitAggression?: (teamName: string) => number;
   getStintPlan?: (entryId: string) => AiStintPlan | undefined;
 }
@@ -197,6 +202,21 @@ function trySubmit(
   return submitCommand(entryId, command);
 }
 
+function penaltyServeCommand(s: PlannerSnap): string {
+  const penalty = s.pendingPenalty ?? "none";
+  if (penalty === "drive_through") return "pit|drive_through";
+  if (penalty === "stop_go" || penalty === "black") return "pit|stop_go";
+  return "pit|penalty";
+}
+
+function needsEmergencyPit(s: PlannerSnap): boolean {
+  const limp = s.limpMode ?? "none";
+  if (limp === "barely_driveable" || limp === "hybrid_only" || limp === "immobilized") {
+    return true;
+  }
+  return s.meatballFlag === true;
+}
+
 /** Release cars from garage at session start (practice/qualifying). */
 export function releaseFromGarage(
   snapshots: PlannerSnap[],
@@ -297,6 +317,37 @@ export function tickPitBot(
       const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase);
       if (hybrid) trySubmit(submitCommand, entryId, hybrid);
       trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread, stintPlan));
+      continue;
+    }
+
+    if (mustServePenalty(s)) {
+      const cmd = penaltyServeCommand(s);
+      if (trySubmit(submitCommand, entryId, cmd)) {
+        actions.push({
+          entryId,
+          command: cmd,
+          label: `Serve ${s.pendingPenalty ?? "penalty"}`,
+        });
+        continue;
+      }
+    }
+
+    const emergency = needsEmergencyPit(s);
+    if (
+      !emergency &&
+      shouldDeferPitForRaceControl({
+        flagPhase: ctx.flagPhase ?? "green",
+        fcyActive: ctx.fcyActive ?? false,
+        scActive: ctx.scActive ?? false,
+      })
+    ) {
+      const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase);
+      if (hybrid) trySubmit(submitCommand, entryId, hybrid);
+      trySubmit(
+        submitCommand,
+        entryId,
+        driverMode(s, ctx.wet, st.tyreTread, ctx.getStintPlan?.(entryId)),
+      );
       continue;
     }
 

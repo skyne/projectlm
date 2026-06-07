@@ -250,6 +250,10 @@ const raceControls = new RaceControls(document.getElementById("race-controls-con
     pitModal.open(snap);
   },
   onCancelPit: (entryId) => client.submitCommand(entryId, "cancel_pit"),
+  onPenaltyServe: (entryId, command) => {
+    client.submitCommand(entryId, command);
+    raceControls.setStatus(`Penalty queued — ${command.replace("pit|", "")}`);
+  },
   onReleaseToTrack: (entryId) => client.submitCommand(entryId, "release"),
   onSetupChange: (entryId, command) => {
     client.submitCommand(entryId, command);
@@ -522,11 +526,44 @@ function syncTrackSurfaceTheme(): void {
 }
 
 const mockModeBanner = document.getElementById("mock-mode-banner");
+const raceControlBanner = document.getElementById("race-control-banner");
 
 function syncMockModeBanner(simBackend?: SessionInitPayload["simBackend"]): void {
   const isMock = simBackend === "mock";
   document.body.classList.toggle("mock-sim-active", isMock);
   mockModeBanner?.classList.toggle("hidden", !isMock);
+}
+
+function updateRaceControlBanner(rc: RaceControlPayload | undefined): void {
+  if (!raceControlBanner) return;
+  const phase = (rc?.flagPhase ?? "green").toLowerCase();
+  const showFcy = phase === "fcy" || rc?.fcyActive;
+  const showSc = phase === "sc" || phase === "sc_in_lap" || rc?.scActive;
+  const showWhite = rc?.whiteFlagActive === true;
+
+  raceControlBanner.classList.remove(
+    "race-control-banner--fcy",
+    "race-control-banner--sc",
+    "race-control-banner--white",
+  );
+
+  let label = "";
+  if (showFcy) {
+    label = "Full Course Yellow";
+    raceControlBanner.classList.add("race-control-banner--fcy");
+  } else if (showSc) {
+    label =
+      phase === "sc_in_lap" ? "Safety Car — In This Lap" : "Safety Car";
+    raceControlBanner.classList.add("race-control-banner--sc");
+  } else if (showWhite) {
+    label = "White Flag — Final Lap";
+    raceControlBanner.classList.add("race-control-banner--white");
+  }
+
+  const active = label.length > 0;
+  raceControlBanner.textContent = label;
+  raceControlBanner.classList.toggle("hidden", !active);
+  document.body.classList.toggle("race-control-banner-active", active);
 }
 
 function applySessionInit(payload: SessionInitPayload): void {
@@ -722,6 +759,7 @@ function endRaceSession(): void {
   engineerPanel.setRaceActive(false);
   pitModal.hide();
   document.getElementById("race-lap-counter")?.classList.add("hidden");
+  updateRaceControlBanner(undefined);
   gameAudio.onSessionEnd();
 }
 
@@ -853,6 +891,7 @@ function updateFromTick(
   playback.setRaceTime(raceTime);
   raceControls.setPreGreenFlag(raceTime < 0.5);
   updateWeather(raceControl, raceTime);
+  updateRaceControlBanner(raceControl);
   const teamSnapshots = normalized.filter((s) => managedEntryIds.includes(s.entryId));
   telemetryTrack.updateCars(teamSnapshots);
   const selectedSnap =

@@ -47,6 +47,9 @@ class PitBotManager {
         actions.push(...(0, pit_wall_1.tickPitBot)(snapshots, opponents, this.carState, {
             phase,
             wet,
+            flagPhase: ctx.flagPhase,
+            fcyActive: ctx.fcyActive,
+            scActive: ctx.scActive,
             rivalPitAggression: ctx.rivalPitAggression,
             getStintPlan: ctx.getStintPlan,
         }, submitCommand));

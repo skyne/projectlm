@@ -99,6 +99,7 @@ struct SimulationModifiers {
   double hybridDeployScale = 1.0;
   double hybridRegenScale = 1.0;
   double weatherGripScale = 1.0;
+  double localGripScale = 1.0;
   /** When > 0, overrides PhysicsConfig tireAmbientTempC for clamp/cool targets. */
   double tireAmbientTempC = -1.0;
   /** Multiplier on PhysicsConfig airDensity (from air temperature). */

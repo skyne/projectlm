@@ -320,7 +320,15 @@ export class CompactLeaderboard {
       row.status.title = "";
       row.status.hidden = false;
     } else {
-      row.status.hidden = true;
+      const penaltyTag = formatPenaltyBadge(snap);
+      if (penaltyTag) {
+        row.status.className = `compact-lb-status ${penaltyTag.className}`;
+        row.status.textContent = penaltyTag.text;
+        row.status.title = penaltyTag.title;
+        row.status.hidden = false;
+      } else {
+        row.status.hidden = true;
+      }
     }
 
     row.lap.textContent = this.timingMode ? formatBestLap(snap.bestLapTime) : `L${snap.lap}`;
@@ -359,4 +367,25 @@ export class CompactLeaderboard {
 function formatBestLap(seconds: number | undefined): string {
   if (seconds == null || seconds <= 0) return "—";
   return formatLapTime(seconds);
+}
+
+function formatPenaltyBadge(
+  snap: CarSnapshot,
+): { text: string; title: string; className: string } | null {
+  if (snap.blackFlag || snap.pendingPenalty === "black") {
+    return { text: "BLK", title: "Black flag", className: "status-black-flag" };
+  }
+  if (snap.meatballFlag) {
+    return { text: "MEAT", title: "Meatball — return to pits", className: "status-meatball" };
+  }
+  const penalty = snap.pendingPenalty ?? "none";
+  if (penalty === "drive_through") {
+    const laps = snap.lapsToComply != null ? ` (${snap.lapsToComply})` : "";
+    return { text: `DT${laps}`, title: "Drive-through penalty", className: "status-penalty" };
+  }
+  if (penalty === "stop_go") {
+    const laps = snap.lapsToComply != null ? ` (${snap.lapsToComply})` : "";
+    return { text: `S&G${laps}`, title: "Stop-and-go penalty", className: "status-penalty" };
+  }
+  return null;
 }

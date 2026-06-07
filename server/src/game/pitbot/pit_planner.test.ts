@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  mustServePenalty,
   planPitStop,
   scaledFuelThresholds,
+  shouldDeferPitForRaceControl,
   type PlannerSnap,
 } from "./pit_planner";
 import { fallbackStintPlan } from "../../llm/stint_plan";
@@ -190,5 +192,87 @@ describe("pit_planner stint guide", () => {
     );
     assert.ok(withPlan);
     assert.ok(withPlan?.services.fuel);
+  });
+});
+
+describe("pit_planner race control helpers", () => {
+  it("shouldDeferPitForRaceControl under FCY, SC, slow zone, and green", () => {
+    assert.equal(
+      shouldDeferPitForRaceControl({
+        flagPhase: "green",
+        fcyActive: false,
+        scActive: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldDeferPitForRaceControl({
+        flagPhase: "fcy",
+        fcyActive: true,
+        scActive: false,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldDeferPitForRaceControl({
+        flagPhase: "sc",
+        fcyActive: false,
+        scActive: true,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldDeferPitForRaceControl({
+        flagPhase: "slow_zone",
+        fcyActive: false,
+        scActive: false,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldDeferPitForRaceControl({
+        flagPhase: "sc_in_lap",
+        fcyActive: false,
+        scActive: true,
+      }),
+      true,
+    );
+  });
+
+  it("shouldDeferPitForRaceControl returns false when race control payload missing", () => {
+    assert.equal(shouldDeferPitForRaceControl(undefined), false);
+  });
+
+  it("mustServePenalty when laps remain or black flag is pending", () => {
+    assert.equal(
+      mustServePenalty(
+        snap({ pendingPenalty: "none", lapsToComply: 3 }),
+      ),
+      false,
+    );
+    assert.equal(
+      mustServePenalty(
+        snap({ pendingPenalty: "drive_through", lapsToComply: 0 }),
+      ),
+      false,
+    );
+    assert.equal(
+      mustServePenalty(
+        snap({ pendingPenalty: "drive_through", lapsToComply: 2 }),
+      ),
+      true,
+    );
+    assert.equal(
+      mustServePenalty(
+        snap({ pendingPenalty: "black", lapsToComply: 0 }),
+      ),
+      true,
+    );
+    assert.equal(
+      mustServePenalty(
+        snap({ pendingPenalty: "stop_go", lapsToComply: 1 }),
+      ),
+      true,
+    );
   });
 });

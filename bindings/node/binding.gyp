@@ -16,6 +16,8 @@
         "../../src/core/weather.cpp",
         "../../src/sim/car_entity.cpp",
         "../../src/sim/race.cpp",
+        "../../src/sim/race_control.cpp",
+        "../../src/sim/race_control_common.cpp",
         "../../src/sim/sim_bridge.cpp",
         "../../src/sim/driver.cpp",
         "../../src/sim/commands.cpp",

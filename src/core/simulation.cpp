@@ -294,7 +294,8 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       (1.0 - state.effectiveGripTireWear() * p.tireWearEffect);
   effectiveTireFriction *=
       state.effectiveGripTireTempFactor(kTireOptimalC, kTireOverheatC);
-  effectiveTireFriction *= std::max(0.15, mods.weatherGripScale);
+  effectiveTireFriction *=
+      std::max(0.15, mods.weatherGripScale * mods.localGripScale);
   double tireGripForce = netVerticalForce * effectiveTireFriction;
 
   const double maxCorneringSpeedBase =

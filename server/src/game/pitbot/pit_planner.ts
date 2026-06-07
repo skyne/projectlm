@@ -2,7 +2,7 @@
  * Pit-stop planning: bundle fuel / tyres / driver / repairs into fewer visits.
  * Cost model mirrors viewer/src/utils/pitCommands.ts and src/sim/pit_stop.cpp.
  */
-import type { CarSnapshot, WeekendSessionType } from "../../ws_protocol";
+import type { CarSnapshot, RaceControlPayload, WeekendSessionType } from "../../ws_protocol";
 import type { AiStintPlan } from "../../llm/stint_plan";
 import {
   desiredTyreTread,
@@ -594,4 +594,23 @@ export function tankCapacityFor(s: PlannerSnap): number {
 
 export function fuelToAddFor(s: PlannerSnap): number {
   return fuelToAdd(s);
+}
+
+const DEFER_FLAG_PHASES = new Set(["fcy", "sc", "sc_in_lap", "slow_zone"]);
+
+/** Defer routine pit stops under full-course or safety-car conditions. */
+export function shouldDeferPitForRaceControl(
+  rc: Pick<RaceControlPayload, "flagPhase" | "fcyActive" | "scActive"> | undefined,
+): boolean {
+  if (!rc) return false;
+  if (rc.fcyActive || rc.scActive) return true;
+  const phase = (rc.flagPhase ?? "green").toLowerCase();
+  return DEFER_FLAG_PHASES.has(phase);
+}
+
+/** Car must enter the pits to serve a pending penalty before routine strategy. */
+export function mustServePenalty(s: PlannerSnap): boolean {
+  const penalty = s.pendingPenalty ?? "none";
+  if (penalty === "none") return false;
+  return (s.lapsToComply ?? 0) > 0 || penalty === "black";
 }

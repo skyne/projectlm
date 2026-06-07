@@ -20,6 +20,8 @@ CORE_SRCS = \
 SIM_SRCS = \
   src/sim/car_entity.cpp \
   src/sim/race.cpp \
+  src/sim/race_control.cpp \
+  src/sim/race_control_common.cpp \
   src/sim/sim_bridge.cpp \
   src/sim/driver.cpp \
   src/sim/commands.cpp \
@@ -46,6 +48,11 @@ TEST_SRCS = \
   tests/unit/test_part_compatibility.cpp \
   tests/unit/test_sim_bridge.cpp \
   tests/unit/test_weather.cpp \
+  tests/unit/test_track_obstruction.cpp \
+  tests/unit/test_race_control.cpp \
+  tests/unit/test_race_control_penalties.cpp \
+  tests/unit/test_race_control_collisions.cpp \
+  tests/unit/test_race_control_escalation.cpp \
   tests/integration/test_lap_golden.cpp \
   tests/integration/test_multicar.cpp \
   tests/integration/test_entry_id_column.cpp

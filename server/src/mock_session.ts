@@ -22,6 +22,13 @@ import {
 } from "./weather_model";
 import { parseCarNumber, parseEntries as parseEntriesFromConfig } from "./config_parser";
 import {
+  countTrackObstructions,
+  defaultMockRaceControlState,
+  MOCK_MARSHAL_RESPONSE_SEC,
+  MOCK_TOW_DURATION_SEC,
+  type MockRaceControlState,
+} from "./race_control_model";
+import {
   normalizeTyreTread,
   tyreCompoundId,
   tyreGripScale,
@@ -124,6 +131,11 @@ interface CarState {
   startingCompound?: "soft" | "medium" | "hard";
   tyreTread: "slick" | "intermediate" | "wet";
   inGarage: boolean;
+  trackStatus: string;
+  marshalDispatchTime: number;
+  recoveryEndTime: number;
+  strandedSinceTime: number;
+  obstructionReason: string;
 }
 
 const PIT_LANE_FRACTION = 0.06;
@@ -319,6 +331,11 @@ function makeCarState(
     stintTimeSec: 0,
     tyreTread: "slick",
     inGarage: false,
+    trackStatus: "racing",
+    marshalDispatchTime: -1,
+    recoveryEndTime: -1,
+    strandedSinceTime: -1,
+    obstructionReason: "",
   };
 }
 
@@ -670,6 +687,7 @@ export class MockSimSession {
   private weatherLabel = "";
   private weatherBiome = "";
   private weather: WeatherState = initWeatherState("changeable", 0, 0);
+  private mockRaceControl: MockRaceControlState = defaultMockRaceControlState();
   private rngSeed = 20260306;
   private rngState = 20260306;
 
@@ -683,6 +701,75 @@ export class MockSimSession {
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  private strandCarOnTrack(car: CarState, reason: string): void {
+    if (car.trackStatus !== "racing" || car.retired) return;
+    car.trackStatus = "stranded";
+    car.speed = 0;
+    car.strandedSinceTime = this.raceTime;
+    car.marshalDispatchTime = this.raceTime + MOCK_MARSHAL_RESPONSE_SEC;
+    car.recoveryEndTime = -1;
+    car.obstructionReason = reason;
+    this.mockRaceControl.activeIncidentEntryId = car.entryId;
+    this.pendingEvents.push({
+      type: "Stranded",
+      entryId: car.entryId,
+      lap: car.lap,
+      timestamp: this.raceTime,
+      message: `${car.teamName} stopped on track — ${reason}`,
+    });
+  }
+
+  private clearObstructionCar(car: CarState): void {
+    car.trackStatus = "cleared";
+    this.pendingEvents.push({
+      type: "TrackClear",
+      entryId: car.entryId,
+      lap: car.lap,
+      timestamp: this.raceTime,
+      message: `${car.teamName} cleared from track`,
+    });
+    car.retired = true;
+    car.retireReason = car.obstructionReason || "Retired on track";
+    this.pendingEvents.push({
+      type: "Retirement",
+      entryId: car.entryId,
+      lap: car.lap,
+      timestamp: this.raceTime,
+      message: `${car.teamName} retired: ${car.retireReason}`,
+    });
+    if (this.mockRaceControl.activeIncidentEntryId === car.entryId) {
+      this.mockRaceControl.activeIncidentEntryId = "";
+    }
+  }
+
+  private updateStrandedCars(): void {
+    for (const car of this.cars) {
+      if (car.retired) continue;
+      if (
+        car.trackStatus === "stranded" &&
+        car.marshalDispatchTime >= 0 &&
+        this.raceTime >= car.marshalDispatchTime
+      ) {
+        car.trackStatus = "recovering";
+        car.recoveryEndTime = this.raceTime + MOCK_TOW_DURATION_SEC;
+        this.pendingEvents.push({
+          type: "RecoveryDispatched",
+          entryId: car.entryId,
+          lap: car.lap,
+          timestamp: this.raceTime,
+          message: `${car.teamName} recovery dispatched`,
+        });
+      }
+      if (
+        car.trackStatus === "recovering" &&
+        car.recoveryEndTime >= 0 &&
+        this.raceTime >= car.recoveryEndTime
+      ) {
+        this.clearObstructionCar(car);
+      }
+    }
   }
 
   private resetWeather(): void {
@@ -931,6 +1018,11 @@ export class MockSimSession {
         continue;
       }
 
+      if (car.trackStatus === "stranded" || car.trackStatus === "recovering") {
+        car.speed = 0;
+        continue;
+      }
+
       const prevSector = car.sectorIndex;
       car.currentLapTime += deltaTime;
       car.currentSectorTime += deltaTime;
@@ -1082,18 +1174,15 @@ export class MockSimSession {
           car.engineHealth - (car.coolantTempC - 105) * 0.006 * deltaTime,
         );
       }
-      if (car.engineHealth <= 0) {
-        car.retired = true;
-        car.retireReason = "Engine failure";
-        this.pendingEvents.push({
-          type: "Retirement",
-          entryId: car.entryId,
-          lap: car.lap,
-          timestamp: this.raceTime,
-          message: `${car.teamName} retired: Engine failure`,
-        });
+      if (car.engineHealth <= 0 && car.speed <= 0.5) {
+        if (car.trackStatus === "racing") {
+          this.strandCarOnTrack(car, "Engine failure");
+        }
+      } else if (car.engineHealth <= 0) {
+        car.speed = 0;
       }
     }
+    this.updateStrandedCars();
     if (this.checkRaceComplete()) {
       this.raceComplete = true;
       this.pendingEvents.push({
@@ -1225,6 +1314,20 @@ export class MockSimSession {
         driverStintSeconds: car.stintTimeSec,
         maxDriverStintSeconds: car.maxDriverStintSeconds,
         driverMode: car.driverMode,
+        trackStatus: car.trackStatus !== "racing" ? car.trackStatus : undefined,
+        recoveryProgress:
+          car.trackStatus === "recovering" &&
+          car.recoveryEndTime > car.marshalDispatchTime &&
+          car.marshalDispatchTime >= 0
+            ? Math.min(
+                1,
+                Math.max(
+                  0,
+                  (this.raceTime - car.marshalDispatchTime) /
+                    (car.recoveryEndTime - car.marshalDispatchTime),
+                ),
+              )
+            : undefined,
       };
     });
   }
@@ -1300,6 +1403,7 @@ export class MockSimSession {
     this.raceTime = 0;
     this.pendingEvents = [];
     this.raceComplete = false;
+    this.mockRaceControl = defaultMockRaceControlState();
     this.resetWeather();
     return true;
   }
@@ -1307,9 +1411,19 @@ export class MockSimSession {
   getRaceControl(): RaceControlPayload {
     const profile = this.weatherProfileData;
     const forecast = buildWeatherForecast(this.weather, profile, this.raceTime);
+    const rc = this.mockRaceControl;
     return {
-      fcyActive: false,
-      scActive: false,
+      fcyActive: rc.fcyActive,
+      scActive: rc.scActive,
+      flagPhase: rc.flagPhase,
+      sectorFlags: [...rc.sectorFlags],
+      activeIncidentEntryId: rc.activeIncidentEntryId || undefined,
+      scLapsRemaining: rc.scLapsRemaining,
+      obstructionsOnTrack: countTrackObstructions(
+        this.cars.map((c) => c.trackStatus),
+      ),
+      whiteFlagActive: rc.whiteFlagActive,
+      surfaceHazards: rc.surfaceHazards.map((h) => ({ ...h })),
       trackWetness: this.weather.trackWetness,
       ambientTempC: this.weather.ambientTempC,
       trackTempC: this.weather.trackTempC,

@@ -119,6 +119,15 @@ export interface CarSnapshot {
     severity: number;
     revealed: boolean;
   }>;
+  trackStatus?: string;
+  recoveryProgress?: number;
+  blueFlag?: boolean;
+  blueFlagStrikes?: number;
+  pendingPenalty?: string;
+  penaltyReason?: string;
+  lapsToComply?: number;
+  meatballFlag?: boolean;
+  blackFlag?: boolean;
 }
 
 export type SimEventType =
@@ -132,6 +141,25 @@ export type SimEventType =
   | 'collision'
   | 'blocked'
   | 'command_ack'
+  | 'stranded'
+  | 'recovery_dispatched'
+  | 'track_clear'
+  | 'surface_hazard'
+  | 'surface_cleared'
+  | 'blue_flag'
+  | 'penalty_issued'
+  | 'drive_through_served'
+  | 'stop_go_served'
+  | 'meatball_flag'
+  | 'black_flag'
+  | 'disqualified'
+  | 'slow_zone'
+  | 'fcy_deploy'
+  | 'fcy_end'
+  | 'safety_car_deploy'
+  | 'safety_car_in_this_lap'
+  | 'green_flag'
+  | 'white_flag'
   | 'unknown';
 
 export interface SimEvent {
@@ -199,9 +227,22 @@ export interface WeatherForecastStepPayload {
   visibilityKm: number;
 }
 
+export interface SurfaceHazardSummaryPayload {
+  sectorIndex: number;
+  kind: string;
+  gripMultiplier: number;
+}
+
 export interface RaceControlPayload {
   fcyActive: boolean;
   scActive: boolean;
+  flagPhase: string;
+  sectorFlags: number[];
+  activeIncidentEntryId?: string;
+  scLapsRemaining: number;
+  obstructionsOnTrack: number;
+  whiteFlagActive: boolean;
+  surfaceHazards: SurfaceHazardSummaryPayload[];
   trackWetness: number;
   ambientTempC: number;
   trackTempC: number;

@@ -71,6 +71,118 @@ body {
   text-transform: uppercase;
 }
 
+.race-control-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 11950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  font-family: "Rajdhani", "Segoe UI", sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.race-control-banner.hidden {
+  display: none;
+}
+
+.race-control-banner--fcy {
+  background: linear-gradient(90deg, #b8860b 0%, #ffd700 50%, #b8860b 100%);
+  color: #1a1200;
+}
+
+.race-control-banner--sc {
+  background: linear-gradient(90deg, #8b1a00 0%, #e10600 45%, #ff5a1f 100%);
+}
+
+.race-control-banner--white {
+  background: linear-gradient(90deg, #444 0%, #f5f5f5 50%, #444 100%);
+  color: #111;
+}
+
+.race-penalty-panel {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(231, 76, 60, 0.45);
+  border-radius: 8px;
+  background: rgba(231, 76, 60, 0.08);
+}
+
+.race-penalty-label {
+  margin: 0.35rem 0 0.65rem;
+  font-size: 0.85rem;
+  color: var(--text-muted, #adb5bd);
+}
+
+.track-hazard-marker {
+  stroke: #fff;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.car-marker.stranded-car .car-glow {
+  animation: stranded-pulse 1.2s ease-in-out infinite;
+}
+
+.car-marker.meatball-car .car-body {
+  stroke: #e67e22 !important;
+  stroke-width: 2.5 !important;
+}
+
+.car-marker.black-flag-car .car-body {
+  stroke: #111 !important;
+  stroke-width: 2.5 !important;
+}
+
+@keyframes stranded-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.compact-lb-status.status-penalty {
+  color: #f39c12;
+  font-weight: 600;
+}
+
+.compact-lb-status.status-meatball {
+  color: #e67e22;
+  font-weight: 600;
+}
+
+.compact-lb-status.status-black-flag {
+  color: #fff;
+  background: #111;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-weight: 700;
+}
+
+body.mock-sim-active .race-control-banner:not(.hidden) {
+  top: 2.6rem;
+}
+
+body.race-control-banner-active #app {
+  padding-top: 2.4rem;
+}
+
+body.mock-sim-active.race-control-banner-active #app {
+  padding-top: 5rem;
+}
+
 body.mock-sim-active #app {
   height: calc(100% - 2.6rem);
   margin-top: 2.6rem;

@@ -8,9 +8,34 @@ const DIRECTOR_TYPES = new Set<SimEventType>([
   "PitEnter",
   "PitExit",
   "CommandAck",
+  "Stranded",
+  "RecoveryDispatched",
+  "TrackClear",
+  "SurfaceHazard",
+  "SurfaceCleared",
+  "BlueFlag",
+  "PenaltyIssued",
+  "DriveThroughServed",
+  "StopGoServed",
+  "MeatballFlag",
+  "BlackFlag",
+  "Disqualified",
+  "SlowZone",
+  "FcyDeploy",
+  "FcyEnd",
+  "SafetyCarDeploy",
+  "SafetyCarInThisLap",
+  "GreenFlag",
+  "WhiteFlag",
 ]);
 
-const INCIDENT_TYPES = new Set<SimEventType>(["Retirement", "Collision", "Blocked"]);
+const INCIDENT_TYPES = new Set<SimEventType>([
+  "Retirement",
+  "Collision",
+  "Blocked",
+  "PenaltyWarning",
+  "RacingIncident",
+]);
 
 const TRACK_TYPES = new Set<SimEventType>(["Overtake"]);
 

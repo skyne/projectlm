@@ -3,6 +3,7 @@
 
 #include "car_entity.hpp"
 #include "pit_stop.hpp"
+#include "race_control_common.hpp"
 #include "track.hpp"
 #include "weather.hpp"
 #include <random>
@@ -30,9 +31,7 @@ struct RaceSession {
   std::string weatherProfileId = "changeable";
   std::mt19937 rng{20260306};
   std::unordered_map<std::string, double> trafficEventCooldowns;
-  bool fcyActive = false;
-  double fcyEndTime = 0.0;
-  double nextFcyScheduleTime = 0.0;
+  SessionRaceControl raceControl;
 };
 
 bool IsNightSession(double raceTimeSeconds);

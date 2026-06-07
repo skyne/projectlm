@@ -86,12 +86,19 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
                     double trackWidthM, double raceTime,
                     std::unordered_map<std::string, double> &eventCooldowns,
                     std::vector<TrafficModifiers> &modifiersOut,
-                    std::vector<TrafficEvent> &eventsOut) {
+                    std::vector<TrafficEvent> &eventsOut,
+                    const SessionRaceControl &raceControl,
+                    const std::vector<Car *> &leaderboard) {
   modifiersOut.assign(cars.size(), TrafficModifiers{});
   eventsOut.clear();
 
   if (cars.size() < 2 || lapLength <= 0.0)
     return;
+
+  const bool noOvertaking =
+      raceControl.flagPhase == FlagPhase::FCY ||
+      raceControl.flagPhase == FlagPhase::SC ||
+      raceControl.flagPhase == FlagPhase::SCInLap;
 
   const double safetyGap = 3.0;
 
@@ -99,12 +106,15 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
     const Car &self = cars[i];
     if (self.isRetired() || self.inPitLane())
       continue;
+    if (self.rcState().trackStatus == TrackStatus::Cleared)
+      continue;
 
     const CarBodyDimensions selfDim = self.bodyDimensions();
     TrafficModifiers &selfMod = modifiersOut[i];
     const double paceSkill = self.driver().paceFactor(0.0, false);
     const double overtakeSkill = self.driver().overtakingFactor();
     const double selfRaceDist = RaceDistance(self, lapLength);
+    const bool selfObstruction = self.isOnTrackObstruction();
 
     for (size_t j = 0; j < cars.size(); ++j) {
       if (i == j)
@@ -113,12 +123,26 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
       const Car &other = cars[j];
       if (other.isRetired() || other.inPitLane())
         continue;
+      if (other.rcState().trackStatus == TrackStatus::Cleared)
+        continue;
 
       const CarBodyDimensions otherDim = other.bodyDimensions();
       const double gap = WrapRaceGap(RaceDistance(other, lapLength),
                                      selfRaceDist, lapLength);
       const double combinedLength =
           (selfDim.lengthM + otherDim.lengthM) * 0.5 + safetyGap;
+
+      if (other.isOnTrackObstruction() && gap > 0.0 &&
+          gap < combinedLength * 5.0) {
+        selfMod.blocked = true;
+        selfMod.speedCapMs = std::max(
+            selfMod.speedCapMs,
+            std::max(kMinTrafficSpeedMs, 12.0));
+        selfMod.blockingEntryId = other.entryId();
+      }
+
+      if (selfObstruction)
+        continue;
 
       if (gap <= 0.0 || gap > combinedLength * 6.0)
         continue;
@@ -138,10 +162,22 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
               std::min(10.0, (relativeSpeed - 6.5) * 0.75);
           selfMod.collisionDamage = std::max(selfMod.collisionDamage, impact);
           selfMod.collision = true;
-          TryEmitEvent(eventsOut, eventCooldowns, TrafficEvent::Type::Collision,
-                       self.entryId(), other.entryId(),
-                       self.teamName() + " contact with " + other.teamName(),
-                       raceTime);
+          const std::string key =
+              self.entryId() + ":" + other.entryId() + ":c";
+          if (CooldownReady(eventCooldowns, key, raceTime,
+                            kCollisionEventCooldownSec)) {
+            TrafficEvent ev;
+            ev.type = TrafficEvent::Type::Collision;
+            ev.entryId = self.entryId();
+            ev.otherEntryId = other.entryId();
+            ev.message =
+                self.teamName() + " contact with " + other.teamName();
+            ev.impact = impact;
+            ev.relativeSpeedMs = relativeSpeed;
+            ev.lateralSepM = lateralSep;
+            ev.closingFromRear = gap > 0.0;
+            eventsOut.push_back(std::move(ev));
+          }
         } else if (other.state().currentSpeed > self.state().currentSpeed + 1.0) {
           selfMod.blocked = true;
           selfMod.speedCapMs = std::max(
@@ -169,7 +205,7 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
 
       const double passWindow =
           combinedLength * (1.75 - overtakeSkill * 0.14 - paceSkill * 0.04);
-      if (gap > 0.0 && gap < passWindow &&
+      if (!noOvertaking && gap > 0.0 && gap < passWindow &&
           self.state().currentSpeed > other.state().currentSpeed + 1.5) {
         const double trafficRoom =
             self.driver().active().trafficManagement / 100.0;
@@ -209,7 +245,7 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
       }
 
       // Blue flag: slower class ahead must not block a faster closing car.
-      if (gap > 0.0 && gap < combinedLength * 4.5 &&
+      if (!noOvertaking && gap > 0.0 && gap < combinedLength * 4.5 &&
           ClassRank(self.raceClass().id) < ClassRank(other.raceClass().id) &&
           relativeSpeed > 2.5) {
         TrafficModifiers &otherMod = modifiersOut[j];
@@ -221,6 +257,23 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
                      other.entryId(), self.entryId(),
                      other.teamName() + " blue flag — " + self.teamName(),
                      raceTime);
+      }
+
+      // Lapped traffic blue flag.
+      if (!noOvertaking && !leaderboard.empty() && gap > 0.0 &&
+          gap < combinedLength * 4.5 && relativeSpeed > 2.5) {
+        const Car *leader = leaderboard.front();
+        if (leader != nullptr && other.entryId() == leader->entryId()) {
+          const int lapDelta =
+              self.state().currentLap - other.state().currentLap;
+          if (lapDelta >= 1) {
+            TrafficModifiers &otherMod = modifiersOut[j];
+            otherMod.blueFlag = true;
+            otherMod.speedCapMs = std::max(
+                otherMod.speedCapMs,
+                std::max(kMinTrafficSpeedMs, self.state().currentSpeed * 0.99));
+          }
+        }
       }
     }
   }

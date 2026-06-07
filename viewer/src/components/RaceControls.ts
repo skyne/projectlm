@@ -16,6 +16,7 @@ export interface RaceControlsHandlers {
   onPitNow: (entryId: string) => void;
   onCancelPit: (entryId: string) => void;
   onReleaseToTrack?: (entryId: string) => void;
+  onPenaltyServe?: (entryId: string, command: string) => void;
   onSetupChange: (entryId: string, command: string) => void;
   onStartingCompound?: (entryId: string, compound: StartingCompound) => void;
   onEntryChange?: (entryId: string) => void;
@@ -28,6 +29,9 @@ export class RaceControls {
   private pitBtn!: HTMLButtonElement;
   private releaseBtn!: HTMLButtonElement;
   private cancelPitBtn!: HTMLButtonElement;
+  private penaltyPanelEl!: HTMLElement;
+  private penaltyLabelEl!: HTMLElement;
+  private penaltyServeBtn!: HTMLButtonElement;
   private modeButtons!: NodeListOf<HTMLButtonElement>;
   private setupQuickEl!: HTMLElement;
   private setupReadoutEl!: HTMLElement;
@@ -80,6 +84,11 @@ export class RaceControls {
         <button type="button" class="primary-btn pit-now-btn">⛽ Pit Now</button>
         <button type="button" class="secondary-btn cancel-pit-btn hidden">Cancel pit</button>
       </div>
+      <div class="race-penalty-panel hidden">
+        <span class="control-label">Race control penalty</span>
+        <p class="race-penalty-label"></p>
+        <button type="button" class="primary-btn race-penalty-serve-btn">Serve penalty</button>
+      </div>
       <div class="race-setup-quick hidden">
         <span class="control-label">Quick setup (pit only)</span>
         <div class="setup-row">
@@ -99,6 +108,9 @@ export class RaceControls {
     this.pitBtn = this.root.querySelector(".pit-now-btn")!;
     this.releaseBtn = this.root.querySelector(".release-track-btn")!;
     this.cancelPitBtn = this.root.querySelector(".cancel-pit-btn")!;
+    this.penaltyPanelEl = this.root.querySelector(".race-penalty-panel")!;
+    this.penaltyLabelEl = this.root.querySelector(".race-penalty-label")!;
+    this.penaltyServeBtn = this.root.querySelector(".race-penalty-serve-btn")!;
     this.modeButtons = this.root.querySelectorAll(".driver-mode-btn");
     this.setupQuickEl = this.root.querySelector(".race-setup-quick")!;
     this.setupReadoutEl = this.root.querySelector(".race-setup-readout")!;
@@ -139,6 +151,13 @@ export class RaceControls {
     this.cancelPitBtn.addEventListener("click", () => {
       this.handlers.onCancelPit(this.selectedEntryId);
       this.setStatus("Pit request cancelled");
+    });
+
+    this.penaltyServeBtn.addEventListener("click", () => {
+      const cmd = penaltyServeCommand(this.latestSnap);
+      if (!cmd) return;
+      this.handlers.onPenaltyServe?.(this.selectedEntryId, cmd);
+      this.setStatus(`Penalty queued — ${cmd.replace("pit|", "")}`);
     });
 
     this.setupMoreDfBtn.addEventListener("click", () =>
@@ -229,6 +248,7 @@ export class RaceControls {
     this.pitBtn.disabled = !enabled;
     this.releaseBtn.disabled = !enabled;
     this.cancelPitBtn.disabled = !enabled;
+    this.penaltyServeBtn.disabled = !enabled;
     for (const btn of this.modeButtons) {
       btn.disabled = !enabled;
     }
@@ -252,6 +272,7 @@ export class RaceControls {
     });
 
     this.applyGarageControls();
+    this.applyPenaltyControls();
     this.pitBtn.disabled = snap.inPit || snap.inGarage === true;
     this.cancelPitBtn.classList.toggle("hidden", !snap.pitQueued);
 
@@ -268,6 +289,28 @@ export class RaceControls {
     this.setupReadoutEl.textContent = formatLiveSetupReadout(snap);
 
     this.applySessionSetupVisibility();
+  }
+
+  private applyPenaltyControls(): void {
+    const snap = this.latestSnap;
+    const penalty = snap?.pendingPenalty ?? "none";
+    const mustServe =
+      penalty !== "none" &&
+      ((snap?.lapsToComply ?? 0) > 0 || penalty === "black" || snap?.blackFlag === true);
+    this.penaltyPanelEl.classList.toggle("hidden", !mustServe);
+    if (!mustServe) return;
+
+    const label = formatPenaltyLabel(penalty, snap?.lapsToComply);
+    this.penaltyLabelEl.textContent = label;
+    const cmd = penaltyServeCommand(snap);
+    this.penaltyServeBtn.textContent =
+      cmd === "pit|drive_through"
+        ? "Serve drive-through"
+        : cmd === "pit|stop_go"
+          ? "Serve stop-and-go"
+          : "Serve penalty";
+    const readonly = this.root.classList.contains("spectator-readonly");
+    this.penaltyServeBtn.disabled = readonly || snap?.inPit === true || snap?.pitQueued === true;
   }
 
   private applyGarageControls(): void {
@@ -308,6 +351,30 @@ export class RaceControls {
   getPlayerSnapshot(): CarSnapshot | null {
     return this.latestSnap;
   }
+}
+
+function formatPenaltyLabel(penalty: string, lapsToComply?: number): string {
+  const laps =
+    lapsToComply != null && lapsToComply > 0 ? ` — comply within ${lapsToComply} lap(s)` : "";
+  switch (penalty) {
+    case "drive_through":
+      return `Drive-through pending${laps}`;
+    case "stop_go":
+      return `Stop-and-go pending${laps}`;
+    case "black":
+      return `Black flag — stop in pits${laps}`;
+    default:
+      return `Penalty pending${laps}`;
+  }
+}
+
+function penaltyServeCommand(snap: CarSnapshot | null): string | null {
+  if (!snap) return null;
+  const penalty = snap.pendingPenalty ?? "none";
+  if (penalty === "drive_through") return "pit|drive_through";
+  if (penalty === "stop_go" || penalty === "black") return "pit|stop_go";
+  if (penalty !== "none") return "pit|penalty";
+  return null;
 }
 
 function formatLiveSetupReadout(snap: CarSnapshot): string {

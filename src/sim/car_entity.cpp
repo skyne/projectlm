@@ -179,6 +179,7 @@ void Car::resetForRestart() {
   totalPitSeconds_ = 0.0;
   driver_.resetForRestart();
   garageHold_ = false;
+  rc_ = CarRaceControlState{};
   placeOnGrid(gridPosition_);
 }
 
@@ -187,6 +188,11 @@ void Car::applyCommand(const SimCommand &command) {
   case SimCommandType::PitRequest:
     pit_.pendingEnter = true;
     pit_.plan = command.pit;
+    if (rc_.pendingPenalty == PendingPenalty::DriveThrough)
+      pit_.plan.driveThrough = true;
+    if (rc_.pendingPenalty == PendingPenalty::StopGo ||
+        rc_.pendingPenalty == PendingPenalty::Black)
+      pit_.plan.stopGo = true;
     if (pit_.plan.tiresToChange.empty() && pit_.plan.fuelLiters <= 0.0 &&
         pit_.plan.repairs.empty() && !pit_.plan.changeDriver) {
       pit_.plan.fuelLiters = std::max(0.0, config_.fuelTankCapacity - state_.fuelRemaining);
@@ -319,11 +325,21 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
     pit_.statusMessage = "Pit lane";
     if (pit_.pitLaneDistance >= lane.boxDistance) {
       pit_.pitLaneDistance = lane.boxDistance;
-      pit_.phase = PitPhase::AtBox;
-      state_.currentSpeed = 0.0;
-      pit_.pitElapsed = 0.0;
-      pit_.pitDuration = ComputePitServiceDuration(pit_.plan, config_, staff);
-      pit_.statusMessage = "In pits";
+      if (pit_.plan.driveThrough || pit_.skipBoxService) {
+        pit_.phase = PitPhase::DrivingOut;
+        state_.currentSpeed = speedLimit;
+        pit_.statusMessage = "Drive-through";
+      } else {
+        pit_.phase = PitPhase::AtBox;
+        state_.currentSpeed = 0.0;
+        pit_.pitElapsed = 0.0;
+        if (pit_.plan.stopGo)
+          pit_.pitDuration =
+              rc_.penaltyStopSeconds > 0.0 ? rc_.penaltyStopSeconds : 10.0;
+        else
+          pit_.pitDuration = ComputePitServiceDuration(pit_.plan, config_, staff);
+        pit_.statusMessage = "In pits";
+      }
     }
     break;
 
@@ -334,6 +350,12 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
     pit_.pitElapsed += deltaTime;
     if (pit_.pitElapsed < pit_.pitDuration)
       break;
+    if (pit_.plan.stopGo && rc_.pendingPenalty != PendingPenalty::None) {
+      rc_.pendingPenalty = PendingPenalty::None;
+      rc_.penaltyReason.clear();
+      rc_.lapsToComply = 0;
+      rc_.penaltyStopSeconds = 0.0;
+    }
     pit_.phase = PitPhase::DrivingOut;
     state_.currentSpeed = speedLimit;
     pit_.statusMessage = "Pit exit";
@@ -346,7 +368,13 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
       break;
 
     pit_.pitLaneDistance = lane.totalLength();
-    ApplyPitServices(pit_.plan, config_, state_, driver_);
+    if (!pit_.plan.driveThrough)
+      ApplyPitServices(pit_.plan, config_, state_, driver_);
+    if (pit_.plan.driveThrough && rc_.pendingPenalty == PendingPenalty::DriveThrough) {
+      rc_.pendingPenalty = PendingPenalty::None;
+      rc_.penaltyReason.clear();
+      rc_.lapsToComply = 0;
+    }
     if (pit_.plan.wingAngleDelta != 0.0)
       wingAngleDelta_ =
           std::clamp(wingAngleDelta_ + pit_.plan.wingAngleDelta, -0.5, 0.5);
@@ -392,6 +420,10 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
   if (retired_ || track.sectors.empty() || pit_.inPit)
     return result;
 
+  const TrackStatus ts = rc_.trackStatus;
+  if (ts == TrackStatus::Stranded || ts == TrackStatus::Recovering)
+    return result;
+
   driver_.tickStint(deltaTime);
 
   const int prevLap = state_.currentLap;
@@ -428,6 +460,10 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
       mods.speedCapMs = traffic->speedCapMs;
     if (traffic->blueFlag)
       mods.throttleMultiplier *= 1.02;
+    if (traffic->localGripScale > 0.0 && traffic->localGripScale < 1.0)
+      mods.localGripScale = traffic->localGripScale;
+    if (traffic->scRestartThrottleBoost > 0.0)
+      mods.throttleMultiplier *= 1.0 + traffic->scRestartThrottleBoost;
     if (traffic->draftThrottleBoost > 0.0)
       mods.draftThrottleBoost = traffic->draftThrottleBoost;
     if (traffic->collisionDamage > 0.0) {
@@ -598,10 +634,6 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
       outOfFuelTimer_ += deltaTime;
     else
       outOfFuelTimer_ = 0.0;
-    if (outOfFuelTimer_ > 4.0 && !retired_) {
-      markRetired("Out of fuel");
-      result.retired = true;
-    }
   } else {
     outOfFuelTimer_ = 0.0;
   }
@@ -627,12 +659,13 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
     }
   }
 
-  if (state_.engineHealth <= 0.0 && !retired_) {
+  if (state_.engineHealth <= 0.0 && !retired_ && pit_.inPit) {
     markRetired("Engine failure");
     result.retired = true;
   }
 
-  if (state_.engineHealth > 0.0 && state_.engineHealth < 12.0 && !retired_) {
+  if (state_.engineHealth > 0.0 && state_.engineHealth < 12.0 && !retired_ &&
+      pit_.inPit) {
     const double failRate =
         (12.0 - state_.engineHealth) * 0.000012 * deltaTime;
     const double roll =
@@ -647,6 +680,16 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
   }
 
   return result;
+}
+
+bool Car::isOnTrackObstruction() const {
+  const TrackStatus ts = rc_.trackStatus;
+  return ts == TrackStatus::Stranded || ts == TrackStatus::Recovering;
+}
+
+void Car::markRetired(const std::string &reason) {
+  retired_ = true;
+  retireReason_ = reason;
 }
 
 CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const {
@@ -813,6 +856,17 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const 
 
   snap.position = pose.position;
   snap.tangent = pose.tangent;
+  snap.trackStatus = TrackStatusName(rc_.trackStatus);
+  snap.blueFlag = rc_.blueFlagActive;
+  snap.blueFlagStrikes = rc_.blueFlagStrikes;
+  snap.pendingPenalty = PendingPenaltyName(rc_.pendingPenalty);
+  snap.penaltyReason = rc_.penaltyReason;
+  snap.lapsToComply = rc_.lapsToComply;
+  snap.meatballFlag = rc_.meatballActive;
+  snap.blackFlag = rc_.pendingPenalty == PendingPenalty::Black;
+  snap.collisionWarnings = rc_.collisionWarnings;
+  snap.penaltyStopSeconds = rc_.penaltyStopSeconds;
+  snap.recoveryProgress = rc_.recoveryProgress;
   return snap;
 }
 
@@ -844,9 +898,4 @@ bool Car::isAheadOf(const Car &other) const {
   if (state_.currentLap != other.state_.currentLap)
     return state_.currentLap > other.state_.currentLap;
   return state_.currentDistance > other.state_.currentDistance;
-}
-
-void Car::markRetired(const std::string &reason) {
-  retired_ = true;
-  retireReason_ = reason;
 }

@@ -42,6 +42,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const weather_model_1 = require("./weather_model");
 const config_parser_1 = require("./config_parser");
+const race_control_model_1 = require("./race_control_model");
 const tyre_grip_1 = require("./tyre_grip");
 const PIT_LANE_FRACTION = 0.06;
 const PIT_LANE_SPEED_MS = 60 / 3.6;
@@ -215,6 +216,11 @@ function makeCarState(entry) {
         stintTimeSec: 0,
         tyreTread: "slick",
         inGarage: false,
+        trackStatus: "racing",
+        marshalDispatchTime: -1,
+        recoveryEndTime: -1,
+        strandedSinceTime: -1,
+        obstructionReason: "",
     };
 }
 function isOpenSessionMode(mode) {
@@ -549,6 +555,7 @@ class MockSimSession {
         this.weatherLabel = "";
         this.weatherBiome = "";
         this.weather = (0, weather_model_1.initWeatherState)("changeable", 0, 0);
+        this.mockRaceControl = (0, race_control_model_1.defaultMockRaceControlState)();
         this.rngSeed = 20260306;
         this.rngState = 20260306;
         this.repoRoot = repoRoot;
@@ -559,6 +566,70 @@ class MockSimSession {
         t = Math.imul(t ^ (t >>> 15), t | 1);
         t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+    strandCarOnTrack(car, reason) {
+        if (car.trackStatus !== "racing" || car.retired)
+            return;
+        car.trackStatus = "stranded";
+        car.speed = 0;
+        car.strandedSinceTime = this.raceTime;
+        car.marshalDispatchTime = this.raceTime + race_control_model_1.MOCK_MARSHAL_RESPONSE_SEC;
+        car.recoveryEndTime = -1;
+        car.obstructionReason = reason;
+        this.mockRaceControl.activeIncidentEntryId = car.entryId;
+        this.pendingEvents.push({
+            type: "Stranded",
+            entryId: car.entryId,
+            lap: car.lap,
+            timestamp: this.raceTime,
+            message: `${car.teamName} stopped on track — ${reason}`,
+        });
+    }
+    clearObstructionCar(car) {
+        car.trackStatus = "cleared";
+        this.pendingEvents.push({
+            type: "TrackClear",
+            entryId: car.entryId,
+            lap: car.lap,
+            timestamp: this.raceTime,
+            message: `${car.teamName} cleared from track`,
+        });
+        car.retired = true;
+        car.retireReason = car.obstructionReason || "Retired on track";
+        this.pendingEvents.push({
+            type: "Retirement",
+            entryId: car.entryId,
+            lap: car.lap,
+            timestamp: this.raceTime,
+            message: `${car.teamName} retired: ${car.retireReason}`,
+        });
+        if (this.mockRaceControl.activeIncidentEntryId === car.entryId) {
+            this.mockRaceControl.activeIncidentEntryId = "";
+        }
+    }
+    updateStrandedCars() {
+        for (const car of this.cars) {
+            if (car.retired)
+                continue;
+            if (car.trackStatus === "stranded" &&
+                car.marshalDispatchTime >= 0 &&
+                this.raceTime >= car.marshalDispatchTime) {
+                car.trackStatus = "recovering";
+                car.recoveryEndTime = this.raceTime + race_control_model_1.MOCK_TOW_DURATION_SEC;
+                this.pendingEvents.push({
+                    type: "RecoveryDispatched",
+                    entryId: car.entryId,
+                    lap: car.lap,
+                    timestamp: this.raceTime,
+                    message: `${car.teamName} recovery dispatched`,
+                });
+            }
+            if (car.trackStatus === "recovering" &&
+                car.recoveryEndTime >= 0 &&
+                this.raceTime >= car.recoveryEndTime) {
+                this.clearObstructionCar(car);
+            }
+        }
     }
     resetWeather() {
         const cfg = this.raceConfig;
@@ -786,6 +857,10 @@ class MockSimSession {
                 }
                 continue;
             }
+            if (car.trackStatus === "stranded" || car.trackStatus === "recovering") {
+                car.speed = 0;
+                continue;
+            }
             const prevSector = car.sectorIndex;
             car.currentLapTime += deltaTime;
             car.currentSectorTime += deltaTime;
@@ -903,18 +978,16 @@ class MockSimSession {
             if (car.coolantTempC > 105) {
                 car.engineHealth = Math.max(0, car.engineHealth - (car.coolantTempC - 105) * 0.006 * deltaTime);
             }
-            if (car.engineHealth <= 0) {
-                car.retired = true;
-                car.retireReason = "Engine failure";
-                this.pendingEvents.push({
-                    type: "Retirement",
-                    entryId: car.entryId,
-                    lap: car.lap,
-                    timestamp: this.raceTime,
-                    message: `${car.teamName} retired: Engine failure`,
-                });
+            if (car.engineHealth <= 0 && car.speed <= 0.5) {
+                if (car.trackStatus === "racing") {
+                    this.strandCarOnTrack(car, "Engine failure");
+                }
+            }
+            else if (car.engineHealth <= 0) {
+                car.speed = 0;
             }
         }
+        this.updateStrandedCars();
         if (this.checkRaceComplete()) {
             this.raceComplete = true;
             this.pendingEvents.push({
@@ -1046,6 +1119,13 @@ class MockSimSession {
                 driverStintSeconds: car.stintTimeSec,
                 maxDriverStintSeconds: car.maxDriverStintSeconds,
                 driverMode: car.driverMode,
+                trackStatus: car.trackStatus !== "racing" ? car.trackStatus : undefined,
+                recoveryProgress: car.trackStatus === "recovering" &&
+                    car.recoveryEndTime > car.marshalDispatchTime &&
+                    car.marshalDispatchTime >= 0
+                    ? Math.min(1, Math.max(0, (this.raceTime - car.marshalDispatchTime) /
+                        (car.recoveryEndTime - car.marshalDispatchTime)))
+                    : undefined,
             };
         });
     }
@@ -1114,15 +1194,24 @@ class MockSimSession {
         this.raceTime = 0;
         this.pendingEvents = [];
         this.raceComplete = false;
+        this.mockRaceControl = (0, race_control_model_1.defaultMockRaceControlState)();
         this.resetWeather();
         return true;
     }
     getRaceControl() {
         const profile = this.weatherProfileData;
         const forecast = (0, weather_model_1.buildWeatherForecast)(this.weather, profile, this.raceTime);
+        const rc = this.mockRaceControl;
         return {
-            fcyActive: false,
-            scActive: false,
+            fcyActive: rc.fcyActive,
+            scActive: rc.scActive,
+            flagPhase: rc.flagPhase,
+            sectorFlags: [...rc.sectorFlags],
+            activeIncidentEntryId: rc.activeIncidentEntryId || undefined,
+            scLapsRemaining: rc.scLapsRemaining,
+            obstructionsOnTrack: (0, race_control_model_1.countTrackObstructions)(this.cars.map((c) => c.trackStatus)),
+            whiteFlagActive: rc.whiteFlagActive,
+            surfaceHazards: rc.surfaceHazards.map((h) => ({ ...h })),
             trackWetness: this.weather.trackWetness,
             ambientTempC: this.weather.ambientTempC,
             trackTempC: this.weather.trackTempC,

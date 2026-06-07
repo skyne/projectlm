@@ -26,6 +26,8 @@ struct PitStopPlan {
   ETyreTread tyreTread = ETyreTread::Slick;
   std::vector<std::string> repairs;
   bool changeDriver = false;
+  bool driveThrough = false;
+  bool stopGo = false;
   int swapToDriverIndex = -1;
   double wingAngleDelta = 0.0;
   double brakeBiasDelta = 0.0;
