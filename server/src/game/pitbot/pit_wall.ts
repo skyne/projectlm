@@ -151,7 +151,7 @@ function applyPitSuccess(
   plan: ReturnType<typeof planPitStop>,
 ): void {
   st.lastPitLap = s.lap;
-  st.fuelAtLastPit = tankCapacityFor(s);
+  st.fuelAtLastPit = plan?.services.fuel ? tankCapacityFor(s) : s.fuel;
   if (plan?.services.setup) st.setupDone = true;
   if (plan?.services.tyres) st.tyreTread = desiredTyreTread(wet);
 }

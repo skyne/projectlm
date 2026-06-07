@@ -655,14 +655,23 @@ export class SimHost {
     // spike vibration damage when time compression multiplies delta in one tick.
     const frameDelta = this.simTimestep * this.timeScale;
     let remaining = frameDelta;
+    let pitBotAccumSec = 0;
+    const PITBOT_INTERVAL_SEC = 1.0;
     while (remaining > 1e-9) {
       const dt = Math.min(this.simTimestep, remaining);
       this.session.tick(dt);
       remaining -= dt;
+      pitBotAccumSec += dt;
+      if (pitBotAccumSec >= PITBOT_INTERVAL_SEC) {
+        pitBotAccumSec = 0;
+        this.runPitBot();
+      }
     }
     this.raceTime += frameDelta;
 
-    this.runPitBot();
+    if (pitBotAccumSec > 0) {
+      this.runPitBot();
+    }
 
     const snapshots = this.enrichSnapshots(this.session.getSnapshots());
     const raceTime = this.getRaceTime();

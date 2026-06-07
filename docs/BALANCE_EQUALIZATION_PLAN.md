@@ -124,26 +124,39 @@ Exotic tuning **depends on multiclass stint fix** — many Hypercar “Out of fu
 3. Cap deploy to BoP (~680 hp equivalent).
 4. Re-benchmark solo before grid inclusion.
 
-### 0b — Multiclass stint viability (**highest priority**)
+### 0b — Multiclass stint viability (**in progress** — branch `feature/balance-multiclass`, worktree `../projectlm-balance`)
 
-**Observed:** LMP2 5% finish; 100% fuel DNFs across classes.
+**Observed (baseline):** LMP2 5% finish; 100% fuel DNFs across classes.
 
-**Plan:**
+**Implemented (2026-06-07, ported to PitBot after main merge `7133c67`):**
 
-| Knob | Hypercar | LMP2 | LMGT3 | Rationale |
-|------|----------|------|-------|-----------|
-| AI `fuelLowFraction` | 0.28 → **0.30** | 0.27 → **0.34** | 0.30 → **0.32** | LMP2 pits earlier; avoid lap-6–8 empty tank |
-| AI `fuelCriticalFraction` | 0.12 → **0.14** | 0.11 → **0.16** | 0.13 → **0.15** | Emergency stop before zero |
-| AI `targetStintSeconds` | 2700 | 3000 → **2700** | 2100 → **2400** | Align with real ~45 min stints |
-| Min pit lap rule | keep `lap ≥ 2` | **allow lap-1 stop if fuel ≤ critical** | same as LMP2 | Fix pre-first-stop DNFs |
-| Tank catalog | verify `LeMans90L`/`110L` | **add `LMP2LeMans75L` or bump StandardTank → 110 L** | verify GT3 tank in catalog | Oreca 100 L may be wrong effective capacity after burn |
-| Fuel burn audit | Gibson vs LMP2 BoP | **measure L/100 km at 4:25 lap** | GT3 at 4:47 | Ensure one stint ≥ 6 La Sarthe laps |
+| Change | File(s) |
+|--------|---------|
+| Per-class PitBot fuel thresholds (Hypercar 30%/14%, LMP2 38%/18%, LMGT3 **36%/18%**) | `server/src/game/pitbot/pit_planner.ts` |
+| No fuel-stop deferral for tyre bundling; fix `fuelAtLastPit` after non-fuel stops | `pit_planner.ts`, `pit_wall.ts` |
+| LMGT3 `fuel_burn_modifier=0.90` (was 1.06) | `configs/class_rules.txt` |
+| Lap-1 pit when fuel critical | `pit_planner.ts` |
+| PitBot every 1 sim second under time compression | `server/src/sim_host.ts`, `tools/benchmark/run_endurance.mjs` |
+| LMP2 `fuel_burn_modifier=0.88`, `power_cap_hp=460` | `configs/class_rules.txt` |
+| Oreca `LeMans110L` tank | `configs/cars/lemans2026/oreca_07_gibson.txt` |
+| Gate 1 runner + unit tests | `tools/benchmark/run_endurance.mjs`, `pit_planner.test.ts` |
+
+**Gate 1 results (24h Le Mans, stock grid, post-GT3 fix):**
+
+| Class | Finish | Target | Best lap | Notes |
+|-------|--------|--------|----------|-------|
+| LMP2 | **20/20 (100%)** | ≥18/20 | 4:29.7 | ✅ |
+| LMGT3 | **25/25 (100%)** | ≥21/25 | 4:51.2 | ✅ Fixed (was 10/25) |
+| Hypercar | **17/23 (74%)** | ≥20/23 | 4:03.5 | 6 fuel DNFs (Cadillac/Aston/Ford) |
+| **Grid** | **62/68 (91%)** | — | — | up from 47/68 pre-GT3 fix |
+
+**Next:** Hypercar late-race fuel DNFs (Cadillac/Aston cluster).
 
 **Success metric (stock grid, 24h LM):**
 
-- [ ] LMP2 finish **≥ 18/20**
+- [x] LMP2 finish **≥ 18/20**
 - [ ] Hypercar finish **≥ 20/23**
-- [ ] LMGT3 finish **≥ 21/25**
+- [x] LMGT3 finish **≥ 21/25**
 - [ ] Zero “Out of fuel” DNFs
 - [ ] Pace ladder unchanged within **±1%** (4:06 / 4:24 / 4:47 band)
 
@@ -309,7 +322,7 @@ Output: `tmp/benchmark/latest_summary.json`
 - **Don't** equalize to identical lap counts across classes or powertrains
 - **Don't** buff H₂ ICE peak power to compensate for bad stints
 - **Don't** make FC as fast as ICE on lap time
-- **Don't** tune 68 individual car files — use `class_rules`, tank catalog, `ai_strategy.ts` profiles
+- **Don't** tune 68 individual car files — use `class_rules`, tank catalog, `pit_planner.ts` profiles
 - **Don't** balance using Full EV results until SOC is real
 
 ---
