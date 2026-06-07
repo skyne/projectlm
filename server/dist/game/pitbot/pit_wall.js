@@ -99,7 +99,7 @@ function initCarState(entryIds, wet = 0, options) {
 }
 function applyPitSuccess(s, st, wet, plan) {
     st.lastPitLap = s.lap;
-    st.fuelAtLastPit = (0, pit_planner_1.tankCapacityFor)(s);
+    st.fuelAtLastPit = plan?.services.fuel ? (0, pit_planner_1.tankCapacityFor)(s) : s.fuel;
     if (plan?.services.setup)
         st.setupDone = true;
     if (plan?.services.tyres)
