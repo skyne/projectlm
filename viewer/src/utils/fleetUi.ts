@@ -201,6 +201,77 @@ export function unitCostForExperimentalBuy(
   return total;
 }
 
-export function experimentalAffiliationHint(classId: string): string {
-  return `Experimental ${classId} entries run with an EXP tag, earn no WEC points, and receive prototype media payouts plus bonus R&D.`;
+export function homologatedHypercarManufacturerCount(
+  fleet: FleetCarPayload[],
+): number {
+  return fleet.filter(
+    (c) =>
+      c.classId === "Hypercar" &&
+      c.affiliation === "manufacturer" &&
+      fleetEntryMode(c) === "homologated",
+  ).length;
+}
+
+/** One EXP mule on top of an existing homologated Hypercar manufacturer pair. */
+export function hypercarMfgExpExceptionPath(
+  fleet: FleetCarPayload[],
+  affiliation: FleetCarPayload["affiliation"],
+  mfgHypercarMin = 2,
+): boolean {
+  return (
+    affiliation === "manufacturer" &&
+    homologatedHypercarManufacturerCount(fleet) >= mfgHypercarMin
+  );
+}
+
+export function experimentalHypercarBuyLimits(
+  fleet: FleetCarPayload[],
+  affiliation: FleetCarPayload["affiliation"],
+  catalog: GameCatalogPayload | null,
+): { min: number; max: number; exceptionPath: boolean } {
+  const mfgMin = catalog?.fleetRules.manufacturerHypercarMinCars ?? 2;
+  const exceptionPath = hypercarMfgExpExceptionPath(fleet, affiliation, mfgMin);
+  const standalone =
+    catalog?.fleetRules.experimental.hypercarStandaloneExpCopies ?? 2;
+  const mfgExpMax =
+    catalog?.fleetRules.experimental.hypercarManufacturerExpMax ?? 1;
+  if (exceptionPath) {
+    return { min: 1, max: mfgExpMax, exceptionPath: true };
+  }
+  return { min: standalone, max: standalone, exceptionPath: false };
+}
+
+export function suggestedExperimentalBuyQuantity(
+  classId: string,
+  affiliation: FleetCarPayload["affiliation"],
+  fleet: FleetCarPayload[],
+  catalog: GameCatalogPayload | null,
+  existingExpCount: number,
+): number {
+  if (existingExpCount > 0) return 1;
+  if (classId === "Hypercar") {
+    return experimentalHypercarBuyLimits(fleet, affiliation, catalog).min;
+  }
+  return 1;
+}
+
+export function experimentalAffiliationHint(
+  classId: string,
+  affiliation: FleetCarPayload["affiliation"] = "privateer",
+  fleet: FleetCarPayload[] = [],
+  catalog: GameCatalogPayload | null = null,
+): string {
+  const base = `Experimental ${classId} entries run with an EXP tag, earn no WEC points, and receive prototype media payouts plus bonus R&D.`;
+  if (classId === "Hypercar") {
+    const { min, max, exceptionPath } = experimentalHypercarBuyLimits(
+      fleet,
+      affiliation,
+      catalog,
+    );
+    if (exceptionPath) {
+      return `${base} With your homologated Hypercar pair in place, you may add ${max} EXP mule (order quantity 1).`;
+    }
+    return `${base} Standalone EXP Hypercar programmes require ${min} matched mules — set quantity to ${min} for a new programme.`;
+  }
+  return base;
 }

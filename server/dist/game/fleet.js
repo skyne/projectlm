@@ -19,6 +19,8 @@ exports.createFleetCar = createFleetCar;
 exports.migrateLegacyMeta = migrateLegacyMeta;
 exports.activeFleetCar = activeFleetCar;
 exports.manufacturerHypercarCount = manufacturerHypercarCount;
+exports.hypercarManufacturerExpEligible = hypercarManufacturerExpEligible;
+exports.hypercarMfgExpExceptionPath = hypercarMfgExpExceptionPath;
 exports.validateFleetRegulations = validateFleetRegulations;
 exports.validateBuyCar = validateBuyCar;
 exports.createFleetCars = createFleetCars;
@@ -465,11 +467,38 @@ function manufacturerHypercarCount(fleet) {
         c.affiliation === "manufacturer" &&
         (0, experimental_entry_1.fleetEntryMode)(c) === "homologated").length;
 }
+/** Hypercar mfg EXP allowed only after the mandatory homologated pair exists. */
+function hypercarManufacturerExpEligible(fleet) {
+    return manufacturerHypercarCount(fleet) >= car_marketplace_1.MANUFACTURER_HYPERCAR_MIN_CARS;
+}
+/** Established HC manufacturer adding a third mule on top of the homologated pair. */
+function hypercarMfgExpExceptionPath(fleet, affiliation) {
+    return (affiliation === "manufacturer" && hypercarManufacturerExpEligible(fleet));
+}
+function experimentalHypercarLimits(fleet, affiliation) {
+    const exception = hypercarMfgExpExceptionPath(fleet, affiliation);
+    return {
+        min: (0, experimental_entry_1.minExperimentalCopies)(affiliation, "Hypercar", {
+            hypercarMfgException: exception,
+        }),
+        max: (0, experimental_entry_1.maxExperimentalCopies)(affiliation, "Hypercar", {
+            hypercarMfgException: exception,
+        }),
+    };
+}
 function validateFleetRegulations(fleet) {
     if (fleet.length === 0) {
         return "Your team needs at least one car before racing";
     }
     const mfgHypercars = manufacturerHypercarCount(fleet);
+    const hasExpHypercarMfg = fleet.some((c) => c.classId === "Hypercar" &&
+        c.affiliation === "manufacturer" &&
+        (0, experimental_entry_1.isExperimentalCar)(c));
+    if (mfgHypercars > 0 &&
+        mfgHypercars < car_marketplace_1.MANUFACTURER_HYPERCAR_MIN_CARS &&
+        hasExpHypercarMfg) {
+        return `Complete your homologated Hypercar programme (${car_marketplace_1.MANUFACTURER_HYPERCAR_MIN_CARS} cars) before adding experimental entries`;
+    }
     if (mfgHypercars > 0 && mfgHypercars < car_marketplace_1.MANUFACTURER_HYPERCAR_MIN_CARS) {
         return `As a Hypercar manufacturer you must enter at least ${car_marketplace_1.MANUFACTURER_HYPERCAR_MIN_CARS} homologated Hypercars (you have ${mfgHypercars})`;
     }
@@ -507,9 +536,24 @@ function validateFleetRegulations(fleet) {
             return `Only one experimental design is allowed in ${classId}`;
         }
         if (experimental.length > 0) {
-            const cap = (0, experimental_entry_1.maxExperimentalCopies)(experimental[0].affiliation);
-            if (experimental.length > cap) {
-                return `At most ${cap} experimental ${classId} entries allowed`;
+            const affiliation = experimental[0].affiliation;
+            if (classId === "Hypercar" &&
+                affiliation === "manufacturer" &&
+                mfgHypercars > 0 &&
+                mfgHypercars < car_marketplace_1.MANUFACTURER_HYPERCAR_MIN_CARS) {
+                return `Complete your homologated Hypercar programme (${car_marketplace_1.MANUFACTURER_HYPERCAR_MIN_CARS} cars) before adding experimental entries`;
+            }
+            const { min, max } = classId === "Hypercar"
+                ? experimentalHypercarLimits(fleet, affiliation)
+                : {
+                    min: 1,
+                    max: (0, experimental_entry_1.maxExperimentalCopies)(affiliation, classId),
+                };
+            if (experimental.length < min) {
+                return `Experimental ${classId} programmes require at least ${min} entries`;
+            }
+            if (experimental.length > max) {
+                return `At most ${max} experimental ${classId} entries allowed`;
             }
             if (homologated.length > 0) {
                 const homKey = buildSpecKey(homologated[0].build);
@@ -560,13 +604,27 @@ function validateBuyCar(repoRoot, state, payload) {
         return `You already have a ${existing.label} programme in ${payload.classId}. Sell those cars before switching platform or build type.`;
     }
     if (entryMode === "experimental") {
-        const cap = (0, experimental_entry_1.maxExperimentalCopies)(payload.affiliation);
-        const nextCount = (experimental?.carCount ?? 0) + normalizeQuantity(payload.quantity);
-        if (nextCount > cap) {
-            return `At most ${cap} experimental ${payload.classId} entries allowed`;
+        const homMfgHypercars = manufacturerHypercarCount(fleet);
+        if (payload.classId === "Hypercar" &&
+            payload.affiliation === "manufacturer" &&
+            homMfgHypercars > 0 &&
+            homMfgHypercars < car_marketplace_1.MANUFACTURER_HYPERCAR_MIN_CARS) {
+            return `Complete your homologated Hypercar programme (${car_marketplace_1.MANUFACTURER_HYPERCAR_MIN_CARS} cars) before adding experimental entries`;
         }
-        if (entryMode === "experimental" &&
-            payload.affiliation === "privateer" &&
+        const limits = payload.classId === "Hypercar"
+            ? experimentalHypercarLimits(fleet, payload.affiliation)
+            : {
+                min: 1,
+                max: (0, experimental_entry_1.maxExperimentalCopies)(payload.affiliation, payload.classId),
+            };
+        const nextCount = (experimental?.carCount ?? 0) + normalizeQuantity(payload.quantity);
+        if (nextCount > limits.max) {
+            return `At most ${limits.max} experimental ${payload.classId} entries allowed`;
+        }
+        if (!experimental && nextCount < limits.min) {
+            return `Experimental ${payload.classId} programmes require at least ${limits.min} cars`;
+        }
+        if (payload.affiliation === "privateer" &&
             !experimental &&
             state.budget < experimental_entry_1.EXP_PRIVATEER_PROGRAMME_FEE) {
             return `Experimental privateer programmes require at least $${experimental_entry_1.EXP_PRIVATEER_PROGRAMME_FEE.toLocaleString()} for the development slot`;

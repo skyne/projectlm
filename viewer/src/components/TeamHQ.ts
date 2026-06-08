@@ -26,7 +26,9 @@ import {
   unitCostForBuy,
   unitCostForExperimentalBuy,
   experimentalAffiliationHint,
+  experimentalHypercarBuyLimits,
   fleetEntryMode,
+  suggestedExperimentalBuyQuantity,
 } from "../utils/fleetUi";
 import { mmPanelHeader } from "../utils/mmUi";
 import { LiveryEditor } from "./LiveryEditor";
@@ -650,6 +652,23 @@ export class TeamHQ {
       return;
     }
 
+    if (this.buyEntryMode === "experimental") {
+      const expProgram = getClassProgram(
+        this.meta.fleet ?? [],
+        this.buyClassId,
+        this.catalog,
+        "experimental",
+      );
+      this.buyQuantity = suggestedExperimentalBuyQuantity(
+        this.buyClassId,
+        this.buyAffiliation,
+        this.meta.fleet ?? [],
+        this.catalog,
+        expProgram?.carCount ?? 0,
+      );
+      return;
+    }
+
     if (
       this.buyClassId === "Hypercar" &&
       this.buyAffiliation === "manufacturer" &&
@@ -726,7 +745,11 @@ export class TeamHQ {
         <button type="button" class="entry-mode-btn" data-mode="homologated">Homologated</button>
         <button type="button" class="entry-mode-btn" data-mode="experimental">Experimental EXP</button>
       </div>
-      ${this.buyEntryMode === "experimental" ? `<p class="wizard-hint">${escapeHtml(experimentalAffiliationHint(this.buyClassId))}</p>` : ""}
+      ${this.buyEntryMode === "experimental" ? `<p class="wizard-hint">${escapeHtml(experimentalAffiliationHint(this.buyClassId, this.buyAffiliation, fleet, this.catalog))}</p>` : ""}
+      ${this.buyEntryMode === "experimental" && this.buyClassId === "Hypercar" ? (() => {
+        const lim = experimentalHypercarBuyLimits(fleet, this.buyAffiliation, this.catalog);
+        return `<p class="wizard-hint fleet-rule-warning">EXP Hypercar: order ${lim.min}${lim.min !== lim.max ? `–${lim.max}` : ""} car${lim.max === 1 ? "" : "s"}${lim.exceptionPath ? " (mule alongside homologated pair)" : " (standalone programme)"}.</p>`;
+      })() : ""}
       ${programLocked ? `<div class="fleet-program-locked"><strong>${escapeHtml(program.label)}</strong> — ${program.carCount} car${program.carCount === 1 ? "" : "s"} already entered</div>` : `
         <div class="buy-car-affiliation">
           <button type="button" class="affiliation-btn" data-aff="privateer">${escapeHtml(this.buyClassId)} Privateer</button>
@@ -756,6 +779,7 @@ export class TeamHQ {
       btn.addEventListener("click", () => {
         if (btn.disabled) return;
         this.buyEntryMode = mode;
+        this.syncBuyStateForClass();
         this.renderBuyPanel();
       });
     }

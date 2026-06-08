@@ -589,6 +589,8 @@ export interface FleetRulesPayload {
     opsFee: number;
     fanExposureBase: number;
     rdMultiplier: number;
+    hypercarManufacturerExpMax: number;
+    hypercarStandaloneExpCopies: number;
   };
 }
 

@@ -35,6 +35,7 @@ import {
   fleetEntryMode,
   isExperimentalCar,
   maxExperimentalCopies,
+  minExperimentalCopies,
   newExperimentalProgramId,
 } from "./experimental_entry";
 import type { FleetEntryMode } from "../ws_protocol";
@@ -588,6 +589,36 @@ export function manufacturerHypercarCount(fleet: FleetCarPayload[]): number {
   ).length;
 }
 
+/** Hypercar mfg EXP allowed only after the mandatory homologated pair exists. */
+export function hypercarManufacturerExpEligible(fleet: FleetCarPayload[]): boolean {
+  return manufacturerHypercarCount(fleet) >= MANUFACTURER_HYPERCAR_MIN_CARS;
+}
+
+/** Established HC manufacturer adding a third mule on top of the homologated pair. */
+export function hypercarMfgExpExceptionPath(
+  fleet: FleetCarPayload[],
+  affiliation: FleetCarPayload["affiliation"],
+): boolean {
+  return (
+    affiliation === "manufacturer" && hypercarManufacturerExpEligible(fleet)
+  );
+}
+
+function experimentalHypercarLimits(
+  fleet: FleetCarPayload[],
+  affiliation: FleetCarPayload["affiliation"],
+): { min: number; max: number } {
+  const exception = hypercarMfgExpExceptionPath(fleet, affiliation);
+  return {
+    min: minExperimentalCopies(affiliation, "Hypercar", {
+      hypercarMfgException: exception,
+    }),
+    max: maxExperimentalCopies(affiliation, "Hypercar", {
+      hypercarMfgException: exception,
+    }),
+  };
+}
+
 export function validateFleetRegulations(
   fleet: FleetCarPayload[],
 ): string | null {
@@ -596,6 +627,19 @@ export function validateFleetRegulations(
   }
 
   const mfgHypercars = manufacturerHypercarCount(fleet);
+  const hasExpHypercarMfg = fleet.some(
+    (c) =>
+      c.classId === "Hypercar" &&
+      c.affiliation === "manufacturer" &&
+      isExperimentalCar(c),
+  );
+  if (
+    mfgHypercars > 0 &&
+    mfgHypercars < MANUFACTURER_HYPERCAR_MIN_CARS &&
+    hasExpHypercarMfg
+  ) {
+    return `Complete your homologated Hypercar programme (${MANUFACTURER_HYPERCAR_MIN_CARS} cars) before adding experimental entries`;
+  }
   if (mfgHypercars > 0 && mfgHypercars < MANUFACTURER_HYPERCAR_MIN_CARS) {
     return `As a Hypercar manufacturer you must enter at least ${MANUFACTURER_HYPERCAR_MIN_CARS} homologated Hypercars (you have ${mfgHypercars})`;
   }
@@ -638,9 +682,28 @@ export function validateFleetRegulations(
       return `Only one experimental design is allowed in ${classId}`;
     }
     if (experimental.length > 0) {
-      const cap = maxExperimentalCopies(experimental[0].affiliation);
-      if (experimental.length > cap) {
-        return `At most ${cap} experimental ${classId} entries allowed`;
+      const affiliation = experimental[0].affiliation;
+      if (
+        classId === "Hypercar" &&
+        affiliation === "manufacturer" &&
+        mfgHypercars > 0 &&
+        mfgHypercars < MANUFACTURER_HYPERCAR_MIN_CARS
+      ) {
+        return `Complete your homologated Hypercar programme (${MANUFACTURER_HYPERCAR_MIN_CARS} cars) before adding experimental entries`;
+      }
+
+      const { min, max } =
+        classId === "Hypercar"
+          ? experimentalHypercarLimits(fleet, affiliation)
+          : {
+              min: 1,
+              max: maxExperimentalCopies(affiliation, classId),
+            };
+      if (experimental.length < min) {
+        return `Experimental ${classId} programmes require at least ${min} entries`;
+      }
+      if (experimental.length > max) {
+        return `At most ${max} experimental ${classId} entries allowed`;
       }
       if (homologated.length > 0) {
         const homKey = buildSpecKey(homologated[0].build);
@@ -700,13 +763,32 @@ export function validateBuyCar(
   }
 
   if (entryMode === "experimental") {
-    const cap = maxExperimentalCopies(payload.affiliation);
-    const nextCount = (experimental?.carCount ?? 0) + normalizeQuantity(payload.quantity);
-    if (nextCount > cap) {
-      return `At most ${cap} experimental ${payload.classId} entries allowed`;
+    const homMfgHypercars = manufacturerHypercarCount(fleet);
+    if (
+      payload.classId === "Hypercar" &&
+      payload.affiliation === "manufacturer" &&
+      homMfgHypercars > 0 &&
+      homMfgHypercars < MANUFACTURER_HYPERCAR_MIN_CARS
+    ) {
+      return `Complete your homologated Hypercar programme (${MANUFACTURER_HYPERCAR_MIN_CARS} cars) before adding experimental entries`;
+    }
+
+    const limits =
+      payload.classId === "Hypercar"
+        ? experimentalHypercarLimits(fleet, payload.affiliation)
+        : {
+            min: 1,
+            max: maxExperimentalCopies(payload.affiliation, payload.classId),
+          };
+    const nextCount =
+      (experimental?.carCount ?? 0) + normalizeQuantity(payload.quantity);
+    if (nextCount > limits.max) {
+      return `At most ${limits.max} experimental ${payload.classId} entries allowed`;
+    }
+    if (!experimental && nextCount < limits.min) {
+      return `Experimental ${payload.classId} programmes require at least ${limits.min} cars`;
     }
     if (
-      entryMode === "experimental" &&
       payload.affiliation === "privateer" &&
       !experimental &&
       state.budget < EXP_PRIVATEER_PROGRAMME_FEE

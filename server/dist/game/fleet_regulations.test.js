@@ -60,6 +60,84 @@ function car(id, classId, opts = {}) {
         const err = (0, fleet_1.validateFleetRegulations)([hom, exp]);
         strict_1.default.ok(err?.includes("different design"));
     });
+    (0, node_test_1.it)("allows one EXP Hypercar for manufacturers with two homologated Hypercars", () => {
+        const hom1 = car("car-1", "Hypercar");
+        const hom2 = car("car-2", "Hypercar", {
+            carNumber: "2",
+            build: { ...hom1.build },
+        });
+        const expBuild = { ...hom1.build, front_aero_type: "HighDownforceSplitter" };
+        const exp = car("car-3", "Hypercar", {
+            entryMode: "experimental",
+            experimentalProgramId: "exp-hc-1",
+            build: expBuild,
+            carNumber: "3",
+        });
+        strict_1.default.equal((0, fleet_1.validateFleetRegulations)([hom1, hom2, exp]), null);
+    });
+    (0, node_test_1.it)("allows standalone two-car EXP Hypercar without homologated programme", () => {
+        const expBuild = {
+            ...car("car-1", "Hypercar").build,
+            front_aero_type: "HighDownforceSplitter",
+        };
+        const exp1 = car("car-1", "Hypercar", {
+            entryMode: "experimental",
+            experimentalProgramId: "exp-hc-standalone",
+            build: expBuild,
+        });
+        const exp2 = car("car-2", "Hypercar", {
+            entryMode: "experimental",
+            experimentalProgramId: "exp-hc-standalone",
+            build: expBuild,
+            carNumber: "2",
+        });
+        strict_1.default.equal((0, fleet_1.validateFleetRegulations)([exp1, exp2]), null);
+    });
+    (0, node_test_1.it)("rejects standalone EXP Hypercar with only one car", () => {
+        const exp = car("car-1", "Hypercar", {
+            entryMode: "experimental",
+            experimentalProgramId: "exp-hc-standalone",
+            build: {
+                ...car("car-1", "Hypercar").build,
+                front_aero_type: "HighDownforceSplitter",
+            },
+        });
+        const err = (0, fleet_1.validateFleetRegulations)([exp]);
+        strict_1.default.ok(err?.includes("at least 2"));
+    });
+    (0, node_test_1.it)("rejects EXP Hypercar while homologated manufacturer programme is incomplete", () => {
+        const hom = car("car-1", "Hypercar");
+        const exp = car("car-2", "Hypercar", {
+            entryMode: "experimental",
+            experimentalProgramId: "exp-hc-1",
+            build: { ...hom.build, front_aero_type: "HighDownforceSplitter" },
+            carNumber: "2",
+        });
+        const err = (0, fleet_1.validateFleetRegulations)([hom, exp]);
+        strict_1.default.ok(err?.includes("Complete your homologated Hypercar programme"));
+    });
+    (0, node_test_1.it)("rejects more than one EXP Hypercar for manufacturers", () => {
+        const hom1 = car("car-1", "Hypercar");
+        const hom2 = car("car-2", "Hypercar", {
+            carNumber: "2",
+            build: { ...hom1.build },
+        });
+        const expBuild = { ...hom1.build, front_aero_type: "HighDownforceSplitter" };
+        const exp1 = car("car-3", "Hypercar", {
+            entryMode: "experimental",
+            experimentalProgramId: "exp-hc-1",
+            build: expBuild,
+            carNumber: "3",
+        });
+        const exp2 = car("car-4", "Hypercar", {
+            entryMode: "experimental",
+            experimentalProgramId: "exp-hc-1",
+            build: expBuild,
+            carNumber: "4",
+        });
+        const err = (0, fleet_1.validateFleetRegulations)([hom1, hom2, exp1, exp2]);
+        strict_1.default.ok(err?.includes("At most 1 experimental Hypercar"));
+    });
     (0, node_test_1.it)("requires identical builds within experimental programme", () => {
         const exp1 = car("car-1", "LMP2", {
             entryMode: "experimental",
