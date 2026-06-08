@@ -26,6 +26,7 @@ import { SessionRoster } from "./components/SessionRoster";
 import { JoinSessionModal } from "./components/JoinSessionModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { DriverCenter } from "./components/DriverCenter";
+import { NegotiationPanel } from "./components/NegotiationPanel";
 import { WeatherRadar } from "./components/WeatherRadar";
 import { WeatherForecastPanel } from "./components/WeatherForecastPanel";
 import { AudioControls } from "./components/AudioControls";
@@ -413,6 +414,24 @@ const postRace = new PostRaceOverlay(document.getElementById("post-race-overlay"
   onOpenSessionLog: (sessionLogId) => sessionLogDev.show(sessionLogId),
 });
 
+const negotiationPanel = new NegotiationPanel(document.body, {
+  onSubmitOffer: (negotiationId, terms) => {
+    client.submitNegotiationOffer(negotiationId, terms);
+    driverCenter.setStatus("Submitting offer…");
+  },
+  onAcceptCounter: (negotiationId) => {
+    client.acceptNegotiation(negotiationId);
+    driverCenter.setStatus("Accepting counter-offer…");
+  },
+  onWithdraw: (negotiationId) => {
+    client.withdrawNegotiation(negotiationId);
+    driverCenter.setStatus("Negotiation ended");
+  },
+  onClose: () => {
+    driverCenter.setStatus("");
+  },
+});
+
 const driverCenter = new DriverCenter(driversContainer, {
   onSaveRoster: (roster, assignments) => {
     client.saveDriverRoster(roster, assignments);
@@ -424,9 +443,21 @@ const driverCenter = new DriverCenter(driversContainer, {
   },
   onSignContract: (listingId) => {
     client.signDriverContract(listingId);
-    driverCenter.setStatus("Offering contract…");
+    driverCenter.setStatus("Quick signing…");
+  },
+  onNegotiate: (listing) => {
+    const kind =
+      listing.source === "wec_active" && listing.contractedTeam
+        ? "driver_buyout"
+        : "driver_employment";
+    client.startNegotiation(kind, listing.id);
+    driverCenter.setStatus(`Opening talks with ${listing.driver.name}…`);
+    pendingNegotiationListing = listing;
   },
 });
+
+let pendingNegotiationListing: import("./ws/protocol").DriverMarketListingPayload | null =
+  null;
 
 const teamHQ = new TeamHQ(teamContainer, {
   onRefreshStaffMarket: () => {
@@ -753,6 +784,32 @@ function applyMetaState(meta: MetaStatePayload): void {
   driverCenter.update(meta);
 
   syncGarageBuildLockNav();
+
+  const openRef = negotiationPanel.activeSubjectRef();
+  const activeSession =
+    meta.negotiations?.find(
+      (n) =>
+        (openRef && n.subjectRef === openRef) ||
+        (pendingNegotiationListing &&
+          n.subjectRef === pendingNegotiationListing.id),
+    ) ??
+    meta.negotiations?.find(
+      (n) => n.status === "open" || n.status === "countered",
+    );
+  if (activeSession && pendingNegotiationListing) {
+    if (!negotiationPanel.isOpen()) {
+      negotiationPanel.show(activeSession, pendingNegotiationListing);
+    } else {
+      negotiationPanel.updateSession(activeSession);
+    }
+    if (activeSession.status === "accepted") {
+      pendingNegotiationListing = null;
+      driverCenter.setStatus("Contract signed");
+    }
+  } else if (activeSession && openRef) {
+    const listing = meta.driverMarket?.find((l) => l.id === activeSession.subjectRef);
+    if (listing) negotiationPanel.updateSession(activeSession);
+  }
 
   if (!meta.setupComplete) {
     if (gameCatalog) teamWizard.setCatalog(gameCatalog);

@@ -619,6 +619,32 @@ export class SimHost {
     return this.meta.signStaffContract(listingId, carId);
   }
 
+  startNegotiation(
+    kind: import("./ws_protocol").NegotiationKind,
+    subjectRef: string,
+  ): MetaStatePayload | { error: string } {
+    return this.meta.startNegotiation(kind, subjectRef);
+  }
+
+  submitNegotiationOffer(
+    negotiationId: string,
+    terms: import("./ws_protocol").NegotiationTermsPayload,
+  ): MetaStatePayload | { error: string } {
+    return this.meta.submitNegotiationOffer(negotiationId, terms);
+  }
+
+  acceptNegotiation(
+    negotiationId: string,
+  ): MetaStatePayload | { error: string } {
+    return this.meta.acceptNegotiation(negotiationId);
+  }
+
+  withdrawNegotiation(
+    negotiationId: string,
+  ): MetaStatePayload | { error: string } {
+    return this.meta.withdrawNegotiation(negotiationId);
+  }
+
   saveTeamColors(
     colors: {
       primary: string;

@@ -8,6 +8,7 @@ exports.staffSigningCost = staffSigningCost;
 exports.staffSalaryPerRound = staffSalaryPerRound;
 exports.staffSeveranceCost = staffSeveranceCost;
 exports.computeStaffPayroll = computeStaffPayroll;
+exports.computeDriverPayrollFromContracts = computeDriverPayrollFromContracts;
 exports.computeRaceFinances = computeRaceFinances;
 exports.sponsorOffersPayload = sponsorOffersPayload;
 const experimental_entry_1 = require("./experimental_entry");
@@ -134,13 +135,23 @@ function staffSeveranceCost(member) {
     return Math.round((member.salaryPerRace ?? 0) * 2);
 }
 function computeStaffPayroll(staff) {
-    return staff.reduce((sum, m) => sum + staffSalaryPerRound(m.skill), 0);
+    return staff.reduce((sum, m) => sum + (m.salaryPerRace ?? staffSalaryPerRound(m.skill)), 0);
+}
+function computeDriverPayrollFromContracts(contracts, teamName) {
+    const key = teamName.trim().toLowerCase();
+    return (contracts ?? [])
+        .filter((c) => c.entityKind === "driver" &&
+        c.teamName.trim().toLowerCase() === key)
+        .reduce((sum, c) => sum + c.salaryPerRace, 0);
 }
 function computeRaceFinances(position, classId, format, sponsors, staff, options) {
     const scoring = options?.scoring ?? format.toLowerCase() !== "test";
     const experimental = options?.entryMode === "experimental";
     const prizeMoney = scoring && !experimental ? computePrizeMoney(position, classId, format) : 0;
     const staffPayroll = computeStaffPayroll(staff);
+    const driverPayroll = options?.teamName
+        ? computeDriverPayrollFromContracts(options.employmentContracts, options.teamName)
+        : 0;
     let sponsorIncome = 0;
     let rdPointsEarned = 0;
     let prototypeExposure = 0;
@@ -216,6 +227,9 @@ function computeRaceFinances(position, classId, format, sponsors, staff, options
     if (staffPayroll > 0) {
         breakdown.push({ label: "Staff payroll", amount: -staffPayroll });
     }
+    if (driverPayroll > 0) {
+        breakdown.push({ label: "Driver payroll", amount: -driverPayroll });
+    }
     const appearanceFee = scoring ? exports.APPEARANCE_FEE : 0;
     const entryFee = scoring
         ? experimental
@@ -227,7 +241,8 @@ function computeRaceFinances(position, classId, format, sponsors, staff, options
         sponsorIncome +
         prototypeExposure +
         entryFee -
-        staffPayroll;
+        staffPayroll -
+        driverPayroll;
     let championshipPoints = 0;
     if (scoring && !experimental) {
         championshipPoints = computeChampionshipPoints(position);
@@ -247,6 +262,7 @@ function computeRaceFinances(position, classId, format, sponsors, staff, options
         sponsorIncome,
         entryFee,
         staffPayroll,
+        driverPayroll,
         netEarnings,
         championshipPoints,
         rdPointsEarned: rdOut,

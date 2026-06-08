@@ -650,6 +650,7 @@ export function resolveAiDriverMarketBids(
   season: AiRivalSeasonPayload,
   market: DriverMarketListingPayload[],
   seed: number,
+  protectedListingIds: Set<string> = new Set(),
 ): {
   market: DriverMarketListingPayload[];
   signedIds: string[];
@@ -676,6 +677,7 @@ export function resolveAiDriverMarketBids(
 
     const pool = candidates.filter((l) => {
       if (signedIds.includes(l.id)) return false;
+      if (protectedListingIds.has(l.id)) return false;
       const driverId = ensureCatalogDriverId(l.driver).id!;
       const holder = contracts.get(driverId);
       if (l.source === "prospect") {

@@ -22,6 +22,7 @@ export interface DriverCenterHandlers {
   ) => void;
   onRefreshMarket?: () => void;
   onSignContract?: (listingId: string) => void;
+  onNegotiate?: (listing: DriverMarketListingPayload) => void;
 }
 
 const MARKET_REFRESH_COST = 50_000;
@@ -476,9 +477,14 @@ export class DriverCenter {
             <span>Signing ${formatMoney(listing.signingFee)}</span>
             <span class="driver-market-salary">${formatMoney(listing.salaryPerRace)}/race</span>
           </div>
-          <button type="button" class="primary-btn driver-sign-btn" data-listing="${escapeHtml(listing.id)}" ${canAfford ? "" : "disabled"}>
-            Offer contract
-          </button>
+          <div class="driver-market-actions-row">
+            <button type="button" class="primary-btn driver-negotiate-btn" data-listing="${escapeHtml(listing.id)}">
+              Negotiate
+            </button>
+            <button type="button" class="secondary-btn driver-sign-btn" data-listing="${escapeHtml(listing.id)}" ${canAfford ? "" : "disabled"} title="Quick sign at listed terms">
+              Quick sign
+            </button>
+          </div>
         </article>
       `;
     }).join("");
@@ -487,6 +493,13 @@ export class DriverCenter {
       btn.addEventListener("click", () => {
         const listingId = (btn as HTMLElement).dataset.listing!;
         this.handlers.onSignContract?.(listingId);
+      });
+    }
+    for (const btn of this.marketGridEl.querySelectorAll(".driver-negotiate-btn")) {
+      btn.addEventListener("click", () => {
+        const listingId = (btn as HTMLElement).dataset.listing!;
+        const listing = this.market.find((l) => l.id === listingId);
+        if (listing) this.handlers.onNegotiate?.(listing);
       });
     }
   }

@@ -182,6 +182,49 @@ function sessionRostersForResults(raceResults, options) {
         strict_1.default.ok(signedIds.length >= 1);
         strict_1.default.ok(remaining.length < market.length);
     });
+    (0, node_test_1.it)("skips listings protected by player negotiations", () => {
+        const season = (0, ai_rival_season_1.initAiRivalSeason)(repoRoot, "SkyTech", 2026);
+        for (const team of season.teams.slice(0, 3)) {
+            team.budget = 120000000;
+            team.form = 2;
+        }
+        const listingId = "prospect-protected";
+        const market = [
+            {
+                id: listingId,
+                source: "prospect",
+                driver: {
+                    name: "Protected Prospect",
+                    nationality: "FR",
+                    tier: "Silver",
+                    dryPace: 78,
+                    wetPace: 74,
+                    consistency: 76,
+                    overtaking: 72,
+                    defending: 74,
+                    trafficManagement: 74,
+                    rollingStart: 72,
+                    standingStart: 70,
+                    setupFeedback: 68,
+                    tireManagement: 76,
+                    fuelSaving: 74,
+                    composure: 76,
+                    nightPace: 72,
+                    rainRadar: 68,
+                    stamina: 76,
+                    maxStintHours: 2.5,
+                },
+                signingFee: 90000,
+                salaryPerRace: 18000,
+                tagline: "prospect",
+            },
+        ];
+        const protectedIds = new Set([listingId]);
+        const { signedIds, market: remaining } = (0, ai_rival_season_1.resolveAiDriverMarketBids)(repoRoot, season, market, 99, protectedIds);
+        strict_1.default.equal(signedIds.length, 0);
+        strict_1.default.equal(remaining.length, 1);
+        strict_1.default.equal(remaining[0]?.id, listingId);
+    });
     (0, node_test_1.it)("ranks rivals by class for standings display", () => {
         const season = (0, ai_rival_season_1.initAiRivalSeason)(repoRoot, "SkyTech", 2026);
         const hyper = season.teams.filter((t) => t.primaryClassId === "Hypercar");

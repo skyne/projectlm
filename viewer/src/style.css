@@ -7147,6 +7147,13 @@ body.mock-sim-active #app {
   margin: 0 0 0.75rem;
 }
 
+.driver-market-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
 .driver-market-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -7154,6 +7161,88 @@ body.mock-sim-active #app {
   max-height: min(62vh, 720px);
   overflow-y: auto;
   padding-right: 0.25rem;
+}
+
+.negotiation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 1rem;
+}
+
+.negotiation-overlay.hidden {
+  display: none;
+}
+
+.negotiation-modal {
+  width: min(520px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.negotiation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.negotiation-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.negotiation-meters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.negotiation-form {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.negotiation-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+}
+
+.negotiation-form input,
+.negotiation-form select {
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+  color: inherit;
+}
+
+.negotiation-history-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.negotiation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .driver-market-card {
