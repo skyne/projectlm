@@ -48,6 +48,7 @@ const car_marketplace_1 = require("./car_marketplace");
 const fleet_1 = require("./fleet");
 const engine_model_1 = require("./engine_model");
 const economy_1 = require("./economy");
+const regulations_1 = require("./regulations");
 const part_compatibility_1 = require("./part_compatibility");
 const class_rules_1 = require("./class_rules");
 const CLASS_DESCRIPTIONS = {
@@ -258,6 +259,7 @@ function loadGameCatalog(repoRoot) {
         partsBySlot,
         staffCandidates: generateStaffCandidates(),
         sponsorOffers: (0, economy_1.sponsorOffersPayload)(),
+        ruleChangeProposals: regulations_1.RULE_CHANGE_PROPOSALS,
         carPlatforms: (0, car_marketplace_1.loadCarPlatforms)(repoRoot),
         fleetRules: (0, fleet_1.fleetRulesPayload)(),
         driverStatDefs: driver_catalog_1.DRIVER_STAT_DEFS,

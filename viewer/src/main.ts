@@ -431,18 +431,59 @@ const driverCenter = new DriverCenter(driversContainer, {
         : "driver_employment";
     client.startNegotiation(kind, listing.id);
     driverCenter.setStatus(`Opening talks with ${listing.driver.name}…`);
-    pendingNegotiationListing = listing;
+    pendingNegotiation = {
+      kind: "driver",
+      subjectRef: listing.id,
+      listing,
+    };
   },
 });
 
-let pendingNegotiationListing: import("./ws/protocol").DriverMarketListingPayload | null =
-  null;
+type PendingNegotiation =
+  | {
+      kind: "driver";
+      subjectRef: string;
+      listing: import("./ws/protocol").DriverMarketListingPayload;
+    }
+  | {
+      kind: "sponsor" | "inter_team" | "regulatory";
+      subjectRef: string;
+      title: string;
+    };
+
+let pendingNegotiation: PendingNegotiation | null = null;
 
 const teamHQ = new TeamHQ(teamContainer, {
   onHireStaff: (role, name, skill) => client.hireStaff(role, name, skill),
   onRdInvest: (partId, points) => client.rdInvest(partId, points),
   onSignSponsor: (offerId) => client.signSponsor(offerId),
+  onNegotiateSponsor: (offerId) => {
+    client.startNegotiation("sponsor_partnership", offerId);
+    const offer = gameCatalog?.sponsorOffers?.find((o) => o.id === offerId);
+    pendingNegotiation = {
+      kind: "sponsor",
+      subjectRef: offerId,
+      title: offer?.name ?? "Sponsor",
+    };
+  },
   onDropSponsor: (offerId) => client.dropSponsor(offerId),
+  onStartInterTeamDeal: (subtype, teamName) => {
+    client.startNegotiation("inter_team_agreement", `${subtype}:${teamName}`);
+    pendingNegotiation = {
+      kind: "inter_team",
+      subjectRef: `${subtype}:${teamName}`,
+      title: `${subtype === "joint_testing" ? "Joint testing" : "Tech share"} — ${teamName}`,
+    };
+  },
+  onStartRegulatoryPetition: (proposalId) => {
+    client.startNegotiation("regulatory_petition", proposalId);
+    const proposal = gameCatalog?.ruleChangeProposals?.find((p) => p.id === proposalId);
+    pendingNegotiation = {
+      kind: "regulatory",
+      subjectRef: proposalId,
+      title: proposal?.label ?? "Regulatory petition",
+    };
+  },
   onOpenGarage: () => {
     carGarage.clearEditingCar();
     setMainView("garage");
@@ -746,29 +787,41 @@ function applyMetaState(meta: MetaStatePayload): void {
   driverCenter.update(meta);
 
   const openRef = negotiationPanel.activeSubjectRef();
+  const pendingRef = pendingNegotiation?.subjectRef;
   const activeSession =
     meta.negotiations?.find(
       (n) =>
         (openRef && n.subjectRef === openRef) ||
-        (pendingNegotiationListing &&
-          n.subjectRef === pendingNegotiationListing.id),
+        (pendingRef && n.subjectRef === pendingRef),
     ) ??
     meta.negotiations?.find(
-      (n) => n.status === "open" || n.status === "countered",
+      (n) =>
+        n.status === "open" ||
+        n.status === "countered" ||
+        n.status === "pending_response",
     );
-  if (activeSession && pendingNegotiationListing) {
+  if (activeSession && pendingNegotiation) {
+    const ctx =
+      pendingNegotiation.kind === "driver"
+        ? { listing: pendingNegotiation.listing }
+        : { title: pendingNegotiation.title };
     if (!negotiationPanel.isOpen()) {
-      negotiationPanel.show(activeSession, pendingNegotiationListing);
+      negotiationPanel.show(activeSession, ctx);
     } else {
       negotiationPanel.updateSession(activeSession);
     }
-    if (activeSession.status === "accepted") {
-      pendingNegotiationListing = null;
-      driverCenter.setStatus("Contract signed");
+    if (
+      activeSession.status === "accepted" ||
+      activeSession.status === "rejected" ||
+      activeSession.status === "withdrawn"
+    ) {
+      if (activeSession.status === "accepted") {
+        driverCenter.setStatus("Deal agreed");
+      }
+      pendingNegotiation = null;
     }
   } else if (activeSession && openRef) {
-    const listing = meta.driverMarket?.find((l) => l.id === activeSession.subjectRef);
-    if (listing) negotiationPanel.updateSession(activeSession);
+    negotiationPanel.updateSession(activeSession);
   }
 
   if (!meta.setupComplete) {

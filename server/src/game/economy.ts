@@ -53,6 +53,12 @@ export interface SponsorContract {
   offerId: string;
   name: string;
   signedRound: number;
+  perRaceIncome?: number;
+  podiumBonus?: number;
+  winBonus?: number;
+  topFiveBonus?: number;
+  rdPointsPerRace?: number;
+  expiresSeasonYear?: number;
 }
 
 export interface FinanceLineItem {
@@ -257,46 +263,52 @@ export function computeRaceFinances(
 
   for (const contract of sponsors) {
     const offer = sponsorOfferById(contract.offerId);
-    if (!offer) continue;
+    const name = contract.name ?? offer?.name ?? contract.offerId;
+    const perRaceIncome =
+      contract.perRaceIncome ?? offer?.perRaceIncome ?? 0;
+    const podiumBonus = contract.podiumBonus ?? offer?.podiumBonus ?? 0;
+    const winBonus = contract.winBonus ?? offer?.winBonus ?? 0;
+    const topFiveBonus = contract.topFiveBonus ?? offer?.topFiveBonus ?? 0;
+    const rdPerRace = contract.rdPointsPerRace ?? offer?.rdPointsPerRace ?? 0;
 
-    if (offer.perRaceIncome > 0) {
-      sponsorIncome += offer.perRaceIncome;
+    if (perRaceIncome > 0) {
+      sponsorIncome += perRaceIncome;
       breakdown.push({
-        label: `${offer.name} stipend`,
-        amount: offer.perRaceIncome,
+        label: `${name} stipend`,
+        amount: perRaceIncome,
       });
     }
-    if (position <= 3 && offer.podiumBonus > 0) {
-      const amount = Math.round(offer.podiumBonus * bonusFactor);
+    if (position <= 3 && podiumBonus > 0) {
+      const amount = Math.round(podiumBonus * bonusFactor);
       if (amount > 0) {
         sponsorIncome += amount;
         breakdown.push({
-          label: `${offer.name} podium bonus`,
+          label: `${name} podium bonus`,
           amount,
         });
       }
     }
-    if (position === 1 && offer.winBonus > 0) {
-      const amount = Math.round(offer.winBonus * bonusFactor);
+    if (position === 1 && winBonus > 0) {
+      const amount = Math.round(winBonus * bonusFactor);
       if (amount > 0) {
         sponsorIncome += amount;
         breakdown.push({
-          label: `${offer.name} win bonus`,
+          label: `${name} win bonus`,
           amount,
         });
       }
     }
-    if (position <= 5 && offer.topFiveBonus > 0) {
-      const amount = Math.round(offer.topFiveBonus * bonusFactor);
+    if (position <= 5 && topFiveBonus > 0) {
+      const amount = Math.round(topFiveBonus * bonusFactor);
       if (amount > 0) {
         sponsorIncome += amount;
         breakdown.push({
-          label: `${offer.name} top-5 bonus`,
+          label: `${name} top-5 bonus`,
           amount,
         });
       }
     }
-    rdPointsEarned += offer.rdPointsPerRace;
+    rdPointsEarned += rdPerRace;
   }
 
   if (staffPayroll > 0) {

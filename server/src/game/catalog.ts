@@ -12,6 +12,7 @@ import { loadCarPlatforms } from "./car_marketplace";
 import { fleetRulesPayload } from "./fleet";
 import { cylindersForLayout } from "./engine_model";
 import { sponsorOffersPayload } from "./economy";
+import { RULE_CHANGE_PROPOSALS } from "./regulations";
 import { loadAssemblyRules, type AssemblyRule } from "./part_compatibility";
 import {
   loadParsedClassRules,
@@ -66,6 +67,7 @@ export interface GameCatalogPayload {
   partsBySlot: Record<PartSlot, PartOption[]>;
   staffCandidates: StaffCandidate[];
   sponsorOffers: ReturnType<typeof sponsorOffersPayload>;
+  ruleChangeProposals: typeof RULE_CHANGE_PROPOSALS;
   carPlatforms: ReturnType<typeof loadCarPlatforms>;
   fleetRules: ReturnType<typeof fleetRulesPayload>;
   driverStatDefs: DriverStatDef[];
@@ -297,6 +299,7 @@ export function loadGameCatalog(repoRoot: string): GameCatalogPayload {
     partsBySlot,
     staffCandidates: generateStaffCandidates(),
     sponsorOffers: sponsorOffersPayload(),
+    ruleChangeProposals: RULE_CHANGE_PROPOSALS,
     carPlatforms: loadCarPlatforms(repoRoot),
     fleetRules: fleetRulesPayload(),
     driverStatDefs: DRIVER_STAT_DEFS,
