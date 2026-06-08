@@ -10,6 +10,7 @@ exports.evaluateDriverOffer = evaluateDriverOffer;
 exports.acceptCounterOffer = acceptCounterOffer;
 exports.withdrawNegotiation = withdrawNegotiation;
 exports.expireNegotiations = expireNegotiations;
+exports.isNegotiationKindAsync = isNegotiationKindAsync;
 exports.listingIdsWithOpenNegotiations = listingIdsWithOpenNegotiations;
 exports.applyDriverDeal = applyDriverDeal;
 exports.synthesizeEmploymentContracts = synthesizeEmploymentContracts;
@@ -190,8 +191,13 @@ function evaluateDriverOffer(session, offer, ctx) {
             },
         ],
     };
-    const score = scoreDriverOffer(offer, session.anchorTerms, ctx);
-    if (score >= 1.0) {
+    const anchor = session.anchorTerms;
+    const meetsAsking = (offer.signingFee ?? 0) >= (anchor.signingFee ?? 0) &&
+        (offer.salaryPerRace ?? 0) >= (anchor.salaryPerRace ?? 0) &&
+        (offer.contractSeasons ?? 1) >= (anchor.contractSeasons ?? 1) &&
+        (!ctx.requiresBuyout || (offer.buyoutToTeam ?? 0) >= ctx.minBuyout);
+    const score = scoreDriverOffer(offer, anchor, ctx);
+    if (meetsAsking || score >= 0.96) {
         next.status = "accepted";
         next.counterpartyMood = "keen";
         next.lastCounterOffer = { ...offer };
@@ -256,12 +262,17 @@ function withdrawNegotiation(session) {
 }
 function expireNegotiations(sessions, currentRound) {
     return sessions.map((s) => {
-        if ((s.status === "open" || s.status === "countered") &&
+        if ((s.status === "open" ||
+            s.status === "countered" ||
+            s.status === "pending_response") &&
             currentRound > s.expiresAtRound) {
             return { ...s, status: "expired", counterpartyMood: "walkaway" };
         }
         return s;
     });
+}
+function isNegotiationKindAsync(kind) {
+    return kind === "inter_team_agreement" || kind === "regulatory_petition";
 }
 function listingIdsWithOpenNegotiations(sessions) {
     const ids = new Set();

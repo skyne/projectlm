@@ -51,7 +51,10 @@ export interface TeamHQHandlers {
   onSignStaffContract?: (listingId: string, carId?: string) => void;
   onRdInvest: (partId: string, points: number) => void;
   onSignSponsor?: (offerId: string) => void;
+  onNegotiateSponsor?: (offerId: string) => void;
   onDropSponsor?: (offerId: string) => void;
+  onStartInterTeamDeal?: (subtype: "joint_testing" | "tech_share", teamName: string) => void;
+  onStartRegulatoryPetition?: (proposalId: string) => void;
   onOpenGarage?: () => void;
   onConfigureCar?: (carId: string) => void;
   onBuyCar?: (payload: BuyCarPayload) => void;
@@ -130,6 +133,10 @@ export class TeamHQ {
   private staffEl!: HTMLElement;
   private sponsorsEl!: HTMLElement;
   private sponsorOffersEl!: HTMLElement;
+  private interTeamDealsEl!: HTMLElement;
+  private activeAgreementsEl!: HTMLElement;
+  private regulatoryProposalsEl!: HTMLElement;
+  private regulatoryVotesEl!: HTMLElement;
   private calendarEl!: HTMLElement;
   private partsEl!: HTMLElement;
   private buyPanelEl!: HTMLElement;
@@ -196,6 +203,14 @@ export class TeamHQ {
           <ul id="team-sponsors" class="sponsor-list"></ul>
           <h4 class="hq-subsection-title">Available offers</h4>
           <div id="sponsor-offers" class="sponsor-offers-grid"></div>
+          <h4 class="hq-subsection-title">Partnerships &amp; agreements</h4>
+          <p class="wizard-hint">Propose joint testing or technology sharing with rival teams. Deals resolve after the next race weekend.</p>
+          <div id="inter-team-deals" class="deals-grid"></div>
+          <ul id="active-agreements" class="agreements-list"></ul>
+          <h4 class="hq-subsection-title">Regulatory petitions (ACR)</h4>
+          <p class="wizard-hint">File exceptions or initiate rule-change votes. Sim BoP hooks are stubbed — outcomes are recorded in career state.</p>
+          <div id="regulatory-proposals" class="deals-grid"></div>
+          <ul id="regulatory-votes" class="agreements-list"></ul>
         </section>
         <section class="hq-panel hidden" data-tab="crew">
           <div class="hq-panel-head">
@@ -259,6 +274,10 @@ export class TeamHQ {
     this.crewMarketMetaEl = this.root.querySelector(".hq-crew-market-meta")!;
     this.sponsorsEl = this.root.querySelector("#team-sponsors")!;
     this.sponsorOffersEl = this.root.querySelector("#sponsor-offers")!;
+    this.interTeamDealsEl = this.root.querySelector("#inter-team-deals")!;
+    this.activeAgreementsEl = this.root.querySelector("#active-agreements")!;
+    this.regulatoryProposalsEl = this.root.querySelector("#regulatory-proposals")!;
+    this.regulatoryVotesEl = this.root.querySelector("#regulatory-votes")!;
     this.calendarEl = this.root.querySelector("#team-calendar")!;
     this.partsEl = this.root.querySelector("#team-parts")!;
 
@@ -448,6 +467,7 @@ export class TeamHQ {
     this.renderCrew(meta, fleet);
     if (this.crewTab === "market") this.renderStaffMarket();
     this.renderSponsors(meta);
+    this.renderPartnerships(meta);
     this.renderRd(meta);
     this.renderCalendar(meta);
     this.updateRdUnlockStates(meta);
@@ -855,12 +875,13 @@ export class TeamHQ {
     } else {
       for (const contract of sponsors) {
         const offer = offers.find((o) => o.id === contract.offerId);
+        const income = contract.perRaceIncome ?? offer?.perRaceIncome ?? 0;
         const li = document.createElement("li");
         li.className = "sponsor-contract-row";
         li.innerHTML = `
           <div class="sponsor-contract-info">
             <strong>${escapeHtml(contract.name)}</strong>
-            <span class="sponsor-contract-detail">$${(offer?.perRaceIncome ?? 0).toLocaleString()}/race</span>
+            <span class="sponsor-contract-detail">$${income.toLocaleString()}/race</span>
           </div>
           <button type="button" class="secondary-btn sponsor-drop-btn">End contract</button>
         `;
@@ -876,10 +897,8 @@ export class TeamHQ {
       if (signedIds.has(offer.id)) continue;
       const canAfford = (meta.budget ?? 0) >= offer.signingFee;
       const slotsFull = sponsors.length >= 3;
-      const card = document.createElement("button");
-      card.type = "button";
+      const card = document.createElement("article");
       card.className = `sponsor-offer-card${canAfford && !slotsFull ? "" : " sponsor-offer-disabled"}`;
-      card.disabled = !canAfford || slotsFull;
       const bonuses: string[] = [];
       if (offer.perRaceIncome > 0) bonuses.push(`$${offer.perRaceIncome.toLocaleString()}/race`);
       if (offer.podiumBonus > 0) bonuses.push(`$${offer.podiumBonus.toLocaleString()} podium`);
@@ -892,11 +911,95 @@ export class TeamHQ {
         <span class="sponsor-offer-tagline">${escapeHtml(offer.tagline)}</span>
         <span class="sponsor-offer-fee">Signing fee: $${offer.signingFee.toLocaleString()}</span>
         <span class="sponsor-offer-bonuses">${escapeHtml(bonuses.join(" · "))}</span>
+        <div class="driver-market-actions-row">
+          <button type="button" class="primary-btn sponsor-negotiate-btn">Negotiate</button>
+          <button type="button" class="secondary-btn sponsor-sign-btn" ${canAfford && !slotsFull ? "" : "disabled"}>Quick sign</button>
+        </div>
       `;
-      card.addEventListener("click", () => {
+      card.querySelector(".sponsor-negotiate-btn")!.addEventListener("click", () => {
+        this.handlers.onNegotiateSponsor?.(offer.id);
+      });
+      card.querySelector(".sponsor-sign-btn")!.addEventListener("click", () => {
         if (canAfford && !slotsFull) this.handlers.onSignSponsor?.(offer.id);
       });
       this.sponsorOffersEl.appendChild(card);
+    }
+  }
+
+  private renderPartnerships(meta: MetaStatePayload): void {
+    const rivals =
+      meta.aiRivalSeason?.teams
+        ?.filter((t) => !t.isPlayerTeam)
+        .map((t) => t.teamName)
+        .slice(0, 8) ?? [];
+
+    this.interTeamDealsEl.replaceChildren();
+    for (const team of rivals) {
+      for (const subtype of ["joint_testing", "tech_share"] as const) {
+        const label =
+          subtype === "joint_testing" ? "Joint testing" : "Tech share";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "secondary-btn deal-card";
+        btn.innerHTML = `<strong>${escapeHtml(label)}</strong><span>${escapeHtml(team)}</span>`;
+        btn.addEventListener("click", () => {
+          this.handlers.onStartInterTeamDeal?.(subtype, team);
+        });
+        this.interTeamDealsEl.appendChild(btn);
+      }
+    }
+
+    this.activeAgreementsEl.replaceChildren();
+    const agreements = meta.activeAgreements ?? [];
+    if (!agreements.length) {
+      const li = document.createElement("li");
+      li.className = "wizard-hint";
+      li.textContent = "No active partnership agreements.";
+      this.activeAgreementsEl.appendChild(li);
+    } else {
+      for (const agr of agreements) {
+        const li = document.createElement("li");
+        const stub = agr.stubPending ? ` · ${agr.stubNote ?? "stub"}` : "";
+        li.textContent = `${agr.kind}${agr.partnerTeam ? ` with ${agr.partnerTeam}` : ""} (until round ${agr.expiresAtRound})${stub}`;
+        this.activeAgreementsEl.appendChild(li);
+      }
+    }
+
+    this.regulatoryProposalsEl.replaceChildren();
+    for (const proposal of this.catalog?.ruleChangeProposals ?? []) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "secondary-btn deal-card";
+      btn.innerHTML = `
+        <strong>${escapeHtml(proposal.label)}</strong>
+        <span>${escapeHtml(proposal.description)}</span>
+        <span>Fee: $${proposal.petitionFee.toLocaleString()}</span>
+      `;
+      btn.addEventListener("click", () => {
+        this.handlers.onStartRegulatoryPetition?.(proposal.id);
+      });
+      this.regulatoryProposalsEl.appendChild(btn);
+    }
+
+    this.regulatoryVotesEl.replaceChildren();
+    const votes = meta.regulatoryState?.pendingVotes ?? [];
+    const exceptions = meta.regulatoryState?.grantedExceptions ?? [];
+    if (!votes.length && !exceptions.length) {
+      const li = document.createElement("li");
+      li.className = "wizard-hint";
+      li.textContent = "No open votes or granted exceptions.";
+      this.regulatoryVotesEl.appendChild(li);
+    } else {
+      for (const vote of votes) {
+        const li = document.createElement("li");
+        li.textContent = `${vote.proposalLabel}: ${vote.yesVotes} yes / ${vote.noVotes} no (${vote.status})`;
+        this.regulatoryVotesEl.appendChild(li);
+      }
+      for (const exc of exceptions) {
+        const li = document.createElement("li");
+        li.textContent = `${exc.label} — ${exc.classId} until round ${exc.expiresAtRound} (stub)`;
+        this.regulatoryVotesEl.appendChild(li);
+      }
     }
   }
 

@@ -10,11 +10,17 @@ import { MAX_DRIVER_ROSTER, validateDriverMarketSigning } from "./driver_market"
 export type NegotiationKind =
   | "driver_employment"
   | "driver_buyout"
-  | "staff_employment";
+  | "staff_employment"
+  | "sponsor_partnership"
+  | "inter_team_agreement"
+  | "regulatory_petition";
+
+export type InterTeamAgreementSubtype = "joint_testing" | "tech_share";
 
 export type NegotiationStatus =
   | "open"
   | "countered"
+  | "pending_response"
   | "accepted"
   | "rejected"
   | "expired"
@@ -37,6 +43,25 @@ export interface NegotiationTerms {
   releaseClause?: number;
   seatGuarantee?: "primary" | "reserve" | "none";
   buyoutToTeam?: number;
+  /** Sponsor deal overrides */
+  perRaceIncome?: number;
+  podiumBonus?: number;
+  winBonus?: number;
+  topFiveBonus?: number;
+  rdPointsPerRace?: number;
+  brandingTier?: "title" | "major" | "minor";
+  /** Inter-team agreements */
+  agreementSubtype?: InterTeamAgreementSubtype;
+  partnerTeam?: string;
+  sharedTrackId?: string;
+  testDays?: number;
+  costContribution?: number;
+  techSharePartIds?: string[];
+  /** Regulatory petitions */
+  ruleProposalId?: string;
+  exceptionClassId?: string;
+  powerCapDelta?: number;
+  petitionFee?: number;
 }
 
 export interface NegotiationHistoryEntry {
@@ -65,6 +90,61 @@ export interface NegotiationSession {
   releasingTeam?: string;
   /** Optional car assignment for staff deals. */
   staffCarId?: string;
+  /** Resolved off-week for rival/regulator responses. */
+  asyncResolution?: boolean;
+}
+
+export interface ActiveAgreement {
+  id: string;
+  kind: InterTeamAgreementSubtype | "regulatory_exception";
+  partnerTeam?: string;
+  signedRound: number;
+  expiresAtRound: number;
+  terms: NegotiationTerms;
+  /** Game hook not wired yet — agreement is recorded only. */
+  stubPending?: boolean;
+  stubNote?: string;
+}
+
+export interface RuleChangeVote {
+  id: string;
+  proposalId: string;
+  proposalLabel: string;
+  initiatedRound: number;
+  resolvesAtRound: number;
+  yesVotes: number;
+  noVotes: number;
+  abstain: number;
+  status: "open" | "passed" | "failed";
+  playerVote?: "yes" | "no";
+}
+
+export interface RegulatoryException {
+  id: string;
+  classId: string;
+  powerCapDelta: number;
+  grantedRound: number;
+  expiresAtRound: number;
+  label: string;
+}
+
+export interface RegulatoryState {
+  activeRegulationId: string;
+  pendingVotes: RuleChangeVote[];
+  grantedExceptions: RegulatoryException[];
+}
+
+export interface NegotiatedSponsorDeal {
+  offerId: string;
+  name: string;
+  signedRound: number;
+  expiresSeasonYear: number;
+  signingFeePaid: number;
+  perRaceIncome: number;
+  podiumBonus: number;
+  winBonus: number;
+  topFiveBonus: number;
+  rdPointsPerRace: number;
 }
 
 export interface EmploymentContract {
@@ -460,13 +540,19 @@ export function expireNegotiations(
 ): NegotiationSession[] {
   return sessions.map((s) => {
     if (
-      (s.status === "open" || s.status === "countered") &&
+      (s.status === "open" ||
+        s.status === "countered" ||
+        s.status === "pending_response") &&
       currentRound > s.expiresAtRound
     ) {
       return { ...s, status: "expired", counterpartyMood: "walkaway" };
     }
     return s;
   });
+}
+
+export function isNegotiationKindAsync(kind: NegotiationKind): boolean {
+  return kind === "inter_team_agreement" || kind === "regulatory_petition";
 }
 
 export function listingIdsWithOpenNegotiations(

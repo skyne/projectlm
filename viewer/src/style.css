@@ -7245,6 +7245,51 @@ body.mock-sim-active #app {
   gap: 0.45rem;
 }
 
+.deals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.deal-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  text-align: left;
+  padding: 0.55rem 0.65rem;
+  min-height: 4.5rem;
+}
+
+.deal-card strong {
+  font-size: 0.88rem;
+}
+
+.deal-card span {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.agreements-list {
+  margin: 0 0 1rem;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.negotiation-form fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.negotiation-form fieldset.hidden {
+  display: none;
+}
+
 .driver-market-card {
   border: 1px solid var(--border);
   border-radius: 10px;

@@ -355,11 +355,17 @@ export interface DriverMarketListingPayload {
 export type NegotiationKind =
   | "driver_employment"
   | "driver_buyout"
-  | "staff_employment";
+  | "staff_employment"
+  | "sponsor_partnership"
+  | "inter_team_agreement"
+  | "regulatory_petition";
+
+export type InterTeamAgreementSubtype = "joint_testing" | "tech_share";
 
 export type NegotiationStatus =
   | "open"
   | "countered"
+  | "pending_response"
   | "accepted"
   | "rejected"
   | "expired"
@@ -382,6 +388,84 @@ export interface NegotiationTermsPayload {
   releaseClause?: number;
   seatGuarantee?: "primary" | "reserve" | "none";
   buyoutToTeam?: number;
+  perRaceIncome?: number;
+  podiumBonus?: number;
+  winBonus?: number;
+  topFiveBonus?: number;
+  rdPointsPerRace?: number;
+  brandingTier?: "title" | "major" | "minor";
+  agreementSubtype?: InterTeamAgreementSubtype;
+  partnerTeam?: string;
+  sharedTrackId?: string;
+  testDays?: number;
+  costContribution?: number;
+  techSharePartIds?: string[];
+  ruleProposalId?: string;
+  exceptionClassId?: string;
+  powerCapDelta?: number;
+  petitionFee?: number;
+}
+
+export interface ActiveAgreementPayload {
+  id: string;
+  kind: InterTeamAgreementSubtype | "regulatory_exception";
+  partnerTeam?: string;
+  signedRound: number;
+  expiresAtRound: number;
+  terms: NegotiationTermsPayload;
+  stubPending?: boolean;
+  stubNote?: string;
+}
+
+export interface RuleChangeVotePayload {
+  id: string;
+  proposalId: string;
+  proposalLabel: string;
+  initiatedRound: number;
+  resolvesAtRound: number;
+  yesVotes: number;
+  noVotes: number;
+  abstain: number;
+  status: "open" | "passed" | "failed";
+  playerVote?: "yes" | "no";
+}
+
+export interface RegulatoryExceptionPayload {
+  id: string;
+  classId: string;
+  powerCapDelta: number;
+  grantedRound: number;
+  expiresAtRound: number;
+  label: string;
+}
+
+export interface RegulatoryStatePayload {
+  activeRegulationId: string;
+  pendingVotes: RuleChangeVotePayload[];
+  grantedExceptions: RegulatoryExceptionPayload[];
+}
+
+export interface RuleChangeProposalPayload {
+  id: string;
+  label: string;
+  description: string;
+  kind: "exception" | "rule_vote";
+  petitionFee: number;
+  targetClassId?: string;
+  powerCapDelta?: number;
+}
+
+export interface NegotiatedSponsorDealPayload {
+  offerId: string;
+  name: string;
+  signedRound: number;
+  expiresSeasonYear: number;
+  signingFeePaid: number;
+  perRaceIncome: number;
+  podiumBonus: number;
+  winBonus: number;
+  topFiveBonus: number;
+  rdPointsPerRace: number;
 }
 
 export interface NegotiationHistoryEntryPayload {
@@ -408,6 +492,7 @@ export interface NegotiationSessionPayload {
   counterpartyMood: NegotiationMood;
   releasingTeam?: string;
   staffCarId?: string;
+  asyncResolution?: boolean;
 }
 
 export interface EmploymentContractPayload {
@@ -477,6 +562,12 @@ export interface SponsorContractPayload {
   offerId: string;
   name: string;
   signedRound: number;
+  perRaceIncome?: number;
+  podiumBonus?: number;
+  winBonus?: number;
+  topFiveBonus?: number;
+  rdPointsPerRace?: number;
+  expiresSeasonYear?: number;
 }
 
 export interface SponsorOfferPayload {
@@ -749,6 +840,9 @@ export interface SeasonStartSnapshotPayload {
   staffMarketRound: number;
   negotiations?: NegotiationSessionPayload[];
   employmentContracts?: EmploymentContractPayload[];
+  sponsorDeals?: NegotiatedSponsorDealPayload[];
+  activeAgreements?: ActiveAgreementPayload[];
+  regulatoryState?: RegulatoryStatePayload;
   aiRivalSeason: AiRivalSeasonPayload;
   weekendTireCompound?: string;
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
@@ -790,6 +884,9 @@ export interface MetaStatePayload {
   staffMarketRound?: number;
   negotiations?: NegotiationSessionPayload[];
   employmentContracts?: EmploymentContractPayload[];
+  sponsorDeals?: NegotiatedSponsorDealPayload[];
+  activeAgreements?: ActiveAgreementPayload[];
+  regulatoryState?: RegulatoryStatePayload;
   aiRivalSeason?: AiRivalSeasonPayload;
   seasonComplete?: boolean;
   seasonSummary?: SeasonSummaryPayload;
@@ -909,6 +1006,7 @@ export interface GameCatalogPayload {
   partsBySlot: Record<string, PartOptionPayload[]>;
   staffCandidates: StaffCandidatePayload[];
   sponsorOffers?: SponsorOfferPayload[];
+  ruleChangeProposals?: RuleChangeProposalPayload[];
   carPlatforms: CarPlatformPayload[];
   fleetRules: FleetRulesPayload;
   driverStatDefs?: DriverStatDefPayload[];
