@@ -16,6 +16,7 @@ export interface ParsedEntry {
   carNumber: string;
   classId: string;
   fleetCarId?: string;
+  entryMode?: "homologated" | "experimental";
 }
 
 export function parseCarNumber(raw: string | undefined, fallbackGrid: number): string {

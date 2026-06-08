@@ -41,6 +41,7 @@ exports.writeEntriesFile = writeEntriesFile;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const config_parser_1 = require("../config_parser");
+const experimental_entry_1 = require("./experimental_entry");
 /** Official 2026 Le Mans entry list (62-car grid + optional reserves). */
 exports.LEMANS_ENTRIES_PATH = "configs/entries.txt";
 exports.LEMANS_OFFICIAL_GRID_SIZE = 62;
@@ -135,6 +136,7 @@ function mergePlayerFleet(base, options) {
                 carNumber: fleetCar.carNumber,
                 isPlayer: true,
                 fleetCarId: fleetCar.id,
+                entryMode: (0, experimental_entry_1.fleetEntryMode)(fleetCar),
             };
         }
         const entryId = `entry-${entry.grid}`;
@@ -172,6 +174,7 @@ function mergePlayerFleet(base, options) {
                 carNumber: fleetCar.carNumber,
                 isPlayer: true,
                 fleetCarId: fleetCar.id,
+                entryMode: (0, experimental_entry_1.fleetEntryMode)(fleetCar),
             });
             grid++;
         }

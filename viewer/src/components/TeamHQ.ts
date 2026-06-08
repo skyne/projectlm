@@ -2,6 +2,7 @@ import type {
   BuyCarPayload,
   CarAffiliation,
   CarConditionPayload,
+  FleetEntryMode,
   GameCatalogPayload,
   MetaStatePayload,
   StaffMemberPayload,
@@ -23,6 +24,9 @@ import {
   isHypercarManufacturer,
   teamProgrammeSummary,
   unitCostForBuy,
+  unitCostForExperimentalBuy,
+  experimentalAffiliationHint,
+  fleetEntryMode,
 } from "../utils/fleetUi";
 import { mmPanelHeader } from "../utils/mmUi";
 import { LiveryEditor } from "./LiveryEditor";
@@ -122,6 +126,7 @@ export class TeamHQ {
   private buyAffiliation: CarAffiliation = "privateer";
   private buyPlatformId = "";
   private buyQuantity = 1;
+  private buyEntryMode: FleetEntryMode = "homologated";
   private showBuyPanel = false;
   private liveryEditor: LiveryEditor;
 
@@ -383,17 +388,26 @@ export class TeamHQ {
     }
 
     for (const [classId, cars] of groupFleetByClass(fleet)) {
-      const program = getClassProgram(fleet, classId, this.catalog);
-      const header = document.createElement("li");
-      header.className = "fleet-class-banner";
-      header.innerHTML = `
-        <span class="class-badge class-${escapeHtml(classId)}">${escapeHtml(classId)}</span>
-        <span class="fleet-program-label">${escapeHtml(program?.label ?? "")}</span>
-        <span class="fleet-program-count">${cars.length} car${cars.length === 1 ? "" : "s"}</span>
-      `;
-      this.fleetEl.appendChild(header);
+      const homologated = cars.filter((c) => fleetEntryMode(c) === "homologated");
+      const experimental = cars.filter((c) => fleetEntryMode(c) === "experimental");
+      const sections: { mode: FleetEntryMode; list: typeof cars }[] = [
+        { mode: "homologated", list: homologated },
+        { mode: "experimental", list: experimental },
+      ];
+      for (const section of sections) {
+        if (!section.list.length) continue;
+        const program = getClassProgram(fleet, classId, this.catalog, section.mode);
+        const header = document.createElement("li");
+        header.className = "fleet-class-banner";
+        header.innerHTML = `
+          <span class="class-badge class-${escapeHtml(classId)}">${escapeHtml(classId)}</span>
+          ${section.mode === "experimental" ? '<span class="entry-badge entry-exp">EXP</span>' : ""}
+          <span class="fleet-program-label">${escapeHtml(program?.label ?? "")}</span>
+          <span class="fleet-program-count">${section.list.length} car${section.list.length === 1 ? "" : "s"}</span>
+        `;
+        this.fleetEl.appendChild(header);
 
-      for (const car of cars) {
+        for (const car of section.list) {
         const li = document.createElement("li");
         li.className = "fleet-car-card";
         const isActive = car.id === meta.activeCarId;
@@ -403,6 +417,7 @@ export class TeamHQ {
           <div class="fleet-car-card-top">
             <span class="fleet-car-number">#${car.carNumber}</span>
             <span class="class-badge class-${escapeHtml(car.classId)}">${escapeHtml(car.classId)}</span>
+            ${fleetEntryMode(car) === "experimental" ? '<span class="entry-badge entry-exp">EXP</span>' : ""}
             ${isActive ? '<span class="fleet-badge-active">Active</span>' : ""}
             ${isPlayer ? '<span class="fleet-badge-player">Player</span>' : ""}
           </div>
@@ -436,6 +451,7 @@ export class TeamHQ {
         });
 
         this.fleetEl.appendChild(li);
+      }
       }
     }
   }
@@ -623,6 +639,7 @@ export class TeamHQ {
       this.meta.fleet ?? [],
       this.buyClassId,
       this.catalog,
+      this.buyEntryMode,
     );
     const mfgMin = this.catalog.fleetRules.manufacturerHypercarMinCars ?? 2;
 
@@ -655,18 +672,43 @@ export class TeamHQ {
     const mfgMin = rules.manufacturerHypercarMinCars ?? 2;
     const maxQty = rules.maxCarsPerPurchase ?? 6;
     const fleet = this.meta.fleet ?? [];
-    const program = getClassProgram(fleet, this.buyClassId, this.catalog);
+    const homProgram = getClassProgram(fleet, this.buyClassId, this.catalog, "homologated");
+    const expProgram = getClassProgram(fleet, this.buyClassId, this.catalog, "experimental");
+    const program = getClassProgram(fleet, this.buyClassId, this.catalog, this.buyEntryMode);
     const programLocked = program !== null;
+    const canPickMode = !programLocked || (homProgram && !expProgram) || (expProgram && !homProgram) || (homProgram && expProgram);
     const platforms =
       this.catalog.carPlatforms?.filter((p) => p.classId === this.buyClassId) ?? [];
 
-    const unitCost = unitCostForBuy(
-      this.catalog,
-      this.buyClassId,
-      this.buyAffiliation,
-      this.buyPlatformId,
-    );
-    const totalCost = unitCost * this.buyQuantity;
+    const unitCost =
+      this.buyEntryMode === "experimental"
+        ? Math.round(
+            unitCostForExperimentalBuy(
+              this.catalog,
+              this.buyClassId,
+              this.buyAffiliation,
+              this.buyPlatformId,
+              fleet,
+              1,
+            ),
+          )
+        : unitCostForBuy(
+            this.catalog,
+            this.buyClassId,
+            this.buyAffiliation,
+            this.buyPlatformId,
+          );
+    const totalCost =
+      this.buyEntryMode === "experimental"
+        ? unitCostForExperimentalBuy(
+            this.catalog,
+            this.buyClassId,
+            this.buyAffiliation,
+            this.buyPlatformId,
+            fleet,
+            this.buyQuantity,
+          )
+        : unitCost * this.buyQuantity;
     const mfgWarning = hypercarMfgWarning(
       this.buyClassId,
       this.buyAffiliation,
@@ -680,6 +722,11 @@ export class TeamHQ {
       <h4>${programLocked ? "Add Entries" : "Start Class Programme"}</h4>
       <p class="wizard-hint">Affiliation is per class — you can be a Hypercar manufacturer and a GT3 privateer on the same team. One car type per class; pick how many entries.</p>
       <div class="buy-class-tabs"></div>
+      <div class="buy-entry-mode-tabs">
+        <button type="button" class="entry-mode-btn" data-mode="homologated">Homologated</button>
+        <button type="button" class="entry-mode-btn" data-mode="experimental">Experimental EXP</button>
+      </div>
+      ${this.buyEntryMode === "experimental" ? `<p class="wizard-hint">${escapeHtml(experimentalAffiliationHint(this.buyClassId))}</p>` : ""}
       ${programLocked ? `<div class="fleet-program-locked"><strong>${escapeHtml(program.label)}</strong> — ${program.carCount} car${program.carCount === 1 ? "" : "s"} already entered</div>` : `
         <div class="buy-car-affiliation">
           <button type="button" class="affiliation-btn" data-aff="privateer">${escapeHtml(this.buyClassId)} Privateer</button>
@@ -698,6 +745,21 @@ export class TeamHQ {
       </div>
     `;
 
+    for (const btn of this.buyPanelEl.querySelectorAll<HTMLButtonElement>(".entry-mode-btn")) {
+      const mode = btn.dataset.mode as FleetEntryMode;
+      const disabled =
+        mode === "homologated"
+          ? !!homProgram && programLocked && this.buyEntryMode !== "homologated"
+          : !!expProgram && programLocked && this.buyEntryMode !== "experimental";
+      if (mode === this.buyEntryMode) btn.classList.add("selected");
+      btn.disabled = disabled && mode !== this.buyEntryMode;
+      btn.addEventListener("click", () => {
+        if (btn.disabled) return;
+        this.buyEntryMode = mode;
+        this.renderBuyPanel();
+      });
+    }
+
     if (!programLocked) {
       for (const btn of this.buyPanelEl.querySelectorAll<HTMLButtonElement>(".affiliation-btn")) {
         const aff = btn.dataset.aff as CarAffiliation;
@@ -714,16 +776,25 @@ export class TeamHQ {
     const classTabs = this.buyPanelEl.querySelector(".buy-class-tabs")!;
     classTabs.replaceChildren();
     for (const cls of this.catalog.classes) {
-      const enrolled = getClassProgram(fleet, cls.id, this.catalog);
+      const hom = getClassProgram(fleet, cls.id, this.catalog, "homologated");
+      const exp = getClassProgram(fleet, cls.id, this.catalog, "experimental");
+      const count = (hom?.carCount ?? 0) + (exp?.carCount ?? 0);
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = `garage-slot-tab${cls.id === this.buyClassId ? " active" : ""}`;
-      btn.textContent = enrolled ? `${cls.displayName} (${enrolled.carCount})` : cls.displayName;
+      btn.textContent = count > 0 ? `${cls.displayName} (${count})` : cls.displayName;
       btn.addEventListener("click", () => {
         this.buyClassId = cls.id;
         const plats = this.catalog?.carPlatforms?.filter((p) => p.classId === cls.id) ?? [];
-        if (!getClassProgram(fleet, cls.id, this.catalog)) {
+        const hom = getClassProgram(fleet, cls.id, this.catalog, "homologated");
+        const exp = getClassProgram(fleet, cls.id, this.catalog, "experimental");
+        if (!hom && !exp) {
           this.buyPlatformId = plats[0]?.id ?? "";
+          this.buyEntryMode = "homologated";
+        } else if (hom && !exp) {
+          this.buyEntryMode = "homologated";
+        } else if (exp && !hom) {
+          this.buyEntryMode = "experimental";
         }
         this.renderBuyPanel();
       });
@@ -777,6 +848,7 @@ export class TeamHQ {
               affiliation: "manufacturer",
               acquisition: "build",
               quantity: this.buyQuantity,
+              entryMode: this.buyEntryMode,
             }
           : {
               classId: this.buyClassId,
@@ -784,6 +856,7 @@ export class TeamHQ {
               acquisition: "privateer",
               platformId: this.buyPlatformId,
               quantity: this.buyQuantity,
+              entryMode: this.buyEntryMode,
             };
       this.handlers.onBuyCar?.(payload);
       this.showBuyPanel = false;

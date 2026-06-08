@@ -9,6 +9,7 @@ exports.staffSalaryPerRound = staffSalaryPerRound;
 exports.computeStaffPayroll = computeStaffPayroll;
 exports.computeRaceFinances = computeRaceFinances;
 exports.sponsorOffersPayload = sponsorOffersPayload;
+const experimental_entry_1 = require("./experimental_entry");
 /** Inflated for development — enough for full manufacturer programmes + staff. */
 exports.STARTING_BUDGET = 500000000;
 exports.MAX_SPONSOR_SLOTS = 3;
@@ -132,12 +133,27 @@ function computeStaffPayroll(staff) {
 }
 function computeRaceFinances(position, classId, format, sponsors, staff, options) {
     const scoring = options?.scoring ?? format.toLowerCase() !== "test";
-    const prizeMoney = scoring ? computePrizeMoney(position, classId, format) : 0;
+    const experimental = options?.entryMode === "experimental";
+    const prizeMoney = scoring && !experimental ? computePrizeMoney(position, classId, format) : 0;
     const staffPayroll = computeStaffPayroll(staff);
     let sponsorIncome = 0;
     let rdPointsEarned = 0;
+    let prototypeExposure = 0;
     const breakdown = [];
-    if (scoring) {
+    const bonusFactor = experimental ? experimental_entry_1.EXP_SPONSOR_BONUS_FACTOR : 1;
+    if (scoring && experimental) {
+        breakdown.push({ label: "EXP entry (no class prize money)", amount: 0 });
+        breakdown.push({ label: "WEC appearance fee", amount: exports.APPEARANCE_FEE });
+        breakdown.push({ label: "Prototype operations", amount: -experimental_entry_1.EXP_OPS_FEE });
+        prototypeExposure = (0, experimental_entry_1.computePrototypeExposureFee)(options?.racePosition ?? position);
+        if (prototypeExposure > 0) {
+            breakdown.push({
+                label: "Prototype media exposure",
+                amount: prototypeExposure,
+            });
+        }
+    }
+    else if (scoring) {
         breakdown.push({
             label: `Prize money (P${position})`,
             amount: prizeMoney,
@@ -161,25 +177,34 @@ function computeRaceFinances(position, classId, format, sponsors, staff, options
             });
         }
         if (position <= 3 && offer.podiumBonus > 0) {
-            sponsorIncome += offer.podiumBonus;
-            breakdown.push({
-                label: `${offer.name} podium bonus`,
-                amount: offer.podiumBonus,
-            });
+            const amount = Math.round(offer.podiumBonus * bonusFactor);
+            if (amount > 0) {
+                sponsorIncome += amount;
+                breakdown.push({
+                    label: `${offer.name} podium bonus`,
+                    amount,
+                });
+            }
         }
         if (position === 1 && offer.winBonus > 0) {
-            sponsorIncome += offer.winBonus;
-            breakdown.push({
-                label: `${offer.name} win bonus`,
-                amount: offer.winBonus,
-            });
+            const amount = Math.round(offer.winBonus * bonusFactor);
+            if (amount > 0) {
+                sponsorIncome += amount;
+                breakdown.push({
+                    label: `${offer.name} win bonus`,
+                    amount,
+                });
+            }
         }
         if (position <= 5 && offer.topFiveBonus > 0) {
-            sponsorIncome += offer.topFiveBonus;
-            breakdown.push({
-                label: `${offer.name} top-5 bonus`,
-                amount: offer.topFiveBonus,
-            });
+            const amount = Math.round(offer.topFiveBonus * bonusFactor);
+            if (amount > 0) {
+                sponsorIncome += amount;
+                breakdown.push({
+                    label: `${offer.name} top-5 bonus`,
+                    amount,
+                });
+            }
         }
         rdPointsEarned += offer.rdPointsPerRace;
     }
@@ -187,8 +212,30 @@ function computeRaceFinances(position, classId, format, sponsors, staff, options
         breakdown.push({ label: "Staff payroll", amount: -staffPayroll });
     }
     const appearanceFee = scoring ? exports.APPEARANCE_FEE : 0;
-    const entryFee = scoring ? -exports.RACE_ENTRY_FEE : -15000;
-    const netEarnings = prizeMoney + appearanceFee + sponsorIncome + entryFee - staffPayroll;
+    const entryFee = scoring
+        ? experimental
+            ? -experimental_entry_1.EXP_OPS_FEE
+            : -exports.RACE_ENTRY_FEE
+        : -15000;
+    const netEarnings = prizeMoney +
+        appearanceFee +
+        sponsorIncome +
+        prototypeExposure +
+        entryFee -
+        staffPayroll;
+    let championshipPoints = 0;
+    if (scoring && !experimental) {
+        championshipPoints = computeChampionshipPoints(position);
+    }
+    let rdOut = rdPointsEarned;
+    if (scoring) {
+        if (experimental && rdPointsEarned > 0) {
+            rdOut = Math.round(rdPointsEarned * experimental_entry_1.EXP_RD_MULTIPLIER);
+        }
+    }
+    else {
+        rdOut = Math.max(1, Math.floor(rdPointsEarned / 2));
+    }
     return {
         prizeMoney,
         appearanceFee,
@@ -196,8 +243,8 @@ function computeRaceFinances(position, classId, format, sponsors, staff, options
         entryFee,
         staffPayroll,
         netEarnings,
-        championshipPoints: scoring ? computeChampionshipPoints(position) : 0,
-        rdPointsEarned: scoring ? rdPointsEarned : Math.max(1, Math.floor(rdPointsEarned / 2)),
+        championshipPoints,
+        rdPointsEarned: rdOut,
         breakdown,
     };
 }

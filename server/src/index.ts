@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 import { ClientSessionManager } from "./client_sessions";
 import { computeRaceFinances } from "./game/economy";
+import { fleetEntryMode } from "./game/experimental_entry";
 import {
   nextWeekendSession,
   sortTimingResults,
@@ -735,23 +736,41 @@ function main(): void {
         event?.eventType !== "test" && event?.format !== "test";
       const isRaceSession = weekendSessionType === "race";
 
+      const fleetById = new Map((meta.fleet ?? []).map((c) => [c.id, c]));
+      const entryFleetMap = host.getFleetEntryMap();
+      const resolveEntryMode = (entryId: string) => {
+        const fleetCarId = entryFleetMap.get(entryId);
+        const car = fleetCarId ? fleetById.get(fleetCarId) : undefined;
+        return car ? fleetEntryMode(car) : undefined;
+      };
+
+      const playerCarId =
+        meta.playerCarId ?? meta.activeCarId ?? meta.fleet?.[0]?.id;
+      const primaryResult =
+        results.find((r) => entryFleetMap.get(r.entryId) === playerCarId) ??
+        playerResult;
+
       const finances =
-        isRaceSession && playerResult && event
+        isRaceSession && primaryResult && event
           ? computeRaceFinances(
-              playerResult.position,
-              playerResult.classId,
+              primaryResult.position,
+              primaryResult.classId,
               event.format,
               meta.sponsors ?? [],
               meta.staff,
-              { scoring },
+              {
+                scoring,
+                entryMode: resolveEntryMode(primaryResult.entryId),
+                racePosition: primaryResult.position,
+              },
             )
           : undefined;
 
       let updatedMeta = meta;
-      if (isRaceSession && playerResult && event && !event.completed) {
+      if (isRaceSession && primaryResult && event && !event.completed) {
         updatedMeta = host.completeRound(
-          playerResult.position,
-          playerResult.classId,
+          primaryResult.position,
+          primaryResult.classId,
           results.map((r) => ({
             entryId: r.entryId,
             teamName: r.teamName,
@@ -759,6 +778,7 @@ function main(): void {
             classId: r.classId,
             position: r.position,
             driverName: r.driverName,
+            entryMode: resolveEntryMode(r.entryId),
           })),
         );
       } else if (!isRaceSession) {

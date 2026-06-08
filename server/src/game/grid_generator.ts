@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { formatEntryLine, parseCarNumber } from "../config_parser";
 import type { FleetCarPayload } from "../ws_protocol";
+import { fleetEntryMode } from "./experimental_entry";
 
 export interface GridTemplate {
   classId: string;
@@ -18,6 +19,7 @@ export interface GeneratedEntry {
   carNumber: string;
   isPlayer: boolean;
   fleetCarId?: string;
+  entryMode?: FleetCarPayload["entryMode"];
 }
 
 export interface LeMansGridEntry {
@@ -141,6 +143,7 @@ function mergePlayerFleet(
         carNumber: fleetCar.carNumber,
         isPlayer: true,
         fleetCarId: fleetCar.id,
+        entryMode: fleetEntryMode(fleetCar),
       };
     }
 
@@ -182,6 +185,7 @@ function mergePlayerFleet(
         carNumber: fleetCar.carNumber,
         isPlayer: true,
         fleetCarId: fleetCar.id,
+        entryMode: fleetEntryMode(fleetCar),
       });
       grid++;
     }

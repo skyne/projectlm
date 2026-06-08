@@ -14,11 +14,14 @@ export interface LapTimingSnapshot {
   sectorTimes: number[];
 }
 
+export type FleetEntryMode = "homologated" | "experimental";
+
 export interface CarSnapshot {
   entryId: string;
   teamName: string;
   carNumber: string;
   classId: string;
+  entryMode?: FleetEntryMode;
   lap: number;
   distance: number;
   normalizedT: number;
@@ -543,6 +546,8 @@ export interface FleetCarPayload {
   classId: string;
   affiliation: CarAffiliation;
   acquisition: CarAcquisition;
+  entryMode?: FleetEntryMode;
+  experimentalProgramId?: string;
   manufacturerId?: string;
   platformId?: string;
   build: CarBuildPayload;
@@ -573,6 +578,17 @@ export interface FleetRulesPayload {
   costs: {
     manufacturerBuild: Record<string, number>;
     privateerSlot: Record<string, number>;
+  };
+  experimental: {
+    maxCopiesManufacturer: number;
+    maxCopiesPrivateer: number;
+    privateerProgrammeFee: number;
+    manufacturerUnitMultiplier: number;
+    copyUnitMultiplier: number;
+    privateerUnitMultiplier: number;
+    opsFee: number;
+    fanExposureBase: number;
+    rdMultiplier: number;
   };
 }
 
@@ -801,6 +817,7 @@ export interface BuyCarPayload {
   platformId?: string;
   carNumber?: string;
   quantity?: number;
+  entryMode?: FleetEntryMode;
 }
 
 export interface CreateTeamPayload {

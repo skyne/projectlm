@@ -13,7 +13,8 @@ import {
   computePrizeMoney,
 } from "./economy";
 import { loadLeMansEntries } from "./grid_generator";
-import type { FleetCarPayload } from "../ws_protocol";
+import type { FleetCarPayload, FleetEntryMode } from "../ws_protocol";
+import { fleetEntryMode } from "./experimental_entry";
 
 export type AiRivalArc =
   | "hot_streak"
@@ -80,6 +81,7 @@ export interface RaceResultForSeason {
   classId: string;
   position: number;
   driverName?: string;
+  entryMode?: FleetEntryMode;
 }
 
 export interface AiRivalModifiers {
@@ -587,6 +589,7 @@ export function resolveDriverChampionshipTick(
 
   for (const result of options.raceResults) {
     const pos = classPos.get(result.entryId) ?? result.position;
+    if (result.entryMode === "experimental") continue;
     const pts = computeChampionshipPoints(pos);
     if (pts <= 0) continue;
 

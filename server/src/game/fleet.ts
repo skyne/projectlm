@@ -26,14 +26,28 @@ import {
 import { normalizeCarBuild } from "./chassis_setup";
 import type { CarPlatform } from "./car_marketplace";
 import { STARTING_BUDGET } from "./economy";
+import {
+  EXP_COPY_UNIT_MULTIPLIER,
+  EXP_MANUFACTURER_UNIT_MULTIPLIER,
+  EXP_PRIVATEER_PROGRAMME_FEE,
+  EXP_PRIVATEER_UNIT_MULTIPLIER,
+  experimentalRulesPayload,
+  fleetEntryMode,
+  isExperimentalCar,
+  maxExperimentalCopies,
+  newExperimentalProgramId,
+} from "./experimental_entry";
+import type { FleetEntryMode } from "../ws_protocol";
 
 export const MAX_CARS_PER_PURCHASE = 6;
 
 export interface ClassProgram {
   classId: string;
+  entryMode: FleetEntryMode;
   affiliation: FleetCarPayload["affiliation"];
   acquisition: FleetCarPayload["acquisition"];
   platformId?: string;
+  experimentalProgramId?: string;
   carCount: number;
   label: string;
 }
@@ -63,8 +77,11 @@ export function getClassProgram(
   fleet: FleetCarPayload[],
   classId: string,
   repoRoot?: string,
+  entryMode: FleetEntryMode = "homologated",
 ): ClassProgram | null {
-  const inClass = fleet.filter((c) => c.classId === classId);
+  const inClass = fleet.filter(
+    (c) => c.classId === classId && fleetEntryMode(c) === entryMode,
+  );
   if (inClass.length === 0) return null;
 
   const ref = inClass[0];
@@ -73,13 +90,19 @@ export function getClassProgram(
     platform = platformById(repoRoot, ref.platformId);
   }
 
+  const baseLabel = classProgramLabel(ref, platform);
+  const label =
+    entryMode === "experimental" ? `${baseLabel} · EXP` : baseLabel;
+
   return {
     classId,
+    entryMode,
     affiliation: ref.affiliation,
     acquisition: ref.acquisition,
     platformId: ref.platformId,
+    experimentalProgramId: ref.experimentalProgramId,
     carCount: inClass.length,
-    label: classProgramLabel(ref, platform),
+    label,
   };
 }
 
@@ -87,6 +110,8 @@ export function payloadMatchesClassProgram(
   program: ClassProgram,
   payload: BuyCarPayload,
 ): boolean {
+  const mode = payload.entryMode ?? "homologated";
+  if (program.entryMode !== mode) return false;
   if (program.affiliation !== payload.affiliation) return false;
   if (program.acquisition !== payload.acquisition) return false;
   if (program.acquisition === "privateer") {
@@ -108,20 +133,41 @@ export function referenceCarForClass(
   fleet: FleetCarPayload[],
   classId: string,
 ): FleetCarPayload | undefined {
-  return fleet.find((c) => c.classId === classId);
+  return fleet.find(
+    (c) => c.classId === classId && fleetEntryMode(c) === "homologated",
+  );
 }
 
-/** Force sibling entries in each class to match the first car's build. */
+export function referenceCarForProgramme(
+  fleet: FleetCarPayload[],
+  classId: string,
+  entryMode: FleetEntryMode,
+): FleetCarPayload | undefined {
+  return fleet.find(
+    (c) => c.classId === classId && fleetEntryMode(c) === entryMode,
+  );
+}
+
+function programmeGroupKey(car: FleetCarPayload): string {
+  const mode = fleetEntryMode(car);
+  if (mode === "experimental") {
+    return `${car.classId}:experimental:${car.experimentalProgramId ?? car.id}`;
+  }
+  return `${car.classId}:homologated`;
+}
+
+/** Force sibling entries in each programme to match the first car's build. */
 export function alignProgrammeBuilds(fleet: FleetCarPayload[]): boolean {
   let changed = false;
-  const byClass = new Map<string, FleetCarPayload[]>();
+  const groups = new Map<string, FleetCarPayload[]>();
   for (const car of fleet) {
-    const list = byClass.get(car.classId) ?? [];
+    const key = programmeGroupKey(car);
+    const list = groups.get(key) ?? [];
     list.push(car);
-    byClass.set(car.classId, list);
+    groups.set(key, list);
   }
 
-  for (const cars of byClass.values()) {
+  for (const cars of groups.values()) {
     if (cars.length < 2) continue;
     const refKey = buildSpecKey(cars[0].build);
     for (let i = 1; i < cars.length; i++) {
@@ -285,24 +331,105 @@ function rawToBuild(
 export function buyCarUnitCost(
   repoRoot: string,
   payload: BuyCarPayload,
+  fleet: FleetCarPayload[] = [],
 ): number | null {
+  const entryMode = payload.entryMode ?? "homologated";
+  const inProgramme = getClassProgram(
+    fleet,
+    payload.classId,
+    repoRoot,
+    entryMode,
+  );
+
   if (payload.acquisition === "privateer") {
     if (!payload.platformId) return null;
     const platform = platformById(repoRoot, payload.platformId);
     if (!platform || platform.classId !== payload.classId) return null;
-    return platform.privateerCost;
+    if (entryMode === "homologated") return platform.privateerCost;
+    const base = Math.round(platform.privateerCost * EXP_PRIVATEER_UNIT_MULTIPLIER);
+    if (!inProgramme) return base + EXP_PRIVATEER_PROGRAMME_FEE;
+    return Math.round(base * EXP_COPY_UNIT_MULTIPLIER);
   }
   if (payload.affiliation !== "manufacturer") return null;
-  return manufacturerBuildCost(payload.classId);
+  const homologated = manufacturerBuildCost(payload.classId);
+  if (entryMode === "homologated") return homologated;
+  if (!inProgramme) {
+    return Math.round(homologated * EXP_MANUFACTURER_UNIT_MULTIPLIER);
+  }
+  return Math.round(homologated * EXP_COPY_UNIT_MULTIPLIER);
 }
 
 export function buyCarCost(
   repoRoot: string,
   payload: BuyCarPayload,
+  fleet: FleetCarPayload[] = [],
 ): number | null {
-  const unit = buyCarUnitCost(repoRoot, payload);
+  const qty = normalizeQuantity(payload.quantity);
+  const entryMode = payload.entryMode ?? "homologated";
+  if (entryMode === "experimental" && payload.acquisition === "privateer") {
+    const hasProgramme = !!getClassProgram(
+      fleet,
+      payload.classId,
+      repoRoot,
+      "experimental",
+    );
+    let total = 0;
+    for (let i = 0; i < qty; i++) {
+      const treatAsExisting = hasProgramme || i > 0;
+      const unit = buyCarUnitCost(
+        repoRoot,
+        payload,
+        treatAsExisting ? fleetWithExperimentalStub(fleet, payload.classId) : fleet,
+      );
+      if (unit === null) return null;
+      total += unit;
+    }
+    return total;
+  }
+  const unit = buyCarUnitCost(repoRoot, payload, fleet);
   if (unit === null) return null;
-  return unit * normalizeQuantity(payload.quantity);
+  return unit * qty;
+}
+
+function fleetWithExperimentalStub(
+  fleet: FleetCarPayload[],
+  classId: string,
+): FleetCarPayload[] {
+  if (
+    fleet.some(
+      (c) => c.classId === classId && fleetEntryMode(c) === "experimental",
+    )
+  ) {
+    return fleet;
+  }
+  const hom = fleet.find((c) => c.classId === classId);
+  const build = hom?.build ?? {
+    carName: "preview",
+    chassis_type: "LMDhDallara",
+    front_aero_type: "LowDragNose",
+    rear_aero_type: "StandardWing",
+    cooling_pack: "EnduranceHeavyDuty",
+    wheel_package: "Hypercar18Standard",
+    suspension_layout: "PushrodDoubleWishbone",
+    fuel_system: "LeMans110L",
+    brake_system: "BremboHypercar",
+    transmission: "XtracP1359",
+    hybrid_system: "LMDh50kW",
+  };
+  return [
+    ...fleet,
+    {
+      id: "preview-exp",
+      carNumber: "0",
+      classId,
+      affiliation: "manufacturer",
+      acquisition: "build",
+      entryMode: "experimental",
+      experimentalProgramId: "preview",
+      build,
+      carConfigPath: "",
+    },
+  ];
 }
 
 export function createFleetCar(
@@ -311,45 +438,68 @@ export function createFleetCar(
   payload: BuyCarPayload,
   fleet: FleetCarPayload[],
 ): FleetCarPayload | null {
-  if (buyCarUnitCost(repoRoot, payload) === null) return null;
+  if (buyCarUnitCost(repoRoot, payload, fleet) === null) return null;
 
+  const entryMode = payload.entryMode ?? "homologated";
   const id = nextFleetCarId(fleet);
   const carNumber = payload.carNumber ?? nextCarNumber(fleet);
 
   let build: CarBuildPayload;
   let manufacturerId: string | undefined;
   let platformId: string | undefined;
+  let experimentalProgramId: string | undefined;
+
+  const existingProgramme = referenceCarForProgramme(
+    fleet,
+    payload.classId,
+    entryMode,
+  );
+  if (entryMode === "experimental") {
+    experimentalProgramId =
+      existingProgramme?.experimentalProgramId ??
+      newExperimentalProgramId(payload.classId);
+  }
 
   if (payload.acquisition === "privateer" && payload.platformId) {
     const platform = platformById(repoRoot, payload.platformId);
     if (!platform) return null;
     const catalog = loadGameCatalog(repoRoot);
-    const raw = buildFromPlatform(repoRoot, platform, teamName);
-    build = rawToBuild(
-      raw,
-      raw.carName ?? `${teamName} ${platform.displayName}`,
-      catalog.partsBySlot,
-    );
-    manufacturerId = platform.manufacturerId;
-    platformId = platform.id;
-  } else {
-    const existing = referenceCarForClass(fleet, payload.classId);
-    if (existing?.build) {
-      build = cloneCarBuild(existing.build);
-      manufacturerId =
-        existing.manufacturerId ??
-        teamName.toLowerCase().replace(/\s+/g, "_").slice(0, 24);
+    if (existingProgramme?.build) {
+      build = cloneCarBuild(existingProgramme.build);
+      manufacturerId = existingProgramme.manufacturerId ?? platform.manufacturerId;
+      platformId = existingProgramme.platformId ?? platform.id;
     } else {
-      const catalog = loadGameCatalog(repoRoot);
-      const raw = defaultBuildForClass(repoRoot, payload.classId);
-      if (!raw) return null;
+      const raw = buildFromPlatform(repoRoot, platform, teamName);
       build = rawToBuild(
         raw,
-        raw.carName ?? `${teamName} ${payload.classId}`,
+        raw.carName ?? `${teamName} ${platform.displayName}`,
         catalog.partsBySlot,
       );
-      manufacturerId = teamName.toLowerCase().replace(/\s+/g, "_").slice(0, 24);
+      manufacturerId = platform.manufacturerId;
+      platformId = platform.id;
     }
+  } else if (existingProgramme?.build) {
+    build = cloneCarBuild(existingProgramme.build);
+    manufacturerId =
+      existingProgramme.manufacturerId ??
+      teamName.toLowerCase().replace(/\s+/g, "_").slice(0, 24);
+    platformId = existingProgramme.platformId;
+  } else {
+    const catalog = loadGameCatalog(repoRoot);
+    const raw = defaultBuildForClass(repoRoot, payload.classId);
+    if (!raw) return null;
+    build = rawToBuild(
+      raw,
+      raw.carName ?? `${teamName} ${payload.classId}${entryMode === "experimental" ? " EXP" : ""}`,
+      catalog.partsBySlot,
+    );
+    manufacturerId = teamName.toLowerCase().replace(/\s+/g, "_").slice(0, 24);
+  }
+
+  if (entryMode === "experimental") {
+    build.carName = build.carName.includes("EXP")
+      ? build.carName
+      : `${build.carName} EXP`;
   }
 
   return {
@@ -358,6 +508,8 @@ export function createFleetCar(
     classId: payload.classId,
     affiliation: payload.affiliation,
     acquisition: payload.acquisition,
+    entryMode: entryMode === "homologated" ? undefined : entryMode,
+    experimentalProgramId,
     manufacturerId,
     platformId,
     build,
@@ -378,7 +530,7 @@ export function migrateLegacyMeta(state: MetaStatePayload): MetaStatePayload {
       ...withSponsors,
       driverRoster: migratedRoster,
       activeCarId: withSponsors.activeCarId ?? fleet[0].id,
-      fleet,
+      fleet: fleet.map((c) => ({ ...c, entryMode: c.entryMode ?? undefined })),
     };
   }
 
@@ -429,7 +581,10 @@ export function activeFleetCar(state: MetaStatePayload): FleetCarPayload | null 
 
 export function manufacturerHypercarCount(fleet: FleetCarPayload[]): number {
   return fleet.filter(
-    (c) => c.classId === "Hypercar" && c.affiliation === "manufacturer",
+    (c) =>
+      c.classId === "Hypercar" &&
+      c.affiliation === "manufacturer" &&
+      fleetEntryMode(c) === "homologated",
   ).length;
 }
 
@@ -442,7 +597,28 @@ export function validateFleetRegulations(
 
   const mfgHypercars = manufacturerHypercarCount(fleet);
   if (mfgHypercars > 0 && mfgHypercars < MANUFACTURER_HYPERCAR_MIN_CARS) {
-    return `As a Hypercar manufacturer you must enter at least ${MANUFACTURER_HYPERCAR_MIN_CARS} Hypercars (you have ${mfgHypercars})`;
+    return `As a Hypercar manufacturer you must enter at least ${MANUFACTURER_HYPERCAR_MIN_CARS} homologated Hypercars (you have ${mfgHypercars})`;
+  }
+
+  const groups = new Map<string, FleetCarPayload[]>();
+  for (const car of fleet) {
+    const key = programmeGroupKey(car);
+    const list = groups.get(key) ?? [];
+    list.push(car);
+    groups.set(key, list);
+  }
+
+  for (const [key, cars] of groups) {
+    if (cars.length < 2) continue;
+    const refKey = buildSpecKey(cars[0].build);
+    for (const car of cars.slice(1)) {
+      if (buildSpecKey(car.build) !== refKey) {
+        const label = key.includes(":experimental:")
+          ? `${cars[0].classId} EXP`
+          : cars[0].classId;
+        return `Your ${label} entries must share the same design — #${car.carNumber} does not match #${cars[0].carNumber}`;
+      }
+    }
   }
 
   const byClass = new Map<string, FleetCarPayload[]>();
@@ -451,12 +627,27 @@ export function validateFleetRegulations(
     list.push(car);
     byClass.set(car.classId, list);
   }
+
   for (const [classId, cars] of byClass) {
-    if (cars.length < 2) continue;
-    const refKey = buildSpecKey(cars[0].build);
-    for (const car of cars.slice(1)) {
-      if (buildSpecKey(car.build) !== refKey) {
-        return `Your ${classId} entries must share the same design — #${car.carNumber} does not match #${cars[0].carNumber}`;
+    const homologated = cars.filter((c) => fleetEntryMode(c) === "homologated");
+    const experimental = cars.filter(isExperimentalCar);
+    const expProgramIds = new Set(
+      experimental.map((c) => c.experimentalProgramId).filter(Boolean),
+    );
+    if (expProgramIds.size > 1) {
+      return `Only one experimental design is allowed in ${classId}`;
+    }
+    if (experimental.length > 0) {
+      const cap = maxExperimentalCopies(experimental[0].affiliation);
+      if (experimental.length > cap) {
+        return `At most ${cap} experimental ${classId} entries allowed`;
+      }
+      if (homologated.length > 0) {
+        const homKey = buildSpecKey(homologated[0].build);
+        const expKey = buildSpecKey(experimental[0].build);
+        if (homKey === expKey) {
+          return `Experimental ${classId} must use a different design than your homologated entries`;
+        }
       }
     }
   }
@@ -499,12 +690,34 @@ export function validateBuyCar(
   }
 
   const fleet = state.fleet ?? [];
-  const existing = getClassProgram(fleet, payload.classId, repoRoot);
+  const entryMode = payload.entryMode ?? "homologated";
+  const homologated = getClassProgram(fleet, payload.classId, repoRoot, "homologated");
+  const experimental = getClassProgram(fleet, payload.classId, repoRoot, "experimental");
+  const existing = getClassProgram(fleet, payload.classId, repoRoot, entryMode);
+
   if (existing && !payloadMatchesClassProgram(existing, payload)) {
     return `You already have a ${existing.label} programme in ${payload.classId}. Sell those cars before switching platform or build type.`;
   }
 
-  const cost = buyCarCost(repoRoot, payload);
+  if (entryMode === "experimental") {
+    const cap = maxExperimentalCopies(payload.affiliation);
+    const nextCount = (experimental?.carCount ?? 0) + normalizeQuantity(payload.quantity);
+    if (nextCount > cap) {
+      return `At most ${cap} experimental ${payload.classId} entries allowed`;
+    }
+    if (
+      entryMode === "experimental" &&
+      payload.affiliation === "privateer" &&
+      !experimental &&
+      state.budget < EXP_PRIVATEER_PROGRAMME_FEE
+    ) {
+      return `Experimental privateer programmes require at least $${EXP_PRIVATEER_PROGRAMME_FEE.toLocaleString()} for the development slot`;
+    }
+  } else if (homologated && experimental) {
+    // both programmes allowed in same class
+  }
+
+  const cost = buyCarCost(repoRoot, payload, fleet);
   if (cost === null) return "Invalid car purchase";
   if (state.budget < cost) {
     return `Insufficient budget (need $${cost.toLocaleString()} for ${normalizeQuantity(payload.quantity)} car(s))`;
@@ -551,5 +764,6 @@ export function fleetRulesPayload() {
         LMGT3: privateerSlotCost("LMGT3"),
       },
     },
+    experimental: experimentalRulesPayload(),
   };
 }

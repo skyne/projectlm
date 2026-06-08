@@ -303,6 +303,18 @@ export class CompactLeaderboard {
 
     row.badge.className = `compact-lb-class-badge class-badge class-${snap.classId}`;
     row.badge.textContent = snap.classId.slice(0, 3);
+    let expBadge = row.root.querySelector<HTMLElement>(".entry-badge.entry-exp");
+    if (snap.entryMode === "experimental") {
+      if (!expBadge) {
+        expBadge = document.createElement("span");
+        expBadge.className = "entry-badge entry-exp";
+        row.detail.insertBefore(expBadge, row.badge);
+      }
+      expBadge.textContent = "EXP";
+      expBadge.hidden = false;
+    } else if (expBadge) {
+      expBadge.hidden = true;
+    }
 
     if (snap.retired) {
       row.status.className = "compact-lb-status status-retired";

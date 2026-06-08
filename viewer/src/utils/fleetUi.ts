@@ -1,11 +1,13 @@
 import type {
   CarPlatformPayload,
   FleetCarPayload,
+  FleetEntryMode,
   GameCatalogPayload,
 } from "../ws/protocol";
 
 export interface ClassProgramView {
   classId: string;
+  entryMode: FleetEntryMode;
   affiliation: FleetCarPayload["affiliation"];
   acquisition: FleetCarPayload["acquisition"];
   platformId?: string;
@@ -29,12 +31,19 @@ export function classProgrammeLabel(
   return `${car.classId} Manufacturer`;
 }
 
+export function fleetEntryMode(car: FleetCarPayload): FleetEntryMode {
+  return car.entryMode ?? "homologated";
+}
+
 export function getClassProgram(
   fleet: FleetCarPayload[],
   classId: string,
   catalog: GameCatalogPayload | null,
+  entryMode: FleetEntryMode = "homologated",
 ): ClassProgramView | null {
-  const inClass = fleet.filter((c) => c.classId === classId);
+  const inClass = fleet.filter(
+    (c) => c.classId === classId && fleetEntryMode(c) === entryMode,
+  );
   if (inClass.length === 0) return null;
 
   const ref = inClass[0];
@@ -42,13 +51,15 @@ export function getClassProgram(
     ? catalog?.carPlatforms?.find((p) => p.id === ref.platformId)
     : undefined;
 
+  const baseLabel = classProgrammeLabel(ref, platform);
   return {
     classId,
+    entryMode,
     affiliation: ref.affiliation,
     acquisition: ref.acquisition,
     platformId: ref.platformId,
     carCount: inClass.length,
-    label: classProgrammeLabel(ref, platform),
+    label: entryMode === "experimental" ? `${baseLabel} · EXP` : baseLabel,
   };
 }
 
@@ -140,4 +151,56 @@ export function affiliationHintForClass(
     return `${classId} manufacturer programme — independent from your other class entries.`;
   }
   return `${classId} privateer programme — buy a customer platform for this class only.`;
+}
+
+
+export function unitCostForExperimentalBuy(
+  catalog: GameCatalogPayload,
+  classId: string,
+  affiliation: FleetCarPayload["affiliation"],
+  platformId: string,
+  fleet: FleetCarPayload[],
+  quantity: number,
+): number {
+  const rules = catalog.fleetRules.experimental;
+  const homologated = getClassProgram(fleet, classId, catalog, "homologated");
+  const experimental = getClassProgram(fleet, classId, catalog, "experimental");
+  let total = 0;
+  let simFleet = [...fleet];
+  for (let i = 0; i < quantity; i++) {
+    const hasProgramme = getClassProgram(simFleet, classId, catalog, "experimental");
+    if (affiliation === "manufacturer") {
+      const base = catalog.fleetRules.costs.manufacturerBuild[classId] ?? 0;
+      const unit = hasProgramme
+        ? Math.round(base * rules.copyUnitMultiplier)
+        : Math.round(base * rules.manufacturerUnitMultiplier);
+      total += unit;
+    } else {
+      const platform = catalog.carPlatforms?.find((p) => p.id === platformId);
+      const base = Math.round((platform?.privateerCost ?? 0) * rules.privateerUnitMultiplier);
+      total += hasProgramme
+        ? Math.round(base * rules.copyUnitMultiplier)
+        : base + rules.privateerProgrammeFee;
+    }
+    simFleet = [
+      ...simFleet,
+      {
+        id: `sim-${i}`,
+        carNumber: "0",
+        classId,
+        affiliation,
+        acquisition: affiliation === "manufacturer" ? "build" : "privateer",
+        entryMode: "experimental",
+        experimentalProgramId: experimental?.platformId,
+        platformId,
+        build: { carName: "", chassis_type: "" },
+        carConfigPath: "",
+      },
+    ];
+  }
+  return total;
+}
+
+export function experimentalAffiliationHint(classId: string): string {
+  return `Experimental ${classId} entries run with an EXP tag, earn no WEC points, and receive prototype media payouts plus bonus R&D.`;
 }

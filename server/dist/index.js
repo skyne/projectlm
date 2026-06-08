@@ -4,6 +4,7 @@ const ws_1 = require("ws");
 const http_1 = require("http");
 const client_sessions_1 = require("./client_sessions");
 const economy_1 = require("./game/economy");
+const experimental_entry_1 = require("./game/experimental_entry");
 const weekend_sessions_1 = require("./game/weekend_sessions");
 const engineer_service_1 = require("./llm/engineer_service");
 const garage_engineer_service_1 = require("./llm/garage_engineer_service");
@@ -616,18 +617,33 @@ function main() {
         const event = meta.calendar.find((e) => e.round === meta.currentRound);
         const scoring = event?.eventType !== "test" && event?.format !== "test";
         const isRaceSession = weekendSessionType === "race";
-        const finances = isRaceSession && playerResult && event
-            ? (0, economy_1.computeRaceFinances)(playerResult.position, playerResult.classId, event.format, meta.sponsors ?? [], meta.staff, { scoring })
+        const fleetById = new Map((meta.fleet ?? []).map((c) => [c.id, c]));
+        const entryFleetMap = host.getFleetEntryMap();
+        const resolveEntryMode = (entryId) => {
+            const fleetCarId = entryFleetMap.get(entryId);
+            const car = fleetCarId ? fleetById.get(fleetCarId) : undefined;
+            return car ? (0, experimental_entry_1.fleetEntryMode)(car) : undefined;
+        };
+        const playerCarId = meta.playerCarId ?? meta.activeCarId ?? meta.fleet?.[0]?.id;
+        const primaryResult = results.find((r) => entryFleetMap.get(r.entryId) === playerCarId) ??
+            playerResult;
+        const finances = isRaceSession && primaryResult && event
+            ? (0, economy_1.computeRaceFinances)(primaryResult.position, primaryResult.classId, event.format, meta.sponsors ?? [], meta.staff, {
+                scoring,
+                entryMode: resolveEntryMode(primaryResult.entryId),
+                racePosition: primaryResult.position,
+            })
             : undefined;
         let updatedMeta = meta;
-        if (isRaceSession && playerResult && event && !event.completed) {
-            updatedMeta = host.completeRound(playerResult.position, playerResult.classId, results.map((r) => ({
+        if (isRaceSession && primaryResult && event && !event.completed) {
+            updatedMeta = host.completeRound(primaryResult.position, primaryResult.classId, results.map((r) => ({
                 entryId: r.entryId,
                 teamName: r.teamName,
                 carNumber: r.carNumber,
                 classId: r.classId,
                 position: r.position,
                 driverName: r.driverName,
+                entryMode: resolveEntryMode(r.entryId),
             })));
         }
         else if (!isRaceSession) {

@@ -407,6 +407,8 @@ function resolveDriverChampionshipTick(season, options) {
         row.lastRoundPoints = 0;
     for (const result of options.raceResults) {
         const pos = classPos.get(result.entryId) ?? result.position;
+        if (result.entryMode === "experimental")
+            continue;
         const pts = (0, economy_1.computeChampionshipPoints)(pos);
         if (pts <= 0)
             continue;

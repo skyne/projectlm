@@ -243,6 +243,7 @@ class SimHost {
             carNumber: e.carNumber,
             classId: e.classId,
             fleetCarId: e.fleetCarId,
+            entryMode: e.entryMode,
         }));
         this.fleetEntryMap = new Map(built.entries
             .filter((e) => e.fleetCarId)
@@ -431,6 +432,9 @@ class SimHost {
     getTimeScale() {
         return this.timeScale;
     }
+    getFleetEntryMap() {
+        return new Map(this.fleetEntryMap);
+    }
     getSnapshots() {
         return this.enrichSnapshots(this.session.getSnapshots());
     }
@@ -543,8 +547,14 @@ class SimHost {
         return snapshots.map((snap) => {
             const fromSim = typeof snap.carNumber === "string" && snap.carNumber ? snap.carNumber : "";
             const fromEntry = numbersByEntryId.get(snap.entryId) ?? "";
+            const entry = this.entries.find((e) => e.entryId === snap.entryId);
             const carNumber = fromSim || fromEntry;
-            return carNumber ? { ...snap, carNumber } : snap;
+            const enriched = {
+                ...snap,
+                ...(carNumber ? { carNumber } : {}),
+                ...(entry?.entryMode ? { entryMode: entry.entryMode } : {}),
+            };
+            return enriched;
         });
     }
     configPathForSim() {

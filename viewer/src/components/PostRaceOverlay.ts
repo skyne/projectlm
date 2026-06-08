@@ -446,10 +446,20 @@ export class PostRaceOverlay {
       const pts = payload.finances?.championshipPoints ?? payload.championshipPoints ?? 0;
       const footnote = document.createElement("p");
       footnote.className = "post-race-fleet-footnote";
+      const isExp =
+        !!payload.finances &&
+        payload.finances.championshipPoints === 0 &&
+        payload.finances.prizeMoney === 0 &&
+        payload.finances.appearanceFee > 0 &&
+        payload.finances.breakdown.some((line) =>
+          line.label.includes("EXP") || line.label.includes("Prototype"),
+        );
       footnote.innerHTML =
-        pts > 0
-          ? `Best finish scores <strong>+${pts}</strong> championship pts`
-          : "No championship points scored this round";
+        isExp
+          ? "<strong>EXP entry</strong> — non-championship run (no WEC points or class prize money)"
+          : pts > 0
+            ? `Best finish scores <strong>+${pts}</strong> championship pts`
+            : "No championship points scored this round";
       panel.appendChild(footnote);
     } else if (isQuali) {
       const footnote = document.createElement("p");
