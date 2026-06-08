@@ -695,6 +695,9 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
     car.hybridStintDeployBudgetMJ = pt.stintBudgetMj;
   }
 
+  if (!pt.isFuelCell && !pt.isElectricDrive)
+    engineWeight = std::max(178.0, engineWeight);
+
   if (car.isFuelCell) {
     car.vibrationIndex = 0.0;
     car.fuelBurnRate = 0.0;
@@ -709,15 +712,21 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
       car.fuelBurnRate = 0.0;
   }
 
+  double drivetrainMass = pt.drivetrainExtraMassKg;
+  if (hp.mass > 0.0 && drivetrainMass > 0.0 && !pt.isElectricDrive)
+    drivetrainMass = 0.0;
+
   car.calculatedTotalMass = ch.mass + fa.mass + ra.mass + coolingCompiled.massKg +
                             wp.mass +
                             ((frontSp.mass + rearSp.mass) * 0.5) + fs.mass +
                             bp.mass + tr.mass + hp.mass + df.mass + ex.mass +
                             car.unsprungMassKg + engineWeight +
-                            car.drivetrainExtraMassKg + ac.baseVehicleMass;
+                            drivetrainMass + ac.baseVehicleMass;
 }
 
 void ApplyClassBoP(CarConfig &car, const ClassRule &rule) {
+  car.calculatedTotalMass += rule.assemblyMassOffsetKg;
+
   if (rule.powerCapHP > 0.0 && car.peakHorsepower > rule.powerCapHP) {
     const double scale = rule.powerCapHP / car.peakHorsepower;
     car.peakHorsepower = rule.powerCapHP;
@@ -727,9 +736,7 @@ void ApplyClassBoP(CarConfig &car, const ClassRule &rule) {
   if (rule.minWeightKg > 0.0)
     car.calculatedTotalMass =
         std::max(car.calculatedTotalMass, rule.minWeightKg);
-  if (rule.maxWeightKg > 0.0)
-    car.calculatedTotalMass =
-        std::min(car.calculatedTotalMass, rule.maxWeightKg);
+  // Overweight cars keep true mass in physics (pace penalty); max_weight is regulatory only.
 
   if (rule.aeroBalanceModifier > 0.0)
     car.totalDownforceCl *= rule.aeroBalanceModifier;

@@ -173,6 +173,13 @@ export function staffSalaryPerRound(skill: number): number {
   return 25_000 + skill * 200;
 }
 
+/** Buyout for releasing a signed crew member (two races' salary). */
+export function staffSeveranceCost(
+  member: Pick<StaffMemberPayload, "salaryPerRace">,
+): number {
+  return Math.round((member.salaryPerRace ?? 0) * 2);
+}
+
 export function computeStaffPayroll(staff: StaffMemberPayload[]): number {
   return staff.reduce((sum, m) => sum + staffSalaryPerRound(m.skill), 0);
 }

@@ -80,6 +80,8 @@ std::map<std::string, ClassRule> LoadClassRules(const std::string &filename) {
       current.minWeightKg = std::stod(value);
     else if (key == "max_weight_kg")
       current.maxWeightKg = std::stod(value);
+    else if (key == "assembly_mass_offset_kg")
+      current.assemblyMassOffsetKg = std::stod(value);
     else if (key == "aero_balance_modifier")
       current.aeroBalanceModifier = std::stod(value);
     else if (key == "drag_modifier")

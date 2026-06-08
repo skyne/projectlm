@@ -27,6 +27,7 @@ export interface ParsedClassRule {
   powerCapHp: number;
   minWeightKg: number;
   maxWeightKg: number;
+  assemblyMassOffsetKg: number;
   maxStintHours: number;
   templateCarPath: string;
   legalParts: ClassLegalParts;
@@ -80,6 +81,7 @@ export function loadParsedClassRules(repoRoot: string): ParsedClassRule[] {
       powerCapHp: current.powerCapHp ?? 0,
       minWeightKg: current.minWeightKg ?? 0,
       maxWeightKg: current.maxWeightKg ?? 0,
+      assemblyMassOffsetKg: current.assemblyMassOffsetKg ?? 0,
       maxStintHours: current.maxStintHours ?? 0,
       templateCarPath: current.templateCarPath ?? "",
       legalParts: parseLegalParts(current.legalRaw ?? {}),
@@ -105,6 +107,8 @@ export function loadParsedClassRules(repoRoot: string): ParsedClassRule[] {
       current.minWeightKg = parseFloat(val);
     } else if (key === "max_weight_kg") {
       current.maxWeightKg = parseFloat(val);
+    } else if (key === "assembly_mass_offset_kg") {
+      current.assemblyMassOffsetKg = parseFloat(val);
     } else if (key === "max_driver_stint_hours") {
       current.maxStintHours = parseFloat(val);
     } else if (key === "template_car") {
@@ -147,6 +151,24 @@ export function filterPartsForClass<T extends { partType: string }>(
   return parts.filter((p) => allowed.has(p.partType));
 }
 
+const NON_HYBRID_PLACEHOLDER_PARTS = new Set([
+  "None",
+  "NoneLightweight",
+  "NoneEndurance",
+]);
+
+/** True when the class permits a real hybrid / ERS system (not just "None"). */
+export function classAllowsHybrid(
+  classInfo: Pick<ParsedClassRule, "legalParts"> | undefined,
+): boolean {
+  const allowed = legalPartsForSlot(classInfo, "hybrid");
+  if (!allowed?.size) return false;
+  for (const partType of allowed) {
+    if (!NON_HYBRID_PLACEHOLDER_PARTS.has(partType)) return true;
+  }
+  return false;
+}
+
 const GARAGE_PART_SLOTS: PartSlot[] = [
   "chassis",
   "front_aero",
@@ -171,6 +193,7 @@ export function auditClassPartMinimums(
   const failures: string[] = [];
   for (const cls of classes) {
     for (const slot of GARAGE_PART_SLOTS) {
+      if (slot === "hybrid" && !classAllowsHybrid(cls)) continue;
       const visible = filterPartsForClass(cls, slot, partsBySlot[slot] ?? []);
       if (visible.length < minOptions) {
         failures.push(

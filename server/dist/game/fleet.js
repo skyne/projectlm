@@ -9,6 +9,8 @@ exports.cloneCarBuild = cloneCarBuild;
 exports.buildSpecKey = buildSpecKey;
 exports.referenceCarForClass = referenceCarForClass;
 exports.referenceCarForProgramme = referenceCarForProgramme;
+exports.programmeGroupKey = programmeGroupKey;
+exports.sameFleetProgramme = sameFleetProgramme;
 exports.alignProgrammeBuilds = alignProgrammeBuilds;
 exports.nextFleetCarId = nextFleetCarId;
 exports.nextCarNumber = nextCarNumber;
@@ -102,6 +104,9 @@ function programmeGroupKey(car) {
         return `${car.classId}:experimental:${car.experimentalProgramId ?? car.id}`;
     }
     return `${car.classId}:homologated`;
+}
+function sameFleetProgramme(a, b) {
+    return programmeGroupKey(a) === programmeGroupKey(b);
 }
 /** Force sibling entries in each programme to match the first car's build. */
 function alignProgrammeBuilds(fleet) {
@@ -425,8 +430,16 @@ function migrateLegacyMeta(state) {
             fleet: fleet.map((c) => ({ ...c, entryMode: c.entryMode ?? undefined })),
         };
     }
-    if (!withSponsors.carBuild && !withSponsors.setupComplete) {
-        return { ...withSponsors, fleet: [], activeCarId: "" };
+    if (withSponsors.setupComplete !== true) {
+        return {
+            ...withSponsors,
+            setupComplete: false,
+            fleet: [],
+            activeCarId: "",
+            playerCarId: "",
+            carBuild: null,
+            carBuildGuidePending: false,
+        };
     }
     const classId = withSponsors.playerClassId ?? "Hypercar";
     const build = withSponsors.carBuild ?? {

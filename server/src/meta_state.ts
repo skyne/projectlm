@@ -12,6 +12,8 @@ import type {
   TeamCreationWizardStep,
   AiRivalSeasonPayload,
   DriverMarketListingPayload,
+  StaffMarketListingPayload,
+  StaffRole,
 } from "./ws_protocol";
 import { GameStateStore } from "./game_state";
 import { loadCarPlatforms } from "./game/car_marketplace";
@@ -23,6 +25,7 @@ import {
   createFleetCars,
   migrateLegacyMeta,
   normalizeQuantity,
+  sameFleetProgramme,
   validateBuyCar,
   validateFleetRegulations,
 } from "./game/fleet";
@@ -81,6 +84,7 @@ import {
   MAX_SPONSOR_SLOTS,
   sponsorOfferById,
   staffSigningCost,
+  staffSeveranceCost,
   STARTING_BUDGET,
 } from "./game/economy";
 import {
@@ -93,10 +97,25 @@ import {
   isSeasonCalendarComplete,
 } from "./game/season_end";
 import {
+  assignStaffToCar,
+  findVacantCarsForRole,
+  isStaffSlotFilled,
   migrateStaffToPerCar,
   staffForCar,
   type StaffMember,
 } from "./game/staff";
+import {
+  buildStaffMarket,
+  findStaffMarketListing,
+  STAFF_MARKET_REFRESH_COST,
+  staffMarketSeedForRound,
+} from "./game/staff_market";
+import {
+  DEFAULT_LIVERY_PATTERN,
+  isValidLogoDataUrl,
+  normalizeTeamLivery,
+  type TeamLiveryPayload,
+} from "./game/team_livery";
 
 interface ParsedStaff {
   role: string;
@@ -154,6 +173,7 @@ function parseConfigFile(repoRoot: string): MetaStatePayload {
     teamCreationDraft: null,
     playerClassId: "Hypercar",
     teamColors: { primary: "#d4a843", secondary: "#1a2a44" },
+    teamLivery: defaultTeamLiveryState(),
     carBuild: null,
     fleet: [],
     activeCarId: "",
@@ -254,6 +274,54 @@ function syncLegacyFields(state: MetaStatePayload): void {
     state.playerClassId = active.classId;
     state.carBuild = { ...active.build };
   }
+  syncTeamLiveryFields(state);
+}
+
+function syncTeamLiveryFields(state: MetaStatePayload): void {
+  if (state.teamLivery) {
+    state.teamColors = {
+      primary: state.teamLivery.primary,
+      secondary: state.teamLivery.secondary,
+    };
+    return;
+  }
+  if (state.teamColors) {
+    const migrated = normalizeTeamLivery(state.teamColors);
+    if (migrated) state.teamLivery = migrated;
+  }
+}
+
+function defaultTeamLiveryState(): TeamLiveryPayload {
+  return {
+    primary: "#d4a843",
+    secondary: "#1a2a44",
+    pattern: DEFAULT_LIVERY_PATTERN,
+    logoDataUrl: null,
+  };
+}
+
+/** Repair saves that claim setup is done but are missing core career data. */
+export function normalizeSetupState(state: MetaStatePayload): MetaStatePayload {
+  if (state.setupComplete !== true) {
+    return { ...state, setupComplete: false, carBuildGuidePending: false };
+  }
+
+  const fleet = state.fleet ?? [];
+  const staffCount = state.staff?.length ?? 0;
+  const driverCount = state.driverRoster?.length ?? 0;
+  if (fleet.length === 0 || staffCount < 3 || driverCount < 1) {
+    return {
+      ...state,
+      setupComplete: false,
+      carBuildGuidePending: false,
+      fleet: [],
+      activeCarId: "",
+      playerCarId: "",
+      carBuild: null,
+    };
+  }
+
+  return state;
 }
 
 function clearRuntimeConfigs(repoRoot: string): void {
@@ -308,6 +376,9 @@ export function buildSeasonStartSnapshot(
     driverMarket: structuredClone(state.driverMarket ?? []),
     driverMarketRefreshCount: state.driverMarketRefreshCount ?? 0,
     driverMarketRound: state.driverMarketRound ?? state.currentRound,
+    staffMarket: structuredClone(state.staffMarket ?? []),
+    staffMarketRefreshCount: state.staffMarketRefreshCount ?? 0,
+    staffMarketRound: state.staffMarketRound ?? state.currentRound,
     aiRivalSeason: structuredClone(state.aiRivalSeason!),
     weekendTireCompound: state.weekendTireCompound ?? "Medium",
     trackSetupPresets: structuredClone(state.trackSetupPresets ?? {}),
@@ -330,6 +401,9 @@ function applySeasonStartSnapshot(
   state.driverMarket = structuredClone(snap.driverMarket);
   state.driverMarketRefreshCount = snap.driverMarketRefreshCount;
   state.driverMarketRound = snap.driverMarketRound;
+  state.staffMarket = structuredClone(snap.staffMarket ?? []);
+  state.staffMarketRefreshCount = snap.staffMarketRefreshCount ?? 0;
+  state.staffMarketRound = snap.staffMarketRound ?? snap.currentRound;
   state.aiRivalSeason = structuredClone(snap.aiRivalSeason);
   state.weekendTireCompound = snap.weekendTireCompound ?? "Medium";
   state.trackSetupPresets = structuredClone(snap.trackSetupPresets ?? {});
@@ -343,11 +417,17 @@ export class MetaStateManager {
   /** Snapshots taken before off-week AI resolution — restored on reopenRound. */
   private preRoundAiRivalSeason: AiRivalSeasonPayload | null = null;
   private preRoundDriverMarket: DriverMarketListingPayload[] | null = null;
+  private preRoundStaffMarket: StaffMarketListingPayload[] | null = null;
 
   constructor(private readonly repoRoot: string) {
     this.store = new GameStateStore(repoRoot);
     const defaults = parseConfigFile(repoRoot);
-    this.state = migrateLegacyMeta(this.store.load(defaults));
+    const migrated = migrateLegacyMeta(this.store.load(defaults));
+    const normalized = normalizeSetupState(migrated);
+    this.state = normalized;
+    if (migrated.setupComplete === true && !normalized.setupComplete) {
+      this.store.save(normalized);
+    }
     applyCalendarMigration(this.state);
     applyStaffMigration(this.state, this.store);
     if (this.state.fleet?.length && alignProgrammeBuilds(this.state.fleet)) {
@@ -367,6 +447,7 @@ export class MetaStateManager {
   getState(): MetaStatePayload {
     let changed = false;
     if (this.ensureDriverMarketChanged()) changed = true;
+    if (this.ensureStaffMarketChanged()) changed = true;
     const before = this.state.aiRivalSeason?.teams.length ?? 0;
     this.ensureAiRivalSeason();
     if ((this.state.aiRivalSeason?.teams.length ?? 0) !== before) changed = true;
@@ -450,6 +531,7 @@ export class MetaStateManager {
     this.lastCompletedRound = null;
     this.preRoundAiRivalSeason = null;
     this.preRoundDriverMarket = null;
+    this.preRoundStaffMarket = null;
 
     this.state.aiRivalSeason = initAiRivalSeason(
       this.repoRoot,
@@ -463,6 +545,7 @@ export class MetaStateManager {
       this.state.fleet ?? [],
     );
     this.regenerateDriverMarket();
+    this.regenerateStaffMarket();
     this.captureSeasonStartSnapshot();
     return this.persist();
   }
@@ -490,6 +573,7 @@ export class MetaStateManager {
         this.state.fleet ?? [],
       );
       this.regenerateDriverMarket();
+      this.regenerateStaffMarket();
     }
 
     this.state.weekendProgress = undefined;
@@ -498,6 +582,7 @@ export class MetaStateManager {
     this.lastCompletedRound = null;
     this.preRoundAiRivalSeason = null;
     this.preRoundDriverMarket = null;
+    this.preRoundStaffMarket = null;
 
     if (snap && snap.seasonYear === this.state.seasonYear) {
       writeAllFleetConfigs(
@@ -623,6 +708,32 @@ export class MetaStateManager {
     return false;
   }
 
+  private regenerateStaffMarket(): void {
+    const refreshCount = this.state.staffMarketRefreshCount ?? 0;
+    const seed = staffMarketSeedForRound(
+      this.state.teamName,
+      this.state.currentRound,
+      refreshCount,
+    );
+    this.state.staffMarket = buildStaffMarket({
+      seed,
+      existingStaff: this.state.staff ?? [],
+    });
+    this.state.staffMarketRound = this.state.currentRound;
+  }
+
+  private ensureStaffMarketChanged(): boolean {
+    if (!this.state.setupComplete) return false;
+    if (
+      !this.state.staffMarket?.length ||
+      this.state.staffMarketRound !== this.state.currentRound
+    ) {
+      this.regenerateStaffMarket();
+      return true;
+    }
+    return false;
+  }
+
   validateFleetForRace(): string | null {
     return validateFleetRegulations(this.state.fleet ?? []);
   }
@@ -631,19 +742,114 @@ export class MetaStateManager {
     const clamped = Math.min(100, Math.max(1, skill));
     const cost = staffSigningCost(clamped);
     if (this.state.budget < cost) return this.getState();
-    const carId =
-      this.state.activeCarId ||
-      this.state.playerCarId ||
-      this.state.fleet?.[0]?.id ||
-      "";
-    this.state.staff.push({
-      role,
-      name,
-      skill: clamped,
-      assignedCarId: carId || undefined,
-      status: "active",
-    });
+    const fleetIds = (this.state.fleet ?? []).map((c) => c.id);
+    const staffRole = role as StaffRole;
+    const vacant = findVacantCarsForRole(
+      fleetIds,
+      (this.state.staff ?? []) as StaffMember[],
+      staffRole,
+    );
+    const carId = vacant[0];
+    if (!carId) return this.getState();
+
+    this.state.staff = assignStaffToCar(
+      (this.state.staff ?? []) as StaffMember[],
+      carId,
+      {
+        role: staffRole,
+        name,
+        skill: clamped,
+        salaryPerRace: Math.round(staffSigningCost(clamped) * 0.06),
+        morale: 75,
+      },
+    );
     this.state.budget -= cost;
+    return this.persist();
+  }
+
+  refreshStaffMarket(): MetaStatePayload | { error: string } {
+    if (!this.state.setupComplete) {
+      return { error: "Found your team before browsing the staff market" };
+    }
+    if (this.state.budget < STAFF_MARKET_REFRESH_COST) {
+      return {
+        error: `Insufficient budget (need $${STAFF_MARKET_REFRESH_COST.toLocaleString()})`,
+      };
+    }
+    this.state.budget -= STAFF_MARKET_REFRESH_COST;
+    this.state.staffMarketRefreshCount =
+      (this.state.staffMarketRefreshCount ?? 0) + 1;
+    this.regenerateStaffMarket();
+    return this.persist();
+  }
+
+  signStaffContract(
+    listingId: string,
+    carId?: string,
+  ): MetaStatePayload | { error: string } {
+    if (!this.state.setupComplete) {
+      return { error: "Found your team before hiring crew" };
+    }
+    this.ensureStaffMarketChanged();
+    const listing = findStaffMarketListing(this.state.staffMarket, listingId);
+    if (!listing) {
+      return { error: "That crew member is no longer on the market" };
+    }
+
+    const fleetIds = (this.state.fleet ?? []).map((c) => c.id);
+    if (!fleetIds.length) {
+      return { error: "Add a car to your fleet before hiring crew" };
+    }
+
+    const staff = (this.state.staff ?? []) as StaffMember[];
+    const vacant = findVacantCarsForRole(fleetIds, staff, listing.role);
+
+    let targetCarId = carId?.trim();
+    if (targetCarId) {
+      if (!fleetIds.includes(targetCarId)) {
+        return { error: "Unknown car" };
+      }
+    } else if (vacant.length) {
+      targetCarId = vacant[0];
+    } else {
+      return {
+        error: `Choose a car to replace the current ${listing.role}`,
+      };
+    }
+
+    const existing = staff.find(
+      (s) => s.role === listing.role && s.assignedCarId === targetCarId,
+    );
+    const replacing = isStaffSlotFilled(existing);
+    const severance =
+      replacing && existing ? staffSeveranceCost(existing) : 0;
+    const totalCost = listing.signingFee + severance;
+
+    if (this.state.budget < totalCost) {
+      return {
+        error: replacing
+          ? `Insufficient budget (need $${totalCost.toLocaleString()} incl. $${severance.toLocaleString()} severance)`
+          : `Insufficient budget (need $${listing.signingFee.toLocaleString()} signing fee)`,
+      };
+    }
+
+    this.state.budget -= totalCost;
+    this.state.staff = assignStaffToCar(
+      (this.state.staff ?? []) as StaffMember[],
+      targetCarId,
+      {
+        role: listing.role,
+        name: listing.name,
+        skill: listing.skill,
+        experience: listing.experience,
+        salaryPerRace: listing.salaryPerRace,
+        morale: listing.morale,
+        traits: listing.traits,
+      },
+    );
+    this.state.staffMarket = (this.state.staffMarket ?? []).filter(
+      (l) => l.id !== listingId,
+    );
     return this.persist();
   }
 
@@ -808,6 +1014,12 @@ export class MetaStateManager {
     } else {
       this.regenerateDriverMarket();
     }
+    if (this.preRoundStaffMarket) {
+      this.state.staffMarket = structuredClone(this.preRoundStaffMarket);
+      this.preRoundStaffMarket = null;
+    } else {
+      this.regenerateStaffMarket();
+    }
 
     return this.persist();
   }
@@ -860,8 +1072,10 @@ export class MetaStateManager {
       );
     }
     this.regenerateDriverMarket();
+    this.regenerateStaffMarket();
     this.preRoundAiRivalSeason = structuredClone(this.state.aiRivalSeason!);
     this.preRoundDriverMarket = structuredClone(this.state.driverMarket ?? []);
+    this.preRoundStaffMarket = structuredClone(this.state.staffMarket ?? []);
     this.resolveAiOffWeek(
       raceResults,
       event.format,
@@ -913,14 +1127,33 @@ export class MetaStateManager {
     return this.persist();
   }
 
-  createTeam(payload: CreateTeamPayload): MetaStatePayload | null {
+  createTeam(payload: CreateTeamPayload): MetaStatePayload | { error: string } {
     const name = payload.teamName.trim();
-    if (name.length < 2 || name.length > 40) return null;
-    if (!payload.firstCar || payload.staff.length < 3) return null;
-    if (!payload.driverRoster || payload.driverRoster.length < 1) return null;
+    if (name.length < 2) {
+      return { error: "Team name must be at least 2 characters" };
+    }
+    if (name.length > 40) {
+      return { error: "Team name must be 40 characters or fewer" };
+    }
+    if (!payload.firstCar) {
+      return { error: "Choose a class programme before founding" };
+    }
+    const staffRoles = new Set(payload.staff.map((s) => s.role));
+    const missingStaff = (["engineer", "mechanic", "strategist"] as const).filter(
+      (role) => !staffRoles.has(role),
+    );
+    if (missingStaff.length > 0) {
+      return { error: `Hire ${missingStaff.join(", ")} before founding` };
+    }
+    if (!payload.driverRoster || payload.driverRoster.length < 1) {
+      return { error: "Add at least one driver to your line-up" };
+    }
     for (const driver of payload.driverRoster) {
       const err = validateCustomDriver(driver);
-      if (err) return null;
+      if (err) {
+        const label = driver.name.trim() || "A driver";
+        return { error: `${label}: ${err}` };
+      }
     }
 
     const staffCost = payload.staff.reduce(
@@ -932,7 +1165,7 @@ export class MetaStateManager {
       ...this.state,
       budget: Math.max(0, STARTING_BUDGET - staffCost),
     }, payload.firstCar);
-    if (firstCarErr) return null;
+    if (firstCarErr) return { error: firstCarErr };
 
     const firstCars = createFleetCars(
       this.repoRoot,
@@ -940,20 +1173,39 @@ export class MetaStateManager {
       payload.firstCar,
       [],
     );
-    if (firstCars.length === 0) return null;
+    if (firstCars.length === 0) {
+      return { error: "Failed to create cars for your class programme" };
+    }
+    if (firstCars.length !== normalizeQuantity(payload.firstCar.quantity)) {
+      return {
+        error: `Failed to create ${normalizeQuantity(payload.firstCar.quantity)} car(s)`,
+      };
+    }
+    const fleetErr = validateFleetRegulations(firstCars);
+    if (fleetErr) return { error: fleetErr };
 
     const firstCarCost = buyCarCost(this.repoRoot, payload.firstCar) ?? 0;
     const firstCar = firstCars[0];
 
     this.state.teamName = name;
+    const foundedLivery =
+      normalizeTeamLivery({
+        primary: payload.primaryColor,
+        secondary: payload.secondaryColor,
+        pattern: payload.liveryPattern,
+        logoDataUrl: payload.logoDataUrl ?? null,
+      }) ?? defaultTeamLiveryState();
+    this.state.teamLivery = foundedLivery;
     this.state.teamColors = {
-      primary: payload.primaryColor,
-      secondary: payload.secondaryColor,
+      primary: foundedLivery.primary,
+      secondary: foundedLivery.secondary,
     };
     this.state.staff = payload.staff.map((s) => ({
       role: s.role,
       name: s.name,
       skill: Math.min(100, Math.max(1, s.skill)),
+      assignedCarId: firstCar.id,
+      status: "active" as const,
     }));
     this.state.budget = Math.max(0, STARTING_BUDGET - staffCost - firstCarCost);
     this.state.sponsors = [];
@@ -973,6 +1225,11 @@ export class MetaStateManager {
     for (const car of firstCars) {
       car.assignedDriverIds = assignments[car.id] ?? [];
     }
+    const migratedStaff = migrateStaffToPerCar(
+      this.state.staff as StaffMember[],
+      firstCars.map((c) => c.id),
+    );
+    this.state.staff = migratedStaff.staff;
     this.state.setupComplete = true;
     this.state.teamCreationDraft = null;
     this.state.carBuildGuidePending =
@@ -999,6 +1256,7 @@ export class MetaStateManager {
       this.state.fleet,
     );
     this.regenerateDriverMarket();
+    this.regenerateStaffMarket();
     this.captureSeasonStartSnapshot();
     return this.persist();
   }
@@ -1021,6 +1279,9 @@ export class MetaStateManager {
     if (!isValidHexColor(draft.secondaryColor)) {
       return { error: "Invalid secondary color" };
     }
+    if (draft.logoDataUrl && !isValidLogoDataUrl(draft.logoDataUrl)) {
+      return { error: "Team logo is invalid or too large" };
+    }
     for (const driver of draft.driverRoster ?? []) {
       const err = validateCustomDriver(driver);
       if (err) return { error: err };
@@ -1031,6 +1292,8 @@ export class MetaStateManager {
       teamName: draft.teamName.slice(0, 40),
       primaryColor: draft.primaryColor,
       secondaryColor: draft.secondaryColor,
+      liveryPattern: draft.liveryPattern ?? DEFAULT_LIVERY_PATTERN,
+      logoDataUrl: draft.logoDataUrl ?? null,
       classId: draft.classId.trim() || "Hypercar",
       affiliation:
         draft.affiliation === "manufacturer" ? "manufacturer" : "privateer",
@@ -1092,6 +1355,11 @@ export class MetaStateManager {
         car.platformId ? templates.get(car.platformId) : undefined,
       );
     }
+    const migratedStaff = migrateStaffToPerCar(
+      (this.state.staff ?? []) as StaffMember[],
+      (this.state.fleet ?? []).map((c) => c.id),
+    );
+    this.state.staff = migratedStaff.staff;
     return this.persist();
   }
 
@@ -1163,7 +1431,7 @@ export class MetaStateManager {
     );
 
     for (const car of this.state.fleet ?? []) {
-      if (car.classId !== active.classId || car.id === active.id) continue;
+      if (car.id === active.id || !sameFleetProgramme(car, active)) continue;
       car.build = cloneCarBuild(build);
       writeFleetCarConfig(
         this.repoRoot,
@@ -1178,14 +1446,31 @@ export class MetaStateManager {
   }
 
   saveTeamColors(
-    colors: { primary: string; secondary: string },
+    colors: {
+      primary: string;
+      secondary: string;
+      pattern?: string;
+      logoDataUrl?: string | null;
+    },
   ): MetaStatePayload | null {
-    if (!isValidHexColor(colors.primary) || !isValidHexColor(colors.secondary)) {
-      return null;
-    }
+    const existing = this.state.teamLivery ?? normalizeTeamLivery(this.state.teamColors);
+    const livery = normalizeTeamLivery(
+      {
+        primary: colors.primary,
+        secondary: colors.secondary,
+        pattern: colors.pattern as TeamLiveryPayload["pattern"] | undefined,
+        logoDataUrl:
+          colors.logoDataUrl !== undefined
+            ? colors.logoDataUrl
+            : existing?.logoDataUrl ?? null,
+      },
+      existing ?? undefined,
+    );
+    if (!livery) return null;
+    this.state.teamLivery = livery;
     this.state.teamColors = {
-      primary: colors.primary,
-      secondary: colors.secondary,
+      primary: livery.primary,
+      secondary: livery.secondary,
     };
     return this.persist();
   }
@@ -1383,28 +1668,39 @@ export class MetaStateManager {
     this.store.delete();
     clearRuntimeConfigs(this.repoRoot);
     const defaults = parseConfigFile(this.repoRoot);
-    this.state = migrateLegacyMeta({
-      ...structuredClone(defaults),
-      setupComplete: false,
-      teamCreationDraft: null,
-      fleet: [],
-      activeCarId: "",
-      playerCarId: "",
-      driverRoster: [],
-      driverMarket: [],
-      driverMarketRefreshCount: 0,
-      driverMarketRound: 0,
-      carBuild: null,
-      staff: [],
-      sponsors: [],
-      unlockedParts: ["tire.Medium", "brake.StandardCaliper"],
-      budget: defaults.budget,
-      rdPoints: defaults.rdPoints,
-      currentRound: 0,
-      calendar: defaultWecCalendarPayload(),
-      carBuildGuidePending: false,
-      weekendTireCompound: "Medium",
-    });
+    this.state = normalizeSetupState(
+      migrateLegacyMeta({
+        ...structuredClone(defaults),
+        setupComplete: false,
+        teamCreationDraft: null,
+        fleet: [],
+        activeCarId: "",
+        playerCarId: "",
+        driverRoster: [],
+        driverMarket: [],
+        driverMarketRefreshCount: 0,
+        driverMarketRound: 0,
+        staffMarket: [],
+        staffMarketRefreshCount: 0,
+        staffMarketRound: 0,
+        carBuild: null,
+        staff: [],
+        sponsors: [],
+        unlockedParts: ["tire.Medium", "brake.StandardCaliper"],
+        budget: STARTING_BUDGET,
+        rdPoints: 100,
+        currentRound: 0,
+        calendar: defaultWecCalendarPayload(),
+        carBuildGuidePending: false,
+        weekendTireCompound: "Medium",
+        teamName: "ProjectLM Racing",
+        teamColors: { primary: "#d4a843", secondary: "#1a2a44" },
+        teamLivery: defaultTeamLiveryState(),
+        aiRivalSeason: undefined,
+        seasonComplete: false,
+        seasonSummary: undefined,
+      }),
+    );
     for (const event of this.state.calendar) {
       event.completed = false;
       event.championshipPoints = 0;

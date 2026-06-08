@@ -29,6 +29,7 @@ export class HeaderNav {
   private onChange?: (view: MainView) => void;
   private active: MainView = "season";
   private raceActive = false;
+  private garageBuildLocked = false;
   private buttons = new Map<MainView, HTMLButtonElement>();
 
   constructor(container: HTMLElement) {
@@ -57,7 +58,6 @@ export class HeaderNav {
       `;
       button.addEventListener("click", () => {
         if (button.hidden) return;
-        this.setActive(view);
         this.onChange?.(view);
       });
       this.buttons.set(view, button);
@@ -89,7 +89,7 @@ export class HeaderNav {
       !active &&
       (this.active === "map" || this.active === "timing" || this.active === "telemetry")
     ) {
-      this.setActive("season");
+      this.setActive(this.garageBuildLocked ? "garage" : "season");
     }
   }
 
@@ -97,10 +97,24 @@ export class HeaderNav {
     return this.raceActive;
   }
 
+  setGarageBuildLocked(locked: boolean): void {
+    this.garageBuildLocked = locked;
+    this.applyTabVisibility();
+    if (locked && !this.raceActive) {
+      this.setActive("garage");
+    }
+  }
+
   private applyTabVisibility(): void {
     for (const view of OFFSEASON_TABS) {
       const btn = this.buttons.get(view)!;
-      btn.hidden = this.raceActive;
+      if (this.raceActive) {
+        btn.hidden = true;
+      } else if (this.garageBuildLocked) {
+        btn.hidden = view !== "garage";
+      } else {
+        btn.hidden = false;
+      }
     }
     for (const view of RACE_TABS) {
       const btn = this.buttons.get(view)!;

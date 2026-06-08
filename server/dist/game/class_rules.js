@@ -38,6 +38,7 @@ exports.loadParsedClassRules = loadParsedClassRules;
 exports.legalPartsForSlot = legalPartsForSlot;
 exports.isPartLegalForClass = isPartLegalForClass;
 exports.filterPartsForClass = filterPartsForClass;
+exports.classAllowsHybrid = classAllowsHybrid;
 exports.auditClassPartMinimums = auditClassPartMinimums;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
@@ -97,6 +98,7 @@ function loadParsedClassRules(repoRoot) {
             powerCapHp: current.powerCapHp ?? 0,
             minWeightKg: current.minWeightKg ?? 0,
             maxWeightKg: current.maxWeightKg ?? 0,
+            assemblyMassOffsetKg: current.assemblyMassOffsetKg ?? 0,
             maxStintHours: current.maxStintHours ?? 0,
             templateCarPath: current.templateCarPath ?? "",
             legalParts: parseLegalParts(current.legalRaw ?? {}),
@@ -126,6 +128,9 @@ function loadParsedClassRules(repoRoot) {
         }
         else if (key === "max_weight_kg") {
             current.maxWeightKg = parseFloat(val);
+        }
+        else if (key === "assembly_mass_offset_kg") {
+            current.assemblyMassOffsetKg = parseFloat(val);
         }
         else if (key === "max_driver_stint_hours") {
             current.maxStintHours = parseFloat(val);
@@ -159,6 +164,22 @@ function filterPartsForClass(classInfo, slot, parts) {
         return parts;
     return parts.filter((p) => allowed.has(p.partType));
 }
+const NON_HYBRID_PLACEHOLDER_PARTS = new Set([
+    "None",
+    "NoneLightweight",
+    "NoneEndurance",
+]);
+/** True when the class permits a real hybrid / ERS system (not just "None"). */
+function classAllowsHybrid(classInfo) {
+    const allowed = legalPartsForSlot(classInfo, "hybrid");
+    if (!allowed?.size)
+        return false;
+    for (const partType of allowed) {
+        if (!NON_HYBRID_PLACEHOLDER_PARTS.has(partType))
+            return true;
+    }
+    return false;
+}
 const GARAGE_PART_SLOTS = [
     "chassis",
     "front_aero",
@@ -178,6 +199,8 @@ function auditClassPartMinimums(classes, partsBySlot, minOptions = 3) {
     const failures = [];
     for (const cls of classes) {
         for (const slot of GARAGE_PART_SLOTS) {
+            if (slot === "hybrid" && !classAllowsHybrid(cls))
+                continue;
             const visible = filterPartsForClass(cls, slot, partsBySlot[slot] ?? []);
             if (visible.length < minOptions) {
                 failures.push(`${cls.id}.${slot}: ${visible.length} visible (need ${minOptions}) — ${visible.map((p) => p.partType).join(", ") || "none"}`);

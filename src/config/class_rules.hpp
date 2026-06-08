@@ -13,6 +13,8 @@ struct ClassRule {
   double powerTargetHP = 0.0;
   double minWeightKg = 0.0;
   double maxWeightKg = 0.0;
+  /** Added at compile before BoP min-weight floor (per-class calibration). */
+  double assemblyMassOffsetKg = 0.0;
   double aeroBalanceModifier = 1.0;
   double dragModifier = 1.0;
   /** Scales compiled fuelBurnRate after architecture build (1.0 = unchanged). */

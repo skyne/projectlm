@@ -318,13 +318,13 @@ function main() {
             }
             else if (msg.type === "create_team") {
                 const payload = msg.payload;
-                const meta = host.createTeam(payload);
-                if (!meta) {
-                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: "Invalid team setup" })));
+                const result = host.createTeam(payload);
+                if ("error" in result) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
                 }
                 else {
-                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", meta));
-                    console.log("[server] Team created:", meta.teamName);
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
+                    console.log("[server] Team created:", result.teamName);
                 }
             }
             else if (msg.type === "save_team_creation_draft") {
@@ -398,6 +398,27 @@ function main() {
                 else {
                     broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
                     console.log("[server] Driver contract signed");
+                }
+            }
+            else if (msg.type === "refresh_staff_market") {
+                const result = host.refreshStaffMarket();
+                if ("error" in result) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
+                    console.log("[server] Staff market refreshed");
+                }
+            }
+            else if (msg.type === "sign_staff_contract") {
+                const payload = msg.payload;
+                const result = host.signStaffContract(payload.listingId ?? "", payload.carId);
+                if ("error" in result) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
+                    console.log("[server] Staff contract signed");
                 }
             }
             else if (msg.type === "save_team_colors") {

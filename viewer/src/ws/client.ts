@@ -353,6 +353,14 @@ export class ViewerClient {
     this.send(clientMessage("save_driver_roster", { roster, assignments }));
   }
 
+  refreshStaffMarket(): void {
+    this.send(clientMessage("refresh_staff_market", {}));
+  }
+
+  signStaffContract(listingId: string, carId?: string): void {
+    this.send(clientMessage("sign_staff_contract", { listingId, carId }));
+  }
+
   refreshDriverMarket(): void {
     this.send(clientMessage("refresh_driver_market", {}));
   }
@@ -417,11 +425,16 @@ export class ViewerClient {
       this.permissions.size > 0 &&
       !this.permissions.has(msg.type)
     ) {
-      console.warn(`[ws] blocked ${msg.type} — insufficient permissions`);
+      const action = msg.type.replace(/_/g, " ");
+      this.handlers.onError?.(
+        `Not permitted for your role (${this.role ?? "unknown"}) — cannot ${action}`,
+      );
       return;
     }
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
+    } else {
+      this.handlers.onError?.("Not connected to the server — try refreshing the page");
     }
   }
 

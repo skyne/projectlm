@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "capture:preview": "node scripts/capture_preview.mjs",
     "generate:track-bg": "tsx scripts/generate_track_backgrounds.ts",
-    "test": "node --import tsx --test src/audio/audioSettings.test.ts src/entryNumbers.test.ts src/utils/leaderboardBoard.test.ts src/utils/partCompatibility.test.ts src/utils/timingColors.test.ts src/utils/trackGeometry.test.ts src/utils/trackWeatherVisual.test.ts src/utils/trackWetnessDisplay.test.ts"
+    "test": "node --import tsx --test src/audio/audioSettings.test.ts src/entryNumbers.test.ts src/utils/car_mass_balance.test.ts src/utils/leaderboardBoard.test.ts src/utils/partCompatibility.test.ts src/utils/timingColors.test.ts src/utils/trackGeometry.test.ts src/utils/trackWeatherVisual.test.ts src/utils/trackWetnessDisplay.test.ts"
   },
   "devDependencies": {
     "playwright": "^1.60.0",

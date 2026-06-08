@@ -149,12 +149,19 @@ export function referenceCarForProgramme(
   );
 }
 
-function programmeGroupKey(car: FleetCarPayload): string {
+export function programmeGroupKey(car: FleetCarPayload): string {
   const mode = fleetEntryMode(car);
   if (mode === "experimental") {
     return `${car.classId}:experimental:${car.experimentalProgramId ?? car.id}`;
   }
   return `${car.classId}:homologated`;
+}
+
+export function sameFleetProgramme(
+  a: FleetCarPayload,
+  b: FleetCarPayload,
+): boolean {
+  return programmeGroupKey(a) === programmeGroupKey(b);
 }
 
 /** Force sibling entries in each programme to match the first car's build. */
@@ -537,8 +544,16 @@ export function migrateLegacyMeta(state: MetaStatePayload): MetaStatePayload {
     };
   }
 
-  if (!withSponsors.carBuild && !withSponsors.setupComplete) {
-    return { ...withSponsors, fleet: [], activeCarId: "" };
+  if (withSponsors.setupComplete !== true) {
+    return {
+      ...withSponsors,
+      setupComplete: false,
+      fleet: [],
+      activeCarId: "",
+      playerCarId: "",
+      carBuild: null,
+      carBuildGuidePending: false,
+    };
   }
 
   const classId = withSponsors.playerClassId ?? "Hypercar";

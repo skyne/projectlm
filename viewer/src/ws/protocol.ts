@@ -351,6 +351,22 @@ export interface DriverMarketListingPayload {
 export type StaffRole = "engineer" | "mechanic" | "strategist";
 export type StaffStatus = "active" | "injured" | "ill" | "poached";
 
+export type StaffMarketSource = "veteran" | "experienced" | "prospect";
+
+export interface StaffMarketListingPayload {
+  id: string;
+  source: StaffMarketSource;
+  role: StaffRole;
+  name: string;
+  skill: number;
+  experience: number;
+  morale: number;
+  traits: string[];
+  signingFee: number;
+  salaryPerRace: number;
+  tagline: string;
+}
+
 export interface StaffMemberPayload {
   id?: string;
   role: string;
@@ -604,11 +620,30 @@ export type TeamCreationWizardStep =
   | "drivers"
   | "confirm";
 
+export type LiveryPattern =
+  | "solid"
+  | "dual_stripe"
+  | "center_stripe"
+  | "side_bands"
+  | "chevron"
+  | "gradient_bow"
+  | "hood_accent"
+  | "split_diagonal";
+
+export interface TeamLiveryPayload {
+  primary: string;
+  secondary: string;
+  pattern: LiveryPattern;
+  logoDataUrl?: string | null;
+}
+
 export interface TeamCreationDraftPayload {
   step: TeamCreationWizardStep;
   teamName: string;
   primaryColor: string;
   secondaryColor: string;
+  liveryPattern?: LiveryPattern;
+  logoDataUrl?: string | null;
   classId: string;
   affiliation: CarAffiliation;
   platformId: string;
@@ -631,6 +666,9 @@ export interface SeasonStartSnapshotPayload {
   driverMarket: DriverMarketListingPayload[];
   driverMarketRefreshCount: number;
   driverMarketRound: number;
+  staffMarket: StaffMarketListingPayload[];
+  staffMarketRefreshCount: number;
+  staffMarketRound: number;
   aiRivalSeason: AiRivalSeasonPayload;
   weekendTireCompound?: string;
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
@@ -651,6 +689,7 @@ export interface MetaStatePayload {
   teamCreationDraft?: TeamCreationDraftPayload | null;
   playerClassId?: string;
   teamColors?: { primary: string; secondary: string };
+  teamLivery?: TeamLiveryPayload;
   carBuild?: CarBuildPayload | null;
   fleet?: FleetCarPayload[];
   activeCarId?: string;
@@ -666,6 +705,9 @@ export interface MetaStatePayload {
   driverMarket?: DriverMarketListingPayload[];
   driverMarketRefreshCount?: number;
   driverMarketRound?: number;
+  staffMarket?: StaffMarketListingPayload[];
+  staffMarketRefreshCount?: number;
+  staffMarketRound?: number;
   aiRivalSeason?: AiRivalSeasonPayload;
   seasonComplete?: boolean;
   seasonSummary?: SeasonSummaryPayload;
@@ -758,6 +800,7 @@ export interface ClassInfoPayload {
   powerCapHp: number;
   minWeightKg: number;
   maxWeightKg: number;
+  assemblyMassOffsetKg?: number;
   maxStintHours: number;
   /** Allowed part types per garage slot (from class_rules.txt legal_* lists). */
   legalParts?: Partial<Record<string, string[]>>;
@@ -828,6 +871,8 @@ export interface CreateTeamPayload {
   teamName: string;
   primaryColor: string;
   secondaryColor: string;
+  liveryPattern?: LiveryPattern;
+  logoDataUrl?: string | null;
   staff: StaffMemberPayload[];
   firstCar: BuyCarPayload;
   driverRoster: DriverProfilePayload[];
@@ -836,6 +881,8 @@ export interface CreateTeamPayload {
 export interface SaveTeamColorsPayload {
   primary: string;
   secondary: string;
+  pattern?: LiveryPattern;
+  logoDataUrl?: string | null;
 }
 
 export interface WeatherForecastStepPayload {
@@ -1007,6 +1054,8 @@ export type ClientMessageType =
   | "save_driver_roster"
   | "refresh_driver_market"
   | "sign_driver_contract"
+  | "refresh_staff_market"
+  | "sign_staff_contract"
   | "save_team_colors"
   | "sign_sponsor"
   | "drop_sponsor"

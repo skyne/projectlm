@@ -150,20 +150,82 @@ export function migrateStaffToPerCar(
     }
   }
 
-  const secondaryCarId = fleetIds[1];
-  if (secondaryCarId) {
+  for (const carId of fleetIds) {
+    if (carId === primaryCarId) continue;
     for (const role of STAFF_ROLES) {
-      const onSecondary = result.find(
-        (member) =>
-          member.role === role && member.assignedCarId === secondaryCarId,
+      const onCar = result.find(
+        (member) => member.role === role && member.assignedCarId === carId,
       );
-      if (onSecondary) continue;
-      result.push(createJuniorPlaceholder(role, secondaryCarId));
+      if (onCar) continue;
+      result.push(createJuniorPlaceholder(role, carId));
       migrated = true;
     }
   }
 
   return { staff: result, migrated };
+}
+
+export function isJuniorPlaceholder(member: StaffMember): boolean {
+  if (member.id?.startsWith("staff-junior-")) return true;
+  return member.name === JUNIOR_NAMES[member.role];
+}
+
+export function isStaffSlotFilled(
+  member: StaffMember | null | undefined,
+): boolean {
+  return member != null && !isJuniorPlaceholder(member);
+}
+
+export function findVacantCarsForRole(
+  fleetIds: string[],
+  staff: StaffMember[],
+  role: StaffRole,
+): string[] {
+  return fleetIds.filter((carId) => {
+    const member = staff.find(
+      (s) => s.role === role && s.assignedCarId === carId,
+    );
+    return !isStaffSlotFilled(member);
+  });
+}
+
+export function assignStaffToCar(
+  staff: StaffMember[],
+  carId: string,
+  listing: {
+    role: StaffRole;
+    name: string;
+    skill: number;
+    experience?: number;
+    salaryPerRace?: number;
+    morale?: number;
+    traits?: string[];
+  },
+): StaffMember[] {
+  const role = listing.role;
+  const idx = staff.findIndex(
+    (s) => s.role === role && s.assignedCarId === carId,
+  );
+  const member = normalizeMember(
+    {
+      id: `staff-${role}-${carId}`,
+      role,
+      name: listing.name,
+      skill: listing.skill,
+      experience: listing.experience,
+      salaryPerRace: listing.salaryPerRace,
+      morale: listing.morale,
+      traits: listing.traits,
+      status: "active",
+    },
+    carId,
+  );
+  if (idx >= 0) {
+    const next = [...staff];
+    next[idx] = member;
+    return next;
+  }
+  return [...staff, member];
 }
 
 export function staffForCar(staff: StaffMember[], carId: string): StaffMember[] {

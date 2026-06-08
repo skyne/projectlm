@@ -66,10 +66,10 @@ fuel_overrun_fraction=0.28
 thermal_overrun_fraction=0.22
 
 # === ENGINE ASSEMBLY ===
-engine_weight_coeff=35.0
+engine_weight_coeff=30.0
 engine_weight_cyl_factor=5.0
 diesel_weight_mult=1.3
-base_vehicle_mass=180.0
+base_vehicle_mass=580.0
 body_base_drag_cd=0.30
 default_specific_torque_nm_per_l=105.0
 hp_conversion=7127.0

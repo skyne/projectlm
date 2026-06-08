@@ -404,16 +404,12 @@ function main(): void {
         }
       } else if (msg.type === "create_team") {
         const payload = msg.payload as CreateTeamPayload;
-        const meta = host.createTeam(payload);
-        if (!meta) {
-          ws.send(
-            JSON.stringify(
-              serverMessage("error", { message: "Invalid team setup" }),
-            ),
-          );
+        const result = host.createTeam(payload);
+        if ("error" in result) {
+          ws.send(JSON.stringify(serverMessage("error", { message: result.error })));
         } else {
-          broadcast(clients, serverMessage("meta_state", meta));
-          console.log("[server] Team created:", meta.teamName);
+          broadcast(clients, serverMessage("meta_state", result));
+          console.log("[server] Team created:", result.teamName);
         }
       } else if (msg.type === "save_team_creation_draft") {
         const draft = msg.payload as TeamCreationDraftPayload;
@@ -492,6 +488,33 @@ function main(): void {
         } else {
           broadcast(clients, serverMessage("meta_state", result));
           console.log("[server] Driver contract signed");
+        }
+      } else if (msg.type === "refresh_staff_market") {
+        const result = host.refreshStaffMarket();
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+          console.log("[server] Staff market refreshed");
+        }
+      } else if (msg.type === "sign_staff_contract") {
+        const payload = msg.payload as {
+          listingId?: string;
+          carId?: string;
+        };
+        const result = host.signStaffContract(
+          payload.listingId ?? "",
+          payload.carId,
+        );
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+          console.log("[server] Staff contract signed");
         }
       } else if (msg.type === "save_team_colors") {
         const payload = msg.payload as SaveTeamColorsPayload;

@@ -19,7 +19,8 @@ export class GameStateStore {
       return {
         ...defaults,
         ...parsed,
-        setupComplete: parsed.setupComplete ?? true,
+        // Only explicit true counts — missing/false must reopen team setup.
+        setupComplete: parsed.setupComplete === true,
       };
     } catch {
       return structuredClone(defaults);

@@ -144,7 +144,7 @@ struct AssemblyConfig {
   double engineWeightCoeff = 35.0;
   double engineWeightCylFactor = 5.0;
   double dieselWeightMult = 1.3;
-  double baseVehicleMass = 150.0;
+  double baseVehicleMass = 580.0;
   /// Default Nm/L for race NA engines when car omits peak_torque_nm.
   double defaultSpecificTorqueNmPerL = 105.0;
   double bodyBaseDragCd = 0.32;

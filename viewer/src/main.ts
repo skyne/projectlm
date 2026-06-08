@@ -38,6 +38,7 @@ import {
 import type { ClientRole, RosterUpdatePayload } from "./ws/protocol";
 import { enrichSnapshots, setEntryNumbersFromSession } from "./entryNumbers";
 import { resolveRetireReason } from "./utils/retireReason";
+import { resolveTeamLivery } from "./utils/teamLivery";
 import { setTrackLapLengthMeters } from "./utils/pitCommands";
 import { carBuildToVisual } from "./graphics/visualCatalog";
 import type {
@@ -285,6 +286,7 @@ const engineerPanel = new EngineerPanel(document.getElementById("engineer-contai
 const teamWizard = new TeamCreationWizard(document.getElementById("team-wizard-overlay")!, {
   onComplete: (payload) => client.createTeam(payload),
   onSaveDraft: (draft) => client.saveTeamCreationDraft(draft),
+  canFoundTeam: () => client.canSend("create_team"),
 });
 
 const carGarage = new CarGarage(garageContainer, {
@@ -408,7 +410,14 @@ const driverCenter = new DriverCenter(driversContainer, {
 });
 
 const teamHQ = new TeamHQ(teamContainer, {
-  onHireStaff: (role, name, skill) => client.hireStaff(role, name, skill),
+  onRefreshStaffMarket: () => {
+    client.refreshStaffMarket();
+    teamHQ.setCrewStatus("Refreshing staff market…");
+  },
+  onSignStaffContract: (listingId, carId) => {
+    client.signStaffContract(listingId, carId);
+    teamHQ.setCrewStatus("Offering contract…");
+  },
   onRdInvest: (partId, points) => client.rdInvest(partId, points),
   onSignSponsor: (offerId) => client.signSponsor(offerId),
   onDropSponsor: (offerId) => client.dropSponsor(offerId),
@@ -430,12 +439,18 @@ const teamHQ = new TeamHQ(teamContainer, {
   onSetPlayerEntry: (carId) => client.setPlayerEntry(carId),
   onRemoveCar: (carId) => client.removeCar(carId),
   onRepairCarCondition: (carId, options) => client.repairCarCondition(carId, options),
-  onSaveTeamColors: (colors) => {
+  onSaveTeamLivery: (livery) => {
     liverySavePending = true;
-    client.saveTeamColors(colors);
+    client.saveTeamColors(livery);
     teamHQ.setLiveryStatus("Saving livery…");
   },
   onNewGame: () => {
+    if (!client.canSend("new_game")) {
+      window.alert(
+        "Only the session host can start a new game.\n\nOpen Identity in the header and reconnect as Host.",
+      );
+      return;
+    }
     if (
       !window.confirm(
         "Start a new game?\n\nYour current save will be permanently deleted and you'll set up a new team from scratch.",
@@ -708,18 +723,27 @@ function applyMetaState(meta: MetaStatePayload): void {
   const engineerSkill =
     meta.staff?.find((s) => s.role === "engineer")?.skill ?? 75;
   pitModal.setEngineerSkill(engineerSkill);
+  const livery = resolveTeamLivery(meta);
+  track.setTeamLivery(livery);
+  telemetryTrack.setTeamLivery(livery);
   teamHQ.update(meta);
   raceHub.update(meta);
   seasonCalendar.update(meta);
   carGarage.update(meta);
+  carPreview.setLivery(resolveTeamLivery(meta), meta.teamName);
   driverCenter.update(meta);
+
+  syncGarageBuildLockNav();
 
   if (!meta.setupComplete) {
     if (gameCatalog) teamWizard.setCatalog(gameCatalog);
-    if (!teamWizard.isVisible()) teamWizard.open(meta.teamCreationDraft);
+    teamWizard.open(meta.teamCreationDraft ?? null);
+    if (!raceStarted) setMainView("season");
   } else {
     teamWizard.hide();
-    if (wasIncomplete && !raceStarted) setMainView("garage");
+    if (!raceStarted && (wasIncomplete || meta.carBuildGuidePending)) {
+      setMainView("garage");
+    }
   }
 }
 
@@ -727,9 +751,25 @@ function isRaceView(view: MainView): boolean {
   return view === "map" || view === "timing" || view === "telemetry";
 }
 
-function setMainView(view: MainView): void {
-  if (latestMeta && !latestMeta.setupComplete && view !== "season") return;
-  if (carGarage.isBuildGuideActive() && view !== "garage") return;
+function isGarageBuildLocked(): boolean {
+  return Boolean(
+    latestMeta?.setupComplete && latestMeta.carBuildGuidePending && !raceStarted,
+  );
+}
+
+function syncGarageBuildLockNav(): void {
+  headerNav.setGarageBuildLocked(isGarageBuildLocked());
+}
+
+function resolveOffseasonMainView(wasLive: boolean): MainView {
+  if (wasLive || isRaceView(headerNav.getActive())) return "season";
+  if (isGarageBuildLocked()) return "garage";
+  return headerNav.getActive();
+}
+
+function setMainView(view: MainView): boolean {
+  if (latestMeta && !latestMeta.setupComplete && view !== "season") return false;
+  if (isGarageBuildLocked()) view = "garage";
   if (
     raceStarted &&
     (view === "garage" ||
@@ -738,9 +778,9 @@ function setMainView(view: MainView): void {
       view === "calendar" ||
       view === "drivers")
   ) {
-    return;
+    return false;
   }
-  if (!raceStarted && isRaceView(view)) return;
+  if (!raceStarted && isRaceView(view)) return false;
 
   seasonPanel.classList.toggle("hidden", view !== "season");
   calendarPanel.classList.toggle("hidden", view !== "calendar");
@@ -753,6 +793,7 @@ function setMainView(view: MainView): void {
   timetable.setVisible(view === "timing");
   telemetryPanel.setVisible(view === "telemetry");
   headerNav.setActive(view);
+  syncGarageBuildLockNav();
 
   if (raceStarted && isRaceView(view)) {
     sessionStorage.setItem(RACE_MAIN_VIEW_KEY, view);
@@ -770,6 +811,7 @@ function setMainView(view: MainView): void {
   raceControls.setRaceActive(showRaceSidebar);
   engineerPanel.setRaceActive(showRaceSidebar);
   syncAudioContext();
+  return true;
 }
 
 function syncPlaybackPaused(paused: boolean): void {
@@ -843,6 +885,8 @@ function endRaceSession(): void {
   document.getElementById("race-lap-counter")?.classList.add("hidden");
   updateRaceControlBanner(undefined);
   gameAudio.onSessionEnd();
+  latestSession = null;
+  raceHub.setSessionInfo(null);
 }
 
 function openPreSessionBriefing(): void {
@@ -1067,6 +1111,7 @@ const client = new ViewerClient({
     statusEl.textContent = `${payload.displayName} · ${payload.role}`;
     statusEl.className = "status status-open";
     changeIdentityBtn.classList.remove("hidden");
+    teamWizard.refreshNavState();
   },
   onRosterUpdate: (payload: RosterUpdatePayload) => {
     sessionRoster.update(payload);
@@ -1074,6 +1119,7 @@ const client = new ViewerClient({
     if (names) statusEl.title = `Connected: ${names}`;
   },
   onSessionInit: (payload) => {
+    const wasLive = raceStarted;
     applySessionInit(payload);
     const sessionLive = payload.raceActive && !payload.raceComplete;
     if (sessionLive) {
@@ -1101,7 +1147,13 @@ const client = new ViewerClient({
       endRaceSession();
       eventLog.clear();
       applySessionPlayback(payload);
-      if (!teamWizard.isVisible()) setMainView("season");
+      if (!teamWizard.isVisible()) {
+        if (wasLive) {
+          setMainView("season");
+        } else if (latestMeta) {
+          setMainView(resolveOffseasonMainView(false));
+        }
+      }
     }
   },
   onTrackGeometry: (geometry) => {
@@ -1142,7 +1194,7 @@ const client = new ViewerClient({
         carGarage.setStatus("Build synced with server.", false);
       }
     }
-    if (liverySavePending && payload.teamColors) {
+    if (liverySavePending && (payload.teamLivery || payload.teamColors)) {
       teamHQ.setLiveryStatus("Livery saved.");
       liverySavePending = false;
     }
@@ -1153,8 +1205,8 @@ const client = new ViewerClient({
     teamWizard.setCatalog(catalog);
     driverCenter.setCatalog(catalog);
     teamHQ.setCatalog(catalog);
-    if (latestMeta && !latestMeta.setupComplete && !teamWizard.isVisible()) {
-      teamWizard.open(latestMeta.teamCreationDraft);
+    if (latestMeta && !latestMeta.setupComplete) {
+      teamWizard.open(latestMeta.teamCreationDraft ?? null);
     }
   },
   onEngineerAdvice: (payload) => engineerPanel.showAdvice(payload),
@@ -1173,7 +1225,7 @@ const client = new ViewerClient({
         message: "Race complete — check final standings",
       },
     ]);
-    if (isSeasonFinished(latestMeta)) {
+    if (latestMeta && isSeasonFinished(latestMeta)) {
       client.endSession();
       setMainView("season");
       tryShowSeasonEnd();
@@ -1200,6 +1252,9 @@ const client = new ViewerClient({
     if (pendingRaceStart && !live) {
       pendingRaceStart = false;
       setMainView("season");
+    }
+    if (teamWizard.isVisible()) {
+      teamWizard.setError(message);
     }
     carGarage.setStatus(message, true);
     if (liverySavePending) {

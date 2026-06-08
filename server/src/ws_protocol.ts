@@ -326,6 +326,27 @@ export interface SignDriverContractPayload {
 export type StaffRole = "engineer" | "mechanic" | "strategist";
 export type StaffStatus = "active" | "injured" | "ill" | "poached";
 
+export type StaffMarketSource = "veteran" | "experienced" | "prospect";
+
+export interface StaffMarketListingPayload {
+  id: string;
+  source: StaffMarketSource;
+  role: StaffRole;
+  name: string;
+  skill: number;
+  experience: number;
+  morale: number;
+  traits: string[];
+  signingFee: number;
+  salaryPerRace: number;
+  tagline: string;
+}
+
+export interface SignStaffContractPayload {
+  listingId: string;
+  carId?: string;
+}
+
 export interface StaffMemberPayload {
   id?: string;
   role: string;
@@ -391,9 +412,24 @@ export interface RaceFinancesPayload {
   breakdown: FinanceLineItemPayload[];
 }
 
+export type LiveryPattern =
+  | "solid"
+  | "dual_stripe"
+  | "center_stripe"
+  | "side_bands"
+  | "chevron"
+  | "gradient_bow"
+  | "hood_accent"
+  | "split_diagonal";
+
 export interface TeamColorsPayload {
   primary: string;
   secondary: string;
+}
+
+export interface TeamLiveryPayload extends TeamColorsPayload {
+  pattern: LiveryPattern;
+  logoDataUrl?: string | null;
 }
 
 export interface EngineBuildPayload {
@@ -597,6 +633,8 @@ export interface TeamCreationDraftPayload {
   teamName: string;
   primaryColor: string;
   secondaryColor: string;
+  liveryPattern?: LiveryPattern;
+  logoDataUrl?: string | null;
   classId: string;
   affiliation: CarAffiliation;
   platformId: string;
@@ -620,6 +658,9 @@ export interface SeasonStartSnapshotPayload {
   driverMarket: DriverMarketListingPayload[];
   driverMarketRefreshCount: number;
   driverMarketRound: number;
+  staffMarket: StaffMarketListingPayload[];
+  staffMarketRefreshCount: number;
+  staffMarketRound: number;
   aiRivalSeason: AiRivalSeasonPayload;
   weekendTireCompound?: string;
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
@@ -642,6 +683,7 @@ export interface MetaStatePayload {
   /** @deprecated Use fleet + activeCarId */
   playerClassId?: string;
   teamColors?: TeamColorsPayload;
+  teamLivery?: TeamLiveryPayload;
   /** @deprecated Use fleet */
   carBuild?: CarBuildPayload | null;
   fleet?: FleetCarPayload[];
@@ -661,6 +703,9 @@ export interface MetaStatePayload {
   driverMarket?: DriverMarketListingPayload[];
   driverMarketRefreshCount?: number;
   driverMarketRound?: number;
+  staffMarket?: StaffMarketListingPayload[];
+  staffMarketRefreshCount?: number;
+  staffMarketRound?: number;
   /** Lightweight off-week state for AI rival teams (budget, form, standings). */
   aiRivalSeason?: AiRivalSeasonPayload;
   /** True when every scoring round on the calendar is finished. */
@@ -757,6 +802,7 @@ export interface ClassInfoPayload {
   powerCapHp: number;
   minWeightKg: number;
   maxWeightKg: number;
+  assemblyMassOffsetKg?: number;
   maxStintHours: number;
   /** Allowed part types per garage slot (from class_rules.txt legal_* lists). */
   legalParts?: Partial<Record<string, string[]>>;
@@ -829,6 +875,8 @@ export interface CreateTeamPayload {
   teamName: string;
   primaryColor: string;
   secondaryColor: string;
+  liveryPattern?: LiveryPattern;
+  logoDataUrl?: string | null;
   staff: StaffMemberPayload[];
   firstCar: BuyCarPayload;
   driverRoster: DriverProfilePayload[];
@@ -837,6 +885,8 @@ export interface CreateTeamPayload {
 export interface SaveTeamColorsPayload {
   primary: string;
   secondary: string;
+  pattern?: LiveryPattern;
+  logoDataUrl?: string | null;
 }
 
 export interface WeatherForecastStepPayload {
@@ -1088,6 +1138,8 @@ export type ClientMessageType =
   | "save_driver_roster"
   | "refresh_driver_market"
   | "sign_driver_contract"
+  | "refresh_staff_market"
+  | "sign_staff_contract"
   | "save_team_colors"
   | "sign_sponsor"
   | "drop_sponsor"
@@ -1150,6 +1202,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       "save_driver_roster",
       "refresh_driver_market",
       "sign_driver_contract",
+      "refresh_staff_market",
+      "sign_staff_contract",
       "save_team_colors",
       "sign_sponsor",
       "drop_sponsor",

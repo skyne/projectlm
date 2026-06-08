@@ -6,6 +6,7 @@ exports.computeChampionshipPoints = computeChampionshipPoints;
 exports.computePrizeMoney = computePrizeMoney;
 exports.staffSigningCost = staffSigningCost;
 exports.staffSalaryPerRound = staffSalaryPerRound;
+exports.staffSeveranceCost = staffSeveranceCost;
 exports.computeStaffPayroll = computeStaffPayroll;
 exports.computeRaceFinances = computeRaceFinances;
 exports.sponsorOffersPayload = sponsorOffersPayload;
@@ -127,6 +128,10 @@ function staffSigningCost(skill) {
 }
 function staffSalaryPerRound(skill) {
     return 25000 + skill * 200;
+}
+/** Buyout for releasing a signed crew member (two races' salary). */
+function staffSeveranceCost(member) {
+    return Math.round((member.salaryPerRace ?? 0) * 2);
 }
 function computeStaffPayroll(staff) {
     return staff.reduce((sum, m) => sum + staffSalaryPerRound(m.skill), 0);

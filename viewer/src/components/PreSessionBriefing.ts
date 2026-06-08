@@ -287,9 +287,14 @@ export class PreSessionBriefing {
     if (!this.catalog) {
       return compileCarStats(build, {}, { classId: car.classId });
     }
+    const classInfo = this.catalog.classes.find((c) => c.id === car.classId);
     return compileCarStats(build, this.catalog.partsBySlot, {
       classId: car.classId,
       tireGripMultiplier: DEFAULT_TIRE_GRIP,
+      minWeightKg: classInfo?.minWeightKg,
+      maxWeightKg: classInfo?.maxWeightKg,
+      assemblyMassOffsetKg: classInfo?.assemblyMassOffsetKg ?? 0,
+      powerCapHp: classInfo?.powerCapHp,
     });
   }
 

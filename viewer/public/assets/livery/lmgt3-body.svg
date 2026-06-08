@@ -1,0 +1,30 @@
+<svg viewBox="0 0 560 144" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <!-- Filled LMGT3 side profile (coupe) for livery masking  white body, transparent elsewhere -->
+  <path
+    fill="#ffffff"
+    fill-rule="evenodd"
+    d="
+      M 24 96
+      L 38 78
+      C 52 66 78 58 108 56
+      L 148 52
+      C 168 50 188 48 214 50
+      L 248 54
+      C 278 58 302 64 322 72
+      L 348 80
+      C 368 86 382 92 392 98
+      L 404 102
+      L 404 108
+      C 398 112 382 114 360 114
+      L 120 114
+      C 72 114 42 110 28 104
+      Z
+      M 108 114
+      A 26 26 0 1 0 108.1 114
+      Z
+      M 352 114
+      A 30 30 0 1 0 352.1 114
+      Z
+    "
+  />
+</svg>

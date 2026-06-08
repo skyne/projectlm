@@ -35,6 +35,19 @@ function car(id, classId, opts = {}) {
         ...opts,
     };
 }
+(0, node_test_1.describe)("fleet programme grouping", () => {
+    (0, node_test_1.it)("treats homologated and experimental hypercars as separate programmes", () => {
+        const hom = car("car-1", "Hypercar");
+        const exp = car("car-2", "Hypercar", {
+            entryMode: "experimental",
+            experimentalProgramId: "exp-hc",
+            carNumber: "2",
+        });
+        strict_1.default.equal((0, fleet_1.sameFleetProgramme)(hom, exp), false);
+        strict_1.default.equal((0, fleet_1.sameFleetProgramme)(hom, hom), true);
+        strict_1.default.equal((0, fleet_1.sameFleetProgramme)(exp, exp), true);
+    });
+});
 (0, node_test_1.describe)("experimental fleet regulations", () => {
     (0, node_test_1.it)("allows homologated and experimental programmes in the same class", () => {
         const hom = car("car-1", "LMP2", { classId: "LMP2" });

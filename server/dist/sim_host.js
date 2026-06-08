@@ -393,6 +393,12 @@ class SimHost {
     signDriverContract(listingId) {
         return this.meta.signDriverContract(listingId);
     }
+    refreshStaffMarket() {
+        return this.meta.refreshStaffMarket();
+    }
+    signStaffContract(listingId, carId) {
+        return this.meta.signStaffContract(listingId, carId);
+    }
     saveTeamColors(colors) {
         return this.meta.saveTeamColors(colors);
     }

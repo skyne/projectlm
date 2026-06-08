@@ -139,6 +139,31 @@ export function hypercarMfgWarning(
   return `Building your own Hypercar makes you a Hypercar manufacturer — you must enter at least ${mfgMin}. Consider ordering ${mfgMin} now.`;
 }
 
+/** Whether removing one entry is allowed under WEC fleet rules (mirrors server removeCar). */
+export function canRemoveFleetCar(
+  fleet: FleetCarPayload[],
+  carId: string,
+  mfgMin: number,
+): { allowed: boolean; reason?: string } {
+  const car = fleet.find((c) => c.id === carId);
+  if (!car) return { allowed: false, reason: "Car not found" };
+
+  const remaining = fleet.filter((c) => c.id !== carId);
+  if (remaining.length === 0) return { allowed: true };
+
+  const mfgHypercars = remaining.filter(
+    (c) => c.classId === "Hypercar" && c.affiliation === "manufacturer",
+  ).length;
+  if (mfgHypercars > 0 && mfgHypercars < mfgMin) {
+    return {
+      allowed: false,
+      reason: `Hypercar manufacturers must keep at least ${mfgMin} entries`,
+    };
+  }
+
+  return { allowed: true };
+}
+
 export function affiliationHintForClass(
   classId: string,
   affiliation: FleetCarPayload["affiliation"],
@@ -193,9 +218,23 @@ export function unitCostForExperimentalBuy(
         entryMode: "experimental",
         experimentalProgramId: experimental?.platformId,
         platformId,
-        build: { carName: "", chassis_type: "" },
+        build: {
+          carName: "",
+          chassis_type: classId === "LMGT3" ? "GT3Spaceframe" : classId === "LMP2" ? "Oreca07" : "LMDhDallara",
+          front_aero_type: "LowDragNose",
+          rear_aero_type: classId === "LMGT3" ? "HighDownforceWing" : "StandardWing",
+          diffuser_type: "StockFloor",
+          exhaust_type: "TwinOutletSide",
+          cooling_pack: "EnduranceHeavyDuty",
+          wheel_package: classId === "LMGT3" ? "GT3Forged18" : classId === "LMP2" ? "LMP2Forged18" : "Hypercar18WideRear",
+          suspension_layout: classId === "LMGT3" ? "DoubleWishboneGT" : "DoubleWishboneLMP",
+          fuel_system: "StandardTank",
+          brake_system: "CarbonCeramic",
+          transmission: "Sequential6",
+          hybrid_system: classId === "Hypercar" ? "LMDh50kW" : "None",
+        },
         carConfigPath: "",
-      },
+      } satisfies FleetCarPayload,
     ];
   }
   return total;

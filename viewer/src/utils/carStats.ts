@@ -8,6 +8,7 @@ import {
   peakTorqueNm,
   resolvePowertrainTraits,
 } from "./engineModel";
+import { resolveEngineAssemblyMassKg } from "./powertrain_traits";
 import {
   computeWheelStats,
   resolveSuspensionStats,
@@ -19,7 +20,7 @@ import { EV_ONLY_OUTLET_PARTS } from "./ev_outlet";
 /** Assembly constants from configs/physics_config.txt — must match C++ AssemblyConfig. */
 export const ASSEMBLY = {
   bodyBaseDragCd: 0.3,
-  baseVehicleMass: 180,
+  baseVehicleMass: 580,
   hpConversion: 7127,
   groundSuckNumerator: 0.05,
   groundSuckOffset: 0.01,
@@ -144,7 +145,8 @@ export const SIM_STAT_BARS: SimStatBarDef[] = [
     formatValue: (c) => {
       const raw = Math.round(c.rawTotalMass);
       const race = Math.round(c.calculatedTotalMass);
-      if (race > raw) return `${raw} kg (${race} race)`;
+      if (race > raw + 0.5) return `${raw} kg (+${race - raw} ballast)`;
+      if (raw > race + 0.5) return `${raw} kg (over min)`;
       return `${raw} kg`;
     },
   },
@@ -226,6 +228,7 @@ export interface CompileOptions {
   powerCapHp?: number;
   minWeightKg?: number;
   maxWeightKg?: number;
+  assemblyMassOffsetKg?: number;
   tireGripMultiplier?: number;
   classId?: string;
 }
@@ -336,7 +339,7 @@ export function compileCarStats(
   const engine: EngineBuildPayload | undefined = build.engine;
   const traits = engine ? resolvePowertrainTraits(engine, classId) : null;
   const engMass = traits
-    ? traits.engineMassKg + traits.drivetrainExtraMassKg
+    ? resolveEngineAssemblyMassKg(traits, hp?.mass ?? 0)
     : 0;
   const exhaustPowerMult = ex ? num(ex.stats, "power_mult", 1) : 1;
   const exhaustBackPressure = ex ? num(ex.stats, "back_pressure") : 0;
@@ -350,14 +353,15 @@ export function compileCarStats(
   const torque = engine ? peakTorqueNm(engine) * powerScale : 0;
 
   let rawTotalMass =
-    partMass + unsprungMass + engMass + ASSEMBLY.baseVehicleMass;
+    partMass +
+    unsprungMass +
+    engMass +
+    ASSEMBLY.baseVehicleMass +
+    (options.assemblyMassOffsetKg ?? 0);
 
   let raceMassKg = rawTotalMass;
   if (options.minWeightKg && options.minWeightKg > 0) {
     raceMassKg = Math.max(raceMassKg, options.minWeightKg);
-  }
-  if (options.maxWeightKg && options.maxWeightKg > 0) {
-    raceMassKg = Math.min(raceMassKg, options.maxWeightKg);
   }
 
   const brakePressure = bp ? num(bp.stats, "max_pressure", 0.72) : 0.72;
@@ -431,7 +435,7 @@ export function toBarValues(compiled: CompiledCarStats): Record<SimBarId, number
     cornering: lerpNorm(corneringScore, 0.82, 1.08),
     downforce: lerpNorm(compiled.totalDownforceCl, 2.0, 5.5),
     drag: lerpNorm(compiled.totalDragCd, 0.42, 0.62, true),
-    mass: lerpNorm(compiled.rawTotalMass, 1120, 920, true),
+    mass: lerpNorm(compiled.calculatedTotalMass, 1090, 1030, true),
     braking: lerpNorm(
       compiled.brakeMaxPressure * compiled.brakeFadeResistance,
       0.58,
@@ -466,7 +470,7 @@ function rawNumericValue(id: SimBarId, compiled: CompiledCarStats): number {
     case "drag":
       return compiled.totalDragCd;
     case "mass":
-      return compiled.rawTotalMass;
+      return compiled.calculatedTotalMass;
     case "braking":
       return compiled.brakeMaxPressure * compiled.brakeFadeResistance;
     case "shiftTime":

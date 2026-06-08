@@ -16,6 +16,7 @@ import {
 } from "../utils/trackWeatherVisual";
 import { PIT_LANE_FRACTION } from "../utils/pitCommands";
 import { resolveTrackTheme, type TrackTheme } from "../utils/trackThemes";
+import type { TeamLiveryPayload } from "../ws/protocol";
 
 const PIT_BOX_FRACTION = 0.48;
 const PIT_LANE_BLEND = 0.34;
@@ -153,6 +154,7 @@ export class SvgTrack {
   private hitLayer: SVGRectElement | null = null;
   private fit: FitTransform | null = null;
   private playerEntryId = "entry-1";
+  private teamLivery: TeamLiveryPayload | null = null;
   private highlightedEntryIds = new Set<string>();
   private carPositions = new Map<string, { x: number; y: number }>();
   private zoomable: boolean;
@@ -338,6 +340,10 @@ export class SvgTrack {
 
   setPlayerEntry(entryId: string): void {
     this.playerEntryId = entryId;
+  }
+
+  setTeamLivery(livery: TeamLiveryPayload | null): void {
+    this.teamLivery = livery;
   }
 
   setHighlightedEntries(entryIds: string[]): void {
@@ -670,7 +676,13 @@ export class SvgTrack {
       const widthPx = Math.max(7, (snap.carWidthM ?? 2) * 1.8);
       const isPlayer = snap.entryId === this.playerEntryId;
       const isTeam = this.highlightedEntryIds.has(snap.entryId);
-      const color = classColor(snap.classId);
+      const teamLiveryCar = isPlayer || isTeam;
+      const color =
+        teamLiveryCar && this.teamLivery
+          ? this.teamLivery.primary
+          : classColor(snap.classId);
+      const accentColor =
+        teamLiveryCar && this.teamLivery ? this.teamLivery.secondary : "#1a1f2b";
 
       this.carPositions.set(snap.entryId, { x: p.x, y: p.y });
 
@@ -749,8 +761,8 @@ export class SvgTrack {
       marker.body.setAttribute("stroke-width", isPlayer ? "1.5" : "1");
 
       marker.cockpit.setAttribute("d", this.cockpitPath(lengthPx, widthPx));
-      marker.cockpit.setAttribute("fill", "#1a1f2b");
-      marker.cockpit.setAttribute("opacity", "0.85");
+      marker.cockpit.setAttribute("fill", accentColor);
+      marker.cockpit.setAttribute("opacity", teamLiveryCar ? "0.92" : "0.85");
 
       const wheelR = Math.max(1.8, widthPx * 0.22);
       const wheelPositions: Array<[SVGCircleElement, number, number]> = [

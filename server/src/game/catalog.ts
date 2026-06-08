@@ -40,6 +40,7 @@ export interface ClassInfo {
   powerCapHp: number;
   minWeightKg: number;
   maxWeightKg: number;
+  assemblyMassOffsetKg: number;
   maxStintHours: number;
   templateCarPath: string;
   legalParts: ClassLegalParts;
@@ -185,6 +186,7 @@ function classRuleToInfo(rule: ParsedClassRule): ClassInfo {
     powerCapHp: rule.powerCapHp,
     minWeightKg: rule.minWeightKg,
     maxWeightKg: rule.maxWeightKg,
+    assemblyMassOffsetKg: rule.assemblyMassOffsetKg,
     maxStintHours: rule.maxStintHours,
     templateCarPath: rule.templateCarPath,
     legalParts: rule.legalParts,
@@ -192,9 +194,27 @@ function classRuleToInfo(rule: ParsedClassRule): ClassInfo {
 }
 
 const STAFF_POOL: Array<{ role: string; names: string[] }> = [
-  { role: "engineer", names: ["Marie Chen", "Luca Rossi", "Yuki Tanaka", "Elena Voss"] },
-  { role: "mechanic", names: ["Jean Dupont", "Marcus Webb", "Sofia Reyes", "Tom Becker"] },
-  { role: "strategist", names: ["Sam Okoye", "Priya Sharma", "Oliver Kent", "Ines Alvarez"] },
+  {
+    role: "engineer",
+    names: [
+      "Marie Chen", "Luca Rossi", "Yuki Tanaka", "Elena Voss",
+      "Antoine Moreau", "Hannah Fischer", "Ravi Park", "Clara Lindqvist",
+    ],
+  },
+  {
+    role: "mechanic",
+    names: [
+      "Jean Dupont", "Marcus Webb", "Sofia Reyes", "Tom Becker",
+      "Gianni Marchetti", "Henrik Lindström", "Anika Novak", "Diego Silva",
+    ],
+  },
+  {
+    role: "strategist",
+    names: [
+      "Sam Okoye", "Priya Sharma", "Oliver Kent", "Ines Alvarez",
+      "Catherine Dubois", "Raj Mehta", "Finn Hartmann", "Mei Nakamura",
+    ],
+  },
 ];
 
 const ENGINE_KEYS = new Set([

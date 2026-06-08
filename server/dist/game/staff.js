@@ -2,6 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ROLE_LABELS = void 0;
 exports.migrateStaffToPerCar = migrateStaffToPerCar;
+exports.isJuniorPlaceholder = isJuniorPlaceholder;
+exports.isStaffSlotFilled = isStaffSlotFilled;
+exports.findVacantCarsForRole = findVacantCarsForRole;
+exports.assignStaffToCar = assignStaffToCar;
 exports.staffForCar = staffForCar;
 exports.estimateWeeklySalaries = estimateWeeklySalaries;
 exports.ROLE_LABELS = {
@@ -109,17 +113,53 @@ function migrateStaffToPerCar(rawStaff, fleetIds) {
             migrated = true;
         }
     }
-    const secondaryCarId = fleetIds[1];
-    if (secondaryCarId) {
+    for (const carId of fleetIds) {
+        if (carId === primaryCarId)
+            continue;
         for (const role of STAFF_ROLES) {
-            const onSecondary = result.find((member) => member.role === role && member.assignedCarId === secondaryCarId);
-            if (onSecondary)
+            const onCar = result.find((member) => member.role === role && member.assignedCarId === carId);
+            if (onCar)
                 continue;
-            result.push(createJuniorPlaceholder(role, secondaryCarId));
+            result.push(createJuniorPlaceholder(role, carId));
             migrated = true;
         }
     }
     return { staff: result, migrated };
+}
+function isJuniorPlaceholder(member) {
+    if (member.id?.startsWith("staff-junior-"))
+        return true;
+    return member.name === JUNIOR_NAMES[member.role];
+}
+function isStaffSlotFilled(member) {
+    return member != null && !isJuniorPlaceholder(member);
+}
+function findVacantCarsForRole(fleetIds, staff, role) {
+    return fleetIds.filter((carId) => {
+        const member = staff.find((s) => s.role === role && s.assignedCarId === carId);
+        return !isStaffSlotFilled(member);
+    });
+}
+function assignStaffToCar(staff, carId, listing) {
+    const role = listing.role;
+    const idx = staff.findIndex((s) => s.role === role && s.assignedCarId === carId);
+    const member = normalizeMember({
+        id: `staff-${role}-${carId}`,
+        role,
+        name: listing.name,
+        skill: listing.skill,
+        experience: listing.experience,
+        salaryPerRace: listing.salaryPerRace,
+        morale: listing.morale,
+        traits: listing.traits,
+        status: "active",
+    }, carId);
+    if (idx >= 0) {
+        const next = [...staff];
+        next[idx] = member;
+        return next;
+    }
+    return [...staff, member];
 }
 function staffForCar(staff, carId) {
     return staff.filter((member) => member.assignedCarId === carId);

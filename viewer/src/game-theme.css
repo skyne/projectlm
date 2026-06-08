@@ -488,6 +488,58 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
   box-shadow: inset 0 0 24px rgba(212, 168, 67, 0.12);
 }
 
+.hub-team-snapshot {
+  margin: 0.75rem 0;
+}
+
+.hub-fleet-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.hub-snapshot-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #9aa3b2);
+}
+
+.hub-fleet-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.hub-fleet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hub-fleet-num {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--wec-gold-bright, #e8c468);
+}
+
+.hub-snapshot-alerts {
+  margin-top: 0.5rem;
+}
+
+.hub-snapshot-alert {
+  margin: 0.15rem 0;
+  font-size: 0.75rem;
+  color: #fbbf24;
+}
+
 .calendar-card {
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
@@ -758,6 +810,13 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
   height: auto;
 }
 
+.garage-livery-preview {
+  border-radius: 8px;
+  box-shadow:
+    inset 0 0 24px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(212, 168, 67, 0.12);
+}
+
 .car-preview-parts,
 .garage-car-visual-parts {
   font-family: var(--font-display);
@@ -870,6 +929,23 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
   padding: 1rem 1.25rem;
   background:
     linear-gradient(135deg, rgba(22, 31, 46, 0.95) 0%, rgba(12, 16, 24, 0.98) 100%);
+}
+
+.hq-hero-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 0.85rem;
+}
+
+.hq-hero-logo {
+  width: 2.75rem;
+  height: 2.75rem;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .hq-hero-title {
@@ -1029,11 +1105,124 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.65rem;
   padding: 0.45rem 0.65rem;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--border);
+}
+
+.fleet-class-banner-main {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.fleet-class-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+
+.fleet-class-banner .fleet-add-entry-btn {
+  margin: 0;
+  font-size: 0.72rem;
+  padding: 0.3rem 0.55rem;
+  white-space: nowrap;
+}
+
+.buy-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.buy-panel-head h4 {
+  margin: 0;
+}
+
+.buy-panel-head .buy-panel-close {
+  margin: 0;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.65rem;
+}
+
+.fleet-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(5, 8, 14, 0.88);
+  backdrop-filter: blur(6px);
+}
+
+.fleet-confirm-overlay.hidden {
+  display: none;
+}
+
+.fleet-confirm-card {
+  width: min(420px, 100%);
+  padding: 1.15rem;
+  border-radius: 12px;
+  border: 1px solid rgba(212, 168, 67, 0.35);
+  background: linear-gradient(165deg, #1a2332 0%, #121824 100%);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+
+.fleet-confirm-head h4 {
+  margin: 0 0 0.65rem;
+  font-size: 1.05rem;
+}
+
+.fleet-confirm-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0 0 0.65rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 0.88rem;
+}
+
+.fleet-confirm-qty-field {
+  margin: 0.65rem 0;
+}
+
+.fleet-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.fleet-confirm-actions button {
+  margin: 0;
+}
+
+.fleet-car-livery-host {
+  margin: 0.35rem 0 0.5rem;
+  border-radius: 8px;
+  overflow: hidden;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.fleet-car-livery-host .livery-car-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 35 / 9;
 }
 
 .fleet-car-card {
@@ -1203,6 +1392,185 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--wec-gold-dim) 0%, var(--wec-gold-bright) 100%);
+}
+
+.hq-crew-role-stats,
+.hq-crew-role-traits {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+.hq-crew-role-traits {
+  color: var(--accent);
+}
+
+.hq-crew-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.hq-crew-tab-btn {
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text-muted);
+  border-radius: 8px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.hq-crew-tab-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(212, 168, 67, 0.08);
+}
+
+.hq-crew-market-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-bottom: 0.65rem;
+}
+
+.hq-crew-market-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.hq-crew-market-filter {
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.hq-crew-market-filter.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.hq-crew-market-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hq-crew-market-meta {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.hq-crew-market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.65rem;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.hq-crew-market-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.hq-crew-market-card.source-veteran {
+  border-left: 3px solid var(--accent-gold);
+}
+
+.hq-crew-market-card.source-experienced {
+  border-left: 3px solid var(--accent);
+}
+
+.hq-crew-market-card.source-prospect {
+  border-left: 3px solid var(--text-dim);
+}
+
+.hq-crew-market-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.hq-crew-market-role,
+.hq-crew-market-source {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.hq-crew-market-name {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.hq-crew-market-stats,
+.hq-crew-market-tagline {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+.hq-crew-market-fees {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.hq-crew-market-salary {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.hq-crew-market-car-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.hq-crew-market-car-select {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  padding: 0.35rem 0.45rem;
+}
+
+.hq-crew-sign-btn {
+  width: 100%;
+  margin-top: 0.15rem;
+}
+
+.hq-crew-sign-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hq-crew-status {
+  margin: 0.65rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  min-height: 1.1rem;
 }
 
 .hq-rd-unlocks {

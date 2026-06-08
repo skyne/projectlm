@@ -1,5 +1,7 @@
 import { CarCompositor, clearImageCache, loadCarGraphics } from "../graphics/CarCompositor";
+import { classIdFromChassis, tintAssemblyCanvas } from "../graphics/liveryRenderer";
 import type { CarBuildVisual } from "../graphics/visualCatalog";
+import { resolveTeamLivery, type TeamLiveryView } from "../utils/teamLivery";
 
 const DEMO_BUILD: CarBuildVisual = {
   chassis_type: "LMDhDallara",
@@ -15,6 +17,8 @@ export class CarPreview {
   private labelEl: HTMLElement;
   private compositor: CarCompositor | null = null;
   private build: CarBuildVisual = { ...DEMO_BUILD };
+  private livery: TeamLiveryView = resolveTeamLivery(null);
+  private teamName = "";
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -35,6 +39,12 @@ export class CarPreview {
     void this.render();
   }
 
+  setLivery(livery: TeamLiveryView, teamName?: string): void {
+    this.livery = livery;
+    if (teamName !== undefined) this.teamName = teamName;
+    void this.render();
+  }
+
   async reloadGraphics(): Promise<void> {
     clearImageCache();
     const { catalog, assembly } = await loadCarGraphics();
@@ -52,7 +62,17 @@ export class CarPreview {
 
   private async render(): Promise<void> {
     if (!this.compositor) return;
-    const canvas = await this.compositor.render(this.build);
+    const assembly = await this.compositor.render(this.build);
+    const canvas = await tintAssemblyCanvas(assembly, {
+      primary: this.livery.primary,
+      secondary: this.livery.secondary,
+      pattern: this.livery.pattern,
+      logoDataUrl: this.livery.logoDataUrl,
+      classId: classIdFromChassis(this.build.chassis_type),
+      teamName: this.teamName,
+      visualBuild:
+        classIdFromChassis(this.build.chassis_type) === "Hypercar" ? undefined : this.build,
+    });
     this.canvasHost.innerHTML = "";
     canvas.className = "car-preview-img";
     this.canvasHost.appendChild(canvas);

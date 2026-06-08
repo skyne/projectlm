@@ -284,6 +284,16 @@ export function formatAssemblyConflict(
     return `Not compatible with ${front} (Front Aero) — wingless package needs a low-drag nose`;
   }
 
+  if (conflict.kind === "diesel_dpf") {
+    return "Diesel DPF exhaust requires Diesel fuel in the powertrain";
+  }
+  if (conflict.kind === "ev_exhaust") {
+    return "E-drive powertrain requires an underbody outlet package";
+  }
+  if (conflict.kind === "combustion_none_exhaust") {
+    return "Combustion powertrain requires an exhaust system";
+  }
+
   const triggerLabel = partLabel(conflict.triggerSlot, conflict.triggerPart);
   const otherLabel = partLabel(conflict.otherSlot, conflict.otherPart);
   const triggerSlotLabel = slotLabel(conflict.triggerSlot);

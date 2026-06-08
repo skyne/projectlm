@@ -37,6 +37,8 @@ function parseClientMessage(raw) {
             "save_driver_roster",
             "refresh_driver_market",
             "sign_driver_contract",
+            "refresh_staff_market",
+            "sign_staff_contract",
             "save_team_colors",
             "sign_sponsor",
             "drop_sponsor",

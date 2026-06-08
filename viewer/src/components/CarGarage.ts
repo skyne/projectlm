@@ -1,5 +1,6 @@
 import type {
   CarBuildPayload,
+  ClassInfoPayload,
   EngineBuildPayload,
   GameCatalogPayload,
   MetaStatePayload,
@@ -32,8 +33,10 @@ import {
   normalizeExhaustType,
 } from "../utils/ev_outlet";
 import {
+  classAllowsHybrid,
   filterPartsForClass,
   legalPartsForSlot,
+  normalizeHybridForClass,
 } from "../utils/classLegality";
 import {
   clampWheelSetup,
@@ -60,8 +63,9 @@ import {
   type SuspensionSetup,
   type WheelSetup,
 } from "../utils/chassisSetup";
-import { CarCompositor, loadCarGraphics } from "../graphics/CarCompositor";
+import { renderClassLiveryCanvas } from "../graphics/liveryRenderer";
 import { carBuildToVisual } from "../graphics/visualCatalog";
+import { LIVERY_PATTERNS, resolveTeamLivery, type TeamLiveryView } from "../utils/teamLivery";
 import { EngineDesigner } from "./EngineDesigner";
 import { CoolingDesigner } from "./CoolingDesigner";
 import { GarageEngineerPanel } from "./GarageEngineerPanel";
@@ -163,6 +167,22 @@ const BUILD_GUIDE_STEPS: BuildGuideStep[] = [
   { kind: "confirm" },
 ];
 
+const ALL_BUILD_SLOTS = Object.keys(SLOT_LABELS) as BuildSlot[];
+
+function buildGuideStepsForClass(
+  classInfo: ClassInfoPayload | null,
+): BuildGuideStep[] {
+  if (classAllowsHybrid(classInfo)) return BUILD_GUIDE_STEPS;
+  return BUILD_GUIDE_STEPS.filter(
+    (step) => step.kind !== "slot" || step.slot !== "hybrid",
+  );
+}
+
+function visibleBuildSlots(classInfo: ClassInfoPayload | null): BuildSlot[] {
+  if (classAllowsHybrid(classInfo)) return ALL_BUILD_SLOTS;
+  return ALL_BUILD_SLOTS.filter((slot) => slot !== "hybrid");
+}
+
 function slotLabelForBuild(slot: BuildSlot, build?: CarBuildPayload | null): string {
   if (slot === "exhaust" && isElectricDriveOutletBuild(build?.engine)) {
     return "Underbody Outlet";
@@ -241,12 +261,21 @@ function isPartLocked(
   return false;
 }
 
-function compileOptions(classInfo: { id?: string; powerCapHp?: number; minWeightKg?: number; maxWeightKg?: number } | null) {
+function compileOptions(
+  classInfo: {
+    id?: string;
+    powerCapHp?: number;
+    minWeightKg?: number;
+    maxWeightKg?: number;
+    assemblyMassOffsetKg?: number;
+  } | null,
+) {
   return {
     classId: classInfo?.id,
     powerCapHp: classInfo?.powerCapHp ?? 0,
     minWeightKg: classInfo?.minWeightKg,
     maxWeightKg: classInfo?.maxWeightKg,
+    assemblyMassOffsetKg: classInfo?.assemblyMassOffsetKg ?? 0,
   };
 }
 
@@ -277,7 +306,8 @@ export class CarGarage {
   private previewBuild: CarBuildPayload | null = null;
   private visualHost!: HTMLElement;
   private visualLabelEl!: HTMLElement;
-  private compositor: CarCompositor | null = null;
+  private teamLivery: TeamLiveryView = resolveTeamLivery(null);
+  private teamName = "";
   private visualRenderToken = 0;
 
   constructor(container: HTMLElement, handlers: CarGarageHandlers) {
@@ -337,7 +367,6 @@ export class CarGarage {
     this.saveBtn = this.root.querySelector(".garage-save")!;
     this.visualHost = this.root.querySelector(".garage-car-visual")!;
     this.visualLabelEl = this.root.querySelector(".garage-car-visual-parts")!;
-    void this.initCarVisual();
     this.coolingDesigner = new CoolingDesigner(
       this.root.querySelector(".garage-cooling-host")!,
       {
@@ -447,8 +476,13 @@ export class CarGarage {
     this.render();
   }
 
+  private guideSteps(): BuildGuideStep[] {
+    return buildGuideStepsForClass(this.activeClassInfo());
+  }
+
   private currentGuideStep(): BuildGuideStep {
-    return BUILD_GUIDE_STEPS[this.buildGuideStepIndex] ?? BUILD_GUIDE_STEPS[0];
+    const steps = this.guideSteps();
+    return steps[this.buildGuideStepIndex] ?? steps[0];
   }
 
   /** Panel routing during guided build — decoupled from free-garage activeSlot. */
@@ -510,7 +544,7 @@ export class CarGarage {
       this.trySaveBuild("Saving build…");
       return;
     }
-    if (this.buildGuideStepIndex < BUILD_GUIDE_STEPS.length - 1) {
+    if (this.buildGuideStepIndex < this.guideSteps().length - 1) {
       this.buildGuideStepIndex += 1;
       this.render();
     }
@@ -601,8 +635,9 @@ export class CarGarage {
       step.kind === "confirm" ? "Save Build & Finish" : "Continue";
 
     this.guideStepsEl.replaceChildren();
-    for (let i = 0; i < BUILD_GUIDE_STEPS.length; i++) {
-      const s = BUILD_GUIDE_STEPS[i];
+    const steps = this.guideSteps();
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
       const pill = document.createElement("div");
       pill.className = "wizard-step-pill";
       if (i === this.buildGuideStepIndex) pill.classList.add("active");
@@ -649,14 +684,15 @@ export class CarGarage {
   }
 
   private applyLivery(meta: MetaStatePayload): void {
-    const primary = meta.teamColors?.primary ?? "#d4a843";
-    const secondary = meta.teamColors?.secondary ?? "#1a2a44";
-    this.root.style.setProperty("--garage-primary", primary);
-    this.root.style.setProperty("--garage-secondary", secondary);
+    this.teamName = meta.teamName;
+    this.teamLivery = resolveTeamLivery(meta);
+    this.root.style.setProperty("--garage-primary", this.teamLivery.primary);
+    this.root.style.setProperty("--garage-secondary", this.teamLivery.secondary);
   }
 
   private render(): void {
     if (!this.catalog || !this.build) return;
+    this.ensureHybridForClass();
     this.renderBuildGuide();
 
     const guideStep = this.buildGuideActive ? this.currentGuideStep() : null;
@@ -721,32 +757,38 @@ export class CarGarage {
     this.handlers.onVisualBuildChange?.(this.toVisualBuild(build));
   }
 
-  private async initCarVisual(): Promise<void> {
-    try {
-      const { catalog, assembly } = await loadCarGraphics();
-      this.compositor = new CarCompositor({ catalog, assembly });
-      await this.renderCarVisual();
-    } catch (err) {
-      this.visualLabelEl.textContent = `Assembly preview unavailable: ${err}`;
-    }
-  }
-
   private async renderCarVisual(): Promise<void> {
-    if (!this.compositor || !this.build) return;
+    if (!this.build) return;
     const panelMode = this.guidePanelMode();
     if (panelMode === "hidden" || panelMode === "name") return;
 
     const source = this.previewBuild ?? this.build;
     const visual = carBuildToVisual(source);
+    const classId = this.activeClassId();
     const token = ++this.visualRenderToken;
+    const patternLabel =
+      LIVERY_PATTERNS.find((p) => p.id === this.teamLivery.pattern)?.label ??
+      this.teamLivery.pattern;
 
     try {
-      const canvas = await this.compositor.render(visual);
+      const canvas = await renderClassLiveryCanvas({
+        primary: this.teamLivery.primary,
+        secondary: this.teamLivery.secondary,
+        pattern: this.teamLivery.pattern,
+        logoDataUrl: this.teamLivery.logoDataUrl,
+        classId,
+        teamName: this.teamName,
+        visualBuild: classId === "Hypercar" ? undefined : visual,
+        width: 672,
+        height: 168,
+      });
       if (token !== this.visualRenderToken) return;
       this.visualHost.replaceChildren();
-      canvas.className = "car-preview-img garage-car-preview-img";
+      canvas.className = "car-preview-img garage-car-preview-img garage-livery-preview";
       this.visualHost.appendChild(canvas);
       this.visualLabelEl.textContent = [
+        classId,
+        patternLabel,
         visual.chassis_type,
         visual.front_aero_type,
         visual.rear_aero_type,
@@ -755,7 +797,7 @@ export class CarGarage {
       ].join(" · ");
     } catch (err) {
       if (token !== this.visualRenderToken) return;
-      this.visualLabelEl.textContent = `Assembly preview failed: ${err}`;
+      this.visualLabelEl.textContent = `Livery preview failed: ${err}`;
     }
   }
 
@@ -823,6 +865,19 @@ export class CarGarage {
       this.build = defaultBuild(this.meta);
     }
     this.ensureEngine(activeCar?.classId ?? this.meta.playerClassId ?? "Hypercar");
+    this.ensureHybridForClass();
+  }
+
+  private ensureHybridForClass(): void {
+    if (!this.build) return;
+    const classInfo = this.activeClassInfo();
+    const hybrid = normalizeHybridForClass(this.build.hybrid_system, classInfo);
+    if (hybrid !== this.build.hybrid_system) {
+      this.build = { ...this.build, hybrid_system: hybrid };
+    }
+    if (!classAllowsHybrid(classInfo) && this.activeSlot === "hybrid") {
+      this.activeSlot = "transmission";
+    }
   }
 
   private activeClassId(): string {
@@ -928,7 +983,7 @@ export class CarGarage {
       return;
     }
     tabs.classList.remove("hidden");
-    for (const slot of Object.keys(SLOT_LABELS) as BuildSlot[]) {
+    for (const slot of visibleBuildSlots(this.activeClassInfo())) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = `garage-slot-tab${slot === this.activeSlot ? " active" : ""}`;
@@ -1608,7 +1663,11 @@ export class CarGarage {
           <h4>Aero &amp; Chassis</h4>
           <p class="confirm-detail">${escapeHtml(this.build.chassis_type)}</p>
           <p class="confirm-detail">${escapeHtml(this.build.front_aero_type)} / ${escapeHtml(this.build.rear_aero_type)}</p>
-          <p class="confirm-detail">${escapeHtml(this.build.hybrid_system)}</p>
+          ${
+            classAllowsHybrid(this.activeClassInfo())
+              ? `<p class="confirm-detail">${escapeHtml(this.build.hybrid_system)}</p>`
+              : ""
+          }
         </div>
         <div class="confirm-card">
           <h4>Sim Performance</h4>
@@ -1712,12 +1771,11 @@ export class CarGarage {
     if (!this.build || !this.catalog) return {};
     const classId = this.activeClassId();
     const classInfo = this.catalog.classes.find((c) => c.id === classId);
-    const compiled = compileCarStats(this.build, this.catalog.partsBySlot, {
-      classId,
-      powerCapHp: classInfo?.powerCapHp,
-      minWeightKg: classInfo?.minWeightKg,
-      maxWeightKg: classInfo?.maxWeightKg,
-    });
+    const compiled = compileCarStats(
+      this.build,
+      this.catalog.partsBySlot,
+      compileOptions(classInfo ?? null),
+    );
     return {
       powerHp: compiled.peakHorsepower,
       downforceCl: compiled.totalDownforceCl,

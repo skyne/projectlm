@@ -20,6 +20,7 @@ interface CompactLbRow {
   pos: HTMLSpanElement;
   num: HTMLSpanElement;
   team: HTMLSpanElement;
+  detail: HTMLSpanElement;
   badge: HTMLSpanElement;
   status: HTMLSpanElement;
   lap: HTMLSpanElement;
@@ -271,7 +272,7 @@ export class CompactLeaderboard {
     extras.className = "compact-lb-extras";
 
     root.append(pos, num, team, detail, extras);
-    row = { root, pos, num, team, badge, status, lap, gap, extras };
+    row = { root, pos, num, team, detail, badge, status, lap, gap, extras };
     this.rowByEntryId.set(entryId, row);
     return row;
   }

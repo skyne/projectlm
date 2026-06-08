@@ -100,13 +100,13 @@ struct DrivetrainTraits {
 
 DrivetrainTraits DrivetrainFor(const std::string &drv) {
   if (drv == "ParallelHybrid")
-    return {92, 50, 0.35, 8, 1.04, 0.94, 0.96, 1.0, false, false, 0};
+    return {36, 50, 0.35, 8, 1.04, 0.94, 0.96, 1.0, false, false, 0};
   if (drv == "FrontAxleHybrid")
-    return {98, 200, 0.5, 4.5, 1.06, 0.92, 0.94, 1.0, false, false, 0};
+    return {32, 200, 0.5, 4.5, 1.06, 0.92, 0.94, 1.0, false, false, 0};
   if (drv == "RangeExtender")
-    return {145, 0, 0.4, 2.5, 1.12, 0.82, 0.88, 0.88, true, true, 280};
+    return {125, 0, 0.4, 2.5, 1.12, 0.82, 0.88, 0.88, true, true, 280};
   if (drv == "FullEV")
-    return {160, 350, 0.55, 6, 1.15, 0.78, 0.85, 0.92, false, true, 0};
+    return {130, 350, 0.55, 6, 1.15, 0.78, 0.85, 0.92, false, true, 0};
   return {0, 0, 0, 0, 1.0, 1.0, 1.0, 1.0, false, false, 0};
 }
 

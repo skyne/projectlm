@@ -1,0 +1,82 @@
+[
+  {
+    "id": "bmw-m-hybrid-v8",
+    "outline": "assets/livery/hypercar/bmw-m-hybrid-v8-outline.png",
+    "mask": "assets/livery/hypercar/bmw-m-hybrid-v8-mask.png",
+    "fill_pct": 60.4,
+    "size": [
+      371,
+      103
+    ]
+  },
+  {
+    "id": "cadillac-v-series-r",
+    "outline": "assets/livery/hypercar/cadillac-v-series-r-outline.png",
+    "mask": "assets/livery/hypercar/cadillac-v-series-r-mask.png",
+    "fill_pct": 44.5,
+    "size": [
+      370,
+      135
+    ]
+  },
+  {
+    "id": "ferrari-499p",
+    "outline": "assets/livery/hypercar/ferrari-499p-outline.png",
+    "mask": "assets/livery/hypercar/ferrari-499p-mask.png",
+    "fill_pct": 66.6,
+    "size": [
+      366,
+      89
+    ]
+  },
+  {
+    "id": "lamborghini-sc63",
+    "outline": "assets/livery/hypercar/lamborghini-sc63-outline.png",
+    "mask": "assets/livery/hypercar/lamborghini-sc63-mask.png",
+    "fill_pct": 58.1,
+    "size": [
+      370,
+      104
+    ]
+  },
+  {
+    "id": "lmh-generic",
+    "outline": "assets/livery/hypercar/lmh-generic-outline.png",
+    "mask": "assets/livery/hypercar/lmh-generic-mask.png",
+    "fill_pct": 57.8,
+    "size": [
+      354,
+      104
+    ]
+  },
+  {
+    "id": "peugeot-9x8",
+    "outline": "assets/livery/hypercar/peugeot-9x8-outline.png",
+    "mask": "assets/livery/hypercar/peugeot-9x8-mask.png",
+    "fill_pct": 47.0,
+    "size": [
+      357,
+      85
+    ]
+  },
+  {
+    "id": "porsche-963",
+    "outline": "assets/livery/hypercar/porsche-963-outline.png",
+    "mask": "assets/livery/hypercar/porsche-963-mask.png",
+    "fill_pct": 43.5,
+    "size": [
+      370,
+      135
+    ]
+  },
+  {
+    "id": "toyota-gr010",
+    "outline": "assets/livery/hypercar/toyota-gr010-outline.png",
+    "mask": "assets/livery/hypercar/toyota-gr010-mask.png",
+    "fill_pct": 60.2,
+    "size": [
+      348,
+      103
+    ]
+  }
+]

@@ -1,7 +1,7 @@
 import type { EngineBuildPayload } from "../ws/protocol";
 
 export const HP_CONVERSION = 7127;
-export const ENGINE_WEIGHT_COEFF = 35;
+export const ENGINE_WEIGHT_COEFF = 30;
 export const ENGINE_WEIGHT_CYL_FACTOR = 5;
 
 export type FuelType = "Gasoline" | "Diesel" | "Hydrogen";
@@ -148,10 +148,10 @@ const DRIVETRAIN_MOD: Record<
   }
 > = {
   Mechanical: { extraMassKg: 0, deployKw: 0, regenRate: 0, stintBudgetMj: 0, throttleMult: 1, serviceabilityMult: 1, stressMult: 1, isGeneratorOnly: false, isElectricDrive: false, generatorKw: 0, efficiency: 1, hybridHint: "None", transmissionHint: null },
-  ParallelHybrid: { extraMassKg: 92, deployKw: 50, regenRate: 0.35, stintBudgetMj: 8, throttleMult: 1.04, serviceabilityMult: 0.94, stressMult: 0.96, isGeneratorOnly: false, isElectricDrive: false, generatorKw: 0, efficiency: 1, hybridHint: "LMDh50kW", transmissionHint: null },
-  FrontAxleHybrid: { extraMassKg: 98, deployKw: 200, regenRate: 0.5, stintBudgetMj: 4.5, throttleMult: 1.06, serviceabilityMult: 0.92, stressMult: 0.94, isGeneratorOnly: false, isElectricDrive: false, generatorKw: 0, efficiency: 1, hybridHint: "HypercarHV", transmissionHint: null },
-  RangeExtender: { extraMassKg: 145, deployKw: 0, regenRate: 0.4, stintBudgetMj: 2.5, throttleMult: 1.12, serviceabilityMult: 0.82, stressMult: 0.88, isGeneratorOnly: true, isElectricDrive: true, generatorKw: 280, efficiency: 0.88, hybridHint: "None", transmissionHint: "SingleSpeedEDrive" },
-  FullEV: { extraMassKg: 160, deployKw: 350, regenRate: 0.55, stintBudgetMj: 6, throttleMult: 1.15, serviceabilityMult: 0.78, stressMult: 0.85, isGeneratorOnly: false, isElectricDrive: true, generatorKw: 0, efficiency: 0.92, hybridHint: "None", transmissionHint: "SingleSpeedEDrive" },
+  ParallelHybrid: { extraMassKg: 36, deployKw: 50, regenRate: 0.35, stintBudgetMj: 8, throttleMult: 1.04, serviceabilityMult: 0.94, stressMult: 0.96, isGeneratorOnly: false, isElectricDrive: false, generatorKw: 0, efficiency: 1, hybridHint: "LMDh50kW", transmissionHint: null },
+  FrontAxleHybrid: { extraMassKg: 32, deployKw: 200, regenRate: 0.5, stintBudgetMj: 4.5, throttleMult: 1.06, serviceabilityMult: 0.92, stressMult: 0.94, isGeneratorOnly: false, isElectricDrive: false, generatorKw: 0, efficiency: 1, hybridHint: "HypercarHV", transmissionHint: null },
+  RangeExtender: { extraMassKg: 125, deployKw: 0, regenRate: 0.4, stintBudgetMj: 2.5, throttleMult: 1.12, serviceabilityMult: 0.82, stressMult: 0.88, isGeneratorOnly: true, isElectricDrive: true, generatorKw: 280, efficiency: 0.88, hybridHint: "None", transmissionHint: "SingleSpeedEDrive" },
+  FullEV: { extraMassKg: 130, deployKw: 350, regenRate: 0.55, stintBudgetMj: 6, throttleMult: 1.15, serviceabilityMult: 0.78, stressMult: 0.85, isGeneratorOnly: false, isElectricDrive: true, generatorKw: 0, efficiency: 0.92, hybridHint: "None", transmissionHint: "SingleSpeedEDrive" },
 };
 
 const CLASS_REV_BAND: Record<string, { min: number; max: number }> = {
@@ -428,6 +428,18 @@ export function encodePowertrainBuild(
   };
 }
 
+/** Engine + drivetrain mass for compile; ICE hybrid hardware lives in hybrid part slot. */
+export function resolveEngineAssemblyMassKg(
+  traits: PowertrainTraits,
+  hybridPartMass = 0,
+): number {
+  let drivetrainMass = traits.drivetrainExtraMassKg;
+  if (hybridPartMass > 0 && drivetrainMass > 0 && !traits.isElectricDrive) {
+    drivetrainMass = 0;
+  }
+  return traits.engineMassKg + drivetrainMass;
+}
+
 export function resolvePowertrainTraits(
   engine: EngineBuildPayload,
   classId = "Hypercar",
@@ -490,6 +502,10 @@ export function resolvePowertrainTraits(
     displacementL * ENGINE_WEIGHT_COEFF * lay.massMult * fuel.fuelMassMult * asp.massMult;
   engineMass += engine.cylinders * ENGINE_WEIGHT_CYL_FACTOR;
   if (ui.drivetrain === "FullEV") engineMass = 12;
+  // Hypercar ICE unit mass floor — matches real PU + ancillaries; stops tiny layouts gaming BoP.
+  if (classId === "Hypercar" && ui.energyConverter !== "FuelCell" && !drv.isElectricDrive) {
+    engineMass = Math.max(178, engineMass);
+  }
 
   const peakTorqueNm = engine.peak_torque_nm;
   const peakTorqueRpm = engine.peak_torque_rpm || Math.round(engine.max_rpm * asp.torquePeakRatio);

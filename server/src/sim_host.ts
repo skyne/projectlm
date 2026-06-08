@@ -479,7 +479,7 @@ export class SimHost {
     return this.meta.dropSponsor(offerId);
   }
 
-  createTeam(payload: CreateTeamPayload): MetaStatePayload | null {
+  createTeam(payload: CreateTeamPayload): MetaStatePayload | { error: string } {
     return this.meta.createTeam(payload);
   }
 
@@ -527,8 +527,24 @@ export class SimHost {
     return this.meta.signDriverContract(listingId);
   }
 
+  refreshStaffMarket(): MetaStatePayload | { error: string } {
+    return this.meta.refreshStaffMarket();
+  }
+
+  signStaffContract(
+    listingId: string,
+    carId?: string,
+  ): MetaStatePayload | { error: string } {
+    return this.meta.signStaffContract(listingId, carId);
+  }
+
   saveTeamColors(
-    colors: { primary: string; secondary: string },
+    colors: {
+      primary: string;
+      secondary: string;
+      pattern?: string;
+      logoDataUrl?: string | null;
+    },
   ): MetaStatePayload | null {
     return this.meta.saveTeamColors(colors);
   }

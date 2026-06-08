@@ -1,8 +1,8 @@
 import type {
+  CarConditionPayload,
+  FleetCarPayload,
   MetaStatePayload,
   SessionInitPayload,
-  StaffMemberPayload,
-  StaffRole,
   StaffStatus,
 } from "../ws/protocol";
 import {
@@ -81,7 +81,7 @@ export class RaceHub {
             <h3>Next Endurance Event</h3>
             <div class="round-info"></div>
             <div class="weekend-schedule hidden" aria-label="Weekend schedule"></div>
-            <div class="race-hub-staff"></div>
+            <div class="race-hub-snapshot"></div>
             <div class="round-actions">
               <button type="button" class="secondary-btn garage-link-btn">⚙ Garage</button>
               <button type="button" class="secondary-btn restart-season-btn hidden">↺ Restart Season</button>
@@ -299,7 +299,7 @@ export class RaceHub {
 
     this.renderRoundInfo();
     this.renderWeekendSchedule(meta);
-    this.renderStaffRow(meta);
+    this.renderTeamSnapshot(meta);
     this.renderRivalStandings(meta);
     this.renderDriverStandings(meta);
     this.syncHostControls();
@@ -454,66 +454,84 @@ export class RaceHub {
     }
   }
 
-  private renderStaffRow(meta: MetaStatePayload): void {
-    const STAFF_ROLES: StaffRole[] = ["engineer", "mechanic", "strategist"];
-    const ROLE_LABELS: Record<StaffRole, string> = {
-      engineer: "Engineer",
-      mechanic: "Mechanic",
-      strategist: "Strategist",
-    };
-    const STATUS_LABELS: Record<Exclude<StaffStatus, "active">, string> = {
+  private renderTeamSnapshot(meta: MetaStatePayload): void {
+    const STAFF_STATUS_LABELS: Record<Exclude<StaffStatus, "active">, string> = {
       injured: "Injured",
       ill: "Ill",
       poached: "Poached",
     };
 
-    const container = this.root.querySelector(".race-hub-staff");
+    const container = this.root.querySelector(".race-hub-snapshot");
     if (!container) return;
 
-    const carId = meta.activeCarId || meta.playerCarId || meta.fleet?.[0]?.id;
-    if (!carId || !meta.staff?.length) {
+    const fleet = meta.fleet ?? [];
+    if (!fleet.length) {
       container.innerHTML = "";
       return;
     }
 
-    const items = STAFF_ROLES.map((role) => {
-      const member = this.staffForCar(meta, carId, role);
-      return `<div class="weekend-staff-item">
-        <span class="weekend-staff-role">${ROLE_LABELS[role]}</span>
-        <span class="weekend-staff-name">${escapeHtml(member?.name ?? "—")}</span>
-        <span class="weekend-staff-skill">${member?.skill ?? "—"}</span>
-      </div>`;
-    }).join("");
+    const chips = fleet
+      .map(
+        (car) => `
+        <span class="hub-fleet-chip">
+          <span class="hub-fleet-num">#${escapeHtml(car.carNumber)}</span>
+          <span class="class-badge class-${escapeHtml(car.classId)}">${escapeHtml(car.classId)}</span>
+        </span>`,
+      )
+      .join("");
 
-    const warnings = STAFF_ROLES.flatMap((role) => {
-      const member = this.staffForCar(meta, carId, role);
-      if (!member || (member.status ?? "active") === "active") return [];
-      const status = member.status as Exclude<StaffStatus, "active">;
-      return [
-        `<p class="weekend-staff-warning">${ROLE_LABELS[role]} ${escapeHtml(member.name)} — ${STATUS_LABELS[status]}</p>`,
-      ];
-    }).join("");
+    const alerts = this.teamSnapshotAlerts(meta, fleet, STAFF_STATUS_LABELS);
+    const alertHtml = alerts
+      .map((text) => `<p class="hub-snapshot-alert">${escapeHtml(text)}</p>`)
+      .join("");
 
     container.innerHTML = `
-      <div class="weekend-staff">
-        <div class="weekend-staff-row">${items}</div>
-        ${warnings ? `<div class="weekend-staff-warnings">${warnings}</div>` : ""}
+      <div class="hub-team-snapshot">
+        <div class="hub-fleet-line">
+          <span class="hub-snapshot-label">${fleet.length} ${fleet.length === 1 ? "entry" : "entries"}</span>
+          <div class="hub-fleet-chips">${chips}</div>
+        </div>
+        ${alertHtml ? `<div class="hub-snapshot-alerts">${alertHtml}</div>` : ""}
       </div>`;
   }
 
-  private staffForCar(
+  private teamSnapshotAlerts(
     meta: MetaStatePayload,
-    carId: string,
-    role: StaffRole,
-  ): StaffMemberPayload | null {
-    const assigned = meta.staff?.find(
-      (s) => s.role === role && s.assignedCarId === carId,
-    );
-    if (assigned) return assigned;
+    fleet: FleetCarPayload[],
+    staffStatusLabels: Record<Exclude<StaffStatus, "active">, string>,
+  ): string[] {
+    const alerts: string[] = [];
 
-    const firstCarId = meta.fleet?.[0]?.id;
-    if (carId !== firstCarId) return null;
-    return meta.staff?.find((s) => s.role === role && !s.assignedCarId) ?? null;
+    for (const member of meta.staff ?? []) {
+      const status = member.status ?? "active";
+      if (status === "active") continue;
+      const label = staffStatusLabels[status as Exclude<StaffStatus, "active">];
+      alerts.push(`${member.name} (${member.role}) — ${label}`);
+    }
+
+    for (const car of fleet) {
+      if (this.carNeedsAttention(car.carCondition)) {
+        alerts.push(`#${car.carNumber} needs garage attention`);
+      }
+    }
+
+    const hasRoster = (meta.driverRoster?.length ?? 0) > 0;
+    if (hasRoster) {
+      for (const car of fleet) {
+        if ((car.assignedDriverIds?.length ?? 0) === 0) {
+          alerts.push(`#${car.carNumber} has no drivers assigned`);
+        }
+      }
+    }
+
+    return alerts;
+  }
+
+  private carNeedsAttention(condition?: CarConditionPayload): boolean {
+    if (!condition) return false;
+    if (Object.keys(condition.partHealth ?? {}).length > 0) return true;
+    if ((condition.irreparable?.length ?? 0) > 0) return true;
+    return (condition.hiddenFaults ?? []).some((fault) => !fault.revealed);
   }
 
   private renderWeekendSchedule(meta: MetaStatePayload): void {
@@ -590,17 +608,22 @@ export class RaceHub {
       : nextSession
         ? `${sessionDurationLabel(nextSession, formatLabel)} — ${WEEKEND_STEPS.find((s) => s.type === nextSession)?.label ?? "Session"}`
         : `${formatDurationLabel(formatLabel, current.eventType)} race`;
-    if (this.sessionInfo?.weekendSessionType && this.sessionInfo.targetDurationSeconds) {
-      const hours = this.sessionInfo.targetDurationSeconds / 3600;
-      raceDesc =
-        hours >= 1
-          ? `${hours}h duration`
-          : `${Math.round(this.sessionInfo.targetDurationSeconds / 60)} min session`;
-    } else if (this.sessionInfo?.targetDurationSeconds && this.sessionInfo.targetDurationSeconds > 0) {
-      const hours = this.sessionInfo.targetDurationSeconds / 3600;
-      raceDesc = hours >= 1 ? `${hours}h duration` : `${Math.round(this.sessionInfo.targetDurationSeconds / 60)}min duration`;
-    } else if (this.sessionInfo?.targetLaps) {
-      raceDesc = `${this.sessionInfo.targetLaps} lap(s)`;
+    if (this.sessionInfo) {
+      if (this.sessionInfo.weekendSessionType && this.sessionInfo.targetDurationSeconds) {
+        const hours = this.sessionInfo.targetDurationSeconds / 3600;
+        raceDesc =
+          hours >= 1
+            ? `${hours}h duration`
+            : `${Math.round(this.sessionInfo.targetDurationSeconds / 60)} min session`;
+      } else if (this.sessionInfo.targetDurationSeconds && this.sessionInfo.targetDurationSeconds > 0) {
+        const hours = this.sessionInfo.targetDurationSeconds / 3600;
+        raceDesc =
+          hours >= 1
+            ? `${hours}h duration`
+            : `${Math.round(this.sessionInfo.targetDurationSeconds / 60)} min duration`;
+      } else if (!isTest && this.sessionInfo.targetLaps > 0) {
+        raceDesc = `${this.sessionInfo.targetLaps} lap(s)`;
+      }
     }
 
     const iconEl = this.root.querySelector(".current-round-icon");

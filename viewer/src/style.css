@@ -3956,18 +3956,72 @@ body.mock-sim-active #app {
   border: 0;
 }
 
+.livery-showcase {
+  border: 1px solid var(--border-bright);
+  border-radius: 10px;
+  padding: 0.85rem 0.9rem 0.95rem;
+  background: linear-gradient(180deg, #141820 0%, #080a0f 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 4px 16px rgba(0, 0, 0, 0.28);
+}
+
+.livery-showcase .livery-car-host {
+  margin: 0;
+}
+
+.livery-showcase .livery-car-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.livery-showcase-caption {
+  margin: 0.65rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.35;
+}
+
 .livery-preview-card {
   background: var(--bg-panel);
   border: 1px solid var(--border-bright);
   border-radius: 10px;
-  padding: 1.25rem;
+  padding: 1rem 1.1rem 1.15rem;
   text-align: center;
-  background: linear-gradient(
-    135deg,
-    var(--livery-secondary) 0%,
-    #141824 40%,
-    var(--livery-primary) 100%
-  );
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.livery-preview-logo-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.65rem;
+  min-height: 3.25rem;
+  align-items: center;
+}
+
+.livery-preview-logo {
+  width: 3rem;
+  height: 3rem;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.2rem;
+}
+
+.livery-car-host {
+  margin: 0.35rem 0 0.75rem;
+}
+
+.livery-car-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  background: transparent;
 }
 
 .livery-badge {
@@ -5257,9 +5311,10 @@ body.mock-sim-active #app {
 
 .livery-editor-split {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.1fr);
   gap: 1.25rem;
   min-width: 0;
+  align-items: start;
 }
 
 .livery-editor-controls,
@@ -5301,6 +5356,104 @@ body.mock-sim-active #app {
 
 .livery-editor-status.error {
   color: #f87171;
+}
+
+.livery-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.livery-pattern-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 0.45rem;
+}
+
+.livery-pattern-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  padding: 0.45rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-bright);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.livery-pattern-btn.selected {
+  border-color: var(--wec-gold, #d4a843);
+  box-shadow: 0 0 0 1px rgba(212, 168, 67, 0.35);
+  color: #fff;
+}
+
+.livery-pattern-swatch {
+  display: block;
+  height: 1.35rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.livery-pattern-label {
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.livery-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.livery-logo-preview {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+}
+
+.livery-logo-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.livery-logo-placeholder {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.livery-logo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.livery-logo-upload-label {
+  cursor: pointer;
+  margin: 0;
+}
+
+.confirm-livery-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.confirm-livery-wrap .livery-preview-card {
+  padding: 0.65rem;
 }
 
 @media (max-width: 720px) {

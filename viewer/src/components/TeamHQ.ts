@@ -2,9 +2,13 @@ import type {
   BuyCarPayload,
   CarAffiliation,
   CarConditionPayload,
+  FleetCarPayload,
   FleetEntryMode,
   GameCatalogPayload,
   MetaStatePayload,
+  TeamLiveryPayload,
+  StaffMarketListingPayload,
+  StaffMarketSource,
   StaffMemberPayload,
   StaffRole,
   StaffStatus,
@@ -17,6 +21,7 @@ import {
 } from "../utils/trackIcons";
 import {
   affiliationHintForClass,
+  canRemoveFleetCar,
   defaultQuantity,
   getClassProgram,
   groupFleetByClass,
@@ -31,10 +36,18 @@ import {
   suggestedExperimentalBuyQuantity,
 } from "../utils/fleetUi";
 import { mmPanelHeader } from "../utils/mmUi";
+import { mountLiveryCanvas } from "../graphics/liveryRenderer";
+import { resolveTeamLivery } from "../utils/teamLivery";
 import { LiveryEditor } from "./LiveryEditor";
 
+const STAFF_MARKET_REFRESH_COST = 25_000;
+
+type CrewTab = "roster" | "market";
+type StaffMarketFilter = "all" | StaffRole | StaffMarketSource;
+
 export interface TeamHQHandlers {
-  onHireStaff: (role: string, name: string, skill: number) => void;
+  onRefreshStaffMarket?: () => void;
+  onSignStaffContract?: (listingId: string, carId?: string) => void;
   onRdInvest: (partId: string, points: number) => void;
   onSignSponsor?: (offerId: string) => void;
   onDropSponsor?: (offerId: string) => void;
@@ -44,7 +57,7 @@ export interface TeamHQHandlers {
   onSetActiveCar?: (carId: string) => void;
   onSetPlayerEntry?: (carId: string) => void;
   onRemoveCar?: (carId: string) => void;
-  onSaveTeamColors?: (colors: { primary: string; secondary: string }) => void;
+  onSaveTeamLivery?: (livery: TeamLiveryPayload) => void;
   onNewGame?: () => void;
   onRepairCarCondition?: (
     carId: string,
@@ -123,13 +136,27 @@ export class TeamHQ {
   private catalog: GameCatalogPayload | null = null;
   private meta: MetaStatePayload | null = null;
   private activeTab: HqTab = "fleet";
+  private crewTab: CrewTab = "roster";
+  private staffMarketFilter: StaffMarketFilter = "all";
+  private staffMarket: StaffMarketListingPayload[] = [];
+  private crewStatusEl!: HTMLElement;
+  private crewRosterPanelEl!: HTMLElement;
+  private crewMarketPanelEl!: HTMLElement;
+  private crewMarketGridEl!: HTMLElement;
+  private crewMarketMetaEl!: HTMLElement;
 
   private buyClassId = "Hypercar";
   private buyAffiliation: CarAffiliation = "privateer";
   private buyPlatformId = "";
   private buyQuantity = 1;
   private buyEntryMode: FleetEntryMode = "homologated";
-  private showBuyPanel = false;
+  /** null = panel closed; new = start a class programme */
+  private buyPanelMode: "new" | null = null;
+  private fleetConfirmEl!: HTMLElement;
+  private fleetConfirmKind: "withdraw" | "add" | null = null;
+  private fleetConfirmCarId: string | null = null;
+  private fleetConfirmClassId: string | null = null;
+  private fleetConfirmQuantity = 1;
   private liveryEditor: LiveryEditor;
 
   constructor(container: HTMLElement, handlers: TeamHQHandlers) {
@@ -172,12 +199,27 @@ export class TeamHQ {
         <section class="hq-panel hidden" data-tab="crew">
           <div class="hq-panel-head">
             <h3 class="hq-panel-title">Pit Crew &amp; Engineers</h3>
-            <div class="hq-panel-actions">
-              <button type="button" id="hire-engineer" class="secondary-btn">Hire engineer</button>
-              <button type="button" id="hire-mechanic" class="secondary-btn">Hire mechanic</button>
-            </div>
           </div>
-          <div id="team-staff" class="hq-crew-grid"></div>
+          <div class="hq-crew-tabs">
+            <button type="button" class="hq-crew-tab-btn active" data-crew-tab="roster">My crew</button>
+            <button type="button" class="hq-crew-tab-btn" data-crew-tab="market">Staff market</button>
+          </div>
+          <div class="hq-crew-roster-panel">
+            <p class="wizard-hint">Each car needs a race engineer, chief mechanic, and strategist.</p>
+            <div id="team-staff" class="hq-crew-grid"></div>
+          </div>
+          <div class="hq-crew-market-panel hidden">
+            <div class="hq-crew-market-toolbar">
+              <div class="hq-crew-market-filters"></div>
+              <div class="hq-crew-market-actions">
+                <p class="hq-crew-market-meta"></p>
+                <button type="button" class="secondary-btn hq-crew-market-refresh">Refresh listings ($${STAFF_MARKET_REFRESH_COST.toLocaleString()})</button>
+              </div>
+            </div>
+            <p class="wizard-hint">Browse veterans, experienced paddock hires, and budget prospects — pick a car slot when signing.</p>
+            <div class="hq-crew-market-grid"></div>
+          </div>
+          <p class="hq-crew-status"></p>
         </section>
         <section class="hq-panel hidden" data-tab="rd">
           <div class="hq-panel-head">
@@ -209,6 +251,11 @@ export class TeamHQ {
     this.fleetEl = this.root.querySelector("#team-fleet")!;
     this.buyPanelEl = this.root.querySelector("#buy-car-panel")!;
     this.staffEl = this.root.querySelector("#team-staff")!;
+    this.crewStatusEl = this.root.querySelector(".hq-crew-status")!;
+    this.crewRosterPanelEl = this.root.querySelector(".hq-crew-roster-panel")!;
+    this.crewMarketPanelEl = this.root.querySelector(".hq-crew-market-panel")!;
+    this.crewMarketGridEl = this.root.querySelector(".hq-crew-market-grid")!;
+    this.crewMarketMetaEl = this.root.querySelector(".hq-crew-market-meta")!;
     this.sponsorsEl = this.root.querySelector("#team-sponsors")!;
     this.sponsorOffersEl = this.root.querySelector("#sponsor-offers")!;
     this.calendarEl = this.root.querySelector("#team-calendar")!;
@@ -216,18 +263,25 @@ export class TeamHQ {
 
     this.renderTabs();
 
-    this.root.querySelector("#hire-engineer")!.addEventListener("click", () => {
-      this.handlers.onHireStaff("engineer", "New Engineer", 70);
-    });
-    this.root.querySelector("#hire-mechanic")!.addEventListener("click", () => {
-      this.handlers.onHireStaff("mechanic", "New Mechanic", 68);
+    for (const btn of this.root.querySelectorAll(".hq-crew-tab-btn")) {
+      btn.addEventListener("click", () => {
+        const tab = (btn as HTMLElement).dataset.crewTab as CrewTab;
+        this.setCrewTab(tab);
+      });
+    }
+    this.root.querySelector(".hq-crew-market-refresh")!.addEventListener("click", () => {
+      this.handlers.onRefreshStaffMarket?.();
+      this.setCrewStatus("Refreshing staff market…");
     });
     this.root.querySelector("#open-garage")!.addEventListener("click", () => {
       this.handlers.onOpenGarage?.();
     });
     this.root.querySelector("#buy-car-btn")!.addEventListener("click", () => {
-      this.showBuyPanel = !this.showBuyPanel;
-      this.renderBuyPanel();
+      if (this.buyPanelMode === "new") {
+        this.closeBuyPanel();
+      } else {
+        this.openBuyPanel("new");
+      }
     });
     this.root.querySelector("#new-game-btn")!.addEventListener("click", () => {
       this.handlers.onNewGame?.();
@@ -238,9 +292,16 @@ export class TeamHQ {
     this.liveryEditor = new LiveryEditor(
       this.root.querySelector("#team-livery-editor")!,
       {
-        onSave: (colors) => this.handlers.onSaveTeamColors?.(colors),
+        onSave: (livery) => this.handlers.onSaveTeamLivery?.(livery),
       },
     );
+
+    this.fleetConfirmEl = document.createElement("div");
+    this.fleetConfirmEl.className = "fleet-confirm-overlay hidden";
+    this.fleetConfirmEl.addEventListener("click", (e) => {
+      if (e.target === this.fleetConfirmEl) this.closeFleetConfirm();
+    });
+    document.body.appendChild(this.fleetConfirmEl);
   }
 
   private renderTabs(): void {
@@ -322,15 +383,15 @@ export class TeamHQ {
     );
     const programmeSummary = teamProgrammeSummary(fleet, this.catalog);
     const hypercarMfg = isHypercarManufacturer(fleet);
-    const primary = meta.teamColors?.primary ?? "#d4a843";
-    const secondary = meta.teamColors?.secondary ?? "#1a2a44";
+    const livery = resolveTeamLivery(meta);
 
-    this.heroEl.style.setProperty("--hq-primary", primary);
-    this.heroEl.style.setProperty("--hq-secondary", secondary);
+    this.heroEl.style.setProperty("--hq-primary", livery.primary);
+    this.heroEl.style.setProperty("--hq-secondary", livery.secondary);
     this.heroEl.innerHTML = `
       <div class="hq-hero-strip" aria-hidden="true"></div>
       <div class="hq-hero-body">
         <div class="hq-hero-identity">
+          <div class="hq-hero-logo-slot"></div>
           <span class="hq-hero-badge mm-badge mm-badge-wec">${escapeHtml(meta.teamName)}</span>
           <h2 class="hq-hero-title">Season ${meta.seasonYear}</h2>
           <p class="hq-hero-sub">${escapeHtml(programmeSummary)}${hypercarMfg ? ' · <span class="fleet-badge-mfg">Hypercar Manufacturer</span>' : ""}</p>
@@ -360,15 +421,31 @@ export class TeamHQ {
       </div>
     `;
 
+    const logoSlot = this.heroEl.querySelector<HTMLElement>(".hq-hero-logo-slot");
+    if (logoSlot) {
+      if (livery.logoDataUrl) {
+        const img = document.createElement("img");
+        img.className = "hq-hero-logo";
+        img.src = livery.logoDataUrl;
+        img.alt = "";
+        logoSlot.appendChild(img);
+      } else {
+        logoSlot.remove();
+      }
+    }
+
     const rdMeta = this.root.querySelector("#rd-points-meta");
     if (rdMeta) rdMeta.textContent = `${meta.rdPoints} points available`;
 
     const sponsorMeta = this.root.querySelector("#sponsor-slots-meta");
     if (sponsorMeta) sponsorMeta.textContent = `${sponsors.length}/3 slots filled`;
 
+    this.staffMarket = (meta.staffMarket ?? []).map((l) => ({ ...l }));
     this.renderFleet(meta, fleet);
+    this.updateFleetActions(fleet);
     this.renderBuyPanel();
     this.renderCrew(meta, fleet);
+    if (this.crewTab === "market") this.renderStaffMarket();
     this.renderSponsors(meta);
     this.renderRd(meta);
     this.renderCalendar(meta);
@@ -376,6 +453,7 @@ export class TeamHQ {
   }
 
   private renderFleet(meta: MetaStatePayload, fleet: typeof meta.fleet): void {
+    const livery = resolveTeamLivery(meta);
     this.fleetEl.replaceChildren();
     if (!fleet || fleet.length === 0) {
       const li = document.createElement("li");
@@ -388,6 +466,8 @@ export class TeamHQ {
       this.fleetEl.appendChild(li);
       return;
     }
+
+    const mfgMin = this.catalog?.fleetRules.manufacturerHypercarMinCars ?? 2;
 
     for (const [classId, cars] of groupFleetByClass(fleet)) {
       const homologated = cars.filter((c) => fleetEntryMode(c) === "homologated");
@@ -402,11 +482,19 @@ export class TeamHQ {
         const header = document.createElement("li");
         header.className = "fleet-class-banner";
         header.innerHTML = `
-          <span class="class-badge class-${escapeHtml(classId)}">${escapeHtml(classId)}</span>
-          ${section.mode === "experimental" ? '<span class="entry-badge entry-exp">EXP</span>' : ""}
-          <span class="fleet-program-label">${escapeHtml(program?.label ?? "")}</span>
-          <span class="fleet-program-count">${section.list.length} car${section.list.length === 1 ? "" : "s"}</span>
+          <div class="fleet-class-banner-main">
+            <span class="class-badge class-${escapeHtml(classId)}">${escapeHtml(classId)}</span>
+            ${section.mode === "experimental" ? '<span class="entry-badge entry-exp">EXP</span>' : ""}
+            <span class="fleet-program-label">${escapeHtml(program?.label ?? "")}</span>
+          </div>
+          <div class="fleet-class-banner-actions">
+            <span class="fleet-program-count">${section.list.length} car${section.list.length === 1 ? "" : "s"}</span>
+            <button type="button" class="secondary-btn fleet-add-entry-btn">+ Add car</button>
+          </div>
         `;
+        header.querySelector(".fleet-add-entry-btn")!.addEventListener("click", () => {
+          this.openAddCarConfirm(classId);
+        });
         this.fleetEl.appendChild(header);
 
         for (const car of section.list) {
@@ -414,6 +502,7 @@ export class TeamHQ {
         li.className = "fleet-car-card";
         const isActive = car.id === meta.activeCarId;
         const isPlayer = car.id === meta.playerCarId;
+        const withdraw = canRemoveFleetCar(fleet, car.id, mfgMin);
 
         li.innerHTML = `
           <div class="fleet-car-card-top">
@@ -423,15 +512,30 @@ export class TeamHQ {
             ${isActive ? '<span class="fleet-badge-active">Active</span>' : ""}
             ${isPlayer ? '<span class="fleet-badge-player">Player</span>' : ""}
           </div>
+          <div class="fleet-car-livery-host" aria-hidden="true"></div>
           <span class="fleet-car-name">${escapeHtml(car.build.carName)}</span>
           ${formatCarCondition(car.carCondition)}
           <div class="fleet-car-actions">
             <button type="button" class="secondary-btn fleet-edit-btn">Configure</button>
             ${hasUnrevealedFaults(car.carCondition) ? '<button type="button" class="secondary-btn fleet-diagnose-btn">Tear down</button>' : ""}
             ${hasCarDamage(car.carCondition) ? '<button type="button" class="secondary-btn fleet-repair-btn">Workshop repair</button>' : ""}
-            <button type="button" class="secondary-btn fleet-remove-btn">Sell</button>
+            <button type="button" class="secondary-btn fleet-remove-btn"${withdraw.allowed ? "" : ` disabled title="${escapeHtml(withdraw.reason ?? "")}"`}>Withdraw</button>
           </div>
         `;
+
+        const liveryHost = li.querySelector<HTMLElement>(".fleet-car-livery-host");
+        if (liveryHost) {
+          mountLiveryCanvas(liveryHost, {
+            primary: livery.primary,
+            secondary: livery.secondary,
+            pattern: livery.pattern,
+            logoDataUrl: livery.logoDataUrl,
+            classId: car.classId,
+            teamName: meta.teamName,
+            width: 280,
+            height: 72,
+          });
+        }
 
         li.querySelector(".fleet-edit-btn")!.addEventListener("click", () => {
           if (this.handlers.onConfigureCar) {
@@ -448,14 +552,164 @@ export class TeamHQ {
           this.handlers.onRepairCarCondition?.(car.id, { rebuild: true });
         });
         li.querySelector(".fleet-remove-btn")!.addEventListener("click", () => {
-          if (fleet.length <= 1) return;
-          this.handlers.onRemoveCar?.(car.id);
+          if (!canRemoveFleetCar(fleet, car.id, mfgMin).allowed) return;
+          this.openWithdrawConfirm(car, fleet, mfgMin);
         });
 
         this.fleetEl.appendChild(li);
       }
       }
     }
+  }
+
+  setCrewStatus(message: string): void {
+    this.crewStatusEl.textContent = message;
+  }
+
+  private setCrewTab(tab: CrewTab): void {
+    this.crewTab = tab;
+    for (const btn of this.root.querySelectorAll(".hq-crew-tab-btn")) {
+      btn.classList.toggle("active", (btn as HTMLElement).dataset.crewTab === tab);
+    }
+    this.crewRosterPanelEl.classList.toggle("hidden", tab !== "roster");
+    this.crewMarketPanelEl.classList.toggle("hidden", tab !== "market");
+    if (tab === "market") this.renderStaffMarket();
+  }
+
+  private renderStaffMarket(): void {
+    if (!this.meta) return;
+    const budget = this.meta.budget ?? 0;
+    const fleet = this.meta.fleet ?? [];
+    const listings = this.filteredStaffMarket();
+    this.crewMarketMetaEl.textContent = `Budget $${budget.toLocaleString()} · ${listings.length} listing${listings.length === 1 ? "" : "s"}`;
+
+    const filtersEl = this.root.querySelector(".hq-crew-market-filters")!;
+    const filters: Array<{ id: StaffMarketFilter; label: string }> = [
+      { id: "all", label: "All" },
+      { id: "engineer", label: "Engineers" },
+      { id: "mechanic", label: "Mechanics" },
+      { id: "strategist", label: "Strategists" },
+      { id: "veteran", label: "Veterans" },
+      { id: "experienced", label: "Experienced" },
+      { id: "prospect", label: "Prospects" },
+    ];
+    filtersEl.replaceChildren();
+    for (const f of filters) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `hq-crew-market-filter${this.staffMarketFilter === f.id ? " active" : ""}`;
+      btn.dataset.filter = f.id;
+      btn.textContent = f.label;
+      btn.addEventListener("click", () => {
+        this.staffMarketFilter = f.id;
+        this.renderStaffMarket();
+      });
+      filtersEl.appendChild(btn);
+    }
+
+    this.crewMarketGridEl.replaceChildren();
+    if (!listings.length) {
+      const empty = document.createElement("p");
+      empty.className = "wizard-hint";
+      empty.textContent =
+        "No listings in this category — try another filter or refresh the market.";
+      this.crewMarketGridEl.appendChild(empty);
+      return;
+    }
+
+    for (const listing of listings) {
+      const slots = fleet.map((car) => {
+        const member = this.staffForCar(this.meta!, car.id, listing.role);
+        const vacant = !isStaffSlotFilled(member);
+        const severance =
+          member && !vacant ? staffSeveranceCost(member) : 0;
+        return { car, carId: car.id, member, vacant, severance };
+      });
+      const slotCost = (slot: (typeof slots)[number]) =>
+        listing.signingFee + slot.severance;
+      const canAffordSlot = (slot: (typeof slots)[number]) =>
+        budget >= slotCost(slot);
+      const affordableSlots = slots.filter(canAffordSlot);
+      const defaultSlot =
+        affordableSlots.find((s) => s.vacant) ?? affordableSlots[0];
+      const canHire = affordableSlots.length > 0;
+      const card = document.createElement("article");
+      card.className = `hq-crew-market-card source-${listing.source}`;
+      const traits = listing.traits?.length
+        ? listing.traits.join(" · ")
+        : "";
+      const carOptions = slots
+        .map((slot) => {
+          const label = slot.vacant
+            ? `#${slot.car.carNumber} ${slot.car.build.carName} — vacant`
+            : `#${slot.car.carNumber} ${slot.car.build.carName} — replace ${slot.member!.name} · $${slot.severance.toLocaleString()} severance`;
+          return `<option value="${escapeHtml(slot.carId)}"${!canAffordSlot(slot) ? " disabled" : ""}>${escapeHtml(label)}</option>`;
+        })
+        .join("");
+      const singleSlot = slots.length === 1 ? slots[0] : undefined;
+      const slotHint = singleSlot
+        ? singleSlot.vacant
+          ? `<p class="wizard-hint hq-crew-market-slot">Fills car #${singleSlot.car.carNumber}</p>`
+          : `<p class="wizard-hint hq-crew-market-slot">Replaces ${escapeHtml(singleSlot.member!.name)} on #${singleSlot.car.carNumber} · $${singleSlot.severance.toLocaleString()} severance</p>`
+        : "";
+      card.innerHTML = `
+        <header class="hq-crew-market-card-head">
+          <span class="hq-crew-market-role">${escapeHtml(staffRoleLabel(listing.role))}</span>
+          <span class="hq-crew-market-source">${escapeHtml(staffSourceLabel(listing.source))}</span>
+        </header>
+        <h4 class="hq-crew-market-name">${escapeHtml(listing.name)}</h4>
+        <p class="hq-crew-market-stats">Skill ${listing.skill} · XP ${listing.experience} yrs · Morale ${listing.morale}${traits ? ` · ${escapeHtml(traits)}` : ""}</p>
+        <span class="hq-crew-skill-bar"><span class="hq-crew-skill-fill" style="width:${listing.skill}%"></span></span>
+        <p class="hq-crew-market-tagline">${escapeHtml(listing.tagline)}</p>
+        <div class="hq-crew-market-fees">
+          <span>Signing $${listing.signingFee.toLocaleString()}</span>
+          <span class="hq-crew-market-salary">$${listing.salaryPerRace.toLocaleString()}/race</span>
+        </div>
+        ${slots.length > 1 ? `
+          <label class="hq-crew-market-car-pick">
+            <span>Assign to</span>
+            <select class="hq-crew-market-car-select">${carOptions}</select>
+          </label>
+        ` : slotHint}
+        <button type="button" class="primary-btn hq-crew-sign-btn" data-listing="${escapeHtml(listing.id)}" ${canHire ? "" : "disabled"}>
+          ${singleSlot && !singleSlot.vacant ? "Replace staff" : "Sign contract"}
+        </button>
+      `;
+      const signBtn = card.querySelector(".hq-crew-sign-btn")!;
+      const carSelect = card.querySelector<HTMLSelectElement>(
+        ".hq-crew-market-car-select",
+      );
+      if (carSelect && defaultSlot) {
+        carSelect.value = defaultSlot.carId;
+      }
+      const updateSignLabel = () => {
+        const selectedId = carSelect?.value ?? singleSlot?.carId;
+        const selected = slots.find((s) => s.carId === selectedId);
+        signBtn.textContent =
+          selected && !selected.vacant ? "Replace staff" : "Sign contract";
+      };
+      carSelect?.addEventListener("change", updateSignLabel);
+      signBtn.addEventListener("click", () => {
+        const carId = carSelect?.value ?? defaultSlot?.carId ?? singleSlot?.carId;
+        this.handlers.onSignStaffContract?.(listing.id, carId);
+        const selected = slots.find((s) => s.carId === carId);
+        const verb = selected && !selected.vacant ? "Replacing" : "Signing";
+        this.setCrewStatus(`${verb} ${listing.name}…`);
+      });
+      this.crewMarketGridEl.appendChild(card);
+    }
+  }
+
+  private filteredStaffMarket(): StaffMarketListingPayload[] {
+    if (this.staffMarketFilter === "all") return this.staffMarket;
+    if (
+      this.staffMarketFilter === "engineer" ||
+      this.staffMarketFilter === "mechanic" ||
+      this.staffMarketFilter === "strategist"
+    ) {
+      return this.staffMarket.filter((l) => l.role === this.staffMarketFilter);
+    }
+    return this.staffMarket.filter((l) => l.source === this.staffMarketFilter);
   }
 
   private renderCrew(meta: MetaStatePayload, fleet: NonNullable<MetaStatePayload["fleet"]>): void {
@@ -497,16 +751,25 @@ export class TeamHQ {
 
       for (const role of STAFF_ROLES) {
         const member = this.staffForCar(meta, car.id, role);
+        const filled = isStaffSlotFilled(member);
         const status = member?.status ?? "active";
         const roleCard = document.createElement("div");
-        roleCard.className = `hq-crew-role-card${member ? "" : " vacant"}`;
+        roleCard.className = `hq-crew-role-card${filled ? "" : " vacant"}`;
+        const statsLine = filled && member
+          ? `Skill ${member.skill}${member.experience != null ? ` · ${member.experience} yrs` : ""}${member.morale != null ? ` · Morale ${member.morale}` : ""}${member.salaryPerRace ? ` · $${member.salaryPerRace.toLocaleString()}/race` : ""}`
+          : "";
+        const traitsLine = filled && member?.traits?.length
+          ? member.traits.join(" · ")
+          : "";
         roleCard.innerHTML = `
           <span class="hq-crew-role-icon" aria-hidden="true">${ROLE_ICONS[role]}</span>
           <div class="hq-crew-role-body">
             <span class="hq-crew-role-label">${ROLE_LABELS[role]}</span>
-            <span class="hq-crew-role-name">${escapeHtml(member?.name ?? "Vacant")}</span>
-            ${member ? `<span class="hq-crew-skill-bar"><span class="hq-crew-skill-fill" style="width:${member.skill}%"></span></span>` : ""}
-            ${member && status !== "active" ? `<span class="staff-status staff-status-${status}">${STATUS_LABELS[status as Exclude<StaffStatus, "active">]}</span>` : ""}
+            <span class="hq-crew-role-name">${escapeHtml(filled && member ? member.name : "Vacant")}</span>
+            ${filled && member ? `<span class="hq-crew-skill-bar"><span class="hq-crew-skill-fill" style="width:${member.skill}%"></span></span>` : ""}
+            ${statsLine ? `<span class="hq-crew-role-stats">${escapeHtml(statsLine)}</span>` : ""}
+            ${traitsLine ? `<span class="hq-crew-role-traits">${escapeHtml(traitsLine)}</span>` : ""}
+            ${filled && member && status !== "active" ? `<span class="staff-status staff-status-${status}">${STATUS_LABELS[status as Exclude<StaffStatus, "active">]}</span>` : ""}
           </div>
         `;
         rolesEl.appendChild(roleCard);
@@ -635,6 +898,215 @@ export class TeamHQ {
     }
   }
 
+  private unenrolledClasses(): { id: string; displayName: string }[] {
+    if (!this.catalog) return [];
+    const fleet = this.meta?.fleet ?? [];
+    return this.catalog.classes.filter(
+      (cls) => !getClassProgram(fleet, cls.id, this.catalog),
+    );
+  }
+
+  private updateFleetActions(fleet: MetaStatePayload["fleet"]): void {
+    const buyBtn = this.root.querySelector<HTMLButtonElement>("#buy-car-btn");
+    if (!buyBtn || !this.catalog) return;
+    const enrolledClassIds = new Set((fleet ?? []).map((c) => c.classId));
+    const canAddProgramme = this.catalog.classes.some(
+      (cls) => !enrolledClassIds.has(cls.id),
+    );
+    buyBtn.disabled = !canAddProgramme;
+    buyBtn.title = canAddProgramme
+      ? "Enter a new WEC class"
+      : "All available classes already entered";
+  }
+
+  private openWithdrawConfirm(
+    car: FleetCarPayload,
+    fleet: FleetCarPayload[],
+    mfgMin: number,
+  ): void {
+    this.fleetConfirmKind = "withdraw";
+    this.fleetConfirmCarId = car.id;
+    this.fleetConfirmClassId = null;
+    this.renderFleetConfirm(car, fleet, mfgMin);
+    this.fleetConfirmEl.classList.remove("hidden");
+  }
+
+  private openAddCarConfirm(classId: string): void {
+    if (!this.catalog || !this.meta) return;
+    const program = getClassProgram(this.meta.fleet ?? [], classId, this.catalog);
+    if (!program) return;
+
+    this.fleetConfirmKind = "add";
+    this.fleetConfirmCarId = null;
+    this.fleetConfirmClassId = classId;
+    this.fleetConfirmQuantity = 1;
+    this.renderFleetConfirm();
+    this.fleetConfirmEl.classList.remove("hidden");
+  }
+
+  private closeFleetConfirm(): void {
+    this.fleetConfirmKind = null;
+    this.fleetConfirmCarId = null;
+    this.fleetConfirmClassId = null;
+    this.fleetConfirmEl.classList.add("hidden");
+    this.fleetConfirmEl.replaceChildren();
+  }
+
+  private renderFleetConfirm(
+    withdrawCar?: FleetCarPayload,
+    fleet?: FleetCarPayload[],
+    mfgMin = 2,
+  ): void {
+    if (!this.catalog || !this.meta || !this.fleetConfirmKind) return;
+
+    const card = document.createElement("div");
+    card.className = "fleet-confirm-card";
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-modal", "true");
+
+    if (this.fleetConfirmKind === "withdraw" && withdrawCar && fleet) {
+      const remaining = fleet.length - 1;
+      card.innerHTML = `
+        <header class="fleet-confirm-head">
+          <h4>Withdraw entry?</h4>
+        </header>
+        <p class="fleet-confirm-summary">
+          <strong>#${escapeHtml(withdrawCar.carNumber)} ${escapeHtml(withdrawCar.build.carName)}</strong>
+          <span class="class-badge class-${escapeHtml(withdrawCar.classId)}">${escapeHtml(withdrawCar.classId)}</span>
+        </p>
+        <p class="wizard-hint">This removes the car from your race fleet. Crew assigned to this entry may need reassignment.</p>
+        ${remaining === 0 ? `<p class="wizard-hint fleet-rule-warning">This is your last car — withdrawing ends your current programmes.</p>` : ""}
+        <footer class="fleet-confirm-actions">
+          <button type="button" class="secondary-btn fleet-confirm-cancel">Cancel</button>
+          <button type="button" class="danger-btn fleet-confirm-ok">Withdraw</button>
+        </footer>
+      `;
+      card.querySelector(".fleet-confirm-cancel")!.addEventListener("click", () => {
+        this.closeFleetConfirm();
+      });
+      card.querySelector(".fleet-confirm-ok")!.addEventListener("click", () => {
+        if (!canRemoveFleetCar(fleet, withdrawCar.id, mfgMin).allowed) return;
+        this.handlers.onRemoveCar?.(withdrawCar.id);
+        this.closeFleetConfirm();
+      });
+    } else if (
+      this.fleetConfirmKind === "add" &&
+      this.fleetConfirmClassId
+    ) {
+      const classId = this.fleetConfirmClassId;
+      const program = getClassProgram(this.meta.fleet ?? [], classId, this.catalog);
+      if (!program) {
+        this.closeFleetConfirm();
+        return;
+      }
+
+      const rules = this.catalog.fleetRules;
+      const maxQty = rules.maxCarsPerPurchase ?? 6;
+      const platformId = program.platformId ?? "";
+      const unitCost = unitCostForBuy(
+        this.catalog,
+        classId,
+        program.affiliation,
+        platformId,
+      );
+      const budget = this.meta.budget ?? 0;
+
+      const renderCost = (qty: number) => {
+        const total = unitCost * qty;
+        const costEl = card.querySelector(".fleet-confirm-cost");
+        const okBtn = card.querySelector<HTMLButtonElement>(".fleet-confirm-ok");
+        if (costEl) {
+          costEl.textContent = `$${unitCost.toLocaleString()} × ${qty} = $${total.toLocaleString()} · Budget $${budget.toLocaleString()}`;
+        }
+        if (okBtn) {
+          okBtn.disabled = total > budget;
+          okBtn.title = total > budget ? "Insufficient budget" : "";
+        }
+      };
+
+      card.innerHTML = `
+        <header class="fleet-confirm-head">
+          <h4>Add ${escapeHtml(classId)} entry</h4>
+        </header>
+        <p class="fleet-confirm-summary">
+          <strong>${escapeHtml(program.label)}</strong> — ${program.carCount} car${program.carCount === 1 ? "" : "s"} in programme
+        </p>
+        <p class="wizard-hint">New entries share the same build as your existing ${escapeHtml(classId)} cars.</p>
+        <label class="wizard-field fleet-confirm-qty-field">
+          <span>Number of cars</span>
+          <input type="number" class="wizard-input fleet-confirm-qty" min="1" max="${maxQty}" value="${this.fleetConfirmQuantity}" />
+        </label>
+        <p class="fleet-confirm-cost wizard-hint"></p>
+        <footer class="fleet-confirm-actions">
+          <button type="button" class="secondary-btn fleet-confirm-cancel">Cancel</button>
+          <button type="button" class="primary-btn fleet-confirm-ok">Add cars</button>
+        </footer>
+      `;
+
+      const qtyInput = card.querySelector<HTMLInputElement>(".fleet-confirm-qty")!;
+      qtyInput.addEventListener("input", () => {
+        this.fleetConfirmQuantity = Math.max(
+          1,
+          Math.min(maxQty, parseInt(qtyInput.value, 10) || 1),
+        );
+        qtyInput.value = String(this.fleetConfirmQuantity);
+        renderCost(this.fleetConfirmQuantity);
+      });
+
+      card.querySelector(".fleet-confirm-cancel")!.addEventListener("click", () => {
+        this.closeFleetConfirm();
+      });
+      card.querySelector(".fleet-confirm-ok")!.addEventListener("click", () => {
+        const qty = this.fleetConfirmQuantity;
+        const payload: BuyCarPayload =
+          program.affiliation === "manufacturer"
+            ? {
+                classId,
+                affiliation: "manufacturer",
+                acquisition: "build",
+                quantity: qty,
+              }
+            : {
+                classId,
+                affiliation: "privateer",
+                acquisition: "privateer",
+                platformId: program.platformId,
+                quantity: qty,
+              };
+        this.handlers.onBuyCar?.(payload);
+        this.closeFleetConfirm();
+      });
+
+      renderCost(this.fleetConfirmQuantity);
+    }
+
+    this.fleetConfirmEl.replaceChildren(card);
+  }
+
+  private openBuyPanel(mode: "new"): void {
+    if (!this.catalog) return;
+
+    const available = this.unenrolledClasses();
+    if (available.length === 0) return;
+
+    this.buyPanelMode = "new";
+    this.buyClassId = available.some((c) => c.id === this.buyClassId)
+      ? this.buyClassId
+      : available[0].id;
+    this.buyAffiliation = "privateer";
+    const plats =
+      this.catalog.carPlatforms?.filter((p) => p.classId === this.buyClassId) ?? [];
+    this.buyPlatformId = plats[0]?.id ?? "";
+    const mfgMin = this.catalog.fleetRules.manufacturerHypercarMinCars ?? 2;
+    this.buyQuantity = defaultQuantity(this.buyClassId, this.buyAffiliation, mfgMin);
+    this.renderBuyPanel();
+  }
+
+  private closeBuyPanel(): void {
+    this.buyPanelMode = null;
+    this.renderBuyPanel();
+  }
+
   private syncBuyStateForClass(): void {
     if (!this.meta || !this.catalog) return;
     const program = getClassProgram(
@@ -670,6 +1142,7 @@ export class TeamHQ {
     }
 
     if (
+      this.buyPanelMode === "new" &&
       this.buyClassId === "Hypercar" &&
       this.buyAffiliation === "manufacturer" &&
       this.buyQuantity < mfgMin
@@ -679,7 +1152,7 @@ export class TeamHQ {
   }
 
   private renderBuyPanel(): void {
-    if (!this.showBuyPanel || !this.catalog || !this.meta) {
+    if (!this.buyPanelMode || !this.catalog || !this.meta) {
       this.buyPanelEl.classList.add("hidden");
       return;
     }
@@ -695,7 +1168,6 @@ export class TeamHQ {
     const expProgram = getClassProgram(fleet, this.buyClassId, this.catalog, "experimental");
     const program = getClassProgram(fleet, this.buyClassId, this.catalog, this.buyEntryMode);
     const programLocked = program !== null;
-    const canPickMode = !programLocked || (homProgram && !expProgram) || (expProgram && !homProgram) || (homProgram && expProgram);
     const platforms =
       this.catalog.carPlatforms?.filter((p) => p.classId === this.buyClassId) ?? [];
 
@@ -731,14 +1203,15 @@ export class TeamHQ {
     const mfgWarning = hypercarMfgWarning(
       this.buyClassId,
       this.buyAffiliation,
-      program
-        ? program.carCount + this.buyQuantity
-        : this.buyQuantity,
+      this.buyQuantity,
       mfgMin,
     );
 
     this.buyPanelEl.innerHTML = `
-      <h4>${programLocked ? "Add Entries" : "Start Class Programme"}</h4>
+      <div class="buy-panel-head">
+        <h4>Start Class Programme</h4>
+        <button type="button" class="secondary-btn buy-panel-close">Cancel</button>
+      </div>
       <p class="wizard-hint">Affiliation is per class — you can be a Hypercar manufacturer and a GT3 privateer on the same team. One car type per class; pick how many entries.</p>
       <div class="buy-class-tabs"></div>
       <div class="buy-entry-mode-tabs">
@@ -764,9 +1237,13 @@ export class TeamHQ {
       ${mfgWarning ? `<p class="wizard-hint fleet-rule-warning">${escapeHtml(mfgWarning)}</p>` : ""}
       <div class="buy-car-footer">
         <span class="buy-cost">$${unitCost.toLocaleString()} × ${this.buyQuantity} = $${totalCost.toLocaleString()} · Budget $${this.meta.budget.toLocaleString()}</span>
-        <button type="button" class="primary-btn buy-confirm-btn">${programLocked ? "Add Cars" : "Start Programme"}</button>
+        <button type="button" class="primary-btn buy-confirm-btn">Start Programme</button>
       </div>
     `;
+
+    this.buyPanelEl.querySelector(".buy-panel-close")!.addEventListener("click", () => {
+      this.closeBuyPanel();
+    });
 
     for (const btn of this.buyPanelEl.querySelectorAll<HTMLButtonElement>(".entry-mode-btn")) {
       const mode = btn.dataset.mode as FleetEntryMode;
@@ -826,9 +1303,7 @@ export class TeamHQ {
     }
 
     const platformArea = this.buyPanelEl.querySelector(".buy-platform-area")!;
-    if (programLocked) {
-      platformArea.innerHTML = `<p class="confirm-detail">Adding more ${escapeHtml(this.buyClassId)} entries using the same ${escapeHtml(program.label)} programme.</p>`;
-    } else if (this.buyAffiliation === "manufacturer") {
+    if (this.buyAffiliation === "manufacturer") {
       platformArea.innerHTML = `
         <p class="confirm-detail">${escapeHtml(affiliationHintForClass(this.buyClassId, "manufacturer", mfgMin))}</p>
         <p class="confirm-detail">$${unitCost.toLocaleString()} per car from the ${escapeHtml(this.buyClassId)} template.</p>
@@ -883,8 +1358,7 @@ export class TeamHQ {
               entryMode: this.buyEntryMode,
             };
       this.handlers.onBuyCar?.(payload);
-      this.showBuyPanel = false;
-      this.renderBuyPanel();
+      this.closeBuyPanel();
     });
   }
 
@@ -901,6 +1375,49 @@ export class TeamHQ {
     const firstCarId = meta.fleet?.[0]?.id;
     if (carId !== firstCarId) return null;
     return meta.staff?.find((s) => s.role === role && !s.assignedCarId) ?? null;
+  }
+}
+
+const JUNIOR_STAFF_NAMES: Record<StaffRole, string> = {
+  engineer: "Junior Engineer",
+  mechanic: "Junior Mechanic",
+  strategist: "Junior Strategist",
+};
+
+function isJuniorPlaceholder(member: StaffMemberPayload): boolean {
+  if (member.id?.startsWith("staff-junior-")) return true;
+  return member.name === JUNIOR_STAFF_NAMES[member.role as StaffRole];
+}
+
+function isStaffSlotFilled(
+  member: StaffMemberPayload | null | undefined,
+): boolean {
+  return member != null && !isJuniorPlaceholder(member);
+}
+
+function staffSeveranceCost(member: StaffMemberPayload): number {
+  return Math.round((member.salaryPerRace ?? 0) * 2);
+}
+
+function staffRoleLabel(role: StaffRole): string {
+  switch (role) {
+    case "engineer":
+      return "Race Engineer";
+    case "mechanic":
+      return "Chief Mechanic";
+    default:
+      return "Strategist";
+  }
+}
+
+function staffSourceLabel(source: StaffMarketSource): string {
+  switch (source) {
+    case "veteran":
+      return "Veteran";
+    case "experienced":
+      return "Experienced";
+    default:
+      return "Prospect";
   }
 }
 

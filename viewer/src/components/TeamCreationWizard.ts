@@ -19,15 +19,26 @@ import {
 } from "../utils/fleetUi";
 import { closeColorPicker } from "../utils/colorPicker";
 import {
+  bindLiveryPatternPicker,
+  createLiveryPreviewCard,
+  type LiveryPreviewMount,
+} from "./LiveryPreview";
+import {
   bindColorSwatches,
   COLOR_PRESETS,
   DEFAULT_SECONDARY,
-  teamInitials,
 } from "../utils/liveryColors";
+import { processLogoUpload } from "../utils/teamLogo";
+import {
+  DEFAULT_LIVERY_PATTERN,
+  randomLiveryPattern,
+  type LiveryPattern,
+} from "../utils/teamLivery";
 
 export interface TeamCreationHandlers {
   onComplete: (payload: CreateTeamPayload) => void;
   onSaveDraft: (draft: TeamCreationDraftPayload) => void;
+  canFoundTeam?: () => boolean;
 }
 
 type WizardStep = TeamCreationWizardStep;
@@ -116,6 +127,15 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function driverNameKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function rosterHasDriverName(roster: DriverProfilePayload[], name: string): boolean {
+  const key = driverNameKey(name);
+  return roster.some((r) => driverNameKey(r.name) === key);
+}
+
 export class TeamCreationWizard {
   readonly root: HTMLElement;
   private catalog: GameCatalogPayload | null = null;
@@ -123,6 +143,9 @@ export class TeamCreationWizard {
   private teamName = "";
   private primaryColor = COLOR_PRESETS[0];
   private secondaryColor = DEFAULT_SECONDARY;
+  private liveryPattern: LiveryPattern = randomLiveryPattern();
+  private logoDataUrl: string | null = null;
+  private liveryPreviewMount: LiveryPreviewMount | null = null;
   private classId = "Hypercar";
   private affiliation: CarAffiliation = "privateer";
   private acquisition: CarAcquisition = "privateer";
@@ -138,6 +161,7 @@ export class TeamCreationWizard {
   private backBtn!: HTMLButtonElement;
   private nextBtn!: HTMLButtonElement;
   private footerMsgEl!: HTMLElement;
+  private submitting = false;
 
   constructor(container: HTMLElement, handlers: TeamCreationHandlers) {
     this.handlers = handlers;
@@ -201,10 +225,26 @@ export class TeamCreationWizard {
 
   hide(): void {
     this.root.classList.add("hidden");
+    this.submitting = false;
   }
 
   isVisible(): boolean {
     return !this.root.classList.contains("hidden");
+  }
+
+  /** Show a server or permission error on the confirm step footer. */
+  setError(message: string | null): void {
+    this.submitting = false;
+    if (!message) {
+      this.updateNavState();
+      return;
+    }
+    this.updateNavState({ ok: false, message });
+  }
+
+  /** Re-run footer validation after role/permission changes. */
+  refreshNavState(): void {
+    if (this.isVisible()) this.updateNavState();
   }
 
   private steps(): WizardStep[] {
@@ -214,7 +254,7 @@ export class TeamCreationWizard {
   private stepLabel(s: WizardStep): string {
     const labels: Record<WizardStep, string> = {
       identity: "Team Name",
-      livery: "Colors",
+      livery: "Livery",
       firstCar: "Class & Car",
       staff: "Personnel",
       drivers: "Drivers",
@@ -226,7 +266,7 @@ export class TeamCreationWizard {
   private stepGuide(): string {
     const guides: Record<WizardStep, string> = {
       identity: "Step 1 — Choose your team name. It appears on entry lists, timing screens, and your livery.",
-      livery: "Step 2 — Pick primary and secondary livery colors for your squad.",
+      livery: "Step 2 — Choose team colors, a stripe pattern, and optionally upload your logo.",
       firstCar: "Step 3 — Start your first class programme. Affiliation is per class: building a Hypercar makes you a Hypercar manufacturer; other classes can differ.",
       staff: "Step 4 — Hire one engineer, mechanic, and strategist from the candidate pool.",
       drivers: "Step 5 — Build your endurance line-up (2–3 drivers). Fine-tune stats later in Driver Center.",
@@ -268,6 +308,8 @@ export class TeamCreationWizard {
       teamName: this.teamName,
       primaryColor: this.primaryColor,
       secondaryColor: this.secondaryColor,
+      liveryPattern: this.liveryPattern,
+      logoDataUrl: this.logoDataUrl,
       classId: this.classId,
       affiliation: this.affiliation,
       platformId: this.platformId,
@@ -291,6 +333,8 @@ export class TeamCreationWizard {
       this.teamName = "";
       this.primaryColor = COLOR_PRESETS[0];
       this.secondaryColor = DEFAULT_SECONDARY;
+      this.liveryPattern = randomLiveryPattern();
+      this.logoDataUrl = null;
       this.classId = "Hypercar";
       this.affiliation = "privateer";
       this.acquisition = "privateer";
@@ -306,6 +350,8 @@ export class TeamCreationWizard {
     this.teamName = draft.teamName;
     this.primaryColor = draft.primaryColor || COLOR_PRESETS[0];
     this.secondaryColor = draft.secondaryColor || DEFAULT_SECONDARY;
+    this.liveryPattern = draft.liveryPattern ?? DEFAULT_LIVERY_PATTERN;
+    this.logoDataUrl = draft.logoDataUrl ?? null;
     this.classId = draft.classId || "Hypercar";
     this.affiliation = draft.affiliation === "manufacturer" ? "manufacturer" : "privateer";
     this.acquisition = this.affiliation === "manufacturer" ? "build" : "privateer";
@@ -428,6 +474,36 @@ export class TeamCreationWizard {
     }
 
     if (this.step === "confirm") {
+      if (this.handlers.canFoundTeam && !this.handlers.canFoundTeam()) {
+        return {
+          ok: false,
+          message:
+            "Only the session host can found a team. Open Identity in the header and reconnect as Host, or ask the current host to finish setup.",
+        };
+      }
+      if (!this.catalog) {
+        return { ok: false, message: "Loading game catalog…" };
+      }
+      const missing = this.missingStaffRoles();
+      if (missing.length > 0) {
+        return {
+          ok: false,
+          message: `Hire ${missing.join(", ")} before founding.`,
+        };
+      }
+      const driverErr = this.driverRosterError();
+      if (driverErr) return { ok: false, message: driverErr };
+      const mfgMin = this.catalog.fleetRules.manufacturerHypercarMinCars ?? 2;
+      if (
+        this.classId === "Hypercar" &&
+        this.affiliation === "manufacturer" &&
+        this.carQuantity < mfgMin
+      ) {
+        return {
+          ok: false,
+          message: `Hypercar manufacturers need at least ${mfgMin} cars — go back to Class & Car and increase quantity.`,
+        };
+      }
       const remaining = this.remainingBudget();
       if (remaining < 0) {
         return {
@@ -468,6 +544,10 @@ export class TeamCreationWizard {
   }
 
   private updateNavState(validation = this.stepValidation()): void {
+    if (this.submitting) {
+      this.nextBtn.disabled = true;
+      return;
+    }
     this.nextBtn.disabled = !validation.ok;
     this.footerMsgEl.textContent = validation.message ?? "";
     this.footerMsgEl.classList.toggle("visible", Boolean(validation.message));
@@ -524,6 +604,16 @@ export class TeamCreationWizard {
   }
 
   private submit(): void {
+    const validation = this.stepValidation();
+    if (!validation.ok) {
+      this.updateNavState(validation);
+      return;
+    }
+    this.submitting = true;
+    this.footerMsgEl.textContent = "Founding team…";
+    this.footerMsgEl.classList.add("visible");
+    this.nextBtn.disabled = true;
+
     const staff: StaffMemberPayload[] = [...this.selectedStaff.values()].map((s) => ({
       role: s.role,
       name: s.name,
@@ -533,6 +623,8 @@ export class TeamCreationWizard {
       teamName: this.teamName.trim(),
       primaryColor: this.primaryColor,
       secondaryColor: this.secondaryColor,
+      liveryPattern: this.liveryPattern,
+      logoDataUrl: this.logoDataUrl,
       staff,
       firstCar: this.firstCarPayload(),
       driverRoster: this.driverRoster.map((d) => ({
@@ -633,11 +725,7 @@ export class TeamCreationWizard {
           ${nameTooLong ? `<p class="wizard-hint fleet-rule-warning">Team name is too long.</p>` : ""}
         </div>
         <div class="wizard-preview-col">
-          <div class="livery-preview-card" style="--livery-primary: ${this.primaryColor}; --livery-secondary: ${this.secondaryColor}">
-            <div class="livery-badge">${escapeHtml(teamInitials(this.teamName))}</div>
-            <div class="livery-name">${escapeHtml(this.teamName.trim() || "Your Team")}</div>
-            <div class="livery-strip"></div>
-          </div>
+          <div class="wizard-livery-preview-host"></div>
         </div>
       </div>
     `;
@@ -645,18 +733,14 @@ export class TeamCreationWizard {
     const input = this.bodyEl.querySelector<HTMLInputElement>(".team-name-input")!;
     input.addEventListener("input", () => {
       this.teamName = input.value;
-      const badge = this.bodyEl.querySelector(".livery-badge");
-      const nameEl = this.bodyEl.querySelector(".livery-name");
-      if (badge) badge.textContent = teamInitials(this.teamName);
-      if (nameEl) nameEl.textContent = this.teamName.trim() || "Your Team";
+      this.syncWizardLiveryPreview();
       this.updateNavState();
     });
+    this.mountWizardLiveryPreview();
     this.renderStepGuide();
   }
 
   private renderLivery(): void {
-    const initials = teamInitials(this.teamName);
-
     this.bodyEl.innerHTML = `
       <div class="wizard-split">
         <div class="wizard-form-col">
@@ -668,26 +752,155 @@ export class TeamCreationWizard {
             <span>Secondary Livery Color</span>
             <div class="color-swatches secondary-swatches"></div>
           </div>
+          <div class="wizard-field">
+            <div class="livery-field-head">
+              <span>Stripe pattern</span>
+              <button type="button" class="secondary-btn wizard-random-pattern-btn">Random</button>
+            </div>
+            <div class="livery-pattern-picker wizard-pattern-picker"></div>
+          </div>
+          <div class="wizard-field">
+            <span>Team logo (optional)</span>
+            <div class="livery-logo-row">
+              <div class="livery-logo-preview wizard-logo-preview" aria-hidden="true"></div>
+              <div class="livery-logo-actions">
+                <label class="secondary-btn livery-logo-upload-label">
+                  Upload image
+                  <input type="file" class="wizard-logo-input hidden" accept="image/*" />
+                </label>
+                <button type="button" class="secondary-btn wizard-logo-clear-btn"${this.logoDataUrl ? "" : " disabled"}>Remove</button>
+              </div>
+            </div>
+            <p class="wizard-hint wizard-logo-status">Any common image format — we resize it after upload.</p>
+          </div>
         </div>
         <div class="wizard-preview-col">
-          <div class="livery-preview-card" style="--livery-primary: ${this.primaryColor}; --livery-secondary: ${this.secondaryColor}">
-            <div class="livery-badge">${escapeHtml(initials)}</div>
-            <div class="livery-name">${escapeHtml(this.teamName.trim() || "Your Team")}</div>
-            <div class="livery-strip"></div>
-          </div>
+          <div class="wizard-livery-preview-host"></div>
         </div>
       </div>
     `;
 
     this.bindLiverySwatches();
+    bindLiveryPatternPicker(
+      this.bodyEl.querySelector(".wizard-pattern-picker")!,
+      this.liveryPattern,
+      { primary: this.primaryColor, secondary: this.secondaryColor },
+      (pattern) => {
+        this.liveryPattern = pattern;
+        this.syncWizardLiveryPreview();
+        bindLiveryPatternPicker(
+          this.bodyEl.querySelector(".wizard-pattern-picker")!,
+          this.liveryPattern,
+          { primary: this.primaryColor, secondary: this.secondaryColor },
+          (p) => {
+            this.liveryPattern = p;
+            this.syncWizardLiveryPreview();
+          },
+        );
+      },
+    );
+    this.bodyEl.querySelector(".wizard-random-pattern-btn")!.addEventListener("click", () => {
+      this.liveryPattern = randomLiveryPattern();
+      this.syncWizardLiveryPreview();
+      bindLiveryPatternPicker(
+        this.bodyEl.querySelector(".wizard-pattern-picker")!,
+        this.liveryPattern,
+        { primary: this.primaryColor, secondary: this.secondaryColor },
+        (pattern) => {
+          this.liveryPattern = pattern;
+          this.syncWizardLiveryPreview();
+        },
+      );
+    });
+
+    const logoInput = this.bodyEl.querySelector<HTMLInputElement>(".wizard-logo-input")!;
+    const clearLogoBtn = this.bodyEl.querySelector<HTMLButtonElement>(".wizard-logo-clear-btn")!;
+    const logoStatus = this.bodyEl.querySelector<HTMLElement>(".wizard-logo-status")!;
+    logoInput.addEventListener("change", () => {
+      const file = logoInput.files?.[0];
+      logoInput.value = "";
+      if (!file) return;
+      void processLogoUpload(file)
+        .then((processed) => {
+          this.logoDataUrl = processed.dataUrl;
+          clearLogoBtn.disabled = false;
+          if (logoStatus) {
+            logoStatus.textContent = `Logo ready (${processed.width}×${processed.height}).`;
+          }
+          this.renderWizardLogoPreview();
+          this.syncWizardLiveryPreview();
+        })
+        .catch((err) => {
+          if (logoStatus) {
+            logoStatus.textContent =
+              err instanceof Error ? err.message : "Could not process logo";
+            logoStatus.classList.add("fleet-rule-warning");
+          }
+        });
+    });
+    clearLogoBtn.addEventListener("click", () => {
+      this.logoDataUrl = null;
+      clearLogoBtn.disabled = true;
+      this.renderWizardLogoPreview();
+      this.syncWizardLiveryPreview();
+    });
+
+    this.renderWizardLogoPreview();
+    this.mountWizardLiveryPreview();
     this.renderStepGuide();
   }
 
-  private syncLiveryPreview(overrides?: { primary?: string; secondary?: string }): void {
-    const card = this.bodyEl.querySelector<HTMLElement>(".livery-preview-card");
-    if (!card) return;
-    card.style.setProperty("--livery-primary", overrides?.primary ?? this.primaryColor);
-    card.style.setProperty("--livery-secondary", overrides?.secondary ?? this.secondaryColor);
+  private liveryPreviewOptions() {
+    return {
+      primary: this.primaryColor,
+      secondary: this.secondaryColor,
+      pattern: this.liveryPattern,
+      logoDataUrl: this.logoDataUrl,
+      classId: this.classId,
+      teamName: this.teamName,
+      width: 520,
+      height: 140,
+      layout: "showcase" as const,
+    };
+  }
+
+  private mountWizardLiveryPreview(): void {
+    const host = this.bodyEl.querySelector<HTMLElement>(".wizard-livery-preview-host");
+    if (!host) return;
+    this.liveryPreviewMount?.destroy();
+    this.liveryPreviewMount = createLiveryPreviewCard(host, this.liveryPreviewOptions());
+  }
+
+  private syncWizardLiveryPreview(overrides?: {
+    primary?: string;
+    secondary?: string;
+    pattern?: LiveryPattern;
+  }): void {
+    this.liveryPreviewMount?.update({
+      ...this.liveryPreviewOptions(),
+      primary: overrides?.primary ?? this.primaryColor,
+      secondary: overrides?.secondary ?? this.secondaryColor,
+      pattern: overrides?.pattern ?? this.liveryPattern,
+      teamName: this.teamName,
+    });
+  }
+
+  private renderWizardLogoPreview(): void {
+    const host = this.bodyEl.querySelector<HTMLElement>(".wizard-logo-preview");
+    if (!host) return;
+    host.replaceChildren();
+    if (this.logoDataUrl) {
+      const img = document.createElement("img");
+      img.src = this.logoDataUrl;
+      img.alt = "";
+      img.className = "livery-logo-thumb";
+      host.appendChild(img);
+      return;
+    }
+    const span = document.createElement("span");
+    span.className = "livery-logo-placeholder";
+    span.textContent = (this.teamName.trim() || "??").slice(0, 2).toUpperCase();
+    host.appendChild(span);
   }
 
   private bindLiverySwatches(): void {
@@ -696,12 +909,12 @@ export class TeamCreationWizard {
       this.primaryColor,
       (c) => {
         this.primaryColor = c;
-        this.syncLiveryPreview();
+        this.syncWizardLiveryPreview();
         this.bindLiverySwatches();
       },
       {
-        onLive: (c) => this.syncLiveryPreview({ primary: c }),
-        onCancel: () => this.syncLiveryPreview(),
+        onLive: (c) => this.syncWizardLiveryPreview({ primary: c }),
+        onCancel: () => this.syncWizardLiveryPreview(),
       },
     );
     bindColorSwatches(
@@ -709,12 +922,12 @@ export class TeamCreationWizard {
       this.secondaryColor,
       (c) => {
         this.secondaryColor = c;
-        this.syncLiveryPreview();
+        this.syncWizardLiveryPreview();
         this.bindLiverySwatches();
       },
       {
-        onLive: (c) => this.syncLiveryPreview({ secondary: c }),
-        onCancel: () => this.syncLiveryPreview(),
+        onLive: (c) => this.syncWizardLiveryPreview({ secondary: c }),
+        onCancel: () => this.syncWizardLiveryPreview(),
       },
     );
   }
@@ -1008,10 +1221,16 @@ export class TeamCreationWizard {
 
     const templatesEl = this.bodyEl.querySelector(".wizard-template-list")!;
     const previews = this.catalog?.driverMarketPreview ?? [];
+    const availablePreviews = previews.filter(
+      (listing) => !rosterHasDriverName(this.driverRoster, listing.driver.name),
+    );
     if (!previews.length) {
       templatesEl.innerHTML = `<li class="wizard-hint">Templates load when the game catalog is ready.</li>`;
+    } else if (!availablePreviews.length) {
+      templatesEl.innerHTML =
+        `<li class="wizard-hint">All listed templates are in your line-up — remove a driver or add a custom driver.</li>`;
     } else {
-      for (const listing of previews.slice(0, 16)) {
+      for (const listing of availablePreviews.slice(0, 16)) {
         const d = listing.driver;
         const li = document.createElement("li");
         li.className = "wizard-template-item";
@@ -1029,7 +1248,7 @@ export class TeamCreationWizard {
         `;
         li.querySelector(".wizard-template-add")!.addEventListener("click", () => {
           const existing = this.driverRoster.findIndex(
-            (r) => r.name.trim().toLowerCase() === d.name.trim().toLowerCase(),
+            (r) => driverNameKey(r.name) === driverNameKey(d.name),
           );
           const copy = { ...d, tier: inferDriverTier(d) };
           if (existing >= 0) {
@@ -1054,6 +1273,12 @@ export class TeamCreationWizard {
     const carCost = this.firstCarCost();
     const budget = this.remainingBudget();
     const overBudget = budget < 0;
+    const mfgMin = this.catalog?.fleetRules.manufacturerHypercarMinCars ?? 2;
+    const mfgBelowMin =
+      this.classId === "Hypercar" &&
+      this.affiliation === "manufacturer" &&
+      this.carQuantity < mfgMin;
+    const cannotFound = this.handlers.canFoundTeam && !this.handlers.canFoundTeam();
     const platform = this.catalog?.carPlatforms?.find((p) => p.id === this.platformId);
 
     const programmeRole =
@@ -1069,7 +1294,8 @@ export class TeamCreationWizard {
       <div class="confirm-grid">
         <div class="confirm-card">
           <h4>Team</h4>
-          <div class="confirm-livery" style="--livery-primary: ${this.primaryColor}; --livery-secondary: ${this.secondaryColor}">
+          <div class="confirm-livery-wrap">
+            <div class="confirm-livery-preview-host"></div>
             <span class="confirm-team-name">${escapeHtml(this.teamName.trim())}</span>
           </div>
         </div>
@@ -1078,6 +1304,7 @@ export class TeamCreationWizard {
           <p><span class="class-badge class-${escapeHtml(this.classId)}">${escapeHtml(this.classId)}</span></p>
           <p class="confirm-detail">${escapeHtml(programmeRole)} · ${this.carQuantity}× ${escapeHtml(carDesc)}</p>
           <p class="confirm-detail">$${carCost.toLocaleString()}</p>
+          ${mfgBelowMin ? `<p class="wizard-hint fleet-rule-warning">Hypercar manufacturers must enter at least ${mfgMin} cars — go back to Class &amp; Car.</p>` : ""}
         </div>
         <div class="confirm-card confirm-staff">
           <h4>Personnel (${staff.length})</h4>
@@ -1094,12 +1321,26 @@ export class TeamCreationWizard {
           ${overBudget ? `<p class="wizard-hint fleet-rule-warning">Over budget by $${Math.abs(budget).toLocaleString()} — go back and adjust staff or your class programme before founding.</p>` : ""}
         </div>
       </div>
+      ${
+        cannotFound
+          ? `<p class="wizard-hint fleet-rule-warning">You are connected as a pit crew member or spectator. Only the session host can found the team — use Identity in the header to reconnect as Host.</p>`
+          : ""
+      }
       <p class="wizard-hint">${
         this.affiliation === "manufacturer"
           ? "After founding you'll enter guided platform design in the Garage — step through engine, aero, and systems before your first session."
           : "After founding you'll land in the Garage to review your platform — then return to Championship Hub for your first session."
       }</p>
     `;
+    const confirmHost = this.bodyEl.querySelector<HTMLElement>(".confirm-livery-preview-host");
+    if (confirmHost) {
+      createLiveryPreviewCard(confirmHost, {
+        ...this.liveryPreviewOptions(),
+        width: 400,
+        height: 110,
+        layout: "card",
+      });
+    }
     this.renderStepGuide();
   }
 }

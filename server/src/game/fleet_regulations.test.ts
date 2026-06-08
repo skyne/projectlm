@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import type { FleetCarPayload } from "../ws_protocol";
 import {
   buildSpecKey,
+  sameFleetProgramme,
   validateFleetRegulations,
-  validateBuyCar,
 } from "./fleet";
 import { defaultBuildForClass } from "./catalog";
 import path from "path";
@@ -41,6 +41,20 @@ function car(
     ...opts,
   };
 }
+
+describe("fleet programme grouping", () => {
+  it("treats homologated and experimental hypercars as separate programmes", () => {
+    const hom = car("car-1", "Hypercar");
+    const exp = car("car-2", "Hypercar", {
+      entryMode: "experimental",
+      experimentalProgramId: "exp-hc",
+      carNumber: "2",
+    });
+    assert.equal(sameFleetProgramme(hom, exp), false);
+    assert.equal(sameFleetProgramme(hom, hom), true);
+    assert.equal(sameFleetProgramme(exp, exp), true);
+  });
+});
 
 describe("experimental fleet regulations", () => {
   it("allows homologated and experimental programmes in the same class", () => {
