@@ -1,0 +1,47 @@
+---
+description: After parts/catalog/compile/sim balance changes, report whether one setup still wins Cl/Cd, lowest Cd, and max HP
+globs: configs/part_catalog.txt,configs/class_rules.txt,configs/part_compatibility.txt,configs/physics_config.txt,src/core/car_parts.{hpp,cpp},src/config/part_compatibility.cpp,server/src/game/**/*.{ts},viewer/src/utils/carStats.ts,viewer/src/utils/partCompatibility.ts,viewer/src/utils/chassisSetup.ts,viewer/src/utils/ev_outlet.ts,viewer/src/components/CarGarage.ts,tests/unit/test_exhaust_diffuser.cpp
+alwaysApply: false
+---
+
+# Parts / sim balance — “one setup wins all?”
+
+When you change **part catalog stats**, **assembly rules**, **compile paths** (`CompileCarArchitecture` / `compileCarStats`), or anything that shifts **downforce, drag, power, thermal, or compatibility**, you must answer this before marking the task done:
+
+> **Does a single legal Hypercar parts combo top best Cl/Cd, lowest Cd, and max compile HP at the same time?**
+
+## Required answer format
+
+In your final response, include a short **Setup balance** section:
+
+1. **Per powertrain** (at minimum: Gas ICE, Diesel, H₂ fuel cell, Battery BEV — more if you touched them):
+   - Best **Cl/Cd** winner (rear + diffuser + exhaust/outlet)
+   - **Lowest Cd** winner
+   - **Max HP** winner
+2. **One combo wins all three?** — explicit **yes** or **no** for each powertrain.
+3. If **no** (expected): one line on what each role is for (quali star / Le Mans / power or endurance).
+
+Do not skip this because the user did not ask — report it proactively whenever this rule applies.
+
+## How to verify (garage compile sweep)
+
+From a repo/worktree with updated configs, run a legal-combo sweep using `compileCarStats` + `validateAssemblyCompatibility` across front/rear/diffuser/exhaust (or EV outlet) choices. Compare winners on:
+
+| Metric | Meaning |
+|--------|---------|
+| Cl/Cd | Quali / peak aero efficiency |
+| Cd | Straight-line / Le Mans trim |
+| HP | Power / stint pace (compile cap) |
+
+**Passing design:** different winners per column — specialization, not a silver bullet.
+
+**Red flag:** same `front + rear + diffuser + exhaust` wins all three → call it out and propose balance tweaks unless the user explicitly wanted a dominant meta.
+
+## ICE vs e-drive
+
+- ICE: exhaust slot (`BlownDiffuser`, `StraightLowRestriction`, DPF, etc.)
+- BEV / fuel cell: underbody outlet slot (`ActiveUnderbody`, `LowDragUnderfloor`, …) — same question, same three metrics.
+
+## Relation to tests
+
+Balance unit tests (e.g. `[exhaust_diffuser]`, `exhaust_diffuser.test.ts`) guard specific tradeoffs; they do **not** replace this sweep. Run both when feasible.

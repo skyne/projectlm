@@ -1,0 +1,22 @@
+---
+description: When Plan mode blocks edits, ask user to switch to Agent mode — never shell-write code
+alwaysApply: true
+---
+
+# Plan mode — no shell workarounds
+
+When **Plan mode** is active and file edits are blocked (Write/StrReplace rejected, or mode switch to Agent was declined):
+
+1. **Stop** — do not implement code, config, or repo changes.
+2. **Tell the user** to switch to **Agent mode** before continuing.
+3. **Do not** route implementation through the shell (`cat`, heredocs, Python patch scripts, etc.) as a workaround. That bypasses review and is inconsistent with how Cursor expects work to happen.
+
+## Allowed in Plan mode
+
+- Read-only exploration (search, read files, explain design).
+- Updating plan documents when the user is iterating on the plan.
+- Answering questions.
+
+## When the user explicitly asks to execute
+
+If they clearly say implement / merge / ship / execute the plan, prefer **Agent mode**. If still blocked, ask them to switch modes — do not silently implement via shell.
