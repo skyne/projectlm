@@ -18,6 +18,8 @@ export const PIT_REPAIR_PART_SEC: Record<string, number> = {
   gearbox: 10,
   cooling: 8,
   brakes: 6,
+  hybrid: 60,
+  monocoque: 120,
   aero_front: 7,
   aero_rear: 7,
   body_fl: 8,

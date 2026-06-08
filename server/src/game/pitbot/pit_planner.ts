@@ -251,14 +251,16 @@ function deflatedWheels(s: PlannerSnap): string[] {
     .map(([w]) => w.toUpperCase());
 }
 
-function needsLimpPit(s: PlannerSnap): boolean {
-  if (hasIrreparableSuspension(s)) return false;
-  const limp = s.limpMode ?? "none";
-  return limp === "barely_driveable" || limp === "hybrid_only" || limp === "immobilized";
+function canRepairThisSession(s: PlannerSnap): boolean {
+  if (s.physicallyRepairable === false) return false;
+  if (s.sessionRepairable === false) return false;
+  return true;
 }
 
-function hasIrreparableSuspension(s: PlannerSnap): boolean {
-  return (s.partIrreparable ?? []).some((p) => p.startsWith("susp_"));
+function needsLimpPit(s: PlannerSnap): boolean {
+  if (!canRepairThisSession(s)) return false;
+  const limp = s.limpMode ?? "none";
+  return limp === "barely_driveable" || limp === "hybrid_only" || limp === "immobilized";
 }
 
 function tyresWorn(s: PlannerSnap): boolean {
@@ -358,7 +360,7 @@ export function planPitStop(
   fuelAtLastPit: number,
 ): PitStopPlan | null {
   if (
-    hasIrreparableSuspension(s) &&
+    !canRepairThisSession(s) &&
     (s.limpMode === "barely_driveable" ||
       s.limpMode === "hybrid_only" ||
       s.limpMode === "immobilized")
@@ -610,7 +612,7 @@ export function fuelToAddFor(s: PlannerSnap): number {
   return fuelToAdd(s);
 }
 
-const DEFER_FLAG_PHASES = new Set(["fcy", "sc", "sc_in_lap", "slow_zone"]);
+const DEFER_FLAG_PHASES = new Set(["fcy", "sc", "sc_in_lap", "slow_zone", "red_flag"]);
 
 /** Defer routine pit stops under full-course or safety-car conditions. */
 export function shouldDeferPitForRaceControl(

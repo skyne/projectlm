@@ -2,9 +2,11 @@ import * as fs from "fs";
 import * as path from "path";
 import type {
   BuyCarPayload,
+  CalendarEventPayload,
   CarBuildPayload,
   CreateTeamPayload,
   MetaStatePayload,
+  SeasonStartSnapshotPayload,
   StartRoundPayload,
   TeamCreationDraftPayload,
   TeamCreationWizardStep,
@@ -280,6 +282,59 @@ function platformTemplateMap(repoRoot: string): Map<string, string> {
   );
 }
 
+function resetCalendarEvents(calendar: CalendarEventPayload[]): void {
+  for (const event of calendar) {
+    event.completed = false;
+    event.championshipPoints = 0;
+    event.prizeMoney = undefined;
+    event.rdPointsEarned = undefined;
+  }
+}
+
+export function buildSeasonStartSnapshot(
+  state: MetaStatePayload,
+): SeasonStartSnapshotPayload {
+  return {
+    seasonYear: state.seasonYear,
+    budget: state.budget,
+    rdPoints: state.rdPoints,
+    sponsors: structuredClone(state.sponsors ?? []),
+    unlockedParts: [...state.unlockedParts],
+    calendar: structuredClone(state.calendar),
+    currentRound: state.currentRound,
+    fleet: structuredClone(state.fleet ?? []),
+    driverRoster: structuredClone(state.driverRoster ?? []),
+    staff: structuredClone(state.staff),
+    driverMarket: structuredClone(state.driverMarket ?? []),
+    driverMarketRefreshCount: state.driverMarketRefreshCount ?? 0,
+    driverMarketRound: state.driverMarketRound ?? state.currentRound,
+    aiRivalSeason: structuredClone(state.aiRivalSeason!),
+    weekendTireCompound: state.weekendTireCompound ?? "Medium",
+    trackSetupPresets: structuredClone(state.trackSetupPresets ?? {}),
+  };
+}
+
+function applySeasonStartSnapshot(
+  state: MetaStatePayload,
+  snap: SeasonStartSnapshotPayload,
+): void {
+  state.budget = snap.budget;
+  state.rdPoints = snap.rdPoints;
+  state.sponsors = structuredClone(snap.sponsors);
+  state.unlockedParts = [...snap.unlockedParts];
+  state.calendar = structuredClone(snap.calendar);
+  state.currentRound = snap.currentRound;
+  state.fleet = structuredClone(snap.fleet);
+  state.driverRoster = structuredClone(snap.driverRoster);
+  state.staff = structuredClone(snap.staff);
+  state.driverMarket = structuredClone(snap.driverMarket);
+  state.driverMarketRefreshCount = snap.driverMarketRefreshCount;
+  state.driverMarketRound = snap.driverMarketRound;
+  state.aiRivalSeason = structuredClone(snap.aiRivalSeason);
+  state.weekendTireCompound = snap.weekendTireCompound ?? "Medium";
+  state.trackSetupPresets = structuredClone(snap.trackSetupPresets ?? {});
+}
+
 export class MetaStateManager {
   private state: MetaStatePayload;
   private readonly store: GameStateStore;
@@ -408,7 +463,58 @@ export class MetaStateManager {
       this.state.fleet ?? [],
     );
     this.regenerateDriverMarket();
+    this.captureSeasonStartSnapshot();
     return this.persist();
+  }
+
+  restartSeason(): MetaStatePayload | { error: string } {
+    if (!this.state.setupComplete) {
+      return { error: "Complete team setup first" };
+    }
+
+    const snap = this.state.seasonStartSnapshot;
+    if (snap && snap.seasonYear === this.state.seasonYear) {
+      applySeasonStartSnapshot(this.state, snap);
+    } else {
+      resetCalendarEvents(this.state.calendar);
+      this.state.currentRound = 0;
+      this.state.aiRivalSeason = initAiRivalSeason(
+        this.repoRoot,
+        this.state.teamName,
+        this.state.seasonYear,
+      );
+      syncPlayerDriversToStandings(
+        this.state.aiRivalSeason,
+        this.state.teamName,
+        this.state.driverRoster ?? [],
+        this.state.fleet ?? [],
+      );
+      this.regenerateDriverMarket();
+    }
+
+    this.state.weekendProgress = undefined;
+    this.state.seasonComplete = false;
+    this.state.seasonSummary = undefined;
+    this.lastCompletedRound = null;
+    this.preRoundAiRivalSeason = null;
+    this.preRoundDriverMarket = null;
+
+    if (snap && snap.seasonYear === this.state.seasonYear) {
+      writeAllFleetConfigs(
+        this.repoRoot,
+        this.state,
+        platformTemplateMap(this.repoRoot),
+      );
+      writePlayerCarConfig(this.repoRoot, this.state);
+    }
+
+    syncLegacyFields(this.state);
+    return this.persist();
+  }
+
+  private captureSeasonStartSnapshot(): void {
+    this.ensureAiRivalSeason();
+    this.state.seasonStartSnapshot = buildSeasonStartSnapshot(this.state);
   }
 
   private persist(): MetaStatePayload {
@@ -893,6 +999,7 @@ export class MetaStateManager {
       this.state.fleet,
     );
     this.regenerateDriverMarket();
+    this.captureSeasonStartSnapshot();
     return this.persist();
   }
 

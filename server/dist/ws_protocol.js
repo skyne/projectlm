@@ -49,6 +49,7 @@ function parseClientMessage(raw) {
             "ask_garage_engineer",
             "repair_car_condition",
             "start_next_season",
+            "restart_season",
             "finalize_season",
         ];
         if (!allowed.includes(msg.type))

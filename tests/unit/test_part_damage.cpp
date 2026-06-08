@@ -26,7 +26,7 @@ TEST_CASE("Structural severity rises with diagonal damage", "[unit][damage]") {
   TyreDeflationStateArr tyres;
   ApplyPartDamageHit(state, DamagePart::BodyFL, 50.0, {6, 20, 0, 1});
   ApplyPartDamageHit(state, DamagePart::SuspRR, 50.0, {55, 40, 15, 1});
-  state.irreparable[DamagePartIndex(DamagePart::SuspRR)] = true;
+  state.health[DamagePartIndex(DamagePart::SuspRR)] = 10.0;
   const double sev = ComputeStructuralSeverity(state, tyres);
   REQUIRE(sev >= 55.0);
 }
@@ -87,12 +87,38 @@ TEST_CASE("Pit repair restores engine part health", "[unit][damage]") {
   REQUIRE(PartHealth(state, DamagePart::Engine) > 40.0);
 }
 
-TEST_CASE("Irreparable suspension is terminal structural damage", "[unit][damage]") {
+TEST_CASE("Critical suspension is flagged for garage rebuild", "[unit][damage]") {
   PartDamageState state;
   InitPartDamageState(state);
-  state.irreparable[DamagePartIndex(DamagePart::SuspFR)] = true;
-  REQUIRE(HasIrreparableSuspension(state));
-  REQUIRE(HasTerminalStructuralDamage(state));
+  state.health[DamagePartIndex(DamagePart::SuspFR)] = 10.0;
+  CarConfig car;
+  static const PartCatalog catalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(car, catalog, profiles);
+  REQUIRE(HasCriticalSuspension(state, profiles));
+  const CarRepairAssessment assessment = ComputeCarRepairAssessment(
+      state, car, TyreDeflationStateArr{}, profiles, 86400.0);
+  REQUIRE(assessment.physicallyRepairable);
+  REQUIRE(assessment.sessionRepairable);
+  REQUIRE(assessment.needsGarageRebuild);
+}
+
+TEST_CASE("Repair not session-viable when work exceeds remaining time",
+          "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  state.health[DamagePartIndex(DamagePart::SuspFR)] = 5.0;
+  state.health[DamagePartIndex(DamagePart::SuspRR)] = 5.0;
+  CarConfig car;
+  static const PartCatalog catalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(car, catalog, profiles);
+  const CarRepairAssessment ok = ComputeCarRepairAssessment(
+      state, car, TyreDeflationStateArr{}, profiles, 86400.0);
+  REQUIRE(ok.sessionRepairable);
+  const CarRepairAssessment tooLate = ComputeCarRepairAssessment(
+      state, car, TyreDeflationStateArr{}, profiles, 120.0);
+  REQUIRE_FALSE(tooLate.sessionRepairable);
 }
 
 TEST_CASE("Catastrophic same-side loss stops the car on track", "[unit][damage]") {
@@ -135,11 +161,41 @@ TEST_CASE("Low but non-zero corner damage can still limp", "[unit][damage]") {
   state.health[DamagePartIndex(DamagePart::BodyRR)] = 2.0;
   state.health[DamagePartIndex(DamagePart::SuspFR)] = 4.0;
   state.health[DamagePartIndex(DamagePart::SuspRR)] = 1.0;
-  state.irreparable[DamagePartIndex(DamagePart::SuspFR)] = true;
-  state.irreparable[DamagePartIndex(DamagePart::SuspRR)] = true;
   REQUIRE_FALSE(HasCatastrophicSameSideLoss(state));
   const LimpMode limp = EvaluateLimpMode(state, CarConfig{}, tyres, 0.0);
   REQUIRE((limp == LimpMode::BarelyDriveable || limp == LimpMode::Immobilized));
+}
+
+TEST_CASE("Huge crash stresses monocoque", "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  CarConfig car;
+  static const PartCatalog catalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(car, catalog, profiles);
+  ApplyCollisionDamage(state, profiles, 14.5, CollisionSide::Right, true);
+  REQUIRE(PartHealth(state, DamagePart::Monocoque) < 100.0);
+  REQUIRE(FireIgnitionChanceFromImpact(14.5, true, true) > 0.0);
+}
+
+TEST_CASE("Breached monocoque is not physically repairable", "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  state.health[DamagePartIndex(DamagePart::Monocoque)] = 0.0;
+  REQUIRE(IsMonocoqueBreached(state));
+  REQUIRE_FALSE(IsCarPhysicallyRepairable(state, CarConfig{}));
+}
+
+TEST_CASE("Fire damage erodes monocoque over time", "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  CarConfig car;
+  static const PartCatalog catalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(car, catalog, profiles);
+  const double before = PartHealth(state, DamagePart::Monocoque);
+  ApplyFireDamage(state, profiles, 5.0);
+  REQUIRE(PartHealth(state, DamagePart::Monocoque) < before);
 }
 
 TEST_CASE("Same-side severity uses left/right wheel pairs", "[unit][damage]") {

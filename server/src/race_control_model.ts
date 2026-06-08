@@ -5,13 +5,14 @@ export type FlagPhase =
   | "slow_zone"
   | "fcy"
   | "sc"
-  | "sc_in_lap";
+  | "sc_in_lap"
+  | "red_flag";
 
 export type TrackStatus = "racing" | "stranded" | "recovering" | "cleared";
 
 export type PendingPenalty = "none" | "drive_through" | "stop_go" | "black";
 
-export type HazardKind = "oil" | "coolant" | "debris" | "fuel";
+export type HazardKind = "oil" | "coolant" | "debris" | "fuel" | "fire";
 
 export interface SurfaceHazardSummary {
   sectorIndex: number;
@@ -41,6 +42,7 @@ export const FLAG_PHASES: readonly FlagPhase[] = [
   "fcy",
   "sc",
   "sc_in_lap",
+  "red_flag",
 ];
 
 export const TRACK_STATUSES: readonly TrackStatus[] = [

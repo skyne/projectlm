@@ -34,6 +34,9 @@ const EVENT_TYPE_MAP = {
     safety_car_in_this_lap: "SafetyCarInThisLap",
     green_flag: "GreenFlag",
     white_flag: "WhiteFlag",
+    red_flag_deploy: "RedFlagDeploy",
+    red_flag_extended: "RedFlagExtended",
+    red_flag_end: "RedFlagEnd",
 };
 function normalizeEvent(event) {
     return {

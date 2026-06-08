@@ -10,6 +10,34 @@ static RaceSession MakeMinimalSession() {
   return MakeMinimalRaceSession();
 }
 
+TEST_CASE("Fire is extinguished before tow recovery begins", "[unit][obstruction]") {
+  RaceSession session = MakeMinimalSession();
+  Car &c = AddTestCar(session);
+  c.igniteFire();
+  c.state().currentSpeed = 0.0;
+  UpdateTrackObstructions(session, 0.1);
+  REQUIRE(c.rcState().trackStatus == TrackStatus::Stranded);
+  REQUIRE(c.onFire());
+
+  session.elapsedRaceTime = c.rcState().marshalDispatchTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
+  REQUIRE(c.rcState().trackStatus == TrackStatus::Stranded);
+  REQUIRE(c.onFire());
+  REQUIRE(c.rcState().fireExtinguishEndTime > session.elapsedRaceTime);
+  REQUIRE(c.rcState().recoveryEndTime < 0.0);
+
+  session.elapsedRaceTime = c.rcState().fireExtinguishEndTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
+  REQUIRE_FALSE(c.onFire());
+  REQUIRE(c.rcState().trackStatus == TrackStatus::Recovering);
+  REQUIRE(c.rcState().recoveryEndTime > session.elapsedRaceTime);
+
+  session.elapsedRaceTime = c.rcState().recoveryEndTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
+  REQUIRE_FALSE(c.isRetired());
+  REQUIRE(c.inGarageRebuild());
+}
+
 TEST_CASE("Engine failure on track strands instead of instant retire",
           "[unit][obstruction]") {
   RaceSession session = MakeMinimalSession();
@@ -28,7 +56,7 @@ TEST_CASE("Engine failure on track strands instead of instant retire",
   REQUIRE(c.isOnTrackObstruction());
 }
 
-TEST_CASE("Stranded car transitions through recovery to retired",
+TEST_CASE("Stranded car transitions through recovery to garage rebuild",
           "[unit][obstruction]") {
   RaceSession session = MakeMinimalSession();
   CarConfig car;
@@ -46,6 +74,24 @@ TEST_CASE("Stranded car transitions through recovery to retired",
   UpdateTrackObstructions(session, 0.1);
   REQUIRE(c.rcState().trackStatus == TrackStatus::Recovering);
 
+  session.elapsedRaceTime = c.rcState().recoveryEndTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
+  REQUIRE_FALSE(c.isRetired());
+  REQUIRE(c.inGarageRebuild());
+  REQUIRE(c.rcState().trackStatus == TrackStatus::Cleared);
+}
+
+TEST_CASE("Out of fuel tow still retires the car", "[unit][obstruction]") {
+  RaceSession session = MakeMinimalSession();
+  Car &c = AddTestCar(session);
+  c.state().fuelRemaining = 0.0;
+  c.state().currentSpeed = 0.0;
+  for (int i = 0; i < 35; ++i)
+    UpdateTrackObstructions(session, 0.1);
+  REQUIRE(c.rcState().trackStatus == TrackStatus::Stranded);
+
+  session.elapsedRaceTime = c.rcState().marshalDispatchTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
   session.elapsedRaceTime = c.rcState().recoveryEndTime + 0.1;
   UpdateTrackObstructions(session, 0.1);
   REQUIRE(c.isRetired());

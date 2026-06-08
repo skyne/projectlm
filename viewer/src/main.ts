@@ -365,6 +365,9 @@ const raceHub = new RaceHub(seasonPanel, {
   onStartNextSeason: () => {
     client.startNextSeason();
   },
+  onRestartSeason: () => {
+    void requestRestartSeason();
+  },
 });
 
 const seasonCalendar = new SeasonCalendar(calendarPanel, {
@@ -536,6 +539,7 @@ function syncManagedEntryPickers(): void {
   pitWall.setSelectedEntry(commandEntryId);
   compactLeaderboard.setManagedEntryIds(managedEntryIds);
   timetable.setManagedEntryIds(managedEntryIds);
+  eventLog.setManagedEntryIds(managedEntryIds);
   compactLeaderboard.setSelectedEntry(commandEntryId);
   timetable.setSelectedEntry(commandEntryId);
   telemetryPanel.setEntries(options);
@@ -589,18 +593,27 @@ function syncMockModeBanner(simBackend?: SessionInitPayload["simBackend"]): void
 function updateRaceControlBanner(rc: RaceControlPayload | undefined): void {
   if (!raceControlBanner) return;
   const phase = (rc?.flagPhase ?? "green").toLowerCase();
-  const showFcy = phase === "fcy" || rc?.fcyActive;
-  const showSc = phase === "sc" || phase === "sc_in_lap" || rc?.scActive;
-  const showWhite = rc?.whiteFlagActive === true;
+  const showRed = phase === "red_flag" || rc?.redFlagActive === true;
+  const showFcy = !showRed && (phase === "fcy" || rc?.fcyActive);
+  const showSc = !showRed && (phase === "sc" || phase === "sc_in_lap" || rc?.scActive);
+  const showWhite = !showRed && rc?.whiteFlagActive === true;
 
   raceControlBanner.classList.remove(
     "race-control-banner--fcy",
     "race-control-banner--sc",
     "race-control-banner--white",
+    "race-control-banner--red",
   );
 
   let label = "";
-  if (showFcy) {
+  if (showRed) {
+    const remaining = rc?.redFlagSecondsRemaining;
+    label =
+      remaining != null && remaining > 0
+        ? `Red Flag — ${Math.ceil(remaining)}s`
+        : "Red Flag";
+    raceControlBanner.classList.add("race-control-banner--red");
+  } else if (showFcy) {
     label = "Full Course Yellow";
     raceControlBanner.classList.add("race-control-banner--fcy");
   } else if (showSc) {
@@ -634,6 +647,7 @@ function applySessionInit(payload: SessionInitPayload): void {
   selectCommandEntry(commandEntryId);
   syncCarPreview(commandEntryId);
   eventLog.setEntryNames(payload.entries ?? []);
+  eventLog.setManagedEntryIds(managedEntryIds);
   raceHub.setSessionInfo(payload);
   trackMapPanel.setWeatherContext(payload.weatherContext);
   syncTrackSurfaceTheme();
@@ -889,6 +903,34 @@ async function requestRestartSession(fromPostRace = false): Promise<void> {
   if (!confirmed) return;
   if (fromPostRace) postRace.hide();
   restartRaceSession();
+}
+
+async function requestRestartSeason(): Promise<void> {
+  if (confirmModal.isVisible()) return;
+  const hasSnapshot = Boolean(latestMeta?.seasonStartSnapshot);
+  const confirmed = await confirmModal.show({
+    title: "Restart season?",
+    message: hasSnapshot
+      ? `Rewind Season ${latestMeta?.seasonYear ?? ""} to the start? All race results, standings, and season progress will be lost.`
+      : `Reset completed weekends for Season ${latestMeta?.seasonYear ?? ""}? Without a saved season snapshot, budget, roster, and upgrades stay as they are now.`,
+    confirmLabel: "Restart Season",
+    destructive: true,
+  });
+  if (!confirmed) return;
+  seasonEnd.hide();
+  postRace.hide();
+  clearRetirementTracking();
+  endRaceSession();
+  playback.resetSession();
+  syncPlaybackPaused(true);
+  eventLog.clear();
+  track.clearCars();
+  telemetryTrack.clearCars();
+  timetable.reset();
+  telemetryPanel.reset();
+  client.setTimeScale(1);
+  client.restartSeason();
+  setMainView("season");
 }
 
 function endSessionAndReturn(): void {

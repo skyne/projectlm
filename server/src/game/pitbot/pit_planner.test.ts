@@ -277,11 +277,13 @@ describe("pit_planner race control helpers", () => {
   });
 });
 
-describe("planPitStop irreparable structural damage", () => {
-  it("does not plan limp body repair when suspension is irreparable", () => {
+describe("planPitStop when session repair is not viable", () => {
+  it("does not plan limp repair when session time is insufficient", () => {
     const s = snap({
       limpMode: "barely_driveable",
-      partIrreparable: ["susp_fr", "susp_rr"],
+      sessionRepairable: false,
+      totalRepairSec: 900,
+      remainingSessionSec: 300,
       fuel: 20,
       tireWear: 0.9,
     });

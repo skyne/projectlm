@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MetaStateManager = void 0;
+exports.buildSeasonStartSnapshot = buildSeasonStartSnapshot;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const game_state_1 = require("./game_state");
@@ -209,6 +210,51 @@ function clearRuntimeConfigs(repoRoot) {
 function platformTemplateMap(repoRoot) {
     return new Map((0, car_marketplace_1.loadCarPlatforms)(repoRoot).map((p) => [p.id, p.templatePath]));
 }
+function resetCalendarEvents(calendar) {
+    for (const event of calendar) {
+        event.completed = false;
+        event.championshipPoints = 0;
+        event.prizeMoney = undefined;
+        event.rdPointsEarned = undefined;
+    }
+}
+function buildSeasonStartSnapshot(state) {
+    return {
+        seasonYear: state.seasonYear,
+        budget: state.budget,
+        rdPoints: state.rdPoints,
+        sponsors: structuredClone(state.sponsors ?? []),
+        unlockedParts: [...state.unlockedParts],
+        calendar: structuredClone(state.calendar),
+        currentRound: state.currentRound,
+        fleet: structuredClone(state.fleet ?? []),
+        driverRoster: structuredClone(state.driverRoster ?? []),
+        staff: structuredClone(state.staff),
+        driverMarket: structuredClone(state.driverMarket ?? []),
+        driverMarketRefreshCount: state.driverMarketRefreshCount ?? 0,
+        driverMarketRound: state.driverMarketRound ?? state.currentRound,
+        aiRivalSeason: structuredClone(state.aiRivalSeason),
+        weekendTireCompound: state.weekendTireCompound ?? "Medium",
+        trackSetupPresets: structuredClone(state.trackSetupPresets ?? {}),
+    };
+}
+function applySeasonStartSnapshot(state, snap) {
+    state.budget = snap.budget;
+    state.rdPoints = snap.rdPoints;
+    state.sponsors = structuredClone(snap.sponsors);
+    state.unlockedParts = [...snap.unlockedParts];
+    state.calendar = structuredClone(snap.calendar);
+    state.currentRound = snap.currentRound;
+    state.fleet = structuredClone(snap.fleet);
+    state.driverRoster = structuredClone(snap.driverRoster);
+    state.staff = structuredClone(snap.staff);
+    state.driverMarket = structuredClone(snap.driverMarket);
+    state.driverMarketRefreshCount = snap.driverMarketRefreshCount;
+    state.driverMarketRound = snap.driverMarketRound;
+    state.aiRivalSeason = structuredClone(snap.aiRivalSeason);
+    state.weekendTireCompound = snap.weekendTireCompound ?? "Medium";
+    state.trackSetupPresets = structuredClone(snap.trackSetupPresets ?? {});
+}
 class MetaStateManager {
     constructor(repoRoot) {
         this.repoRoot = repoRoot;
@@ -314,7 +360,40 @@ class MetaStateManager {
         this.state.aiRivalSeason = (0, ai_rival_season_1.initAiRivalSeason)(this.repoRoot, this.state.teamName, this.state.seasonYear);
         (0, ai_rival_season_1.syncPlayerDriversToStandings)(this.state.aiRivalSeason, this.state.teamName, this.state.driverRoster ?? [], this.state.fleet ?? []);
         this.regenerateDriverMarket();
+        this.captureSeasonStartSnapshot();
         return this.persist();
+    }
+    restartSeason() {
+        if (!this.state.setupComplete) {
+            return { error: "Complete team setup first" };
+        }
+        const snap = this.state.seasonStartSnapshot;
+        if (snap && snap.seasonYear === this.state.seasonYear) {
+            applySeasonStartSnapshot(this.state, snap);
+        }
+        else {
+            resetCalendarEvents(this.state.calendar);
+            this.state.currentRound = 0;
+            this.state.aiRivalSeason = (0, ai_rival_season_1.initAiRivalSeason)(this.repoRoot, this.state.teamName, this.state.seasonYear);
+            (0, ai_rival_season_1.syncPlayerDriversToStandings)(this.state.aiRivalSeason, this.state.teamName, this.state.driverRoster ?? [], this.state.fleet ?? []);
+            this.regenerateDriverMarket();
+        }
+        this.state.weekendProgress = undefined;
+        this.state.seasonComplete = false;
+        this.state.seasonSummary = undefined;
+        this.lastCompletedRound = null;
+        this.preRoundAiRivalSeason = null;
+        this.preRoundDriverMarket = null;
+        if (snap && snap.seasonYear === this.state.seasonYear) {
+            (0, car_builder_1.writeAllFleetConfigs)(this.repoRoot, this.state, platformTemplateMap(this.repoRoot));
+            (0, car_builder_1.writePlayerCarConfig)(this.repoRoot, this.state);
+        }
+        syncLegacyFields(this.state);
+        return this.persist();
+    }
+    captureSeasonStartSnapshot() {
+        this.ensureAiRivalSeason();
+        this.state.seasonStartSnapshot = buildSeasonStartSnapshot(this.state);
     }
     persist() {
         syncLegacyFields(this.state);
@@ -671,6 +750,7 @@ class MetaStateManager {
         this.state.aiRivalSeason = (0, ai_rival_season_1.initAiRivalSeason)(this.repoRoot, name, this.state.seasonYear);
         (0, ai_rival_season_1.syncPlayerDriversToStandings)(this.state.aiRivalSeason, name, this.state.driverRoster, this.state.fleet);
         this.regenerateDriverMarket();
+        this.captureSeasonStartSnapshot();
         return this.persist();
     }
     saveTeamCreationDraft(draft) {

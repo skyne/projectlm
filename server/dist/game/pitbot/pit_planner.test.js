@@ -187,11 +187,13 @@ const baseCtx = {
         strict_1.default.equal((0, pit_planner_1.mustServePenalty)(snap({ pendingPenalty: "stop_go", lapsToComply: 1 })), true);
     });
 });
-(0, node_test_1.describe)("planPitStop irreparable structural damage", () => {
-    (0, node_test_1.it)("does not plan limp body repair when suspension is irreparable", () => {
+(0, node_test_1.describe)("planPitStop when session repair is not viable", () => {
+    (0, node_test_1.it)("does not plan limp repair when session time is insufficient", () => {
         const s = snap({
             limpMode: "barely_driveable",
-            partIrreparable: ["susp_fr", "susp_rr"],
+            sessionRepairable: false,
+            totalRepairSec: 900,
+            remainingSessionSec: 300,
             fuel: 20,
             tireWear: 0.9,
         });

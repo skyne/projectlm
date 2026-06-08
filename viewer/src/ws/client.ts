@@ -373,6 +373,10 @@ export class ViewerClient {
     this.send(clientMessage("start_next_season", {}));
   }
 
+  restartSeason(): void {
+    this.send(clientMessage("restart_season", {}));
+  }
+
   finalizeSeason(): void {
     this.send(clientMessage("finalize_season", {}));
   }

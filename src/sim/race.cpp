@@ -3,6 +3,7 @@
 #include "config_loader.hpp"
 #include "driver_catalog.hpp"
 #include "part_compatibility.hpp"
+#include "part_damage.hpp"
 #include "race_control.hpp"
 #include "sim_bridge.hpp"
 #include "traffic.hpp"
@@ -162,8 +163,12 @@ void TickRace(RaceSession &session, double deltaTime) {
                  GetLeaderboard(session));
 
   UpdateRaceControl(session, trafficEvents);
+  UpdateRedFlagPitProcedure(session);
   UpdatePenalties(session, deltaTime, trafficMods);
   ApplyFlagModifiers(session, trafficMods);
+
+  const bool redFlagActive =
+      session.raceControl.flagPhase == FlagPhase::RedFlag;
 
   const double lapLength = session.track.lapLength();
   for (size_t i = 0; i < session.cars.size() && i < trafficMods.size(); ++i) {
@@ -188,6 +193,8 @@ void TickRace(RaceSession &session, double deltaTime) {
     g_raceEventOut->push_back(std::move(event));
   }
 
+  bool lateTrackObstruction = false;
+
   for (size_t i = 0; i < session.cars.size(); ++i) {
     Car &car = session.cars[i];
     if (car.isRetired())
@@ -200,15 +207,34 @@ void TickRace(RaceSession &session, double deltaTime) {
     const TrackPose pose =
         session.track.poseAtRaceDistance(car.state().currentDistance);
 
-    if (car.processPitEntry(pose.normalizedT, false)) {
+    if (car.processPitEntry(pose.normalizedT, false, redFlagActive)) {
       EmitRaceEvent(SimEventType::PitEnter, car, car.state().currentLap,
                     static_cast<int>(car.state().currentTrackNodeIndex),
                     session.elapsedRaceTime,
                     car.teamName() + " entered pit lane");
     }
 
+    if (car.inGarageRebuild()) {
+      const double remaining = RemainingSessionSec(session, car);
+      car.tickGarageRebuild(session.track, session.elapsedRaceTime, remaining);
+      if (car.isRetired()) {
+        EmitRaceEvent(SimEventType::Retirement, car, car.state().currentLap,
+                      static_cast<int>(car.state().currentTrackNodeIndex),
+                      session.elapsedRaceTime,
+                      car.teamName() + " retired: " + car.retireReason());
+      } else if (!car.inGarageRebuild() && !car.inGarageHold()) {
+        EmitRaceEvent(SimEventType::PitExit, car, car.state().currentLap,
+                      static_cast<int>(car.state().currentTrackNodeIndex),
+                      session.elapsedRaceTime,
+                      car.teamName() + " rejoined after garage rebuild");
+      }
+      continue;
+    }
+
     if (car.inPitLane()) {
-      if (car.processPitLaneTick(session.track, deltaTime, session.staff)) {
+      const double remaining = RemainingSessionSec(session, car);
+      if (car.processPitLaneTick(session.track, deltaTime, session.staff,
+                                 remaining, redFlagActive)) {
         if (car.isRetired()) {
           EmitRaceEvent(SimEventType::Retirement, car, car.state().currentLap,
                         static_cast<int>(car.state().currentTrackNodeIndex),
@@ -232,12 +258,13 @@ void TickRace(RaceSession &session, double deltaTime) {
     const TrafficModifiers *traffic =
         i < trafficMods.size() ? &trafficMods[i] : nullptr;
 
+    const double remaining = RemainingSessionSec(session, car);
     const CarTickResult result = car.tick(
         session.track, session.physics, deltaTime, session.elapsedRaceTime,
-        nullptr, traffic, session.weather, night);
+        nullptr, traffic, session.weather, night, remaining);
 
     if (result.lapCompleted && car.pit().pendingEnter) {
-      if (car.processPitEntry(0.0, true)) {
+      if (car.processPitEntry(0.0, true, redFlagActive)) {
         EmitRaceEvent(SimEventType::PitEnter, car, car.state().currentLap,
                       static_cast<int>(car.state().currentTrackNodeIndex),
                       session.elapsedRaceTime,
@@ -260,12 +287,22 @@ void TickRace(RaceSession &session, double deltaTime) {
       NotifyCarLapComplete(car, session);
     }
 
+    if (result.stoppedOnTrack) {
+      StrandStoppedCar(car, session, "Heavy crash — immobilized");
+      lateTrackObstruction = true;
+    }
+
     if (result.retired) {
       EmitRaceEvent(SimEventType::Retirement, car, car.state().currentLap,
                     static_cast<int>(car.state().currentTrackNodeIndex),
                     session.elapsedRaceTime,
                     car.teamName() + " retired: " + car.retireReason());
     }
+  }
+
+  if (lateTrackObstruction) {
+    UpdateRaceControl(session, {});
+    ApplyFlagModifiers(session, trafficMods);
   }
 }
 

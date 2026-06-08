@@ -98,7 +98,8 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
   const bool noOvertaking =
       raceControl.flagPhase == FlagPhase::FCY ||
       raceControl.flagPhase == FlagPhase::SC ||
-      raceControl.flagPhase == FlagPhase::SCInLap;
+      raceControl.flagPhase == FlagPhase::SCInLap ||
+      raceControl.flagPhase == FlagPhase::RedFlag;
 
   const double safetyGap = 3.0;
 

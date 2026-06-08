@@ -20,6 +20,8 @@ struct RaceControlState {
   int scLapsRemaining = 0;
   int obstructionsOnTrack = 0;
   bool whiteFlagActive = false;
+  bool redFlagActive = false;
+  double redFlagSecondsRemaining = 0.0;
   struct SurfaceHazardSummary {
     int sectorIndex = 0;
     std::string kind;
@@ -83,7 +85,10 @@ enum class SimEventType {
   SafetyCarDeploy,
   SafetyCarInThisLap,
   GreenFlag,
-  WhiteFlag
+  WhiteFlag,
+  RedFlagDeploy,
+  RedFlagExtended,
+  RedFlagEnd
 };
 
 struct SimEvent {

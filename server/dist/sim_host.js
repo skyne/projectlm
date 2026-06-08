@@ -332,6 +332,27 @@ class SimHost {
     startNextSeason() {
         return this.meta.startNextSeason();
     }
+    restartSeason() {
+        const result = this.meta.restartSeason();
+        if ("error" in result)
+            return result;
+        this.endSession();
+        const prevCwd = process.cwd();
+        process.chdir(this.repoRoot);
+        this.session.initFromRaceConfig(this.configPathForSim());
+        process.chdir(prevCwd);
+        this.inRaceSession = false;
+        this.parsedConfig = (0, config_parser_1.parseRaceConfig)(this.repoRoot, this.raceConfigPath);
+        this.refreshEntriesFromConfig();
+        this.raceTime = 0;
+        this.pitBot.reset();
+        this.stintGuide.reset();
+        this.paused = true;
+        if (this.timeScale === 0)
+            this.timeScale = 1;
+        this.restartTickLoop();
+        return result;
+    }
     finalizeSeasonIfReady() {
         return this.meta.finalizeSeasonIfReady();
     }

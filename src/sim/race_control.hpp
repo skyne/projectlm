@@ -10,6 +10,11 @@ void InitSessionRaceControl(RaceSession &session);
 
 void UpdateTrackObstructions(RaceSession &session, double deltaTime);
 
+/** Mark a stopped car as a track obstruction (local yellow / FCY / SC pipeline). */
+void StrandStoppedCar(Car &car, RaceSession &session, const std::string &reason,
+                      HazardKind hazardKind = HazardKind::Debris,
+                      double hazardGrip = 0.6, double hazardSpan = 35.0);
+
 void SpawnSurfaceHazard(RaceSession &session, double distance,
                         HazardKind kind, const std::string &sourceEntryId,
                         double gripMultiplier, double spanMeters);
@@ -35,6 +40,12 @@ void NotifyCarLapComplete(Car &car, RaceSession &session);
 
 int CountTrackObstructions(const RaceSession &session);
 
+int CountBurningCarsOnTrack(const RaceSession &session);
+
 void SyncRaceControlFlags(SessionRaceControl &rc);
+
+void UpdateRedFlagPitProcedure(RaceSession &session);
+
+void UpdateScPitRelease(RaceSession &session);
 
 #endif

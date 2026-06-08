@@ -89,7 +89,7 @@ function formatCarCondition(condition?: CarConditionPayload): string {
     .map(([p, h]) => `${p} ${h.toFixed(0)}%`);
   bits.push(...worst);
   if ((condition.irreparable?.length ?? 0) > 0) {
-    bits.push(`${condition.irreparable!.length} beyond pit repair`);
+    bits.push(`${condition.irreparable!.length} need garage rebuild`);
   }
   const unrevealed = (condition.hiddenFaults ?? []).filter((f) => !f.revealed).length;
   if (unrevealed > 0) bits.push(`${unrevealed} suspected hidden fault${unrevealed > 1 ? "s" : ""}`);

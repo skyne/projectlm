@@ -444,6 +444,28 @@ export class SimHost {
     return this.meta.startNextSeason();
   }
 
+  restartSeason(): MetaStatePayload | { error: string } {
+    const result = this.meta.restartSeason();
+    if ("error" in result) return result;
+
+    this.endSession();
+    const prevCwd = process.cwd();
+    process.chdir(this.repoRoot);
+    this.session.initFromRaceConfig(this.configPathForSim());
+    process.chdir(prevCwd);
+
+    this.inRaceSession = false;
+    this.parsedConfig = parseRaceConfig(this.repoRoot, this.raceConfigPath);
+    this.refreshEntriesFromConfig();
+    this.raceTime = 0;
+    this.pitBot.reset();
+    this.stintGuide.reset();
+    this.paused = true;
+    if (this.timeScale === 0) this.timeScale = 1;
+    this.restartTickLoop();
+    return result;
+  }
+
   finalizeSeasonIfReady(): MetaStatePayload | { error: string } {
     return this.meta.finalizeSeasonIfReady();
   }

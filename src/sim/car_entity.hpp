@@ -126,7 +126,16 @@ struct CarSnapshot {
   double driverStintSeconds = 0.0;
   double maxDriverStintSeconds = 0.0;
   std::map<std::string, double> partHealth;
+  /** Parts below critical health — need garage-tier rebuild (legacy name). */
   std::vector<std::string> partIrreparable;
+  std::map<std::string, double> partRepairSec;
+  bool physicallyRepairable = true;
+  bool sessionRepairable = true;
+  double totalRepairSec = 0.0;
+  double remainingSessionSec = 0.0;
+  bool garageRebuildActive = false;
+  double garageRebuildRemainingSec = 0.0;
+  bool onFire = false;
   std::map<std::string, std::string> tyreDeflation;
   std::string limpMode = "none";
   std::string limpReason;
@@ -190,6 +199,21 @@ public:
   void placeInGarageHold(const TrackDefinition &track);
   bool releaseFromGarage(const TrackDefinition &track);
   bool inGarageHold() const { return garageHold_; }
+  bool redFlagHold() const { return redFlagHold_; }
+  bool isUnderPitService() const;
+  void applyRedFlagHold();
+  void clearRedFlagHold();
+  void beginGarageRebuild(const TrackDefinition &track, double raceTime,
+                          double durationSec, const std::string &status);
+  void tickGarageRebuild(const TrackDefinition &track, double raceTime,
+                         double remainingSessionSec);
+  bool deliverTowedToGarage(const TrackDefinition &track, double raceTime,
+                            double remainingSessionSec);
+  bool inGarageRebuild() const { return garageRebuildActive_; }
+  double garageRebuildRemainingSec(double raceTime) const;
+  bool onFire() const { return onFire_; }
+  void igniteFire();
+  void extinguishFire();
   double bestLapTime() const { return bestLapTime_; }
   double lastLapTime() const;
   void applyClassStintLimit(double maxStintSeconds);
@@ -204,22 +228,29 @@ public:
                      TelemetryLog *telemetry = nullptr,
                      const TrafficModifiers *traffic = nullptr,
                      const WeatherState &weather = WeatherState{},
-                     bool isNight = false);
+                     bool isNight = false,
+                     double remainingSessionSec = 86400.0 * 7.0);
 
-  bool processPitEntry(double normalizedT, bool lapJustCompleted);
+  bool processPitEntry(double normalizedT, bool lapJustCompleted,
+                       bool redFlagActive = false);
   bool processPitLaneTick(const TrackDefinition &track, double deltaTime,
-                          const StaffModifiers &staff);
+                          const StaffModifiers &staff,
+                          double remainingSessionSec = 86400.0 * 7.0,
+                          bool redFlagActive = false);
   void applyCommand(const SimCommand &command);
   void applyTrafficVisuals(const TrafficModifiers &traffic, double deltaTime);
 
-  CarSnapshot snapshot(const TrackDefinition &track, int racePosition) const;
+  CarSnapshot snapshot(const TrackDefinition &track, int racePosition,
+                       double remainingSessionSec = 86400.0 * 7.0) const;
 
   bool isAheadOf(const Car &other) const;
   void markRetired(const std::string &reason);
 
 private:
-  /** After pit service: retire in garage if structural damage is beyond repair. */
-  bool tryRetireTerminalDamageAfterPit();
+  void tryIgniteFire(double chance, double raceTime);
+  void tickFireDamage(double deltaTime);
+  bool handlePostPitRepairDecision(const TrackDefinition &track, double raceTime,
+                                   double remainingSessionSec);
   std::string entryId_;
   std::string teamName_;
   std::string carNumber_;
@@ -256,6 +287,10 @@ private:
   double totalPitSeconds_ = 0.0;
   double maxDriverStintSeconds_ = 0.0;
   bool garageHold_ = false;
+  bool redFlagHold_ = false;
+  bool garageRebuildActive_ = false;
+  double garageRebuildEndTime_ = 0.0;
+  bool onFire_ = false;
   CarRaceControlState rc_;
 };
 
@@ -266,6 +301,8 @@ struct CarTickResult {
   bool sectorCrossed = false;
   bool lapCompleted = false;
   bool retired = false;
+  /** Catastrophic same-side loss — car stopped on racing line; strand for FCY/SC. */
+  bool stoppedOnTrack = false;
   int completedSectorIndex = 0;
   int completedLap = 0;
 };

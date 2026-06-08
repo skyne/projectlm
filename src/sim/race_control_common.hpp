@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-enum class FlagPhase { Green, SlowZone, FCY, SC, SCInLap };
+enum class FlagPhase { Green, SlowZone, FCY, SC, SCInLap, RedFlag };
 
 enum class SectorFlagLevel : int { Green = 0, Yellow = 1, DoubleYellow = 2 };
 
@@ -12,7 +12,7 @@ enum class TrackStatus { Racing, Stranded, Recovering, Cleared };
 
 enum class PendingPenalty { None, DriveThrough, StopGo, Black };
 
-enum class HazardKind { Oil, Coolant, Debris, Fuel };
+enum class HazardKind { Oil, Coolant, Debris, Fuel, Fire };
 
 struct TrackSurfaceHazard {
   std::string id;
@@ -40,6 +40,13 @@ struct SessionRaceControl {
   double slowZoneHoldUntil = 0.0;
   double scRestartUntil = 0.0;
   bool whiteFlagActive = false;
+  bool redFlagActive = false;
+  double redFlagUntil = 0.0;
+  double redFlagReviewAt = -1.0;
+  int redFlagExtensions = 0;
+  bool redFlagWeatherCause = false;
+  std::vector<std::string> scPitReleaseQueue;
+  double scPitReleaseNextAt = 0.0;
   std::vector<TrackSurfaceHazard> hazards;
 };
 
@@ -47,6 +54,9 @@ struct CarRaceControlState {
   TrackStatus trackStatus = TrackStatus::Racing;
   double obstructionSinceTime = -1.0;
   double marshalDispatchTime = -1.0;
+  double fireExtinguishEndTime = -1.0;
+  double fireStartedAt = -1.0;
+  double recoveryStartTime = -1.0;
   double recoveryEndTime = -1.0;
   int obstructionSectorIndex = 0;
   double stoppedTimer = 0.0;

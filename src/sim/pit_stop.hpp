@@ -36,7 +36,8 @@ struct StaffModifiers {
 };
 
 double ComputePitServiceDuration(const PitStopPlan &plan, const CarConfig &car,
-                                 const StaffModifiers &staff);
+                                 const StaffModifiers &staff,
+                                 const SimulationState *simState = nullptr);
 
 double EstimatePitRemainingSec(const PitStopState &pit,
                                const TrackDefinition &track);
@@ -47,6 +48,9 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
 bool ShouldEnterPitLane(const PitStopState &pit, double normalizedT,
                         bool lapJustCompleted, int currentLap,
                         double fuelRemaining = -1.0,
-                        double fuelTankCapacity = 0.0);
+                        double fuelTankCapacity = 0.0,
+                        bool redFlagActive = false);
+
+bool PitPlanHasActiveService(const PitStopPlan &plan);
 
 #endif

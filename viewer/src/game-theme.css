@@ -1720,10 +1720,18 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
   flex-shrink: 0;
 }
 
+.sidebar-panel[data-panel="drive"] #event-log-container {
+  flex-shrink: 1;
+}
+
 .sidebar-panel .event-log {
   flex: 1 1 auto;
   min-height: 140px;
-  max-height: 220px;
+  max-height: none;
+}
+
+.sidebar-panel[data-panel="drive"] .event-log {
+  min-height: 160px;
 }
 
 .sidebar-weather-stack {

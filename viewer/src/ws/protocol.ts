@@ -99,6 +99,14 @@ export interface CarSnapshot {
   maxDriverStintSeconds?: number;
   partHealth?: Record<string, number>;
   partIrreparable?: string[];
+  partRepairSec?: Record<string, number>;
+  physicallyRepairable?: boolean;
+  sessionRepairable?: boolean;
+  totalRepairSec?: number;
+  remainingSessionSec?: number;
+  garageRebuildActive?: boolean;
+  garageRebuildRemainingSec?: number;
+  onFire?: boolean;
   tyreDeflation?: Record<string, "soft" | "flat">;
   limpMode?: string;
   limpReason?: string;
@@ -149,7 +157,10 @@ export type SimEventType =
   | "SafetyCarDeploy"
   | "SafetyCarInThisLap"
   | "GreenFlag"
-  | "WhiteFlag";
+  | "WhiteFlag"
+  | "RedFlagDeploy"
+  | "RedFlagExtended"
+  | "RedFlagEnd";
 
 export interface SimEvent {
   type: SimEventType;
@@ -586,6 +597,25 @@ export interface TeamCreationDraftPayload {
   driverRoster: DriverProfilePayload[];
 }
 
+export interface SeasonStartSnapshotPayload {
+  seasonYear: number;
+  budget: number;
+  rdPoints: number;
+  sponsors: SponsorContractPayload[];
+  unlockedParts: string[];
+  calendar: CalendarEventPayload[];
+  currentRound: number;
+  fleet: FleetCarPayload[];
+  driverRoster: DriverProfilePayload[];
+  staff: StaffMemberPayload[];
+  driverMarket: DriverMarketListingPayload[];
+  driverMarketRefreshCount: number;
+  driverMarketRound: number;
+  aiRivalSeason: AiRivalSeasonPayload;
+  weekendTireCompound?: string;
+  trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
+}
+
 export interface MetaStatePayload {
   teamName: string;
   budget: number;
@@ -619,6 +649,7 @@ export interface MetaStatePayload {
   aiRivalSeason?: AiRivalSeasonPayload;
   seasonComplete?: boolean;
   seasonSummary?: SeasonSummaryPayload;
+  seasonStartSnapshot?: SeasonStartSnapshotPayload;
 }
 
 export interface SeasonStandingEntryPayload {
@@ -813,6 +844,8 @@ export interface RaceControlPayload {
   scLapsRemaining: number;
   obstructionsOnTrack: number;
   whiteFlagActive: boolean;
+  redFlagActive?: boolean;
+  redFlagSecondsRemaining?: number;
   surfaceHazards: SurfaceHazardSummaryPayload[];
   trackWetness: number;
   ambientTempC: number;
@@ -965,6 +998,7 @@ export type ClientMessageType =
   | "ask_garage_engineer"
   | "repair_car_condition"
   | "start_next_season"
+  | "restart_season"
   | "finalize_season";
 
 export interface ServerMessage<T = unknown> {

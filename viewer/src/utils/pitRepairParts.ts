@@ -9,6 +9,7 @@ export const REPAIR_PART_LABELS: Record<string, string> = {
   cooling: "Cooling",
   brakes: "Brakes",
   hybrid: "Hybrid",
+  monocoque: "Safety cell",
   aero_front: "Front aero",
   aero_rear: "Rear aero",
   body_fl: "Body FL",
@@ -23,6 +24,7 @@ export const REPAIR_PART_LABELS: Record<string, string> = {
 
 /** Subsystem tokens shown in pit UI (engine/body use dedicated checkboxes). */
 const PIT_SUBSYSTEM_ORDER = [
+  "monocoque",
   "gearbox",
   "cooling",
   "brakes",
@@ -45,10 +47,11 @@ export function repairPartLabel(token: string): string {
 
 export function damagedSubsystemParts(snap: CarSnapshot | null | undefined): string[] {
   if (!snap) return [];
-  const irreparable = new Set(snap.partIrreparable ?? []);
+  if (snap.sessionRepairable === false || snap.physicallyRepairable === false) return [];
+  const garageParts = new Set(snap.partIrreparable ?? []);
   const damaged = new Set(
     Object.entries(snap.partHealth ?? {})
-      .filter(([part, health]) => health < REPAIR_HEALTH_THRESHOLD && !irreparable.has(part))
+      .filter(([part, health]) => health < REPAIR_HEALTH_THRESHOLD && !garageParts.has(part))
       .map(([part]) => part),
   );
   return PIT_SUBSYSTEM_ORDER.filter((part) => damaged.has(part));
@@ -65,7 +68,7 @@ export function buildSubsystemRepairHtml(
   const rows = parts
     .map((part) => {
       const health = snap?.partHealth?.[part] ?? 0;
-      const sec = PIT_REPAIR_PART_SEC[part] ?? 8;
+      const sec = snap?.partRepairSec?.[part] ?? PIT_REPAIR_PART_SEC[part] ?? 8;
       const checked = health < 78 ? " checked" : "";
       return `<label><input type="checkbox" data-repair-part="${part}"${checked} /> ${escapeHtml(repairPartLabel(part))} (${health.toFixed(0)}%, +${sec}s)</label>`;
     })

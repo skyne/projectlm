@@ -24,6 +24,7 @@ enum class DamagePart : uint8_t {
   SuspFR,
   SuspRL,
   SuspRR,
+  Monocoque,
   Count
 };
 
@@ -31,7 +32,8 @@ enum class HiddenFaultKind : uint8_t {
   CoolingHoseLeak,
   PowertrainSealLeak,
   HairlineCrack,
-  WiringChafe
+  WiringChafe,
+  TubStress
 };
 
 enum class TyreDeflationState : uint8_t { Normal = 0, Soft, Flat };
@@ -132,9 +134,73 @@ struct PartDamageRepairSpec {
 };
 
 PartDamageRepairSpec RepairSpecForPart(DamagePart part);
-/** True when any corner suspension is marked irreparable (terminal for race). */
+
+/** Health restored by pit/garage work before the car is considered raceable again. */
+constexpr double kRaceableHealthThreshold = 70.0;
+/** Single pit stop cannot exceed this — longer work uses in-garage rebuild. */
+constexpr double kMaxPitLaneRepairSec = 1800.0;
+/** Collision impact at/above this stresses the safety cell. */
+constexpr double kMonocoqueStressImpact = 10.0;
+/** Severe impacts that can breach the tub or ignite a fire. */
+constexpr double kHugeCrashImpact = 13.0;
+
+bool IsMonocoqueBreached(const PartDamageState &state);
+bool IsMonocoquePart(DamagePart part);
+void ApplyMonocoqueImpactDamage(PartDamageState &state,
+                                const CarDamageProfiles &profiles,
+                                double impact);
+double FireIgnitionChanceFromImpact(double impact, bool hasFuel,
+                                    bool hasHybrid);
+void ApplyFireDamage(PartDamageState &state, const CarDamageProfiles &profiles,
+                     double deltaTime);
+
+struct PartRepairAssessment {
+  std::string token;
+  double health = 100.0;
+  double repairSec = 0.0;
+  bool physicallyRepairable = true;
+  bool sessionRepairable = true;
+  bool needsGarageRebuild = false;
+};
+
+struct CarRepairAssessment {
+  double totalRepairSec = 0.0;
+  double remainingSessionSec = 0.0;
+  bool physicallyRepairable = true;
+  bool sessionRepairable = true;
+  bool needsGarageRebuild = false;
+  std::vector<PartRepairAssessment> parts;
+};
+
+class Car;
+struct RaceSession;
+
+double RemainingSessionSec(const RaceSession &session, const Car &car);
+double ScaledRepairSecForHealth(const PartDamageProfile &profile, double health);
+double PartRepairSecToRaceable(const PartDamageState &state, DamagePart part,
+                               const PartDamageProfile &profile,
+                               double targetHealth = kRaceableHealthThreshold);
+bool IsPartBelowCritical(const PartDamageState &state, DamagePart part,
+                         const PartDamageProfile &profile);
+bool IsCarPhysicallyRepairable(const PartDamageState &state,
+                               const CarConfig &car);
+bool IsCarRaceable(const PartDamageState &state, const CarConfig &car,
+                   const TyreDeflationStateArr &tyres, double batteryMJ);
+CarRepairAssessment
+ComputeCarRepairAssessment(const PartDamageState &state, const CarConfig &car,
+                           const TyreDeflationStateArr &tyres,
+                           const CarDamageProfiles &profiles,
+                           double remainingSessionSec,
+                           double targetHealth = kRaceableHealthThreshold);
+void RestoreDamagedPartsToRaceable(PartDamageState &state,
+                                   double targetHealth = kRaceableHealthThreshold);
+
+/** Suspension below critical health threshold — needs garage-tier rebuild time. */
+bool HasCriticalSuspension(const PartDamageState &state,
+                           const CarDamageProfiles &profiles);
+/** @deprecated Prefer IsCarPhysicallyRepairable / health thresholds. */
 bool HasIrreparableSuspension(const PartDamageState &state);
-/** True after garage assessment — irreparable structural parts, no return to track. */
+/** @deprecated Prefer !IsCarPhysicallyRepairable. */
 bool HasTerminalStructuralDamage(const PartDamageState &state);
 /** Two corners on the same side or axle at 0% body+susp — car stops on track. */
 bool HasCatastrophicSameSideLoss(const PartDamageState &state,

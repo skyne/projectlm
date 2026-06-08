@@ -14,6 +14,7 @@ exports.FLAG_PHASES = [
     "fcy",
     "sc",
     "sc_in_lap",
+    "red_flag",
 ];
 exports.TRACK_STATUSES = [
     "racing",

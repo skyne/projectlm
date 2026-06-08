@@ -3,13 +3,9 @@ import { mmPanelHeader } from "../utils/mmUi";
 
 const MAX_EVENTS = 120;
 
-const DIRECTOR_TYPES = new Set<SimEventType>([
+/** Penalties, flags, FCY/SC, surface hazards, session milestones. */
+const RACE_CONTROL_TYPES = new Set<SimEventType>([
   "RaceComplete",
-  "PitEnter",
-  "PitExit",
-  "CommandAck",
-  "Stranded",
-  "RecoveryDispatched",
   "TrackClear",
   "SurfaceHazard",
   "SurfaceCleared",
@@ -27,14 +23,28 @@ const DIRECTOR_TYPES = new Set<SimEventType>([
   "SafetyCarInThisLap",
   "GreenFlag",
   "WhiteFlag",
+  "RedFlagDeploy",
+  "RedFlagExtended",
+  "RedFlagEnd",
 ]);
 
-const INCIDENT_TYPES = new Set<SimEventType>([
+const MY_TEAM_INCIDENT_TYPES = new Set<SimEventType>([
   "Retirement",
   "Collision",
   "Blocked",
   "PenaltyWarning",
   "RacingIncident",
+  "Stranded",
+  "RecoveryDispatched",
+]);
+
+const ALL_INCIDENT_TYPES = new Set<SimEventType>([
+  "Retirement",
+  "Collision",
+  "Blocked",
+  "PenaltyWarning",
+  "RacingIncident",
+  "Stranded",
 ]);
 
 const TRACK_TYPES = new Set<SimEventType>(["Overtake"]);
@@ -50,24 +60,26 @@ export class EventLog {
   readonly root: HTMLElement;
   private list: HTMLUListElement;
   private playerEntryId = "entry-1";
+  private managedEntryIds = new Set<string>(["entry-1"]);
   private teamNameByEntry = new Map<string, string>();
+  private allEvents: SimEvent[] = [];
   private filters: EventLogFilterState = {
     myTeam: true,
     director: true,
-    incidents: true,
-    track: true,
+    incidents: false,
+    track: false,
   };
 
   constructor(container: HTMLElement) {
     this.root = document.createElement("section");
     this.root.className = "panel event-log panel-wec";
     this.root.innerHTML = `
-      ${mmPanelHeader("Sim Log", { subtitle: "Pits, incidents & race control", badge: "LIVE" })}
+      ${mmPanelHeader("Race Log", { subtitle: "Penalties, incidents & track status", badge: "LIVE" })}
       <div class="event-log-filters">
-        <label><input type="checkbox" data-filter="myTeam" checked /> My car</label>
+        <label><input type="checkbox" data-filter="myTeam" checked /> My team</label>
         <label><input type="checkbox" data-filter="director" checked /> Race control</label>
-        <label><input type="checkbox" data-filter="incidents" checked /> Incidents</label>
-        <label><input type="checkbox" data-filter="track" checked /> Track / traffic</label>
+        <label><input type="checkbox" data-filter="incidents" /> All incidents</label>
+        <label><input type="checkbox" data-filter="track" /> Traffic</label>
       </div>
       <ul class="event-list"></ul>
     `;
@@ -78,6 +90,7 @@ export class EventLog {
       input.addEventListener("change", () => {
         const key = (input as HTMLInputElement).dataset.filter as keyof EventLogFilterState;
         this.filters[key] = (input as HTMLInputElement).checked;
+        this.render();
       });
     });
   }
@@ -86,41 +99,64 @@ export class EventLog {
     this.playerEntryId = entryId;
   }
 
+  setManagedEntryIds(entryIds: string[]): void {
+    this.managedEntryIds = new Set(entryIds.length ? entryIds : [this.playerEntryId]);
+  }
+
   setEntryNames(entries: Array<{ entryId: string; teamName: string }>): void {
     this.teamNameByEntry.clear();
     for (const e of entries) this.teamNameByEntry.set(e.entryId, e.teamName);
   }
 
   append(events: SimEvent[]): void {
-    for (const event of events) {
-      if (!this.shouldShow(event)) continue;
-      const li = document.createElement("li");
-      li.className = `event event-${event.type}`;
-      const time = formatRaceTime(event.timestamp);
-      li.innerHTML = `<span class="time">${time}</span> ${this.formatEventContent(event)}`;
-      this.list.prepend(li);
+    if (!events.length) return;
+    this.allEvents.push(...events);
+    while (this.allEvents.length > MAX_EVENTS) {
+      this.allEvents.shift();
     }
-
-    while (this.list.children.length > MAX_EVENTS) {
-      this.list.lastElementChild?.remove();
-    }
+    this.render();
   }
 
   clear(): void {
+    this.allEvents = [];
     this.list.replaceChildren();
+  }
+
+  private render(): void {
+    this.list.replaceChildren();
+    for (let i = this.allEvents.length - 1; i >= 0; i--) {
+      const event = this.allEvents[i]!;
+      if (!this.shouldShow(event)) continue;
+      this.list.appendChild(this.buildRow(event));
+    }
+  }
+
+  private buildRow(event: SimEvent): HTMLLIElement {
+    const li = document.createElement("li");
+    li.className = `event event-${event.type}${isWeatherEvent(event) ? " event-weather" : ""}`;
+    const time = formatRaceTime(event.timestamp);
+    li.innerHTML = `<span class="time">${time}</span> ${this.formatEventContent(event)}`;
+    return li;
+  }
+
+  private isManagedEntry(entryId: string | undefined): boolean {
+    return entryId != null && this.managedEntryIds.has(entryId);
   }
 
   private shouldShow(event: SimEvent): boolean {
     if (event.type === "SectorCross" || event.type === "LapComplete") return false;
 
-    const isMine = event.entryId === this.playerEntryId;
-    const isDirector = DIRECTOR_TYPES.has(event.type);
-    const isIncident = INCIDENT_TYPES.has(event.type);
+    if (isWeatherEvent(event) && this.filters.director) return true;
+
+    const isManagedIncident =
+      MY_TEAM_INCIDENT_TYPES.has(event.type) && this.isManagedEntry(event.entryId);
+    const isRaceControl = RACE_CONTROL_TYPES.has(event.type);
+    const isAnyIncident = ALL_INCIDENT_TYPES.has(event.type);
     const isTrack = TRACK_TYPES.has(event.type);
 
-    if (isMine && this.filters.myTeam) return true;
-    if (isDirector && this.filters.director) return true;
-    if (isIncident && this.filters.incidents) return true;
+    if (isManagedIncident && this.filters.myTeam) return true;
+    if (isRaceControl && this.filters.director) return true;
+    if (isAnyIncident && this.filters.incidents) return true;
     if (isTrack && this.filters.track) return true;
     return false;
   }
@@ -131,6 +167,11 @@ export class EventLog {
       msg = msg.replace(/\s+undefined/g, "");
     }
 
+    if (isWeatherEvent(event)) {
+      const detail = msg.replace(/^Weather:\s*/i, "");
+      return `<span class="event-incident-label">WEATHER</span> ${escapeHtml(detail || msg)}`;
+    }
+
     if (event.type === "Retirement") {
       const match = msg.match(/^(.+?) retired: (.+)$/i);
       if (match) {
@@ -139,11 +180,16 @@ export class EventLog {
     }
 
     if (event.type === "Collision" || event.type === "Blocked") {
-      return `<span class="event-incident-label">${event.type === "Collision" ? "COLLISION" : "BLOCKED"}</span> ${escapeHtml(msg || event.type)}`;
+      const label = event.type === "Collision" ? "COLLISION" : "BLOCKED";
+      return `<span class="event-incident-label">${label}</span> ${escapeHtml(msg || event.type)}`;
     }
 
     return escapeHtml(msg || event.type);
   }
+}
+
+function isWeatherEvent(event: SimEvent): boolean {
+  return event.message?.startsWith("Weather:") ?? false;
 }
 
 function formatRaceTime(seconds: number): string {

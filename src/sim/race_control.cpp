@@ -1,9 +1,12 @@
 #include "race_control.hpp"
 #include "part_damage.hpp"
+#include "pit_stop.hpp"
 #include "sim_bridge.hpp"
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
+
+void UpdateScPitRelease(RaceSession &session);
 
 namespace {
 
@@ -15,10 +18,77 @@ constexpr double kMarshalResponseBaseSec = 15.0;
 constexpr double kMarshalResponseRainSec = 30.0;
 constexpr double kTowBaseSec = 90.0;
 constexpr double kTowStructuralExtraSec = 30.0;
+constexpr double kFireExtinguishBaseSec = 2.0;
+constexpr double kFireExtinguishRainSec = 3.0;
+constexpr double kFireExtinguishUnderScSec = 1.5;
 constexpr double kFcyMinHoldSec = 60.0;
 constexpr double kSlowZoneMinHoldSec = 30.0;
 constexpr int kScMinLaps = 2;
 constexpr double kHazardNaturalClearSec = 1200.0;
+constexpr double kRedFlagWeatherPeriodSec = 120.0;
+constexpr double kRedFlagObstructionPeriodSec = 60.0;
+constexpr double kRedFlagExtendWeatherSec = 90.0;
+constexpr double kRedFlagExtendObstructionSec = 45.0;
+constexpr double kRedFlagReviewLeadMinSec = 15.0;
+constexpr double kRedFlagReviewLeadMaxSec = 30.0;
+constexpr double kRedFlagDeployVisibilityKm = 1.5;
+constexpr double kRedFlagDeployHeavyRainVisibilityKm = 2.5;
+constexpr double kRedFlagResumeVisibilityKm = 2.0;
+constexpr double kRedFlagResumeHeavyRainVisibilityKm = 3.0;
+constexpr double kScPitReleaseGapSec = 2.0;
+constexpr double kRedFlagOnTrackSpeedCapMs = 60.0 / 3.6;
+constexpr double kRedFlagFireDurationSec = 120.0;
+constexpr int kRedFlagFireCountThreshold = 2;
+
+double RedFlagReviewLeadSec(double periodSec) {
+  return std::clamp(periodSec * 0.25, kRedFlagReviewLeadMinSec,
+                    kRedFlagReviewLeadMaxSec);
+}
+
+void SetRedFlagPeriod(SessionRaceControl &rc, double now, double periodSec,
+                      bool weatherCause) {
+  rc.redFlagUntil = now + periodSec;
+  rc.redFlagReviewAt = rc.redFlagUntil - RedFlagReviewLeadSec(periodSec);
+  rc.redFlagWeatherCause = weatherCause;
+}
+
+struct RedFlagTrigger {
+  bool deploy = false;
+  bool weatherCause = false;
+  std::string reason;
+};
+
+bool ShouldRedFlagForWeather(const WeatherState &weather) {
+  if (weather.visibilityKm < kRedFlagDeployVisibilityKm)
+    return true;
+  if (weather.phase == WeatherPhase::HeavyRain &&
+      weather.visibilityKm < kRedFlagDeployHeavyRainVisibilityKm)
+    return true;
+  return false;
+}
+
+int ObstructionRedFlagThreshold(double lapLengthM) {
+  const double lapKm = lapLengthM / 1000.0;
+  if (lapKm < 4.0)
+    return 2;
+  if (lapKm < 6.0)
+    return 3;
+  return 4;
+}
+
+int MaxObstructionsInSingleSector(const RaceSession &session) {
+  std::unordered_map<int, int> bySector;
+  for (const Car &car : session.cars) {
+    const TrackStatus st = car.rcState().trackStatus;
+    if (st != TrackStatus::Stranded && st != TrackStatus::Recovering)
+      continue;
+    ++bySector[car.rcState().obstructionSectorIndex];
+  }
+  int maxInSector = 0;
+  for (const auto &[sector, count] : bySector)
+    maxInSector = std::max(maxInSector, count);
+  return maxInSector;
+}
 
 void EmitControlEvent(SimEventType type, double timestamp,
                       const std::string &message,
@@ -55,6 +125,32 @@ double TowDuration(const Car &car, bool underSc) {
   if (underSc)
     duration *= 0.6;
   return duration;
+}
+
+double FireExtinguishDuration(const Car &car, bool underSc,
+                              const WeatherState &weather) {
+  if (underSc)
+    return kFireExtinguishUnderScSec;
+  const bool heavy =
+      weather.phase == WeatherPhase::HeavyRain || weather.visibilityKm < 4.0;
+  double duration = heavy ? kFireExtinguishRainSec : kFireExtinguishBaseSec;
+  const double structural =
+      ComputeStructuralSeverity(car.state().partDamage, car.state().tyreDeflation);
+  if (structural >= 70.0)
+    duration += 1.0;
+  return duration;
+}
+
+void BeginRecoveryTow(Car &car, RaceSession &session, bool underSc) {
+  CarRaceControlState &rc = car.rcState();
+  rc.trackStatus = TrackStatus::Recovering;
+  rc.recoveryStartTime = session.elapsedRaceTime;
+  rc.recoveryEndTime =
+      session.elapsedRaceTime + TowDuration(car, underSc);
+  rc.recoveryProgress = 0.0;
+  EmitControlEvent(SimEventType::RecoveryDispatched, session.elapsedRaceTime,
+                   car.teamName() + " — recovery vehicle dispatched",
+                   car.entryId());
 }
 
 void IssuePenalty(Car &car, PendingPenalty penalty, const std::string &reason,
@@ -120,22 +216,61 @@ void EmitRacingIncident(const RaceSession &session, const Car &a,
       a.entryId());
 }
 
-void ClearObstructionCar(Car &car, RaceSession &session, bool terminal) {
+bool ObstructionRecoveryIsForceRetire(const Car &car) {
+  if (car.isRetired())
+    return true;
+  const std::string &reason = car.rcState().obstructionReason;
+  return reason.find("Out of fuel") != std::string::npos;
+}
+
+void ClearObstructionCar(Car &car, RaceSession &session) {
   CarRaceControlState &rc = car.rcState();
   rc.trackStatus = TrackStatus::Cleared;
   car.state().currentSpeed = 0.0;
   EmitControlEvent(SimEventType::TrackClear, session.elapsedRaceTime,
                    car.teamName() + " cleared from track", car.entryId());
-  if (terminal) {
-    car.markRetired(rc.obstructionReason.empty() ? "Retired on track"
-                                                 : rc.obstructionReason);
+
+  if (ObstructionRecoveryIsForceRetire(car)) {
+    if (!car.isRetired()) {
+      car.markRetired(rc.obstructionReason.empty() ? "Retired on track"
+                                                   : rc.obstructionReason);
+      EmitControlEvent(SimEventType::Retirement, session.elapsedRaceTime,
+                       car.teamName() + " retired: " + car.retireReason(),
+                       car.entryId());
+    }
+    return;
+  }
+
+  const double remaining = RemainingSessionSec(session, car);
+  if (car.deliverTowedToGarage(session.track, session.elapsedRaceTime,
+                               remaining)) {
+    EmitControlEvent(SimEventType::RecoveryDispatched, session.elapsedRaceTime,
+                     car.teamName() + " towed to garage for rebuild",
+                     car.entryId());
+    return;
+  }
+
+  if (!car.isRetired()) {
+    static const PartCatalog kCatalog{};
+    CarDamageProfiles profiles;
+    BuildCarDamageProfiles(car.config(), kCatalog, profiles);
+    const CarRepairAssessment assessment = ComputeCarRepairAssessment(
+        car.state().partDamage, car.config(), car.state().tyreDeflation,
+        profiles, remaining);
+    const std::string reason =
+        IsMonocoqueBreached(car.state().partDamage)
+            ? "Monocoque breached"
+            : !assessment.physicallyRepairable
+                  ? "Beyond repair"
+                  : "Insufficient session time for repair";
+    car.markRetired(reason);
     EmitControlEvent(SimEventType::Retirement, session.elapsedRaceTime,
                      car.teamName() + " retired: " + car.retireReason(),
                      car.entryId());
-  } else {
-    car.markRetired("Towed from track");
   }
 }
+
+} // namespace
 
 void BeginStrand(Car &car, RaceSession &session, const std::string &reason,
                  HazardKind hazardKind, double hazardGrip, double hazardSpan) {
@@ -149,6 +284,8 @@ void BeginStrand(Car &car, RaceSession &session, const std::string &reason,
   rc.obstructionSinceTime = session.elapsedRaceTime;
   rc.marshalDispatchTime =
       session.elapsedRaceTime + MarshalResponseDelay(session.weather);
+  rc.fireExtinguishEndTime = -1.0;
+  rc.recoveryStartTime = -1.0;
   rc.recoveryEndTime = -1.0;
   rc.obstructionReason = reason;
   rc.obstructionSectorIndex = static_cast<int>(
@@ -169,7 +306,11 @@ void BeginStrand(Car &car, RaceSession &session, const std::string &reason,
                    car.entryId());
 }
 
-} // namespace
+void StrandStoppedCar(Car &car, RaceSession &session, const std::string &reason,
+                      HazardKind hazardKind, double hazardGrip,
+                      double hazardSpan) {
+  BeginStrand(car, session, reason, hazardKind, hazardGrip, hazardSpan);
+}
 
 void InitSessionRaceControl(RaceSession &session) {
   session.raceControl = SessionRaceControl{};
@@ -180,6 +321,7 @@ void InitSessionRaceControl(RaceSession &session) {
 void SyncRaceControlFlags(SessionRaceControl &rc) {
   rc.fcyActive = rc.flagPhase == FlagPhase::FCY;
   rc.scActive = rc.flagPhase == FlagPhase::SC || rc.flagPhase == FlagPhase::SCInLap;
+  rc.redFlagActive = rc.flagPhase == FlagPhase::RedFlag;
 }
 
 void SpawnSurfaceHazard(RaceSession &session, double distance,
@@ -215,7 +357,8 @@ void UpdateTrackHazards(RaceSession &session, double deltaTime) {
   const bool sweeping =
       session.raceControl.flagPhase == FlagPhase::FCY ||
       session.raceControl.flagPhase == FlagPhase::SC ||
-      session.raceControl.flagPhase == FlagPhase::SCInLap;
+      session.raceControl.flagPhase == FlagPhase::SCInLap ||
+      session.raceControl.flagPhase == FlagPhase::RedFlag;
   if (sweeping) {
     for (TrackSurfaceHazard &hz : session.raceControl.hazards) {
       if (hz.clearAt < 0.0)
@@ -269,47 +412,230 @@ int CountTrackObstructions(const RaceSession &session) {
   return count;
 }
 
+int CountBurningCarsOnTrack(const RaceSession &session) {
+  int count = 0;
+  for (const Car &car : session.cars) {
+    if (car.isRetired() || car.inPitLane() || car.inGarageHold())
+      continue;
+    if (car.onFire())
+      ++count;
+  }
+  return count;
+}
+
+bool ShouldRedFlagForFire(const RaceSession &session) {
+  const int count = CountBurningCarsOnTrack(session);
+  if (count >= kRedFlagFireCountThreshold)
+    return true;
+  if (count <= 0)
+    return false;
+  for (const Car &car : session.cars) {
+    if (car.isRetired() || car.inPitLane() || car.inGarageHold() || !car.onFire())
+      continue;
+    const double started = car.rcState().fireStartedAt;
+    if (started >= 0.0 &&
+        session.elapsedRaceTime - started >= kRedFlagFireDurationSec)
+      return true;
+  }
+  return false;
+}
+
+bool ShouldRedFlagForObstructions(const RaceSession &session) {
+  const int count = CountTrackObstructions(session);
+  if (count <= 0)
+    return false;
+  const double lapKm = session.track.lapLength() / 1000.0;
+  const int threshold = ObstructionRedFlagThreshold(session.track.lapLength());
+  const int maxInSector = MaxObstructionsInSingleSector(session);
+  const bool clustered = maxInSector == count;
+  if (lapKm < 4.0 && maxInSector >= 2)
+    return true;
+  if (clustered && count >= 2 && count >= threshold - 1)
+    return true;
+  if (count >= threshold && (clustered || lapKm >= 6.0))
+    return true;
+  return false;
+}
+
+bool SectorFlagsAllGreen(const SessionRaceControl &rc) {
+  for (int flag : rc.sectorFlags) {
+    if (flag > static_cast<int>(SectorFlagLevel::Green))
+      return false;
+  }
+  return true;
+}
+
+bool WeatherSafeForRacing(const WeatherState &weather) {
+  if (weather.visibilityKm < kRedFlagResumeVisibilityKm)
+    return false;
+  if (weather.phase == WeatherPhase::HeavyRain &&
+      weather.visibilityKm < kRedFlagResumeHeavyRainVisibilityKm)
+    return false;
+  return true;
+}
+
+bool AllNonRetiredCarsInPit(const RaceSession &session) {
+  for (const Car &car : session.cars) {
+    if (car.isRetired())
+      continue;
+    if (!car.inPitLane())
+      return false;
+  }
+  return true;
+}
+
+RedFlagTrigger EvaluateRedFlagTrigger(const RaceSession &session) {
+  RedFlagTrigger trigger;
+  const WeatherState &weather = session.weather;
+  if (ShouldRedFlagForWeather(weather)) {
+    trigger.deploy = true;
+    trigger.weatherCause = true;
+    if (weather.visibilityKm < kRedFlagDeployVisibilityKm)
+      trigger.reason = "Race control: Red flag — visibility too low";
+    else
+      trigger.reason = "Race control: Red flag — heavy rain";
+    return trigger;
+  }
+  if (ShouldRedFlagForFire(session)) {
+    const int burning = CountBurningCarsOnTrack(session);
+    trigger.deploy = true;
+    trigger.weatherCause = false;
+    if (burning >= kRedFlagFireCountThreshold)
+      trigger.reason = "Race control: Red flag — multiple car fires (" +
+                       std::to_string(burning) + ")";
+    else
+      trigger.reason = "Race control: Red flag — car fire on track";
+    return trigger;
+  }
+  if (ShouldRedFlagForObstructions(session)) {
+    trigger.deploy = true;
+    trigger.weatherCause = false;
+    trigger.reason = "Race control: Red flag — track blocked (" +
+                     std::to_string(CountTrackObstructions(session)) +
+                     " obstructions)";
+  }
+  return trigger;
+}
+
+bool RacingConditionsMet(const RaceSession &session) {
+  if (CountTrackObstructions(session) > 0)
+    return false;
+  if (CountBurningCarsOnTrack(session) > 0)
+    return false;
+  if (!SectorFlagsAllGreen(session.raceControl))
+    return false;
+  if (!WeatherSafeForRacing(session.weather))
+    return false;
+  if (!AllNonRetiredCarsInPit(session))
+    return false;
+  return true;
+}
+
+void DeployRedFlag(RaceSession &session, const RedFlagTrigger &trigger) {
+  SessionRaceControl &rc = session.raceControl;
+  rc.flagPhase = FlagPhase::RedFlag;
+  const double period = trigger.weatherCause ? kRedFlagWeatherPeriodSec
+                                             : kRedFlagObstructionPeriodSec;
+  SetRedFlagPeriod(rc, session.elapsedRaceTime, period, trigger.weatherCause);
+  rc.redFlagExtensions = 0;
+  rc.redFlagReviewAt = rc.redFlagUntil - RedFlagReviewLeadSec(period);
+  SyncRaceControlFlags(rc);
+  EmitControlEvent(SimEventType::RedFlagDeploy, session.elapsedRaceTime,
+                   trigger.reason);
+}
+
+void ExtendRedFlag(RaceSession &session) {
+  SessionRaceControl &rc = session.raceControl;
+  rc.redFlagExtensions++;
+  const double period = rc.redFlagWeatherCause ? kRedFlagExtendWeatherSec
+                                               : kRedFlagExtendObstructionSec;
+  SetRedFlagPeriod(rc, session.elapsedRaceTime, period, rc.redFlagWeatherCause);
+  EmitControlEvent(SimEventType::RedFlagExtended, session.elapsedRaceTime,
+                   "Race control: Red flag extended (" +
+                       std::to_string(rc.redFlagExtensions) + ")");
+}
+
+void TransitionRedFlagToSc(RaceSession &session) {
+  SessionRaceControl &rc = session.raceControl;
+  rc.flagPhase = FlagPhase::SC;
+  rc.redFlagReviewAt = -1.0;
+  SyncRaceControlFlags(rc);
+  EmitControlEvent(SimEventType::RedFlagEnd, session.elapsedRaceTime,
+                   "Race control: Red flag ended — safety car deployed");
+
+  rc.scDeployedAt = session.elapsedRaceTime;
+  rc.scDeployedAtLap =
+      session.cars.empty() ? 0 : session.cars[0].state().currentLap;
+  const std::vector<Car *> board = GetLeaderboard(session);
+  if (!board.empty()) {
+    rc.scReferenceEntryId = board.front()->entryId();
+    rc.scDeployedAtLap = board.front()->state().currentLap;
+  }
+  rc.scLapsRemaining = kScMinLaps;
+  rc.scPitReleaseQueue.clear();
+  for (const Car *car : board) {
+    if (car->redFlagHold())
+      rc.scPitReleaseQueue.push_back(car->entryId());
+  }
+  rc.scPitReleaseNextAt = session.elapsedRaceTime;
+  EmitControlEvent(SimEventType::SafetyCarDeploy, session.elapsedRaceTime,
+                   "Race control: Safety car deployed");
+  UpdateScPitRelease(session);
+}
+
 void UpdateTrackObstructions(RaceSession &session, double deltaTime) {
   const bool underSc = session.raceControl.scActive;
 
   for (Car &car : session.cars) {
-    if (car.isRetired() || car.inPitLane() || car.inGarageHold())
+    if (car.inPitLane() || car.inGarageHold())
       continue;
 
     CarRaceControlState &rc = car.rcState();
     if (rc.trackStatus == TrackStatus::Stranded) {
       car.state().currentSpeed = 0.0;
+
+      if (rc.fireExtinguishEndTime >= 0.0) {
+        if (session.elapsedRaceTime >= rc.fireExtinguishEndTime) {
+          car.extinguishFire();
+          rc.fireExtinguishEndTime = -1.0;
+          BeginRecoveryTow(car, session, underSc);
+        }
+        continue;
+      }
+
       if (session.elapsedRaceTime >= rc.marshalDispatchTime &&
           rc.recoveryEndTime < 0.0) {
-        rc.trackStatus = TrackStatus::Recovering;
-        rc.recoveryEndTime =
-            session.elapsedRaceTime + TowDuration(car, underSc);
-        EmitControlEvent(SimEventType::RecoveryDispatched,
-                         session.elapsedRaceTime,
-                         car.teamName() + " — recovery vehicle dispatched",
-                         car.entryId());
+        if (car.onFire()) {
+          rc.fireExtinguishEndTime =
+              session.elapsedRaceTime +
+              FireExtinguishDuration(car, underSc, session.weather);
+          EmitControlEvent(
+              SimEventType::RecoveryDispatched, session.elapsedRaceTime,
+              car.teamName() + " — marshals extinguishing fire", car.entryId());
+        } else {
+          BeginRecoveryTow(car, session, underSc);
+        }
       }
       continue;
     }
 
     if (rc.trackStatus == TrackStatus::Recovering) {
       car.state().currentSpeed = 0.0;
-      const double span = rc.recoveryEndTime - rc.marshalDispatchTime;
+      const double towStart =
+          rc.recoveryStartTime >= 0.0 ? rc.recoveryStartTime
+                                      : rc.marshalDispatchTime;
+      const double span = rc.recoveryEndTime - towStart;
       if (span > 0.0) {
         rc.recoveryProgress = std::clamp(
-            (session.elapsedRaceTime - rc.marshalDispatchTime) / span, 0.0,
-            1.0);
+            (session.elapsedRaceTime - towStart) / span, 0.0, 1.0);
       }
-      if (session.elapsedRaceTime >= rc.recoveryEndTime) {
-        const bool terminal =
-            car.state().engineHealth <= 0.0 ||
-            rc.obstructionReason.find("Engine") != std::string::npos ||
-            rc.obstructionReason.find("Mechanical") != std::string::npos ||
-            rc.obstructionReason.find("Out of fuel") != std::string::npos;
-        ClearObstructionCar(car, session, terminal);
-      }
+      if (session.elapsedRaceTime >= rc.recoveryEndTime)
+        ClearObstructionCar(car, session);
       continue;
     }
+
+    if (car.isRetired())
+      continue;
 
     if (rc.trackStatus != TrackStatus::Racing)
       continue;
@@ -325,7 +651,20 @@ void UpdateTrackObstructions(RaceSession &session, double deltaTime) {
     double grip = 0.7;
     double span = 25.0;
 
-    if (car.state().engineHealth <= 0.0) {
+    if (car.onFire() && car.state().currentSpeed < kStoppedSpeedThresholdMs) {
+      shouldStrand = true;
+      reason = "Fire";
+      kind = HazardKind::Fire;
+      grip = 0.58;
+      span = 40.0;
+    } else if (IsMonocoqueBreached(car.state().partDamage) &&
+               car.state().currentSpeed < kStoppedSpeedThresholdMs) {
+      shouldStrand = true;
+      reason = "Monocoque breached";
+      kind = HazardKind::Debris;
+      grip = 0.55;
+      span = 40.0;
+    } else if (car.state().engineHealth <= 0.0) {
       shouldStrand = true;
       reason = "Engine failure";
       kind = HazardKind::Oil;
@@ -444,7 +783,27 @@ void UpdateRaceControl(RaceSession &session,
   const int obstructions = CountTrackObstructions(session);
   SessionRaceControl &rc = session.raceControl;
 
-  if (obstructions == 0 && rc.flagPhase != FlagPhase::Green) {
+  if (rc.flagPhase == FlagPhase::RedFlag) {
+    if (rc.redFlagReviewAt >= 0.0 &&
+        session.elapsedRaceTime >= rc.redFlagReviewAt) {
+      if (RacingConditionsMet(session))
+        TransitionRedFlagToSc(session);
+      else
+        ExtendRedFlag(session);
+      rc.redFlagReviewAt = -1.0;
+    }
+  } else {
+    const RedFlagTrigger trigger = EvaluateRedFlagTrigger(session);
+    if (trigger.deploy)
+      DeployRedFlag(session, trigger);
+  }
+
+  if ((rc.flagPhase == FlagPhase::SC || rc.flagPhase == FlagPhase::SCInLap) &&
+      !rc.scPitReleaseQueue.empty())
+    UpdateScPitRelease(session);
+
+  if (obstructions == 0 && rc.flagPhase != FlagPhase::Green &&
+      rc.flagPhase != FlagPhase::RedFlag) {
     bool hazardsInSector = false;
     for (size_t i = 0; i < rc.sectorFlags.size(); ++i) {
       if (rc.sectorFlags[i] > static_cast<int>(SectorFlagLevel::Green))
@@ -475,7 +834,7 @@ void UpdateRaceControl(RaceSession &session,
     }
   }
 
-  if (obstructions > 0) {
+  if (obstructions > 0 && rc.flagPhase != FlagPhase::RedFlag) {
     if (rc.flagPhase == FlagPhase::Green || rc.flagPhase == FlagPhase::SlowZone) {
       rc.flagPhase = FlagPhase::SlowZone;
       rc.slowZoneHoldUntil =
@@ -493,7 +852,8 @@ void UpdateRaceControl(RaceSession &session,
             car.state().partDamage, car.state().tyreDeflation);
         if (structural >= 70.0 || rc.flagPhase == FlagPhase::SlowZone) {
           if (rc.flagPhase != FlagPhase::FCY && rc.flagPhase != FlagPhase::SC &&
-              rc.flagPhase != FlagPhase::SCInLap) {
+              rc.flagPhase != FlagPhase::SCInLap &&
+              rc.flagPhase != FlagPhase::RedFlag) {
             rc.flagPhase = FlagPhase::FCY;
             rc.fcyHoldUntil =
                 session.elapsedRaceTime + kFcyMinHoldSec;
@@ -503,7 +863,8 @@ void UpdateRaceControl(RaceSession &session,
         }
         if (structural >= 85.0 || obstructions >= 2) {
           if (rc.flagPhase != FlagPhase::SC &&
-              rc.flagPhase != FlagPhase::SCInLap) {
+              rc.flagPhase != FlagPhase::SCInLap &&
+              rc.flagPhase != FlagPhase::RedFlag) {
             rc.flagPhase = FlagPhase::SC;
             rc.scDeployedAt = session.elapsedRaceTime;
             rc.scDeployedAtLap = session.cars.empty()
@@ -551,7 +912,8 @@ void UpdatePenalties(RaceSession &session, double deltaTime,
   const bool noOvertaking =
       session.raceControl.flagPhase == FlagPhase::FCY ||
       session.raceControl.flagPhase == FlagPhase::SC ||
-      session.raceControl.flagPhase == FlagPhase::SCInLap;
+      session.raceControl.flagPhase == FlagPhase::SCInLap ||
+      session.raceControl.flagPhase == FlagPhase::RedFlag;
 
   for (size_t i = 0; i < session.cars.size(); ++i) {
     Car &car = session.cars[i];
@@ -670,6 +1032,15 @@ void ApplyFlagModifiers(RaceSession &session,
     if (car.isRetired() || car.inPitLane())
       continue;
 
+    if (rc.flagPhase == FlagPhase::RedFlag) {
+      const double cap = session.track.pitLane.valid()
+                             ? session.track.pitLane.speedLimitMs
+                             : kRedFlagOnTrackSpeedCapMs;
+      mod.overtaking = false;
+      mod.speedCapMs =
+          mod.speedCapMs > 0.0 ? std::min(mod.speedCapMs, cap) : cap;
+    }
+
     if (rc.flagPhase == FlagPhase::FCY || rc.flagPhase == FlagPhase::SC ||
         rc.flagPhase == FlagPhase::SCInLap) {
       mod.overtaking = false;
@@ -708,4 +1079,40 @@ void ApplyFlagModifiers(RaceSession &session,
     (void)leader;
     (void)lapLength;
   }
+}
+
+void UpdateRedFlagPitProcedure(RaceSession &session) {
+  if (session.raceControl.flagPhase != FlagPhase::RedFlag)
+    return;
+
+  for (Car &car : session.cars) {
+    if (car.isRetired() || car.inPitLane())
+      continue;
+    car.pit().pendingEnter = true;
+    if (!PitPlanHasActiveService(car.pit().plan))
+      car.pit().plan = PitStopPlan{};
+  }
+}
+
+void UpdateScPitRelease(RaceSession &session) {
+  SessionRaceControl &rc = session.raceControl;
+  if (rc.scPitReleaseQueue.empty())
+    return;
+  if (session.elapsedRaceTime < rc.scPitReleaseNextAt)
+    return;
+
+  const std::string entryId = rc.scPitReleaseQueue.front();
+  rc.scPitReleaseQueue.erase(rc.scPitReleaseQueue.begin());
+
+  for (Car &car : session.cars) {
+    if (car.entryId() != entryId)
+      continue;
+    car.clearRedFlagHold();
+    if (car.inGarageHold())
+      car.releaseFromGarage(session.track);
+    break;
+  }
+
+  if (!rc.scPitReleaseQueue.empty())
+    rc.scPitReleaseNextAt = session.elapsedRaceTime + kScPitReleaseGapSec;
 }

@@ -628,6 +628,16 @@ function main(): void {
           broadcast(clients, serverMessage("meta_state", result));
           console.log("[server] New season started");
         }
+      } else if (msg.type === "restart_season") {
+        const result = host.restartSeason();
+        if ("error" in result) {
+          ws.send(JSON.stringify(serverMessage("error", { message: result.error })));
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+          broadcast(clients, serverMessage("session_init", host.getSessionInit()));
+          afterSessionChange();
+          console.log("[server] Season restarted");
+        }
       } else if (msg.type === "new_game") {
         const meta = host.newGame();
         broadcast(clients, serverMessage("meta_state", meta));

@@ -25,6 +25,7 @@ export interface RaceHubHandlers {
   onOpenGarage?: () => void;
   onViewSeasonResults?: () => void;
   onStartNextSeason?: () => void;
+  onRestartSeason?: () => void;
 }
 
 function escapeHtml(text: string): string {
@@ -83,6 +84,7 @@ export class RaceHub {
             <div class="race-hub-staff"></div>
             <div class="round-actions">
               <button type="button" class="secondary-btn garage-link-btn">⚙ Garage</button>
+              <button type="button" class="secondary-btn restart-season-btn hidden">↺ Restart Season</button>
               <button type="button" class="primary-btn start-race-btn">
                 <span class="btn-icon" aria-hidden="true">🏁</span>
                 Prepare &amp; Start
@@ -99,6 +101,7 @@ export class RaceHub {
           <p class="season-complete-copy"></p>
           <div class="season-complete-actions">
             <button type="button" class="primary-btn season-results-btn">View Results &amp; Payouts</button>
+            <button type="button" class="secondary-btn season-restart-btn">↺ Restart Season</button>
             <button type="button" class="secondary-btn season-next-btn">Start Next Season</button>
           </div>
         </div>
@@ -144,6 +147,14 @@ export class RaceHub {
 
     this.root.querySelector(".season-next-btn")!.addEventListener("click", () => {
       this.handlers.onStartNextSeason?.();
+    });
+
+    this.root.querySelector(".restart-season-btn")!.addEventListener("click", () => {
+      this.handlers.onRestartSeason?.();
+    });
+
+    this.root.querySelector(".season-restart-btn")!.addEventListener("click", () => {
+      this.handlers.onRestartSeason?.();
     });
   }
 
@@ -195,6 +206,18 @@ export class RaceHub {
         copy.textContent =
           "All rounds complete — open results to view standings and payouts.";
       }
+    }
+
+    const restartBtn = this.root.querySelector(".restart-season-btn");
+    const seasonRestartBtn = this.root.querySelector(".season-restart-btn");
+    const showRestart =
+      Boolean(meta?.setupComplete) && this.hostControlsEnabled;
+    if (restartBtn instanceof HTMLButtonElement) {
+      restartBtn.classList.toggle("hidden", seasonComplete || !meta?.setupComplete);
+      restartBtn.disabled = !showRestart;
+    }
+    if (seasonRestartBtn instanceof HTMLButtonElement) {
+      seasonRestartBtn.disabled = !showRestart;
     }
 
     const current = meta?.calendar.find((e) => e.round === meta.currentRound);

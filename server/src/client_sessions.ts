@@ -48,6 +48,7 @@ const HOST_PERMISSIONS: ClientMessageType[] = [
   "ask_garage_engineer",
   "repair_car_condition",
   "start_next_season",
+  "restart_season",
   "finalize_season",
   "get_track_preview",
 ];

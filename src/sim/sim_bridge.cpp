@@ -5,6 +5,7 @@
 #include "commands.hpp"
 #include "config_loader.hpp"
 #include "part_compatibility.hpp"
+#include "part_damage.hpp"
 #include "race_config.hpp"
 #include "weather.hpp"
 #include <algorithm>
@@ -257,8 +258,9 @@ std::vector<CarSnapshot> SimBridge::getSnapshots() const {
 
   for (size_t rank = 0; rank < board.size(); ++rank) {
     const Car &car = *board[rank];
+    const double remaining = RemainingSessionSec(session_, car);
     CarSnapshot snap =
-        car.snapshot(session_.track, static_cast<int>(rank + 1));
+        car.snapshot(session_.track, static_cast<int>(rank + 1), remaining);
     if (timingMode) {
       const std::string &classId = car.raceClass().id;
       const Car *classLead = classLeader[classId];
@@ -358,6 +360,11 @@ RaceControlState SimBridge::getRaceControl() const {
   state.scLapsRemaining = rc.scLapsRemaining;
   state.obstructionsOnTrack = CountTrackObstructions(session_);
   state.whiteFlagActive = rc.whiteFlagActive;
+  state.redFlagActive = rc.redFlagActive;
+  state.redFlagSecondsRemaining =
+      rc.redFlagActive
+          ? std::max(0.0, rc.redFlagUntil - session_.elapsedRaceTime)
+          : 0.0;
   state.surfaceHazards.reserve(rc.hazards.size());
   for (const TrackSurfaceHazard &hz : rc.hazards) {
     state.surfaceHazards.push_back(

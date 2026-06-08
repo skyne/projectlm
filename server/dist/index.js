@@ -528,6 +528,18 @@ function main() {
                     console.log("[server] New season started");
                 }
             }
+            else if (msg.type === "restart_season") {
+                const result = host.restartSeason();
+                if ("error" in result) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("session_init", host.getSessionInit()));
+                    afterSessionChange();
+                    console.log("[server] Season restarted");
+                }
+            }
             else if (msg.type === "new_game") {
                 const meta = host.newGame();
                 broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", meta));

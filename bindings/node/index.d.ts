@@ -107,6 +107,14 @@ export interface CarSnapshot {
   maxDriverStintSeconds?: number;
   partHealth?: Record<string, number>;
   partIrreparable?: string[];
+  partRepairSec?: Record<string, number>;
+  physicallyRepairable?: boolean;
+  sessionRepairable?: boolean;
+  totalRepairSec?: number;
+  remainingSessionSec?: number;
+  garageRebuildActive?: boolean;
+  garageRebuildRemainingSec?: number;
+  onFire?: boolean;
   tyreDeflation?: Record<string, string>;
   limpMode?: string;
   limpReason?: string;

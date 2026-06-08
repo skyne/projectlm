@@ -8,12 +8,20 @@ void MaybeRollHiddenFault(PartDamageState &damage, double impact, uint32_t salt)
   const double roll = std::fmod(std::sin(salt * 0.173) * 43758.5453, 1.0);
   if (roll > 0.004 + impact * 0.00022) return;
   HiddenFault fault;
-  fault.kind = impact > 12.0 ? HiddenFaultKind::CoolingHoseLeak
-                             : HiddenFaultKind::HairlineCrack;
-  fault.linkedPart = fault.kind == HiddenFaultKind::CoolingHoseLeak
-                         ? DamagePart::Cooling
-                         : DamagePart::SuspFL;
-  fault.severity = 20.0 + impact * 2.0;
+  if (impact >= kHugeCrashImpact + 1.0 &&
+      std::fmod(std::sin(salt * 0.311) * 43758.5453, 1.0) < 0.35) {
+    fault.kind = HiddenFaultKind::TubStress;
+    fault.linkedPart = DamagePart::Monocoque;
+    fault.severity = 28.0 + impact * 2.5;
+  } else if (impact > 12.0) {
+    fault.kind = HiddenFaultKind::CoolingHoseLeak;
+    fault.linkedPart = DamagePart::Cooling;
+    fault.severity = 20.0 + impact * 2.0;
+  } else {
+    fault.kind = HiddenFaultKind::HairlineCrack;
+    fault.linkedPart = DamagePart::SuspFL;
+    fault.severity = 20.0 + impact * 2.0;
+  }
   fault.revealed = false;
   damage.hiddenFaults.push_back(fault);
 }
@@ -118,7 +126,7 @@ void Car::placeInGarageHold(const TrackDefinition &track) {
 }
 
 bool Car::releaseFromGarage(const TrackDefinition &track) {
-  if (!garageHold_ || retired_)
+  if (!garageHold_ || retired_ || garageRebuildActive_)
     return false;
   garageHold_ = false;
   if (pit_.inPit && track.pitLane.valid()) {
@@ -179,6 +187,10 @@ void Car::resetForRestart() {
   totalPitSeconds_ = 0.0;
   driver_.resetForRestart();
   garageHold_ = false;
+  redFlagHold_ = false;
+  garageRebuildActive_ = false;
+  garageRebuildEndTime_ = 0.0;
+  onFire_ = false;
   rc_ = CarRaceControlState{};
   placeOnGrid(gridPosition_);
 }
@@ -269,9 +281,31 @@ void Car::applyCommand(const SimCommand &command) {
   }
 }
 
-bool Car::processPitEntry(double normalizedT, bool lapJustCompleted) {
+bool Car::isUnderPitService() const {
+  if (PitPlanHasActiveService(pit_.plan))
+    return true;
+  if (pit_.phase == PitPhase::AtBox && pit_.pitDuration > 0.0 &&
+      pit_.pitElapsed < pit_.pitDuration)
+    return true;
+  return false;
+}
+
+void Car::applyRedFlagHold() {
+  redFlagHold_ = true;
+  garageHold_ = true;
+  state_.currentSpeed = 0.0;
+  pit_.statusMessage = "Red flag hold";
+}
+
+void Car::clearRedFlagHold() {
+  redFlagHold_ = false;
+}
+
+bool Car::processPitEntry(double normalizedT, bool lapJustCompleted,
+                          bool redFlagActive) {
   if (!ShouldEnterPitLane(pit_, normalizedT, lapJustCompleted, state_.currentLap,
-                          state_.fuelRemaining, config_.fuelTankCapacity))
+                          state_.fuelRemaining, config_.fuelTankCapacity,
+                          redFlagActive))
     return false;
   pit_.inPit = true;
   pit_.pendingEnter = false;
@@ -287,7 +321,8 @@ bool Car::processPitEntry(double normalizedT, bool lapJustCompleted) {
 }
 
 bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
-                             const StaffModifiers &staff) {
+                             const StaffModifiers &staff,
+                             double remainingSessionSec, bool redFlagActive) {
   if (!pit_.inPit)
     return false;
 
@@ -296,7 +331,8 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
   const PitLaneDefinition &lane = track.pitLane;
   if (!lane.valid()) {
     if (pit_.pitDuration <= 0.0)
-      pit_.pitDuration = ComputePitServiceDuration(pit_.plan, config_, staff);
+      pit_.pitDuration =
+          ComputePitServiceDuration(pit_.plan, config_, staff, &state_);
     pit_.pitElapsed += deltaTime;
     if (pit_.pitElapsed < pit_.pitDuration)
       return false;
@@ -307,7 +343,8 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
     if (pit_.plan.brakeBiasDelta != 0.0)
       brakeBias_ = std::clamp(brakeBias_ + pit_.plan.brakeBiasDelta, 0.35, 0.65);
     pitCount_ += 1;
-    if (tryRetireTerminalDamageAfterPit()) {
+    if (handlePostPitRepairDecision(track, state_.elapsedRaceTime,
+                                    remainingSessionSec)) {
       pit_.plan = PitStopPlan{};
       return false;
     }
@@ -341,7 +378,8 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
           pit_.pitDuration =
               rc_.penaltyStopSeconds > 0.0 ? rc_.penaltyStopSeconds : 10.0;
         else
-          pit_.pitDuration = ComputePitServiceDuration(pit_.plan, config_, staff);
+          pit_.pitDuration =
+              ComputePitServiceDuration(pit_.plan, config_, staff, &state_);
         pit_.statusMessage = "In pits";
       }
     }
@@ -349,6 +387,8 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
 
   case PitPhase::AtBox:
     state_.currentSpeed = 0.0;
+    if (redFlagActive && !isUnderPitService() && !redFlagHold_)
+      applyRedFlagHold();
     if (garageHold_)
       break;
     pit_.pitElapsed += deltaTime;
@@ -360,12 +400,21 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
       rc_.lapsToComply = 0;
       rc_.penaltyStopSeconds = 0.0;
     }
+    if (redFlagActive && redFlagHold_)
+      break;
     pit_.phase = PitPhase::DrivingOut;
     state_.currentSpeed = speedLimit;
     pit_.statusMessage = "Pit exit";
     break;
 
   case PitPhase::DrivingOut:
+    if (redFlagActive && redFlagHold_) {
+      pit_.phase = PitPhase::AtBox;
+      pit_.pitLaneDistance = lane.boxDistance;
+      state_.currentSpeed = 0.0;
+      pit_.statusMessage = "Red flag hold";
+      break;
+    }
     state_.currentSpeed = speedLimit;
     pit_.pitLaneDistance += speedLimit * deltaTime;
     if (pit_.pitLaneDistance < lane.totalLength())
@@ -386,7 +435,8 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
       brakeBias_ = std::clamp(brakeBias_ + pit_.plan.brakeBiasDelta, 0.35, 0.65);
     pitCount_ += 1;
 
-    if (tryRetireTerminalDamageAfterPit()) {
+    if (handlePostPitRepairDecision(track, state_.elapsedRaceTime,
+                                    remainingSessionSec)) {
       pit_.plan = PitStopPlan{};
       return false;
     }
@@ -424,7 +474,8 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
                       double deltaTime, double raceTime,
                       TelemetryLog *telemetry,
                       const TrafficModifiers *traffic,
-                      const WeatherState &weather, bool isNight) {
+                      const WeatherState &weather, bool isNight,
+                      double remainingSessionSec) {
   CarTickResult result;
   if (retired_ || track.sectors.empty() || pit_.inPit)
     return result;
@@ -488,9 +539,17 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
         SyncDerivedEngineHealth(state_, config_);
         MaybeRollHiddenFault(state_.partDamage, traffic->collisionDamage,
                              static_cast<uint32_t>(entryId_.length() + state_.currentLap));
-        collisionCooldown_ = 3.0;
-        setupFeedback_ = "Contact — check bodywork";
+        const bool hasFuel = state_.fuelRemaining > 0.5;
+        const bool hasHybrid = config_.hybridDeployPowerKW > 0.0;
+        tryIgniteFire(FireIgnitionChanceFromImpact(traffic->collisionDamage,
+                                                   hasFuel, hasHybrid),
+                      raceTime);
+        if (traffic->collisionDamage >= kHugeCrashImpact)
+          setupFeedback_ = "Heavy impact — check safety cell";
+        else
+          setupFeedback_ = "Contact — check bodywork";
         setupFeedbackTimer_ = 6.0;
+        collisionCooldown_ = 3.0;
       }
       if (state_.engineHealth < 30.0)
         mods.throttleMultiplier *= 0.82;
@@ -597,6 +656,17 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
     setupFeedbackTimer_ = 6.0;
   }
 
+  if (onFire_) {
+    tickFireDamage(deltaTime);
+    mods.throttleMultiplier *= 0.35;
+    mods.speedCapMs = mods.speedCapMs > 0.0 ? std::min(mods.speedCapMs, 18.0) : 18.0;
+    if (IsMonocoqueBreached(state_.partDamage) && !retired_) {
+      markRetired("Monocoque breached — fire");
+      result.retired = true;
+      return result;
+    }
+  }
+
   static const PartCatalog kLimpCatalog{};
   CarDamageProfiles limpProfiles;
   BuildCarDamageProfiles(config_, kLimpCatalog, limpProfiles);
@@ -612,13 +682,17 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
       state_.partDamage, config_, state_.tyreDeflation,
       state_.batteryChargeMJ > 0.0 ? state_.batteryChargeMJ
                                    : state_.hybridDeployRemainingMJ);
+  const CarRepairAssessment repairPlan = ComputeCarRepairAssessment(
+      state_.partDamage, config_, state_.tyreDeflation, limpProfiles,
+      remainingSessionSec);
+  const bool canSessionRepair = repairPlan.sessionRepairable;
+
   if (HasCatastrophicSameSideLoss(state_.partDamage)) {
+    ApplyMonocoqueImpactDamage(state_.partDamage, limpProfiles, 14.5);
+    tryIgniteFire(0.24, raceTime);
     pit_.pendingEnter = false;
     state_.currentSpeed = 0.0;
-    if (!retired_) {
-      markRetired("Heavy crash — car stopped on track");
-      result.retired = true;
-    }
+    result.stoppedOnTrack = true;
     return result;
   }
   const double structural = ComputeStructuralSeverity(state_.partDamage,
@@ -626,22 +700,19 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
   if (limp == LimpMode::Immobilized) {
     mods.speedCapMs = std::max(mods.speedCapMs, 4.0);
     mods.throttleMultiplier *= 0.15;
-    if (!HasIrreparableSuspension(state_.partDamage) && !pit_.pendingEnter &&
-        !pit_.inPit)
+    if (canSessionRepair && !pit_.pendingEnter && !pit_.inPit)
       pit_.pendingEnter = true;
   } else if (limp == LimpMode::BarelyDriveable) {
     const double capMs = std::max(11.0, 28.0 - structural * 0.18);
     mods.speedCapMs = mods.speedCapMs > 0.0 ? std::min(mods.speedCapMs, capMs) : capMs;
     mods.throttleMultiplier *= 0.55;
-    if (!HasIrreparableSuspension(state_.partDamage) && !pit_.pendingEnter &&
-        !pit_.inPit)
+    if (canSessionRepair && !pit_.pendingEnter && !pit_.inPit)
       pit_.pendingEnter = true;
   } else if (limp == LimpMode::HybridOnly) {
     mods.throttleMultiplier *= 0.05;
     mods.hybridDeployScale = std::max(mods.hybridDeployScale, 0.35);
     mods.speedCapMs = mods.speedCapMs > 0.0 ? std::min(mods.speedCapMs, 36.0) : 36.0;
-    if (!HasTerminalStructuralDamage(state_.partDamage) && !pit_.pendingEnter &&
-        !pit_.inPit)
+    if (canSessionRepair && !pit_.pendingEnter && !pit_.inPit)
       pit_.pendingEnter = true;
   } else if (limp == LimpMode::ReducedPower) {
     mods.throttleMultiplier *= 0.45;
@@ -680,13 +751,12 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
     }
   }
 
-  if (state_.engineHealth <= 0.0 && !retired_ && pit_.inPit) {
-    markRetired("Engine failure");
-    result.retired = true;
+  if (state_.engineHealth <= 0.0 && !retired_ && pit_.inPit && !garageRebuildActive_) {
+    // Defer to post-pit / garage rebuild assessment on pit exit.
   }
 
   if (state_.engineHealth > 0.0 && state_.engineHealth < 12.0 && !retired_ &&
-      pit_.inPit) {
+      pit_.inPit && !garageRebuildActive_) {
     const double failRate =
         (12.0 - state_.engineHealth) * 0.000012 * deltaTime;
     const double roll =
@@ -711,22 +781,162 @@ bool Car::isOnTrackObstruction() const {
 void Car::markRetired(const std::string &reason) {
   retired_ = true;
   retireReason_ = reason;
+  garageRebuildActive_ = false;
+  onFire_ = false;
+  rc_.fireStartedAt = -1.0;
 }
 
-bool Car::tryRetireTerminalDamageAfterPit() {
-  if (retired_ || !HasTerminalStructuralDamage(state_.partDamage))
-    return false;
-  markRetired("Terminal damage (beyond repair)");
+void Car::igniteFire() {
+  if (retired_)
+    return;
+  onFire_ = true;
+  if (rc_.fireStartedAt < 0.0)
+    rc_.fireStartedAt = state_.elapsedRaceTime;
+}
+
+void Car::extinguishFire() {
+  onFire_ = false;
+  rc_.fireStartedAt = -1.0;
+}
+
+void Car::tryIgniteFire(double chance, double raceTime) {
+  if (onFire_ || retired_ || chance <= 0.0)
+    return;
+  const double roll = std::fmod(
+      std::sin((raceTime + static_cast<double>(entryId_.length())) * 0.41) *
+          43758.5453,
+      1.0);
+  if (roll >= chance)
+    return;
+  onFire_ = true;
+  if (rc_.fireStartedAt < 0.0)
+    rc_.fireStartedAt = raceTime;
+  setupFeedback_ = "Fire — stop immediately";
+  setupFeedbackTimer_ = 10.0;
+}
+
+void Car::tickFireDamage(double deltaTime) {
+  static const PartCatalog kCatalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(config_, kCatalog, profiles);
+  ApplyFireDamage(state_.partDamage, profiles, deltaTime);
+  SyncDerivedEngineHealth(state_, config_);
+  if (state_.engineHealth <= 0.0 && state_.fuelRemaining > 0.5 &&
+      !retired_) {
+    const double roll = std::fmod(
+        std::sin((state_.elapsedRaceTime + 3.1) * 0.29) * 43758.5453, 1.0);
+    if (roll < 0.0015 * deltaTime * 60.0)
+      tryIgniteFire(1.0, state_.elapsedRaceTime);
+  }
+}
+
+void Car::beginGarageRebuild(const TrackDefinition &track, double raceTime,
+                             double durationSec, const std::string &status) {
+  placeInGarageHold(track);
+  garageRebuildActive_ = true;
+  garageRebuildEndTime_ = raceTime + std::max(60.0, durationSec);
   pit_.pendingEnter = false;
-  pit_.inPit = true;
-  pit_.phase = PitPhase::AtBox;
-  garageHold_ = true;
-  state_.currentSpeed = 0.0;
-  pit_.statusMessage = "Retired — terminal damage";
+  pit_.statusMessage = status;
+  rc_.recoveryEndTime = -1.0;
+  rc_.recoveryProgress = 0.0;
+  extinguishFire();
+}
+
+double Car::garageRebuildRemainingSec(double raceTime) const {
+  if (!garageRebuildActive_)
+    return 0.0;
+  return std::max(0.0, garageRebuildEndTime_ - raceTime);
+}
+
+void Car::tickGarageRebuild(const TrackDefinition &track, double raceTime,
+                            double remainingSessionSec) {
+  if (!garageRebuildActive_ || retired_)
+    return;
+
+  const double rebuildRemaining = garageRebuildEndTime_ - raceTime;
+  if (rebuildRemaining > remainingSessionSec + 1.0) {
+    markRetired("Insufficient session time for repair");
+    pit_.statusMessage = "Retired — insufficient session time";
+    return;
+  }
+
+  if (raceTime + 1e-6 >= garageRebuildEndTime_) {
+    RestoreDamagedPartsToRaceable(state_.partDamage);
+    SyncDerivedEngineHealth(state_, config_);
+    garageRebuildActive_ = false;
+    garageRebuildEndTime_ = 0.0;
+    pit_.statusMessage = "Rebuild complete — rejoining";
+    releaseFromGarage(track);
+  }
+}
+
+bool Car::deliverTowedToGarage(const TrackDefinition &track, double raceTime,
+                               double remainingSessionSec) {
+  if (retired_)
+    return false;
+
+  static const PartCatalog kCatalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(config_, kCatalog, profiles);
+  const CarRepairAssessment assessment = ComputeCarRepairAssessment(
+      state_.partDamage, config_, state_.tyreDeflation, profiles,
+      remainingSessionSec);
+  if (!assessment.physicallyRepairable || !assessment.sessionRepairable)
+    return false;
+
+  beginGarageRebuild(track, raceTime, assessment.totalRepairSec,
+                     "Garage rebuild after tow");
   return true;
 }
 
-CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const {
+bool Car::handlePostPitRepairDecision(const TrackDefinition &track,
+                                      double raceTime,
+                                      double remainingSessionSec) {
+  if (retired_)
+    return true;
+
+  static const PartCatalog kCatalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(config_, kCatalog, profiles);
+  SyncDerivedEngineHealth(state_, config_);
+  const double battery = state_.batteryChargeMJ > 0.0
+                             ? state_.batteryChargeMJ
+                             : state_.hybridDeployRemainingMJ;
+  if (IsCarRaceable(state_.partDamage, config_, state_.tyreDeflation, battery))
+    return false;
+
+  const CarRepairAssessment assessment = ComputeCarRepairAssessment(
+      state_.partDamage, config_, state_.tyreDeflation, profiles,
+      remainingSessionSec);
+  if (!assessment.physicallyRepairable) {
+    markRetired(IsMonocoqueBreached(state_.partDamage) ? "Monocoque breached"
+                                                       : "Beyond repair");
+    pit_.pendingEnter = false;
+    pit_.inPit = true;
+    pit_.phase = PitPhase::AtBox;
+    garageHold_ = true;
+    state_.currentSpeed = 0.0;
+    pit_.statusMessage = "Retired — beyond repair";
+    return true;
+  }
+  if (!assessment.sessionRepairable) {
+    markRetired("Insufficient session time for repair");
+    pit_.pendingEnter = false;
+    pit_.inPit = true;
+    pit_.phase = PitPhase::AtBox;
+    garageHold_ = true;
+    state_.currentSpeed = 0.0;
+    pit_.statusMessage = "Retired — insufficient session time";
+    return true;
+  }
+
+  beginGarageRebuild(track, raceTime, assessment.totalRepairSec,
+                     "Garage rebuild in progress");
+  return true;
+}
+
+CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition,
+                          double remainingSessionSec) const {
   TrackPose pose;
   if (pit_.inPit && track.pitLane.valid()) {
     pose = track.pitLane.poseAtDistance(pit_.pitLaneDistance);
@@ -768,14 +978,35 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition) const 
       state_.batteryChargeMJ > 0.0 ? state_.batteryChargeMJ
                                    : state_.hybridDeployRemainingMJ);
   snap.limpMode = LimpModeLabel(limpSnap);
+  static const PartCatalog kSnapCatalog{};
+  CarDamageProfiles snapProfiles;
+  BuildCarDamageProfiles(config_, kSnapCatalog, snapProfiles);
+  const CarRepairAssessment repairSnap = ComputeCarRepairAssessment(
+      state_.partDamage, config_, state_.tyreDeflation, snapProfiles,
+      remainingSessionSec);
+  snap.physicallyRepairable = repairSnap.physicallyRepairable;
+  snap.sessionRepairable = repairSnap.sessionRepairable;
+  snap.totalRepairSec = repairSnap.totalRepairSec;
+  snap.remainingSessionSec = repairSnap.remainingSessionSec;
+  snap.garageRebuildActive = garageRebuildActive_;
+  snap.garageRebuildRemainingSec =
+      garageRebuildActive_ ? garageRebuildRemainingSec(state_.elapsedRaceTime) : 0.0;
+  snap.onFire = onFire_;
   snap.partHealth.clear();
+  snap.partIrreparable.clear();
+  snap.partRepairSec.clear();
+  for (const PartRepairAssessment &part : repairSnap.parts) {
+    snap.partHealth[part.token] = part.health;
+    snap.partRepairSec[part.token] = part.repairSec;
+    if (part.needsGarageRebuild)
+      snap.partIrreparable.push_back(part.token);
+  }
   for (int pi = 0; pi < static_cast<int>(DamagePart::Count); ++pi) {
     const DamagePart part = static_cast<DamagePart>(pi);
+    const std::string tok = DamagePartToken(part);
     const double h = PartHealth(state_.partDamage, part);
-    if (h < 99.5)
-      snap.partHealth[DamagePartToken(part)] = h;
-    if (state_.partDamage.irreparable[pi])
-      snap.partIrreparable.push_back(DamagePartToken(part));
+    if (h < 99.5 && !snap.partHealth.count(tok))
+      snap.partHealth[tok] = h;
   }
   snap.tyreDeflation.clear();
   static const char *kWheel[] = {"FL", "FR", "RL", "RR"};

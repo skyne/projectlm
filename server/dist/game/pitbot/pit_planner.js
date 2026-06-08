@@ -158,14 +158,18 @@ function deflatedWheels(s) {
         .filter(([, v]) => v === "flat" || v === "soft")
         .map(([w]) => w.toUpperCase());
 }
+function canRepairThisSession(s) {
+    if (s.physicallyRepairable === false)
+        return false;
+    if (s.sessionRepairable === false)
+        return false;
+    return true;
+}
 function needsLimpPit(s) {
-    if (hasIrreparableSuspension(s))
+    if (!canRepairThisSession(s))
         return false;
     const limp = s.limpMode ?? "none";
     return limp === "barely_driveable" || limp === "hybrid_only" || limp === "immobilized";
-}
-function hasIrreparableSuspension(s) {
-    return (s.partIrreparable ?? []).some((p) => p.startsWith("susp_"));
 }
 function tyresWorn(s) {
     const wear = s.tireWear ?? 0;
@@ -255,7 +259,7 @@ function scaledFuelThresholds(pitAggression = 1, base) {
 }
 /** Decide bundled pit stop (or defer). */
 function planPitStop(s, ctx, fuelAtLastPit) {
-    if (hasIrreparableSuspension(s) &&
+    if (!canRepairThisSession(s) &&
         (s.limpMode === "barely_driveable" ||
             s.limpMode === "hybrid_only" ||
             s.limpMode === "immobilized")) {
@@ -442,7 +446,7 @@ function tankCapacityFor(s) {
 function fuelToAddFor(s) {
     return fuelToAdd(s);
 }
-const DEFER_FLAG_PHASES = new Set(["fcy", "sc", "sc_in_lap", "slow_zone"]);
+const DEFER_FLAG_PHASES = new Set(["fcy", "sc", "sc_in_lap", "slow_zone", "red_flag"]);
 /** Defer routine pit stops under full-course or safety-car conditions. */
 function shouldDeferPitForRaceControl(rc) {
     if (!rc)

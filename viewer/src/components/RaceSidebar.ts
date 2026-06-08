@@ -27,9 +27,9 @@ export class RaceSidebar {
     panelsWrap.className = "sidebar-panels";
 
     const groups: Record<SidebarPanel, string[]> = {
-      drive: ["car-preview-container", "race-controls-container", "playback-container"],
+      drive: ["event-log-container", "race-controls-container", "playback-container"],
       pit: ["pitwall-container", "sidebar-weather-stack"],
-      comms: ["engineer-container", "event-log-container"],
+      comms: ["engineer-container"],
     };
 
     for (const panel of PANELS) {

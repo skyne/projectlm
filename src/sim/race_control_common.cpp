@@ -10,6 +10,8 @@ const char *FlagPhaseName(FlagPhase phase) {
     return "sc";
   case FlagPhase::SCInLap:
     return "sc_in_lap";
+  case FlagPhase::RedFlag:
+    return "red_flag";
   case FlagPhase::Green:
   default:
     return "green";
@@ -52,6 +54,8 @@ const char *HazardKindName(HazardKind kind) {
     return "coolant";
   case HazardKind::Fuel:
     return "fuel";
+  case HazardKind::Fire:
+    return "fire";
   case HazardKind::Debris:
   default:
     return "debris";

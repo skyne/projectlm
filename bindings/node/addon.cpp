@@ -69,6 +69,12 @@ const char *EventTypeName(SimEventType type) {
     return "green_flag";
   case SimEventType::WhiteFlag:
     return "white_flag";
+  case SimEventType::RedFlagDeploy:
+    return "red_flag_deploy";
+  case SimEventType::RedFlagExtended:
+    return "red_flag_extended";
+  case SimEventType::RedFlagEnd:
+    return "red_flag_end";
   }
   return "unknown";
 }
@@ -219,6 +225,24 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
       ir.Set(static_cast<uint32_t>(i), snapshot.partIrreparable[i]);
     obj.Set("partIrreparable", ir);
   }
+  if (!snapshot.partRepairSec.empty()) {
+    Napi::Object pr = Napi::Object::New(env);
+    for (const auto &kv : snapshot.partRepairSec)
+      pr.Set(kv.first, kv.second);
+    obj.Set("partRepairSec", pr);
+  }
+  obj.Set("physicallyRepairable", snapshot.physicallyRepairable);
+  obj.Set("sessionRepairable", snapshot.sessionRepairable);
+  if (snapshot.totalRepairSec > 0.0)
+    obj.Set("totalRepairSec", snapshot.totalRepairSec);
+  if (snapshot.remainingSessionSec > 0.0)
+    obj.Set("remainingSessionSec", snapshot.remainingSessionSec);
+  if (snapshot.garageRebuildActive)
+    obj.Set("garageRebuildActive", true);
+  if (snapshot.garageRebuildRemainingSec > 0.0)
+    obj.Set("garageRebuildRemainingSec", snapshot.garageRebuildRemainingSec);
+  if (snapshot.onFire)
+    obj.Set("onFire", true);
   if (!snapshot.tyreDeflation.empty()) {
     Napi::Object td = Napi::Object::New(env);
     for (const auto &kv : snapshot.tyreDeflation)
@@ -432,6 +456,8 @@ Napi::Object RaceControlToObject(Napi::Env env, const RaceControlState &rc) {
   obj.Set("scLapsRemaining", rc.scLapsRemaining);
   obj.Set("obstructionsOnTrack", rc.obstructionsOnTrack);
   obj.Set("whiteFlagActive", rc.whiteFlagActive);
+  obj.Set("redFlagActive", rc.redFlagActive);
+  obj.Set("redFlagSecondsRemaining", rc.redFlagSecondsRemaining);
   if (!rc.activeIncidentEntryId.empty())
     obj.Set("activeIncidentEntryId", rc.activeIncidentEntryId);
 
