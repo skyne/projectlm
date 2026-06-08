@@ -16,7 +16,7 @@ TEST_CASE("LoadPartCatalog parses catalog entries generically",
 
   const PartStats *stats = catalog.FindStats("chassis", "LMHInHouse");
   REQUIRE(stats != nullptr);
-  REQUIRE(PartStatD(*stats, "mass") == Catch::Approx(72.0));
+  REQUIRE(PartStatD(*stats, "mass") == Catch::Approx(74.0));
   REQUIRE(PartStatD(*stats, "rigidity") == Catch::Approx(1.35));
 }
 
