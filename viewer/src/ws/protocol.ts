@@ -451,6 +451,8 @@ export interface CarBuildPayload {
   chassis_type: string;
   front_aero_type: string;
   rear_aero_type: string;
+  diffuser_type?: string;
+  exhaust_type?: string;
   cooling_pack: string;
   cooling?: CoolingBuildPayload;
   /** 0–1 duct restriction — set at track in race setup (tape on inlets). */

@@ -1,6 +1,66 @@
 #include "part_compatibility.hpp"
 #include <fstream>
 #include <sstream>
+#include <unordered_set>
+
+namespace {
+
+bool IsElectricDriveOutletBuild(const CarConfig &car) {
+  return car.engine.drivetrain == "FullEV" ||
+         (car.engine.fuelType == "Hydrogen" &&
+          car.engine.energyConverter == "FuelCell");
+}
+
+bool IsEvLegalOutlet(const std::string &exhaustId) {
+  static const std::unordered_set<std::string> kEvOutlets = {
+      "None",           "ActiveUnderbody", "LowDragUnderfloor",
+      "ThermalScoop",   "WakeNeutralBody",
+  };
+  return kEvOutlets.count(exhaustId) > 0;
+}
+
+bool IsEvOnlyOutlet(const std::string &exhaustId) {
+  static const std::unordered_set<std::string> kEvOnly = {
+      "ActiveUnderbody", "LowDragUnderfloor", "ThermalScoop", "WakeNeutralBody",
+  };
+  return kEvOnly.count(exhaustId) > 0;
+}
+
+bool ValidateExhaustPowertrain(const CarConfig &car, std::string *errorOut) {
+  const std::string exhaust =
+      car.exhaustId.empty() ? "TwinOutletSide" : car.exhaustId;
+  const bool isEv = IsElectricDriveOutletBuild(car);
+
+  if (exhaust == "DieselDPF" || exhaust == "DieselDPFSport") {
+    if (car.engine.fuelType != "Diesel") {
+      if (errorOut) {
+        *errorOut = "Diesel DPF exhaust requires Diesel fuel in the powertrain";
+      }
+      return false;
+    }
+  }
+
+  if (isEv) {
+    if (!IsEvLegalOutlet(exhaust)) {
+      if (errorOut) {
+        *errorOut =
+            "E-drive powertrain requires an underbody outlet package";
+      }
+      return false;
+    }
+    return true;
+  }
+
+  if (exhaust == "None" || IsEvOnlyOutlet(exhaust)) {
+    if (errorOut) {
+      *errorOut = "Combustion powertrain requires an exhaust system";
+    }
+    return false;
+  }
+  return true;
+}
+
+} // namespace
 
 static std::string Trim(const std::string &s) {
   size_t start = 0;
@@ -117,6 +177,9 @@ bool ValidatePartCompatibility(const CarConfig &car,
     }
     return false;
   }
+
+  if (!ValidateExhaustPowertrain(car, errorOut))
+    return false;
 
   for (const CompatibilityRule &rule : rules) {
     if (PartChoiceForSlot(car, rule.ifSlot) != rule.ifPart)

@@ -111,6 +111,8 @@ export function validateCarBuild(
     ["legal_chassis", build.chassis_type, "chassis"],
     ["legal_front_aero", build.front_aero_type, "front_aero"],
     ["legal_rear_aero", build.rear_aero_type, "rear_aero"],
+    ["legal_diffuser", build.diffuser_type ?? "StockFloor", "diffuser"],
+    ["legal_exhaust", build.exhaust_type ?? "TwinOutletSide", "exhaust"],
     [
       "legal_cooling",
       build.cooling_pack === "Custom" || build.cooling ? "Custom" : build.cooling_pack,
@@ -207,6 +209,8 @@ function writeCarConfigFile(
     `chassis_type=${build.chassis_type}`,
     `front_aero_type=${build.front_aero_type}`,
     `rear_aero_type=${build.rear_aero_type}`,
+    `diffuser_type=${build.diffuser_type ?? "StockFloor"}`,
+    `exhaust_type=${build.exhaust_type ?? "TwinOutletSide"}`,
     `cooling_pack=${build.cooling_pack}`,
     ...(build.cooling
       ? [

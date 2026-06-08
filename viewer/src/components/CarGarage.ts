@@ -28,6 +28,10 @@ import {
   validateAssemblyCompatibility,
 } from "../utils/partCompatibility";
 import {
+  isElectricDriveOutletBuild,
+  normalizeExhaustType,
+} from "../utils/ev_outlet";
+import {
   filterPartsForClass,
   legalPartsForSlot,
 } from "../utils/classLegality";
@@ -79,6 +83,8 @@ type BuildSlot =
   | "chassis"
   | "front_aero"
   | "rear_aero"
+  | "diffuser"
+  | "exhaust"
   | "cooling"
   | "wheel_package"
   | "suspension"
@@ -92,6 +98,8 @@ const SLOT_LABELS: Record<BuildSlot, string> = {
   chassis: "Chassis",
   front_aero: "Front Aero",
   rear_aero: "Rear Aero",
+  diffuser: "Diffuser",
+  exhaust: "Exhaust",
   cooling: "Cooling",
   wheel_package: "Wheels & Tyres",
   suspension: "Suspension",
@@ -105,6 +113,8 @@ const BUILD_FIELD: Record<PartSlot, keyof CarBuildPayload> = {
   chassis: "chassis_type",
   front_aero: "front_aero_type",
   rear_aero: "rear_aero_type",
+  diffuser: "diffuser_type",
+  exhaust: "exhaust_type",
   cooling: "cooling_pack",
   wheel_package: "wheel_package",
   suspension: "suspension_layout",
@@ -118,6 +128,8 @@ const FIELD_TO_BUILD_SLOT: Partial<Record<keyof CarBuildPayload, BuildSlot>> = {
   chassis_type: "chassis",
   front_aero_type: "front_aero",
   rear_aero_type: "rear_aero",
+  diffuser_type: "diffuser",
+  exhaust_type: "exhaust",
   cooling_pack: "cooling",
   wheel_package: "wheel_package",
   suspension_layout: "suspension",
@@ -140,6 +152,8 @@ const BUILD_GUIDE_STEPS: BuildGuideStep[] = [
   { kind: "slot", slot: "chassis" },
   { kind: "slot", slot: "front_aero" },
   { kind: "slot", slot: "rear_aero" },
+  { kind: "slot", slot: "diffuser" },
+  { kind: "slot", slot: "exhaust" },
   { kind: "slot", slot: "cooling" },
   { kind: "slot", slot: "wheel_package" },
   { kind: "slot", slot: "suspension" },
@@ -149,11 +163,18 @@ const BUILD_GUIDE_STEPS: BuildGuideStep[] = [
   { kind: "confirm" },
 ];
 
-function buildGuideLabel(step: BuildGuideStep): string {
+function slotLabelForBuild(slot: BuildSlot, build?: CarBuildPayload | null): string {
+  if (slot === "exhaust" && isElectricDriveOutletBuild(build?.engine)) {
+    return "Underbody Outlet";
+  }
+  return SLOT_LABELS[slot];
+}
+
+function buildGuideLabel(step: BuildGuideStep, build?: CarBuildPayload | null): string {
   if (step.kind === "intro") return "Welcome";
   if (step.kind === "name") return "Car Name";
   if (step.kind === "confirm") return "Confirm";
-  return SLOT_LABELS[step.slot];
+  return slotLabelForBuild(step.slot, build);
 }
 
 function buildGuideText(step: BuildGuideStep, classId: string): string {
@@ -356,6 +377,10 @@ export class CarGarage {
           if (suggestions?.transmission && this.catalog?.partsBySlot.transmission?.some((p) => p.partType === suggestions.transmission)) {
             next = { ...next, transmission: suggestions.transmission };
           }
+          next = {
+            ...next,
+            exhaust_type: normalizeExhaustType(next.exhaust_type, engine),
+          };
           this.build = next;
           this.statusEl.textContent = "";
           this.previewBuild = null;
@@ -582,7 +607,7 @@ export class CarGarage {
       pill.className = "wizard-step-pill";
       if (i === this.buildGuideStepIndex) pill.classList.add("active");
       else if (i < this.buildGuideStepIndex) pill.classList.add("done");
-      pill.textContent = buildGuideLabel(s);
+      pill.textContent = buildGuideLabel(s, this.build);
       this.guideStepsEl.appendChild(pill);
     }
   }
@@ -907,7 +932,7 @@ export class CarGarage {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = `garage-slot-tab${slot === this.activeSlot ? " active" : ""}`;
-      btn.textContent = SLOT_LABELS[slot];
+      btn.textContent = slotLabelForBuild(slot, this.build);
       btn.addEventListener("click", () => {
         this.activeSlot = slot;
         this.render();
@@ -1822,6 +1847,8 @@ function defaultBuild(meta: MetaStatePayload): CarBuildPayload {
     chassis_type: classId === "LMGT3" ? "GT3Spaceframe" : classId === "LMP2" ? "Oreca07" : "LMDhDallara",
     front_aero_type: "LowDragNose",
     rear_aero_type: classId === "LMGT3" ? "HighDownforceWing" : "StandardWing",
+    diffuser_type: "StockFloor",
+    exhaust_type: "TwinOutletSide",
     cooling_pack: "EnduranceHeavyDuty",
     cooling: {
       engine_radiator: 0.65,

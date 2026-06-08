@@ -3,11 +3,18 @@ import type {
   CarBuildPayload,
 } from "../ws/protocol";
 import type { PartSlot } from "./carStats";
+import {
+  EV_ONLY_OUTLET_PARTS,
+  isElectricDriveOutletBuild,
+  isEvLegalOutlet,
+} from "./ev_outlet";
 
 const BUILD_FIELD_BY_CONFIG_SLOT: Record<string, keyof CarBuildPayload> = {
   chassis: "chassis_type",
   front_aero: "front_aero_type",
   rear_aero: "rear_aero_type",
+  diffuser: "diffuser_type",
+  exhaust: "exhaust_type",
   cooling: "cooling_pack",
   wheel_package: "wheel_package",
   suspension: "suspension_layout",
@@ -22,6 +29,8 @@ export const CONFIG_SLOT_BY_PART_SLOT: Record<PartSlot, string> = {
   chassis: "chassis",
   front_aero: "front_aero",
   rear_aero: "rear_aero",
+  diffuser: "diffuser",
+  exhaust: "exhaust",
   cooling: "cooling",
   wheel_package: "wheel_package",
   suspension: "suspension",
@@ -35,6 +44,8 @@ export const CONFIG_SLOT_LABELS: Record<string, string> = {
   chassis: "Chassis",
   front_aero: "Front Aero",
   rear_aero: "Rear Aero",
+  diffuser: "Diffuser",
+  exhaust: "Exhaust",
   cooling: "Cooling",
   wheel_package: "Wheels & Tyres",
   suspension: "Suspension",
@@ -84,13 +95,33 @@ export type AssemblyConflict =
     }
   | {
       kind: "h2_rex_blocked";
+    }
+  | {
+      kind: "diesel_dpf";
+      otherPart: string;
+    }
+  | {
+      kind: "ev_exhaust";
+      otherPart: string;
+    }
+  | {
+      kind: "combustion_none_exhaust";
+    }
+  | {
+      kind: "wingless_diffuser";
+      otherPart: string;
     };
+
+const DPF_EXHAUST_PARTS = new Set(["DieselDPF", "DieselDPFSport"]);
 
 function buildFieldValue(build: CarBuildPayload, configSlot: string): string {
   const field = BUILD_FIELD_BY_CONFIG_SLOT[configSlot];
   if (!field) return "";
   const value = build[field];
-  return typeof value === "string" ? value : "";
+  if (typeof value === "string" && value) return value;
+  if (field === "diffuser_type") return "StockFloor";
+  if (field === "exhaust_type") return "TwinOutletSide";
+  return "";
 }
 
 function findFuelSystemConflict(
@@ -119,6 +150,40 @@ function findFuelSystemConflict(
   }
   if (eng?.fuel_type === "Hydrogen" && eng.drivetrain === "RangeExtender") {
     return { kind: "h2_rex_blocked" };
+  }
+  return null;
+}
+
+function findExhaustConflict(build: CarBuildPayload): AssemblyConflict | null {
+  const exhaust = build.exhaust_type ?? "TwinOutletSide";
+  const eng = build.engine;
+  if (DPF_EXHAUST_PARTS.has(exhaust) && eng?.fuel_type !== "Diesel") {
+    return {
+      kind: "diesel_dpf",
+      otherPart: eng?.fuel_type ?? "Gasoline",
+    };
+  }
+  const isEv = isElectricDriveOutletBuild(eng);
+  if (isEv && !isEvLegalOutlet(exhaust)) {
+    return { kind: "ev_exhaust", otherPart: exhaust };
+  }
+  if (!isEv && (exhaust === "None" || EV_ONLY_OUTLET_PARTS.has(exhaust))) {
+    return { kind: "combustion_none_exhaust" };
+  }
+  return null;
+}
+
+function findWinglessDiffuserConflict(
+  build: CarBuildPayload,
+): AssemblyConflict | null {
+  if (
+    build.rear_aero_type === "WinglessGroundEffect" &&
+    (build.diffuser_type ?? "StockFloor") === "StockFloor"
+  ) {
+    return {
+      kind: "wingless_diffuser",
+      otherPart: build.diffuser_type ?? "StockFloor",
+    };
   }
   return null;
 }
@@ -170,7 +235,12 @@ export function findAssemblyConflict(
     }
   }
 
-  return findWinglessNoseConflict(build) ?? findFuelSystemConflict(build);
+  return (
+    findWinglessNoseConflict(build) ??
+    findWinglessDiffuserConflict(build) ??
+    findExhaustConflict(build) ??
+    findFuelSystemConflict(build)
+  );
 }
 
 export function formatAssemblyConflict(
@@ -199,6 +269,10 @@ export function formatAssemblyConflict(
   }
   if (conflict.kind === "h2_rex_blocked") {
     return "Hydrogen range-extender is not supported; use fuel cell instead";
+  }
+
+  if (conflict.kind === "wingless_diffuser") {
+    return "Wingless rear requires a diffuser floor package";
   }
 
   if (conflict.kind === "wingless_nose") {
@@ -250,6 +324,9 @@ export function validateAssemblyCompatibility(
   if (conflict.kind === "wingless_nose") {
     return "Wingless rear package requires a low-drag nose";
   }
+  if (conflict.kind === "wingless_diffuser") {
+    return "Wingless rear requires a diffuser floor package";
+  }
   if (conflict.kind === "hydrogen_fuel") {
     return "Hydrogen tank requires Hydrogen fuel in the powertrain";
   }
@@ -264,6 +341,15 @@ export function validateAssemblyCompatibility(
   }
   if (conflict.kind === "h2_rex_blocked") {
     return "Hydrogen range-extender is not supported; use fuel cell instead";
+  }
+  if (conflict.kind === "diesel_dpf") {
+    return "Diesel DPF exhaust requires Diesel fuel in the powertrain";
+  }
+  if (conflict.kind === "ev_exhaust") {
+    return "E-drive powertrain requires an underbody outlet package";
+  }
+  if (conflict.kind === "combustion_none_exhaust") {
+    return "Combustion powertrain requires an exhaust system";
   }
   if (conflict.kind === "requires") {
     return `${conflict.triggerPart} requires ${conflict.requiredPart} on ${conflict.otherSlot}`;
@@ -281,7 +367,7 @@ export function isPartCompatibleWithBuild(
   const field = BUILD_FIELD_BY_CONFIG_SLOT[configSlot];
   if (!field) return true;
   const preview = { ...build, [field]: candidatePart };
-  return findAssemblyConflict(preview, rules) === null;
+  return validateAssemblyCompatibility(preview, rules) === null;
 }
 
 export function describePartIncompatibility(

@@ -65,6 +65,32 @@ const winglessRule: AssemblyRulePayload = {
   requiresAnyParts: ["LowDragNose", "LowDragNoseSlim"],
 };
 
+const winglessDiffuserRule: AssemblyRulePayload = {
+  kind: "requires_any",
+  ifSlot: "rear_aero",
+  ifPart: "WinglessGroundEffect",
+  requiresSlot: "diffuser",
+  requiresAnyParts: [
+    "WinglessBaseline",
+    "FlatFloor",
+    "HighDownforceDiffuser",
+    "DoubleDeckerDiffuser",
+  ],
+};
+
+const blownExhaustRule: AssemblyRulePayload = {
+  kind: "requires_any",
+  ifSlot: "exhaust",
+  ifPart: "BlownDiffuser",
+  requiresSlot: "diffuser",
+  requiresAnyParts: [
+    "StandardDiffuser",
+    "HighDownforceDiffuser",
+    "DoubleDeckerDiffuser",
+    "StrakedDiffuser",
+  ],
+};
+
 describe("partCompatibility", () => {
   it("flags high-DF front aero when wingless rear is fitted", () => {
     const build = {
@@ -130,5 +156,52 @@ describe("partCompatibility", () => {
     );
     assert.match(message, /hydrogen powertrain/i);
     assert.match(message, /Gasoline/);
+  });
+
+  it("allows wingless rear with a floor diffuser package", () => {
+    const build = {
+      ...baseBuild,
+      rear_aero_type: "WinglessGroundEffect",
+      diffuser_type: "WinglessBaseline",
+    };
+    assert.equal(
+      isPartCompatibleWithBuild(build, "diffuser", "HighDownforceDiffuser", [
+        winglessDiffuserRule,
+      ]),
+      true,
+    );
+  });
+
+  it("blocks wingless rear with stock floor only", () => {
+    const build = {
+      ...baseBuild,
+      rear_aero_type: "WinglessGroundEffect",
+      diffuser_type: "StockFloor",
+    };
+    const conflict = findAssemblyConflict(build, []);
+    assert.equal(conflict?.kind, "wingless_diffuser");
+  });
+
+  it("blocks blown exhaust without active diffuser floor", () => {
+    const build = {
+      ...baseBuild,
+      diffuser_type: "FlatFloor",
+      exhaust_type: "BlownDiffuser",
+    };
+    assert.equal(
+      isPartCompatibleWithBuild(build, "exhaust", "BlownDiffuser", [
+        blownExhaustRule,
+      ]),
+      false,
+    );
+  });
+
+  it("blocks DPF exhaust on gasoline engine", () => {
+    const build = {
+      ...baseBuild,
+      exhaust_type: "DieselDPF",
+    };
+    const conflict = findAssemblyConflict(build, []);
+    assert.equal(conflict?.kind, "diesel_dpf");
   });
 });

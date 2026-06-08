@@ -214,6 +214,10 @@ std::string PartChoiceForSlot(const CarConfig &car, const std::string &slot) {
     return car.transmissionId;
   if (slot == "hybrid_system")
     return car.hybridSystemId;
+  if (slot == "diffuser")
+    return car.diffuserId;
+  if (slot == "exhaust")
+    return car.exhaustId;
   if (slot == "wheel_package")
     return car.wheelPackageId;
   if (slot == "suspension")
@@ -370,6 +374,35 @@ HybridPart GetHybridStats(const PartCatalog &catalog,
   return part;
 }
 
+DiffuserPart GetDiffuserStats(const PartCatalog &catalog,
+                              const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "diffuser", partId);
+  DiffuserPart part;
+  part.mass = PartStatD(s, "mass");
+  part.downforceCl = PartStatD(s, "downforce");
+  part.winglessDownforceCl = PartStatD(s, "wingless_downforce");
+  part.dragCd = PartStatD(s, "drag");
+  part.groundEffectMult = PartStatD(s, "ground_effect_mult", 1.0);
+  part.aeroStability = PartStatD(s, "aero_stability", 1.0);
+  part.mechanicalGrip = PartStatD(s, "mechanical_grip", 1.0);
+  return part;
+}
+
+ExhaustPart GetExhaustStats(const PartCatalog &catalog,
+                            const std::string &partId) {
+  const PartStats &s = LookupStats(catalog, "exhaust", partId);
+  ExhaustPart part;
+  part.mass = PartStatD(s, "mass");
+  part.dragCd = PartStatD(s, "drag");
+  part.backPressure = PartStatD(s, "back_pressure");
+  part.powerMult = PartStatD(s, "power_mult", 1.0);
+  part.thermalMult = PartStatD(s, "thermal_mult", 1.0);
+  part.diffuserBoost = PartStatD(s, "diffuser_boost");
+  part.aeroStability = PartStatD(s, "aero_stability", 1.0);
+  part.serviceability = PartStatD(s, "serviceability", 1.0);
+  return part;
+}
+
 std::string GetAttachmentPoint(const PartCatalog &catalog,
                                const std::string &slot,
                                const std::string &partName) {
@@ -456,6 +489,12 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   TransmissionPart tr =
       GetTransmissionStats(catalog, car.transmissionId);
   HybridPart hp = GetHybridStats(catalog, car.hybridSystemId);
+  if (car.diffuserId.empty())
+    car.diffuserId = "StockFloor";
+  if (car.exhaustId.empty())
+    car.exhaustId = "TwinOutletSide";
+  DiffuserPart df = GetDiffuserStats(catalog, car.diffuserId);
+  ExhaustPart ex = GetExhaustStats(catalog, car.exhaustId);
 
   ApplyTireCompoundStats(car, car.tireChoice, catalog);
 
@@ -500,7 +539,7 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   car.aeroPlatformStability =
       (frontSp.aeroPlatformStability + rearSp.aeroPlatformStability) * 0.5;
   car.suspensionMechanicalGrip =
-      (frontSp.mechanicalGrip + rearSp.mechanicalGrip) * 0.5;
+      (frontSp.mechanicalGrip + rearSp.mechanicalGrip) * 0.5 * df.mechanicalGrip;
 
   if (customFrontSpring)
     car.frontSpringStiffness = frontSpringOverride;
@@ -531,10 +570,17 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   }
   ClampSuspensionSetup(car);
 
+  const double diffuserBaseCl =
+      ra.permitsWinglessPitch && df.winglessDownforceCl > 0.0
+          ? df.winglessDownforceCl
+          : df.downforceCl;
+  const double effectiveDiffuserDf =
+      diffuserBaseCl * (1.0 + ex.diffuserBoost);
   car.totalDragCd =
       ac.bodyBaseDragCd + ch.baselineDrag + fa.dragCd + ra.dragCd +
-      coolingCompiled.dragCd + wp.dragCd;
-  car.totalDownforceCl = fa.downforceCl + ra.downforceCl;
+      coolingCompiled.dragCd + wp.dragCd + df.dragCd + ex.dragCd;
+  car.totalDownforceCl =
+      fa.downforceCl + ra.downforceCl + effectiveDiffuserDf;
   car.structuralRigidityFactor = ch.structuralRigidity;
   car.serviceabilityFactor = ch.serviceability;
   car.driverChangeFactor = ch.driverChangeFactor;
@@ -555,9 +601,12 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   if (ra.permitsWinglessPitch) {
     double groundSuckEfficiency =
         ac.groundSuckNumerator / (car.rideHeight + ac.groundSuckOffset);
-    car.totalDownforceCl += (ac.groundEffectDownforce * groundSuckEfficiency);
+    car.totalDownforceCl +=
+        (ac.groundEffectDownforce * groundSuckEfficiency * df.groundEffectMult);
     car.totalDragCd -= ac.winglessDragReduction;
   }
+
+  car.aeroPlatformStability *= df.aeroStability * ex.aeroStability;
 
   PowertrainTraits pt = ResolvePowertrainTraits(car.engine);
 
@@ -586,6 +635,8 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
     car.peakTorque = displacementLiters * specificTorque * pt.torqueMult *
                      std::sqrt(std::max(0.5, boreStrokeRatio));
   }
+
+  car.peakTorque *= ex.powerMult * (1.0 - ex.backPressure);
 
   const int peakTorqueRpm =
       car.engine.peakTorqueRpm > 0
@@ -616,14 +667,14 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
     car.electricalDeployKW = pt.deployKw;
   }
 
-  car.engineThrottleResponse = pt.throttleMult;
+  car.engineThrottleResponse = pt.throttleMult * (1.0 - ex.backPressure * 0.5);
   car.throttleLagTau = pt.throttleLagTau;
   car.torquePeakRatio = pt.torquePeakRatio;
   car.torqueCurveFalloff = pt.torqueFalloff;
   car.engineStressMult = pt.stressMult;
   car.cgCorneringBonus = pt.cgCorneringBonus;
   car.powertrainFuelBurnMult = pt.fuelBurnMult;
-  car.powertrainThermalMult = pt.thermalMult;
+  car.powertrainThermalMult = pt.thermalMult * ex.thermalMult;
   car.drivetrainExtraMassKg = pt.drivetrainExtraMassKg;
   car.isGeneratorOnly = pt.isGeneratorOnly;
   car.isElectricDrive = pt.isElectricDrive;
@@ -634,7 +685,7 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   car.suspensionRollStiffnessBase =
       (frontSp.rollStiffness + rearSp.rollStiffness) * 0.5 *
       pt.cgCorneringBonus;
-  car.serviceabilityFactor *= pt.serviceabilityMult;
+  car.serviceabilityFactor *= pt.serviceabilityMult * ex.serviceability;
 
   FinalizeSuspensionDerivedStats(car);
 
@@ -661,7 +712,7 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   car.calculatedTotalMass = ch.mass + fa.mass + ra.mass + coolingCompiled.massKg +
                             wp.mass +
                             ((frontSp.mass + rearSp.mass) * 0.5) + fs.mass +
-                            bp.mass + tr.mass + hp.mass +
+                            bp.mass + tr.mass + hp.mass + df.mass + ex.mass +
                             car.unsprungMassKg + engineWeight +
                             car.drivetrainExtraMassKg + ac.baseVehicleMass;
 }
