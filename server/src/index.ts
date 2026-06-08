@@ -493,6 +493,57 @@ function main(): void {
           broadcast(clients, serverMessage("meta_state", result));
           console.log("[server] Driver contract signed");
         }
+      } else if (msg.type === "start_negotiation") {
+        const payload = msg.payload as {
+          kind?: import("./ws_protocol").NegotiationKind;
+          subjectRef?: string;
+        };
+        const result = host.startNegotiation(
+          payload.kind ?? "driver_employment",
+          payload.subjectRef ?? "",
+        );
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+        }
+      } else if (msg.type === "submit_negotiation_offer") {
+        const payload = msg.payload as import("./ws_protocol").SubmitNegotiationOfferPayload;
+        const result = host.submitNegotiationOffer(
+          payload.negotiationId ?? "",
+          payload.terms ?? {},
+        );
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+        }
+      } else if (msg.type === "accept_negotiation") {
+        const negotiationId =
+          (msg.payload as { negotiationId?: string }).negotiationId ?? "";
+        const result = host.acceptNegotiation(negotiationId);
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+        }
+      } else if (msg.type === "withdraw_negotiation") {
+        const negotiationId =
+          (msg.payload as { negotiationId?: string }).negotiationId ?? "";
+        const result = host.withdrawNegotiation(negotiationId);
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("meta_state", result));
+        }
       } else if (msg.type === "save_team_colors") {
         const payload = msg.payload as SaveTeamColorsPayload;
         const meta = host.saveTeamColors(payload);
@@ -762,6 +813,8 @@ function main(): void {
                 scoring,
                 entryMode: resolveEntryMode(primaryResult.entryId),
                 racePosition: primaryResult.position,
+                employmentContracts: meta.employmentContracts,
+                teamName: meta.teamName,
               },
             )
           : undefined;

@@ -361,6 +361,28 @@ export class ViewerClient {
     this.send(clientMessage("sign_driver_contract", { listingId }));
   }
 
+  startNegotiation(
+    kind: import("./protocol").NegotiationKind,
+    subjectRef: string,
+  ): void {
+    this.send(clientMessage("start_negotiation", { kind, subjectRef }));
+  }
+
+  submitNegotiationOffer(
+    negotiationId: string,
+    terms: import("./protocol").NegotiationTermsPayload,
+  ): void {
+    this.send(clientMessage("submit_negotiation_offer", { negotiationId, terms }));
+  }
+
+  acceptNegotiation(negotiationId: string): void {
+    this.send(clientMessage("accept_negotiation", { negotiationId }));
+  }
+
+  withdrawNegotiation(negotiationId: string): void {
+    this.send(clientMessage("withdraw_negotiation", { negotiationId }));
+  }
+
   saveTeamColors(colors: SaveTeamColorsPayload): void {
     this.send(clientMessage("save_team_colors", colors));
   }

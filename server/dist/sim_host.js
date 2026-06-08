@@ -393,6 +393,18 @@ class SimHost {
     signDriverContract(listingId) {
         return this.meta.signDriverContract(listingId);
     }
+    startNegotiation(kind, subjectRef) {
+        return this.meta.startNegotiation(kind, subjectRef);
+    }
+    submitNegotiationOffer(negotiationId, terms) {
+        return this.meta.submitNegotiationOffer(negotiationId, terms);
+    }
+    acceptNegotiation(negotiationId) {
+        return this.meta.acceptNegotiation(negotiationId);
+    }
+    withdrawNegotiation(negotiationId) {
+        return this.meta.withdrawNegotiation(negotiationId);
+    }
     saveTeamColors(colors) {
         return this.meta.saveTeamColors(colors);
     }

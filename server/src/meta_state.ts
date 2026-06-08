@@ -43,13 +43,11 @@ import {
 import {
   assignUnassignedDriversToCars,
   defaultDriverAssignments,
-  ensureCatalogDriverId,
   ensureDriverIds,
   sanitizeAssignedDriverIds,
   validateCustomDriver,
   validateDriverStats,
   validateExclusiveDriverAssignments,
-  inferTier,
   type DriverProfilePayload,
 } from "./game/driver_catalog";
 import {
@@ -57,8 +55,6 @@ import {
   DRIVER_MARKET_REFRESH_COST,
   findMarketListing,
   marketSeedForRound,
-  MAX_DRIVER_ROSTER,
-  validateDriverMarketSigning,
 } from "./game/driver_market";
 import {
   applyPlayerTeamRoundResult,
@@ -97,6 +93,26 @@ import {
   staffForCar,
   type StaffMember,
 } from "./game/staff";
+import {
+  acceptCounterOffer,
+  anchorTermsFromDriverListing,
+  applyDriverDeal,
+  buildDriverNegotiationContext,
+  computePrestigeScore,
+  createDriverNegotiation,
+  evaluateDriverOffer,
+  expireNegotiations,
+  findDriverListing,
+  listingIdsWithOpenNegotiations,
+  synthesizeEmploymentContracts,
+  withdrawNegotiation,
+  type NegotiationSession,
+  type NegotiationTerms,
+} from "./game/negotiations";
+import type {
+  NegotiationKind,
+  NegotiationTermsPayload,
+} from "./ws_protocol";
 
 interface ParsedStaff {
   role: string;
@@ -308,6 +324,8 @@ export function buildSeasonStartSnapshot(
     driverMarket: structuredClone(state.driverMarket ?? []),
     driverMarketRefreshCount: state.driverMarketRefreshCount ?? 0,
     driverMarketRound: state.driverMarketRound ?? state.currentRound,
+    negotiations: structuredClone(state.negotiations ?? []),
+    employmentContracts: structuredClone(state.employmentContracts ?? []),
     aiRivalSeason: structuredClone(state.aiRivalSeason!),
     weekendTireCompound: state.weekendTireCompound ?? "Medium",
     trackSetupPresets: structuredClone(state.trackSetupPresets ?? {}),
@@ -330,6 +348,8 @@ function applySeasonStartSnapshot(
   state.driverMarket = structuredClone(snap.driverMarket);
   state.driverMarketRefreshCount = snap.driverMarketRefreshCount;
   state.driverMarketRound = snap.driverMarketRound;
+  state.negotiations = structuredClone(snap.negotiations ?? []);
+  state.employmentContracts = structuredClone(snap.employmentContracts ?? []);
   state.aiRivalSeason = structuredClone(snap.aiRivalSeason);
   state.weekendTireCompound = snap.weekendTireCompound ?? "Medium";
   state.trackSetupPresets = structuredClone(snap.trackSetupPresets ?? {});
@@ -366,6 +386,17 @@ export class MetaStateManager {
 
   getState(): MetaStatePayload {
     let changed = false;
+    this.ensureEmploymentContracts();
+    const expired = expireNegotiations(
+      this.state.negotiations ?? [],
+      this.state.currentRound,
+    );
+    if (
+      JSON.stringify(expired) !== JSON.stringify(this.state.negotiations ?? [])
+    ) {
+      this.state.negotiations = expired;
+      changed = true;
+    }
     if (this.ensureDriverMarketChanged()) changed = true;
     const before = this.state.aiRivalSeason?.teams.length ?? 0;
     this.ensureAiRivalSeason();
@@ -588,6 +619,7 @@ export class MetaStateManager {
       season,
       this.state.driverMarket ?? [],
       seed,
+      listingIdsWithOpenNegotiations(this.state.negotiations),
     );
     this.state.driverMarket = resolved.market;
     if (resolved.signedIds.length > 0) {
@@ -825,13 +857,18 @@ export class MetaStateManager {
     if (!event || event.completed) return this.getState();
 
     const scoring = event.eventType !== "test" && event.format !== "test";
+    this.ensureEmploymentContracts();
     const finances = computeRaceFinances(
       position,
       classId,
       event.format,
       this.state.sponsors ?? [],
       this.state.staff,
-      { scoring },
+      {
+        scoring,
+        employmentContracts: this.state.employmentContracts,
+        teamName: this.state.teamName,
+      },
     );
 
     event.completed = true;
@@ -849,6 +886,10 @@ export class MetaStateManager {
     if (nextRound !== null) {
       this.state.currentRound = nextRound;
     }
+    this.state.negotiations = expireNegotiations(
+      this.state.negotiations ?? [],
+      this.state.currentRound,
+    );
     this.lastCompletedRound = completingRound;
     this.ensureAiRivalSeason();
     if (scoring) {
@@ -1264,47 +1305,89 @@ export class MetaStateManager {
     return this.persist();
   }
 
-  signDriverContract(listingId: string): MetaStatePayload | { error: string } {
-    if (!this.state.setupComplete) {
-      return { error: "Found your team before signing drivers" };
-    }
-    this.ensureDriverMarketChanged();
-    const listing = findMarketListing(this.state.driverMarket, listingId);
-    if (!listing) {
-      return { error: "That driver is no longer on the market" };
-    }
+  private ensureEmploymentContracts(): void {
+    this.state.employmentContracts = synthesizeEmploymentContracts({
+      teamName: this.state.teamName,
+      seasonYear: this.state.seasonYear,
+      currentRound: this.state.currentRound,
+      driverRoster: this.state.driverRoster,
+      staff: this.state.staff,
+      employmentContracts: this.state.employmentContracts,
+    });
+  }
 
-    const roster = this.state.driverRoster ?? [];
-    if (roster.length >= MAX_DRIVER_ROSTER) {
-      return { error: `Roster full (${MAX_DRIVER_ROSTER} drivers maximum)` };
-    }
-    const contractErr = validateDriverMarketSigning(
-      listing,
-      this.state.teamName,
-      roster,
-      this.repoRoot,
-      this.state.aiRivalSeason?.rosterOverrides,
+  private playerPrestigeScore(): number {
+    const playerTeam = this.state.aiRivalSeason?.teams.find(
+      (t) => t.isPlayerTeam || t.teamName === this.state.teamName,
     );
-    if (contractErr) return { error: contractErr };
-    if (this.state.budget < listing.signingFee) {
-      return {
-        error: `Insufficient budget (need $${listing.signingFee.toLocaleString()} signing fee)`,
-      };
-    }
+    const points = playerTeam?.championshipPoints ?? 0;
+    const fleetClass = activeFleetCar(this.state)?.classId;
+    return computePrestigeScore(points, fleetClass);
+  }
 
+  private findNegotiation(negotiationId: string): NegotiationSession | null {
+    return (
+      this.state.negotiations?.find((n) => n.id === negotiationId) ?? null
+    );
+  }
+
+  private replaceNegotiation(session: NegotiationSession): void {
+    const list = [...(this.state.negotiations ?? [])];
+    const idx = list.findIndex((n) => n.id === session.id);
+    if (idx >= 0) list[idx] = session;
+    else list.push(session);
+    this.state.negotiations = list;
+  }
+
+  private driverListingForNegotiation(
+    subjectRef: string,
+  ): DriverMarketListingPayload | null {
+    return (
+      findDriverListing(this.state.driverMarket, subjectRef) ??
+      findMarketListing(this.state.driverMarket, subjectRef)
+    );
+  }
+
+  private driverNegotiationContext(
+    listing: DriverMarketListingPayload,
+  ) {
+    return buildDriverNegotiationContext(listing, {
+      playerTeamName: this.state.teamName,
+      currentRound: this.state.currentRound,
+      seasonYear: this.state.seasonYear,
+      prestigeScore: this.playerPrestigeScore(),
+    });
+  }
+
+  private termsFromPayload(terms: NegotiationTermsPayload): NegotiationTerms {
+    return { ...terms };
+  }
+
+  private finalizeDriverNegotiation(
+    session: NegotiationSession,
+    listing: DriverMarketListingPayload,
+  ): MetaStatePayload | { error: string } {
     const statErr = validateDriverStats(listing.driver);
     if (statErr) return { error: statErr };
 
-    this.state.budget -= listing.signingFee;
-    const signed = ensureCatalogDriverId(listing.driver);
-    roster.push({
-      ...signed,
-      tier: inferTier(signed),
+    this.ensureEmploymentContracts();
+    const applied = applyDriverDeal(session, listing, {
+      repoRoot: this.repoRoot,
+      teamName: this.state.teamName,
+      currentRound: this.state.currentRound,
+      seasonYear: this.state.seasonYear,
+      budget: this.state.budget,
+      roster: this.state.driverRoster ?? [],
+      driverMarket: this.state.driverMarket ?? [],
+      rosterOverrides: this.state.aiRivalSeason?.rosterOverrides,
+      employmentContracts: this.state.employmentContracts ?? [],
     });
-    this.state.driverRoster = ensureDriverIds(roster);
-    this.state.driverMarket = (this.state.driverMarket ?? []).filter(
-      (l) => l.id !== listingId,
-    );
+    if ("error" in applied) return applied;
+
+    this.state.budget = applied.budget;
+    this.state.driverRoster = ensureDriverIds(applied.roster);
+    this.state.driverMarket = applied.driverMarket;
+    this.state.employmentContracts = applied.employmentContracts;
 
     for (const car of this.state.fleet ?? []) {
       car.assignedDriverIds = sanitizeAssignedDriverIds(
@@ -1321,7 +1404,130 @@ export class MetaStateManager {
       this.state.fleet ?? [],
     );
 
+    this.replaceNegotiation({ ...session, status: "accepted" });
     return this.persist();
+  }
+
+  startNegotiation(
+    kind: NegotiationKind,
+    subjectRef: string,
+  ): MetaStatePayload | { error: string } {
+    if (!this.state.setupComplete) {
+      return { error: "Found your team before negotiating contracts" };
+    }
+    if (kind !== "driver_employment" && kind !== "driver_buyout") {
+      return { error: "Only driver negotiations are available in this build" };
+    }
+
+    this.ensureDriverMarketChanged();
+    const listing = this.driverListingForNegotiation(subjectRef);
+    if (!listing) {
+      return { error: "That listing is no longer on the market" };
+    }
+
+    const created = createDriverNegotiation(listing, {
+      playerTeamName: this.state.teamName,
+      currentRound: this.state.currentRound,
+      seasonYear: this.state.seasonYear,
+      prestigeScore: this.playerPrestigeScore(),
+      existing: this.state.negotiations,
+    });
+    if ("error" in created) return created;
+
+    this.replaceNegotiation(created);
+    return this.persist();
+  }
+
+  submitNegotiationOffer(
+    negotiationId: string,
+    terms: NegotiationTermsPayload,
+  ): MetaStatePayload | { error: string } {
+    const session = this.findNegotiation(negotiationId);
+    if (!session) return { error: "Unknown negotiation" };
+    if (session.status !== "open" && session.status !== "countered") {
+      return { error: "Negotiation is closed" };
+    }
+
+    const listing = this.driverListingForNegotiation(session.subjectRef);
+    if (!listing) return { error: "Listing no longer available" };
+
+    const ctx = this.driverNegotiationContext(listing);
+    const evaluated = evaluateDriverOffer(
+      session,
+      this.termsFromPayload(terms),
+      ctx,
+    );
+    this.replaceNegotiation(evaluated.session);
+
+    if (evaluated.accepted) {
+      return this.finalizeDriverNegotiation(evaluated.session, listing);
+    }
+    return this.persist();
+  }
+
+  acceptNegotiation(
+    negotiationId: string,
+  ): MetaStatePayload | { error: string } {
+    const session = this.findNegotiation(negotiationId);
+    if (!session) return { error: "Unknown negotiation" };
+    if (!session.lastCounterOffer) {
+      return { error: "No counter-offer to accept" };
+    }
+
+    const listing = this.driverListingForNegotiation(session.subjectRef);
+    if (!listing) return { error: "Listing no longer available" };
+
+    const ctx = this.driverNegotiationContext(listing);
+    const evaluated = acceptCounterOffer(session, ctx);
+    this.replaceNegotiation(evaluated.session);
+    if (!evaluated.accepted) {
+      return { error: "Could not finalize at counter-offer terms" };
+    }
+    return this.finalizeDriverNegotiation(evaluated.session, listing);
+  }
+
+  withdrawNegotiation(
+    negotiationId: string,
+  ): MetaStatePayload | { error: string } {
+    const session = this.findNegotiation(negotiationId);
+    if (!session) return { error: "Unknown negotiation" };
+    this.replaceNegotiation(withdrawNegotiation(session));
+    return this.persist();
+  }
+
+  signDriverContract(listingId: string): MetaStatePayload | { error: string } {
+    if (!this.state.setupComplete) {
+      return { error: "Found your team before signing drivers" };
+    }
+    this.ensureDriverMarketChanged();
+    const listing = findMarketListing(this.state.driverMarket, listingId);
+    if (!listing) {
+      return { error: "That driver is no longer on the market" };
+    }
+
+    const created = createDriverNegotiation(listing, {
+      playerTeamName: this.state.teamName,
+      currentRound: this.state.currentRound,
+      seasonYear: this.state.seasonYear,
+      prestigeScore: this.playerPrestigeScore(),
+      existing: this.state.negotiations,
+    });
+    if ("error" in created) return created;
+    this.replaceNegotiation(created);
+    const active = created;
+
+    const ctx = this.driverNegotiationContext(listing);
+    const offer = anchorTermsFromDriverListing(listing);
+    const evaluated = evaluateDriverOffer(active, offer, ctx);
+    this.replaceNegotiation(evaluated.session);
+
+    if (evaluated.accepted) {
+      return this.finalizeDriverNegotiation(evaluated.session, listing);
+    }
+    return {
+      error:
+        "Driver wants to negotiate — use the negotiation panel to improve your offer",
+    };
   }
 
   setWeekendTireCompound(compound: string): MetaStatePayload | { error: string } {
@@ -1394,6 +1600,8 @@ export class MetaStateManager {
       driverMarket: [],
       driverMarketRefreshCount: 0,
       driverMarketRound: 0,
+      negotiations: [],
+      employmentContracts: [],
       carBuild: null,
       staff: [],
       sponsors: [],

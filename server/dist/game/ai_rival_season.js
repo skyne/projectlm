@@ -439,7 +439,7 @@ function rivalModifiersForTeam(teamName, season) {
     return { wingDelta, damperBumpDelta, ductAirflowDelta, pitAggression };
 }
 /** AI rivals sign drivers from the refreshed market between rounds. */
-function resolveAiDriverMarketBids(repoRoot, season, market, seed) {
+function resolveAiDriverMarketBids(repoRoot, season, market, seed, protectedListingIds = new Set()) {
     const rnd = seeded(seed);
     const signedIds = [];
     const teamsByBudget = [...season.teams].sort((a, b) => b.budget - a.budget);
@@ -458,6 +458,8 @@ function resolveAiDriverMarketBids(repoRoot, season, market, seed) {
             continue;
         const pool = candidates.filter((l) => {
             if (signedIds.includes(l.id))
+                return false;
+            if (protectedListingIds.has(l.id))
                 return false;
             const driverId = (0, driver_catalog_1.ensureCatalogDriverId)(l.driver).id;
             const holder = contracts.get(driverId);

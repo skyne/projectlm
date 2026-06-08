@@ -348,6 +348,78 @@ export interface DriverMarketListingPayload {
   tagline: string;
 }
 
+export type NegotiationKind =
+  | "driver_employment"
+  | "driver_buyout"
+  | "staff_employment";
+
+export type NegotiationStatus =
+  | "open"
+  | "countered"
+  | "accepted"
+  | "rejected"
+  | "expired"
+  | "withdrawn";
+
+export type NegotiationMood = "keen" | "neutral" | "annoyed" | "walkaway";
+
+export interface NegotiationPartyPayload {
+  id: string;
+  role: "initiator" | "counterparty" | "observer";
+  displayName: string;
+}
+
+export interface NegotiationTermsPayload {
+  signingFee?: number;
+  salaryPerRace?: number;
+  contractSeasons?: number;
+  bonusPerWin?: number;
+  bonusPerPodium?: number;
+  releaseClause?: number;
+  seatGuarantee?: "primary" | "reserve" | "none";
+  buyoutToTeam?: number;
+}
+
+export interface NegotiationHistoryEntryPayload {
+  round: number;
+  from: string;
+  terms: NegotiationTermsPayload;
+  note?: string;
+}
+
+export interface NegotiationSessionPayload {
+  id: string;
+  kind: NegotiationKind;
+  status: NegotiationStatus;
+  parties: NegotiationPartyPayload[];
+  subjectRef: string;
+  anchorTerms: NegotiationTermsPayload;
+  currentOffer: NegotiationTermsPayload;
+  lastCounterOffer?: NegotiationTermsPayload;
+  patience: number;
+  rounds: number;
+  maxRounds: number;
+  expiresAtRound: number;
+  history: NegotiationHistoryEntryPayload[];
+  counterpartyMood: NegotiationMood;
+  releasingTeam?: string;
+  staffCarId?: string;
+}
+
+export interface EmploymentContractPayload {
+  entityId: string;
+  entityKind: "driver" | "staff";
+  teamName: string;
+  signedRound: number;
+  expiresSeasonYear: number;
+  signingFeePaid: number;
+  salaryPerRace: number;
+  bonuses?: { win?: number; podium?: number };
+  releaseClause?: number;
+  seatGuarantee?: string;
+  sourceListingId?: string;
+}
+
 export type StaffRole = "engineer" | "mechanic" | "strategist";
 export type StaffStatus = "active" | "injured" | "ill" | "poached";
 
@@ -409,6 +481,7 @@ export interface RaceFinancesPayload {
   sponsorIncome: number;
   entryFee: number;
   staffPayroll: number;
+  driverPayroll: number;
   netEarnings: number;
   championshipPoints: number;
   rdPointsEarned: number;
@@ -631,6 +704,8 @@ export interface SeasonStartSnapshotPayload {
   driverMarket: DriverMarketListingPayload[];
   driverMarketRefreshCount: number;
   driverMarketRound: number;
+  negotiations?: NegotiationSessionPayload[];
+  employmentContracts?: EmploymentContractPayload[];
   aiRivalSeason: AiRivalSeasonPayload;
   weekendTireCompound?: string;
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
@@ -666,6 +741,8 @@ export interface MetaStatePayload {
   driverMarket?: DriverMarketListingPayload[];
   driverMarketRefreshCount?: number;
   driverMarketRound?: number;
+  negotiations?: NegotiationSessionPayload[];
+  employmentContracts?: EmploymentContractPayload[];
   aiRivalSeason?: AiRivalSeasonPayload;
   seasonComplete?: boolean;
   seasonSummary?: SeasonSummaryPayload;
@@ -1007,6 +1084,10 @@ export type ClientMessageType =
   | "save_driver_roster"
   | "refresh_driver_market"
   | "sign_driver_contract"
+  | "start_negotiation"
+  | "submit_negotiation_offer"
+  | "accept_negotiation"
+  | "withdraw_negotiation"
   | "save_team_colors"
   | "sign_sponsor"
   | "drop_sponsor"
