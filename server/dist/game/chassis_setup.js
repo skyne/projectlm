@@ -26,6 +26,7 @@ exports.validateWheelSetup = validateWheelSetup;
 exports.validateSuspensionSetup = validateSuspensionSetup;
 exports.normalizeCarBuild = normalizeCarBuild;
 exports.wheelSetupToBuildFields = wheelSetupToBuildFields;
+const ev_outlet_1 = require("./ev_outlet");
 /** Per-class ride height slider bounds (mm). */
 exports.RIDE_HEIGHT_LIMITS = {
     Hypercar: { min: 30, max: 55, step: 1 },
@@ -452,8 +453,14 @@ function normalizeCarBuild(build, classId, partsBySlot) {
         rear_suspension_layout: rearLayout,
     };
     const suspension = clampSuspensionSetup(resolveSuspensionSetup(layoutBuild, suspensionParts, classId), layoutBuild, suspensionParts, classId);
+    const diffuserType = build.rear_aero_type === "WinglessGroundEffect" &&
+        (!build.diffuser_type || build.diffuser_type === "StockFloor")
+        ? "WinglessBaseline"
+        : (build.diffuser_type ?? "StockFloor");
     return {
         ...build,
+        diffuser_type: diffuserType,
+        exhaust_type: (0, ev_outlet_1.normalizeExhaustType)(build.exhaust_type, build.engine),
         suspension_layout: build.suspension_layout || frontLayout,
         front_suspension_layout: frontLayout,
         rear_suspension_layout: rearLayout,

@@ -73,6 +73,10 @@ bool LoadCarConfig(const std::string &filename, CarConfig &car) {
         car.frontAeroId = value;
       else if (key == "rear_aero_type")
         car.rearAeroId = value;
+      else if (key == "diffuser_type")
+        car.diffuserId = value;
+      else if (key == "exhaust_type")
+        car.exhaustId = value;
       else if (key == "cooling_pack") {
         if (value == "Custom")
           car.hasCustomCoolingLayout = true;

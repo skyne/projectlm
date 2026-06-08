@@ -1,4 +1,5 @@
 import type { CarBuildPayload, PartOptionPayload } from "../ws/protocol";
+import { normalizeExhaustType } from "./ev_outlet";
 
 export interface WheelSetup {
   frontDiameterIn: number;
@@ -751,8 +752,16 @@ export function normalizeCarBuild(
     classId,
   );
 
+  const diffuserType =
+    build.rear_aero_type === "WinglessGroundEffect" &&
+    (!build.diffuser_type || build.diffuser_type === "StockFloor")
+      ? "WinglessBaseline"
+      : (build.diffuser_type ?? "StockFloor");
+
   return {
     ...build,
+    diffuser_type: diffuserType,
+    exhaust_type: normalizeExhaustType(build.exhaust_type, build.engine),
     suspension_layout: build.suspension_layout || frontLayout,
     front_suspension_layout: frontLayout,
     rear_suspension_layout: rearLayout,

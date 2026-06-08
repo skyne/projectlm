@@ -1,12 +1,19 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { CarBuildPayload } from "../ws_protocol";
+import {
+  EV_ONLY_OUTLET_PARTS,
+  isElectricDriveOutletBuild,
+  isEvLegalOutlet,
+} from "./ev_outlet";
 
 /** Config slot names in part_compatibility.txt → CarBuildPayload fields. */
 export const BUILD_FIELD_BY_CONFIG_SLOT: Record<string, keyof CarBuildPayload> = {
   chassis: "chassis_type",
   front_aero: "front_aero_type",
   rear_aero: "rear_aero_type",
+  diffuser: "diffuser_type",
+  exhaust: "exhaust_type",
   cooling: "cooling_pack",
   wheel_package: "wheel_package",
   suspension: "suspension_layout",
@@ -116,7 +123,10 @@ export function buildFieldValue(
   const field = BUILD_FIELD_BY_CONFIG_SLOT[configSlot];
   if (!field) return "";
   const value = build[field];
-  return typeof value === "string" ? value : "";
+  if (typeof value === "string" && value) return value;
+  if (field === "diffuser_type") return "StockFloor";
+  if (field === "exhaust_type") return "TwinOutletSide";
+  return "";
 }
 
 function validateFuelSystemPowertrain(build: CarBuildPayload): string | null {
@@ -140,6 +150,24 @@ function validateFuelSystemPowertrain(build: CarBuildPayload): string | null {
   }
   if (eng?.fuel_type === "Hydrogen" && eng.drivetrain === "RangeExtender") {
     return "Hydrogen range-extender is not supported; use fuel cell instead";
+  }
+  return null;
+}
+
+const DPF_EXHAUST_PARTS = new Set(["DieselDPF", "DieselDPFSport"]);
+
+function validateExhaustPowertrain(build: CarBuildPayload): string | null {
+  const exhaust = build.exhaust_type ?? "TwinOutletSide";
+  const eng = build.engine;
+  if (DPF_EXHAUST_PARTS.has(exhaust) && eng?.fuel_type !== "Diesel") {
+    return "Diesel DPF exhaust requires Diesel fuel in the powertrain";
+  }
+  const isEv = isElectricDriveOutletBuild(eng);
+  if (isEv && !isEvLegalOutlet(exhaust)) {
+    return "E-drive powertrain requires an underbody outlet package";
+  }
+  if (!isEv && (exhaust === "None" || EV_ONLY_OUTLET_PARTS.has(exhaust))) {
+    return "Combustion powertrain requires an exhaust system";
   }
   return null;
 }
@@ -168,6 +196,16 @@ export function validateAssemblyCompatibility(
   ) {
     return "Wingless rear package requires a low-drag nose";
   }
+
+  if (
+    build.rear_aero_type === "WinglessGroundEffect" &&
+    (build.diffuser_type ?? "StockFloor") === "StockFloor"
+  ) {
+    return "Wingless rear requires a diffuser floor package";
+  }
+
+  const exhaustErr = validateExhaustPowertrain(build);
+  if (exhaustErr) return exhaustErr;
 
   return validateFuelSystemPowertrain(build);
 }

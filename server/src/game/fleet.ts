@@ -191,6 +191,8 @@ function rawToBuild(
     chassis_type: raw.chassis_type ?? "LMDhDallara",
     front_aero_type: raw.front_aero_type ?? "LowDragNose",
     rear_aero_type: raw.rear_aero_type ?? "StandardWing",
+    diffuser_type: raw.diffuser_type ?? "StockFloor",
+    exhaust_type: raw.exhaust_type ?? "TwinOutletSide",
     cooling_pack: raw.cooling_pack ?? "EnduranceHeavyDuty",
     wheel_package:
       raw.wheel_package ?? defaultWheelPackageForClass(classId),
@@ -392,6 +394,8 @@ export function migrateLegacyMeta(state: MetaStatePayload): MetaStatePayload {
     chassis_type: classId === "LMGT3" ? "GT3Spaceframe" : classId === "LMP2" ? "Oreca07" : "LMDhDallara",
     front_aero_type: "LowDragNose",
     rear_aero_type: classId === "LMGT3" ? "HighDownforceWing" : "StandardWing",
+    diffuser_type: "StockFloor",
+    exhaust_type: "TwinOutletSide",
     cooling_pack: "EnduranceHeavyDuty",
     wheel_package: defaultWheelPackageForClass(classId),
     suspension_layout: defaultSuspensionForClass(classId),

@@ -26,3 +26,4 @@ fuel_system=HydrogenTank
 brake_system=APRacingPrototype
 transmission=SingleSpeedEDrive
 hybrid_system=None
+exhaust_type=None

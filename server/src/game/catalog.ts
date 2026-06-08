@@ -23,6 +23,8 @@ export type PartSlot =
   | "chassis"
   | "front_aero"
   | "rear_aero"
+  | "diffuser"
+  | "exhaust"
   | "cooling"
   | "wheel_package"
   | "suspension"
@@ -87,6 +89,8 @@ const SLOT_FROM_PREFIX: Record<string, PartSlot> = {
   chassis: "chassis",
   front_aero: "front_aero",
   rear_aero: "rear_aero",
+  diffuser: "diffuser",
+  exhaust: "exhaust",
   cooling: "cooling",
   wheel_package: "wheel_package",
   suspension: "suspension",
@@ -100,6 +104,8 @@ const CAR_FIELD_BY_SLOT: Record<PartSlot, string> = {
   chassis: "chassis_type",
   front_aero: "front_aero_type",
   rear_aero: "rear_aero_type",
+  diffuser: "diffuser_type",
+  exhaust: "exhaust_type",
   cooling: "cooling_pack",
   wheel_package: "wheel_package",
   suspension: "suspension_layout",

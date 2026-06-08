@@ -14,6 +14,7 @@ import {
   resolveWheelSetup,
 } from "./chassisSetup";
 import { computeCoolingStats, decodeCoolingLayout } from "./cooling_model";
+import { EV_ONLY_OUTLET_PARTS } from "./ev_outlet";
 
 /** Assembly constants from configs/physics_config.txt — must match C++ AssemblyConfig. */
 export const ASSEMBLY = {
@@ -35,6 +36,8 @@ export type PartSlot =
   | "chassis"
   | "front_aero"
   | "rear_aero"
+  | "diffuser"
+  | "exhaust"
   | "cooling"
   | "wheel_package"
   | "suspension"
@@ -47,6 +50,8 @@ export const BUILD_SLOTS: PartSlot[] = [
   "chassis",
   "front_aero",
   "rear_aero",
+  "diffuser",
+  "exhaust",
   "cooling",
   "wheel_package",
   "suspension",
@@ -248,6 +253,8 @@ export function compileCarStats(
   const ch = findPart(partsBySlot, "chassis", build.chassis_type);
   const fa = findPart(partsBySlot, "front_aero", build.front_aero_type);
   const ra = findPart(partsBySlot, "rear_aero", build.rear_aero_type);
+  const df = findPart(partsBySlot, "diffuser", build.diffuser_type ?? "StockFloor");
+  const ex = findPart(partsBySlot, "exhaust", build.exhaust_type ?? "TwinOutletSide");
   const coolingLayout = decodeCoolingLayout(build);
   const coolingStats = computeCoolingStats(
     coolingLayout,
@@ -273,28 +280,42 @@ export function compileCarStats(
   const unsprungMass = wheelStats.unsprungMass * unsprungFactor;
   const widthGripFactor = wheelStats.widthGripBlend;
 
+  const diffuserGripMult = df ? num(df.stats, "mechanical_grip", 1) : 1;
   const tireGrip = options.tireGripMultiplier ?? DEFAULT_TIRE_GRIP;
-  const gripIndex = tireGrip * wheelGrip * widthGripFactor * mechanicalGrip;
+  const gripIndex =
+    tireGrip * wheelGrip * widthGripFactor * mechanicalGrip * diffuserGripMult;
   const tyreBalanceFactor = wheelStats.balanceFactor;
   const corneringFactor = Math.sqrt(Math.max(0.75, rollStiffness));
+
+  const permitsWingless = ra ? num(ra.stats, "permits_wingless") > 0 : false;
+  const diffuserBoost = ex ? num(ex.stats, "diffuser_boost") : 0;
+  const diffuserBaseCl = df
+    ? permitsWingless && num(df.stats, "wingless_downforce") > 0
+      ? num(df.stats, "wingless_downforce")
+      : num(df.stats, "downforce")
+    : 0;
+  const effectiveDiffuserDf = diffuserBaseCl * (1 + diffuserBoost);
 
   let totalDragCd =
     ASSEMBLY.bodyBaseDragCd +
     (ch ? num(ch.stats, "drag") : 0) +
     (fa ? num(fa.stats, "drag") : 0) +
     (ra ? num(ra.stats, "drag") : 0) +
+    (df ? num(df.stats, "drag") : 0) +
+    (ex ? num(ex.stats, "drag") : 0) +
     coolingStats.dragCd +
     wheelStats.dragCd;
 
   let totalDownforceCl =
     (fa ? num(fa.stats, "downforce") : 0) +
-    (ra ? num(ra.stats, "downforce") : 0);
+    (ra ? num(ra.stats, "downforce") : 0) +
+    effectiveDiffuserDf;
 
-  const permitsWingless = ra ? num(ra.stats, "permits_wingless") > 0 : false;
+  const groundEffectMult = df ? num(df.stats, "ground_effect_mult", 1) : 1;
   if (permitsWingless) {
     const groundSuck =
       ASSEMBLY.groundSuckNumerator / (rideHeightM + ASSEMBLY.groundSuckOffset);
-    totalDownforceCl += ASSEMBLY.groundEffectDownforce * groundSuck;
+    totalDownforceCl += ASSEMBLY.groundEffectDownforce * groundSuck * groundEffectMult;
     totalDragCd -= ASSEMBLY.winglessDragReduction;
   }
 
@@ -302,6 +323,8 @@ export function compileCarStats(
     (ch?.mass ?? 0) +
     (fa?.mass ?? 0) +
     (ra?.mass ?? 0) +
+    (df?.mass ?? 0) +
+    (ex?.mass ?? 0) +
     coolingStats.massKg +
     wheelStats.mass +
     suspension.mass +
@@ -315,10 +338,16 @@ export function compileCarStats(
   const engMass = traits
     ? traits.engineMassKg + traits.drivetrainExtraMassKg
     : 0;
+  const exhaustPowerMult = ex ? num(ex.stats, "power_mult", 1) : 1;
+  const exhaustBackPressure = ex ? num(ex.stats, "back_pressure") : 0;
+  const exhaustThermalMult = ex ? num(ex.stats, "thermal_mult", 1) : 1;
+  const exhaustServiceability = ex ? num(ex.stats, "serviceability", 1) : 1;
+  const powerScale = exhaustPowerMult * (1 - exhaustBackPressure);
+
   let peakHp = engine
-    ? effectiveHorsepower(engine, options.powerCapHp ?? 0, classId)
+    ? effectiveHorsepower(engine, options.powerCapHp ?? 0, classId) * powerScale
     : 0;
-  const torque = engine ? peakTorqueNm(engine) : 0;
+  const torque = engine ? peakTorqueNm(engine) * powerScale : 0;
 
   let rawTotalMass =
     partMass + unsprungMass + engMass + ASSEMBLY.baseVehicleMass;
@@ -350,7 +379,8 @@ export function compileCarStats(
   const corneringWithCg = corneringFactor * (traits?.cgCorneringBonus ?? 1);
   const serviceability =
     (ch ? num(ch.stats, "serviceability", 1) : 1) *
-    (traits?.serviceabilityMult ?? 1);
+    (traits?.serviceabilityMult ?? 1) *
+    exhaustServiceability;
 
   if (traits?.isElectricDrive) shiftDelay = tr?.partType === "SingleSpeedEDrive" ? 0 : shiftDelay * 0.4;
 
@@ -606,6 +636,50 @@ export function partStatLines(
           : []),
         stat("Mass", `${part.mass} kg`, false),
       ];
+    case "diffuser":
+      return [
+        stat("Downforce", `+Cl ${num(s, "downforce").toFixed(2)}`, true),
+        stat("Drag", `+${num(s, "drag").toFixed(3)} Cd`, false),
+        stat("Ground effect", `×${num(s, "ground_effect_mult", 1).toFixed(2)}`, true),
+        stat("Platform", `×${num(s, "aero_stability", 1).toFixed(2)}`, true),
+        stat("Mass", `${part.mass} kg`, false),
+      ];
+    case "exhaust": {
+      const drag = num(s, "drag");
+      const dragLabel =
+        drag < 0
+          ? `${drag.toFixed(3)} Cd`
+          : drag > 0
+            ? `+${drag.toFixed(3)} Cd`
+            : "0 Cd";
+      if (part.partType === "None") {
+        return [
+          stat("Underbody", "sealed baseline", true),
+          stat("Mass", `${part.mass} kg`, false),
+        ];
+      }
+      const isEvOutlet = EV_ONLY_OUTLET_PARTS.has(part.partType);
+      return [
+        ...(num(s, "power_mult", 1) !== 1
+          ? [stat("Power", `×${num(s, "power_mult", 1).toFixed(2)}`, true)]
+          : []),
+        ...(!isEvOutlet && num(s, "back_pressure") > 0
+          ? [stat("Back pressure", `${(num(s, "back_pressure") * 100).toFixed(0)}%`, false)]
+          : []),
+        ...(num(s, "diffuser_boost") > 0
+          ? [
+              stat(
+                isEvOutlet ? "Active floor" : "Blown DF",
+                `+${(num(s, "diffuser_boost") * 100).toFixed(0)}%`,
+                true,
+              ),
+            ]
+          : []),
+        stat("Drag", dragLabel, false),
+        stat("Thermal", `×${num(s, "thermal_mult", 1).toFixed(2)}`, false),
+        stat("Mass", `${part.mass} kg`, false),
+      ];
+    }
     case "cooling":
       return [
         stat("Cooling", `×${num(s, "dissipation").toFixed(2)}`, true),

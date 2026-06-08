@@ -45,6 +45,7 @@ TEST_SRCS = \
   tests/unit/test_simulation.cpp \
   tests/unit/test_part_damage.cpp \
   tests/unit/test_car_parts.cpp \
+  tests/unit/test_exhaust_diffuser.cpp \
   tests/unit/test_fuel_cell.cpp \
   tests/unit/test_part_compatibility.cpp \
   tests/unit/test_sim_bridge.cpp \

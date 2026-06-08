@@ -33,6 +33,34 @@ if_part=WinglessGroundEffect
 requires_slot=front_aero
 requires_any_parts=LowDragNose,LowDragNoseSlim
 
+# Wingless-only baseline floor
+rule=wingless_baseline_requires_wingless_rear
+if_slot=diffuser
+if_part=WinglessBaseline
+requires_slot=rear_aero
+requires_part=WinglessGroundEffect
+
+# Wingless — floor downforce comes from diffuser slot (not StockFloor)
+rule=wingless_requires_diffuser_floor
+if_slot=rear_aero
+if_part=WinglessGroundEffect
+requires_slot=diffuser
+requires_any_parts=WinglessBaseline,FlatFloor,LowDragDiffuser,StandardDiffuser,HighDownforceDiffuser,DoubleDeckerDiffuser,StrakedDiffuser,StallRecoveryDiffuser
+
+# Blown exhaust needs a working diffuser floor (not stock/flat)
+rule=blown_exhaust_needs_diffuser
+if_slot=exhaust
+if_part=BlownDiffuser
+requires_slot=diffuser
+requires_any_parts=WinglessBaseline,StandardDiffuser,HighDownforceDiffuser,DoubleDeckerDiffuser,StrakedDiffuser
+
+# Active underbody pump needs a working diffuser floor (e-drive quali trim)
+rule=active_underbody_needs_diffuser
+if_slot=exhaust
+if_part=ActiveUnderbody
+requires_slot=diffuser
+requires_any_parts=WinglessBaseline,StandardDiffuser,HighDownforceDiffuser,DoubleDeckerDiffuser,StrakedDiffuser
+
 # APRacing GT3 kit fits homologated GT3 constructors
 rule=apr_gt3_requires_gt3_chassis
 if_slot=brake_system

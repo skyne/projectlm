@@ -40,11 +40,14 @@ exports.validateAssemblyCompatibility = validateAssemblyCompatibility;
 exports.isAssemblyPartCompatible = isAssemblyPartCompatible;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const ev_outlet_1 = require("./ev_outlet");
 /** Config slot names in part_compatibility.txt → CarBuildPayload fields. */
 exports.BUILD_FIELD_BY_CONFIG_SLOT = {
     chassis: "chassis_type",
     front_aero: "front_aero_type",
     rear_aero: "rear_aero_type",
+    diffuser: "diffuser_type",
+    exhaust: "exhaust_type",
     cooling: "cooling_pack",
     wheel_package: "wheel_package",
     suspension: "suspension_layout",
@@ -129,7 +132,13 @@ function buildFieldValue(build, configSlot) {
     if (!field)
         return "";
     const value = build[field];
-    return typeof value === "string" ? value : "";
+    if (typeof value === "string" && value)
+        return value;
+    if (field === "diffuser_type")
+        return "StockFloor";
+    if (field === "exhaust_type")
+        return "TwinOutletSide";
+    return "";
 }
 function validateFuelSystemPowertrain(build) {
     if (build.fuel_system === "HydrogenTank" &&
@@ -153,6 +162,22 @@ function validateFuelSystemPowertrain(build) {
     }
     return null;
 }
+const DPF_EXHAUST_PARTS = new Set(["DieselDPF", "DieselDPFSport"]);
+function validateExhaustPowertrain(build) {
+    const exhaust = build.exhaust_type ?? "TwinOutletSide";
+    const eng = build.engine;
+    if (DPF_EXHAUST_PARTS.has(exhaust) && eng?.fuel_type !== "Diesel") {
+        return "Diesel DPF exhaust requires Diesel fuel in the powertrain";
+    }
+    const isEv = (0, ev_outlet_1.isElectricDriveOutletBuild)(eng);
+    if (isEv && !(0, ev_outlet_1.isEvLegalOutlet)(exhaust)) {
+        return "E-drive powertrain requires an underbody outlet package";
+    }
+    if (!isEv && (exhaust === "None" || ev_outlet_1.EV_ONLY_OUTLET_PARTS.has(exhaust))) {
+        return "Combustion powertrain requires an exhaust system";
+    }
+    return null;
+}
 function validateAssemblyCompatibility(build, rules) {
     for (const rule of rules) {
         if (buildFieldValue(build, rule.ifSlot) !== rule.ifPart)
@@ -172,6 +197,13 @@ function validateAssemblyCompatibility(build, rules) {
         build.front_aero_type !== "LowDragNoseSlim") {
         return "Wingless rear package requires a low-drag nose";
     }
+    if (build.rear_aero_type === "WinglessGroundEffect" &&
+        (build.diffuser_type ?? "StockFloor") === "StockFloor") {
+        return "Wingless rear requires a diffuser floor package";
+    }
+    const exhaustErr = validateExhaustPowertrain(build);
+    if (exhaustErr)
+        return exhaustErr;
     return validateFuelSystemPowertrain(build);
 }
 /** True when selecting `candidatePart` for `configSlot` keeps the build valid. */

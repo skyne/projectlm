@@ -95,6 +95,28 @@ struct HybridPart {
   double stintDeployBudgetMJ = 0.0;
 };
 
+struct DiffuserPart {
+  double mass = 0.0;
+  double downforceCl = 0.0;
+  /// When rear aero permits wingless pitch, use this floor Cl if > 0.
+  double winglessDownforceCl = 0.0;
+  double dragCd = 0.0;
+  double groundEffectMult = 1.0;
+  double aeroStability = 1.0;
+  double mechanicalGrip = 1.0;
+};
+
+struct ExhaustPart {
+  double mass = 0.0;
+  double dragCd = 0.0;
+  double backPressure = 0.0;
+  double powerMult = 1.0;
+  double thermalMult = 1.0;
+  double diffuserBoost = 0.0;
+  double aeroStability = 1.0;
+  double serviceability = 1.0;
+};
+
 struct EngineConfig {
   std::string layout;
   std::string fuelType;
@@ -163,6 +185,8 @@ struct CarConfig {
   std::string brakeSystemId = "StandardCaliper";
   std::string transmissionId = "SixSpeedSequential";
   std::string hybridSystemId = "None";
+  std::string diffuserId = "StockFloor";
+  std::string exhaustId = "TwinOutletSide";
   double frontSpringStiffness = 100000.0;
   double rearSpringStiffness = 100000.0;
   double frontRideHeightM = 0.040;
@@ -279,6 +303,10 @@ TransmissionPart GetTransmissionStats(const PartCatalog &catalog,
                                       const std::string &partId);
 HybridPart GetHybridStats(const PartCatalog &catalog,
                           const std::string &partId);
+DiffuserPart GetDiffuserStats(const PartCatalog &catalog,
+                              const std::string &partId);
+ExhaustPart GetExhaustStats(const PartCatalog &catalog,
+                            const std::string &partId);
 
 inline const char *TireCompoundId(ETireCompound compound,
                                   ETyreTread tread = ETyreTread::Slick) {

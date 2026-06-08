@@ -34,3 +34,5 @@ When you finish implementing, fixing, or refactoring sim/game/weather/server/vie
 6. **Fix failures** in the same turn when feasible; do not hand off broken tests.
 
 Skip only unrelated test suites (known pre-existing failures) and say which ones were skipped and why.
+
+7. **After parts / catalog / compile / balance sim changes**, also follow `parts-setup-balance-check.mdc`: report whether **one legal setup wins best Cl/Cd, lowest Cd, and max HP** for each affected powertrain (explicit yes/no per row).
