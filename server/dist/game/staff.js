@@ -60,6 +60,7 @@ function normalizeMember(raw, assignedCarId) {
             ? { unavailableUntilRound: Number(raw.unavailableUntilRound) }
             : {}),
         ...(raw.traits?.length ? { traits: [...raw.traits] } : {}),
+        progressionXp: Math.max(0, Number(raw.progressionXp ?? 0)),
     };
 }
 function memberNeedsMigration(raw, normalized) {

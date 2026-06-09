@@ -8,6 +8,7 @@ import type {
   MetaStatePayload,
   SeasonStartSnapshotPayload,
   StartRoundPayload,
+  StartPrivateTestPayload,
   TeamCreationDraftPayload,
   TeamCreationWizardStep,
   AiRivalSeasonPayload,
@@ -43,6 +44,11 @@ import {
   type QualifyingResult,
   type WeekendSessionType,
 } from "./game/weekend_sessions";
+import {
+  applyPrivateTestProgression,
+  type ProgressionSummary,
+} from "./game/progression";
+import { collectPrivateTestParticipants } from "./game/private_test";
 import {
   assignUnassignedDriversToCars,
   defaultDriverAssignments,
@@ -946,6 +952,54 @@ export class MetaStateManager {
     fleet[idx] = { ...car, carCondition: next };
     this.state.fleet = fleet;
     return this.persist();
+  }
+
+  applyPrivateTestPrep(prep: StartPrivateTestPayload): string | null {
+    const trackId = String(prep.trackId ?? "").trim();
+    if (!trackId) return "Select a track";
+
+    for (const entry of prep.carSetups ?? []) {
+      const carId = String(entry.carId ?? "").trim();
+      const preset = entry.preset;
+      if (!carId || !preset) return "Each car setup requires carId and preset";
+      const car = this.state.fleet?.find((c) => c.id === carId);
+      if (!car) return `Unknown car: ${carId}`;
+      const err = validateTrackPreset({ ...preset, trackId });
+      if (err) return `${car.carNumber}: ${err}`;
+      if (!car.trackSetupPresets) car.trackSetupPresets = {};
+      car.trackSetupPresets[trackId] = { ...preset, trackId };
+    }
+
+    writePlayerCarConfig(this.repoRoot, this.state);
+    this.persist();
+    return null;
+  }
+
+  applyPrivateTestCompletion(
+    payload: StartPrivateTestPayload,
+    snapshots: CarSnapshot[],
+    entryToFleetCarId: Map<string, string>,
+  ): { meta: MetaStatePayload; summary: ProgressionSummary } {
+    this.persistSessionCarConditions(snapshots, entryToFleetCarId, "practice");
+
+    const { driverIds, staffIds } = collectPrivateTestParticipants(
+      this.state,
+      payload.carIds,
+      payload.driverAssignments,
+    );
+
+    const progression = applyPrivateTestProgression(
+      this.state.driverRoster ?? [],
+      (this.state.staff ?? []) as import("./game/staff").StaffMember[],
+      driverIds,
+      staffIds,
+      payload.durationHours,
+    );
+
+    this.state.driverRoster = progression.drivers;
+    this.state.staff = progression.staff;
+
+    return { meta: this.persist(), summary: progression.summary };
   }
 
   completeWeekendSession(

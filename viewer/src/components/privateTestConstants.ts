@@ -1,0 +1,3 @@
+export const PRIVATE_TEST_DEFAULT_HOURS = 4;
+export const PRIVATE_TEST_MIN_HOURS = 1;
+export const PRIVATE_TEST_MAX_HOURS = 72;

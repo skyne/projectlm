@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.LEMANS_OFFICIAL_GRID_SIZE = exports.LEMANS_ENTRIES_PATH = void 0;
 exports.loadLeMansEntries = loadLeMansEntries;
 exports.loadClassTemplates = loadClassTemplates;
+exports.generatePlayerOnlyGrid = generatePlayerOnlyGrid;
 exports.generateGrid = generateGrid;
 exports.writeEntriesFile = writeEntriesFile;
 const fs = __importStar(require("fs"));
@@ -181,6 +182,27 @@ function mergePlayerFleet(base, options) {
     }
     merged.sort((a, b) => a.grid - b.grid);
     return merged;
+}
+function generatePlayerOnlyGrid(options) {
+    const fleet = options.playerFleet;
+    if (!fleet.length)
+        return [];
+    let grid = 1;
+    return fleet.map((fleetCar) => {
+        const entry = {
+            entryId: `entry-${grid}`,
+            teamName: options.playerTeamName,
+            carConfigPath: fleetCar.carConfigPath,
+            classId: fleetCar.classId,
+            grid,
+            carNumber: fleetCar.carNumber,
+            isPlayer: true,
+            fleetCarId: fleetCar.id,
+            entryMode: (0, experimental_entry_1.fleetEntryMode)(fleetCar),
+        };
+        grid++;
+        return entry;
+    });
 }
 function generateGrid(options) {
     const base = loadLeMansEntries(options.repoRoot, {

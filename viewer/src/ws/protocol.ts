@@ -223,6 +223,8 @@ export interface WeekendProgressPayload {
 
 export type SimBackend = "native" | "mock";
 
+export type SessionKind = "weekend" | "private_test";
+
 export interface SessionInitPayload {
   simBackend?: SimBackend;
   trackName: string;
@@ -231,6 +233,7 @@ export interface SessionInitPayload {
   raceFormat?: string;
   roundNumber?: number;
   weekendSessionType?: WeekendSessionType;
+  sessionKind?: SessionKind;
   simTimestep: number;
   entries: Array<{
     entryId: string;
@@ -324,6 +327,7 @@ export interface DriverProfilePayload {
   rainRadar: number;
   stamina: number;
   maxStintHours: number;
+  progressionXp?: number;
 }
 
 export interface DriverStatDefPayload {
@@ -379,6 +383,7 @@ export interface StaffMemberPayload {
   status?: StaffStatus;
   unavailableUntilRound?: number;
   traits?: string[];
+  progressionXp?: number;
 }
 
 export type CalendarEventType = "test" | "race";
@@ -940,11 +945,34 @@ export interface EventsPayload {
   events: SimEvent[];
 }
 
+export interface ProgressionStatBumpPayload {
+  stat: string;
+  from: number;
+  to: number;
+}
+
+export interface ProgressionGainPayload {
+  id: string;
+  name: string;
+  xpGained: number;
+  xpTotal: number;
+  levelBefore: number;
+  levelAfter: number;
+  statBumps?: ProgressionStatBumpPayload[];
+}
+
+export interface ProgressionSummaryPayload {
+  drivers: ProgressionGainPayload[];
+  staff: ProgressionGainPayload[];
+}
+
 export interface RaceCompletePayload {
   raceTime: number;
   championshipPoints?: number;
   finances?: RaceFinancesPayload;
   weekendSessionType?: WeekendSessionType;
+  sessionKind?: SessionKind;
+  progressionSummary?: ProgressionSummaryPayload;
   sessionLogId?: string;
   nextWeekendSession?: WeekendSessionType | null;
   results: Array<{
@@ -983,6 +1011,18 @@ export interface StartRoundPayload {
   trackId?: string;
   carSetups?: SessionCarSetupPayload[];
   sessionType?: WeekendSessionType;
+}
+
+export interface PrivateTestDriverAssignments {
+  [carId: string]: string[];
+}
+
+export interface StartPrivateTestPayload {
+  trackId: string;
+  carIds: string[];
+  driverAssignments: PrivateTestDriverAssignments;
+  durationHours: number;
+  carSetups?: SessionCarSetupPayload[];
 }
 
 export interface EngineerAdvicePayload {
@@ -1039,6 +1079,7 @@ export type ClientMessageType =
   | "restart_race"
   | "end_session"
   | "start_round"
+  | "start_private_test"
   | "reload_definitions"
   | "submit_command"
   | "hire_staff"

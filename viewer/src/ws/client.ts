@@ -281,6 +281,10 @@ export class ViewerClient {
     this.send(clientMessage("start_round", prep ?? {}));
   }
 
+  startPrivateTest(prep: import("./protocol").StartPrivateTestPayload): void {
+    this.send(clientMessage("start_private_test", prep));
+  }
+
   reloadDefinitions(): void {
     this.send(clientMessage("reload_definitions", {}));
   }

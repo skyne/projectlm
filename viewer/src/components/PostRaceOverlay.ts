@@ -13,6 +13,12 @@ import {
   sessionResultsTitle,
 } from "../utils/weekendSessions";
 import { isSeasonFinished } from "../utils/seasonState";
+import {
+  progressionLevel,
+  xpBarPercent,
+  xpIntoCurrentLevel,
+  XP_PER_LEVEL,
+} from "../utils/progression";
 import { resolveResultRetireReason } from "../utils/retireReason";
 import { isDevToolsEnabled } from "./SessionLogDevPanel";
 
@@ -82,6 +88,8 @@ export class PostRaceOverlay {
   private devToolsEl: HTMLElement;
   private continueBtn: HTMLButtonElement;
   private weekendBtn: HTMLButtonElement;
+  private progressionEl: HTMLElement;
+  private progressionListEl: HTMLElement;
   private handlers: PostRaceHandlers;
   private pendingNextSession: WeekendSessionType | null = null;
   private pendingSeasonResults = false;
@@ -109,6 +117,10 @@ export class PostRaceOverlay {
         <p class="post-race-player-summary hidden"></p>
         <div class="post-race-finances"></div>
         <div class="post-race-championship hidden"></div>
+        <div class="post-race-progression hidden">
+          <h3 class="post-race-progression-title">Development</h3>
+          <ul class="post-race-progression-list"></ul>
+        </div>
         <div class="post-race-results-wrap">
           <table class="post-race-table">
             <thead>
@@ -145,6 +157,8 @@ export class PostRaceOverlay {
     this.devToolsEl = this.root.querySelector(".post-race-dev-tools")!;
     this.continueBtn = this.root.querySelector(".btn-continue")!;
     this.weekendBtn = this.root.querySelector(".btn-weekend-next")!;
+    this.progressionEl = this.root.querySelector(".post-race-progression")!;
+    this.progressionListEl = this.root.querySelector(".post-race-progression-list")!;
 
     this.weekendBtn.addEventListener("click", () => {
       const next = this.pendingNextSession;
@@ -174,20 +188,29 @@ export class PostRaceOverlay {
     activeSessionType?: WeekendSessionType,
     managedEntryIds: string[] = [playerEntryId],
   ): void {
+    const isPrivateTest = payload.sessionKind === "private_test";
     const sessionType =
       payload.weekendSessionType ?? activeSessionType ?? "race";
     const isQuali = sessionType === "qualifying";
-    const isPractice = sessionType === "practice";
-    const isRace = sessionType === "race";
+    const isPractice = sessionType === "practice" || isPrivateTest;
+    const isRace = sessionType === "race" && !isPrivateTest;
     const isTiming = isQuali || isPractice;
-    this.pendingNextSession = resolvePendingNextSession(payload, sessionType, meta);
+    this.pendingNextSession = isPrivateTest
+      ? null
+      : resolvePendingNextSession(payload, sessionType, meta);
     this.pendingSeasonResults = Boolean(
       isRace && !this.pendingNextSession && meta && isSeasonFinished(meta),
     );
 
-    this.badgeEl.textContent = sessionCompleteBadge(sessionType);
-    this.titleEl.textContent = sessionResultsTitle(sessionType);
-    this.timeLabelEl.textContent = sessionElapsedLabel(sessionType);
+    this.badgeEl.textContent = isPrivateTest
+      ? "Private Test Complete"
+      : sessionCompleteBadge(sessionType);
+    this.titleEl.textContent = isPrivateTest
+      ? "Private Test Results"
+      : sessionResultsTitle(sessionType);
+    this.timeLabelEl.textContent = isPrivateTest
+      ? "Session time"
+      : sessionElapsedLabel(sessionType);
 
     const weekendLabel = continueSessionButtonLabel(this.pendingNextSession);
     if (this.pendingNextSession) {
@@ -197,12 +220,16 @@ export class PostRaceOverlay {
     } else {
       this.weekendBtn.classList.add("hidden");
       this.continueBtn.classList.remove("hidden");
-      if (meta && isSeasonFinished(meta)) {
+      if (isPrivateTest) {
+        this.continueBtn.textContent = "Return to HQ";
+      } else if (meta && isSeasonFinished(meta)) {
         this.continueBtn.textContent = "View Season Results";
       } else {
         this.continueBtn.textContent = returnToHqButtonLabel(sessionType);
       }
     }
+
+    this.renderProgression(payload.progressionSummary);
 
     this.timeEl.textContent = formatRaceTime(payload.raceTime);
     this.resultsBody.replaceChildren();
@@ -592,6 +619,49 @@ export class PostRaceOverlay {
     if (noteEl instanceof HTMLElement) {
       noteEl.textContent = marketNote;
       noteEl.classList.toggle("hidden", !marketNote);
+    }
+  }
+
+  private renderProgression(
+    summary?: import("../ws/protocol").ProgressionSummaryPayload,
+  ): void {
+    const entries = [
+      ...(summary?.drivers ?? []),
+      ...(summary?.staff ?? []),
+    ];
+    if (!entries.length) {
+      this.progressionEl.classList.add("hidden");
+      this.progressionListEl.replaceChildren();
+      return;
+    }
+
+    this.progressionEl.classList.remove("hidden");
+    this.progressionListEl.replaceChildren();
+
+    for (const gain of entries) {
+      const li = document.createElement("li");
+      const leveledUp = gain.levelAfter > gain.levelBefore;
+      li.className = `post-race-progression-item${leveledUp ? " progression-level-up" : ""}`;
+      const xpFill = xpBarPercent(gain.xpTotal);
+      const bumpHtml = (gain.statBumps ?? [])
+        .map(
+          (b) =>
+            `<span class="progression-stat-bump">${escapeHtml(b.stat)} ${b.from} → ${b.to}</span>`,
+        )
+        .join("");
+      li.innerHTML = `
+        <div class="progression-gain-head">
+          <span class="progression-gain-name">${escapeHtml(gain.name)}</span>
+          <span class="progression-gain-xp">+${gain.xpGained} XP</span>
+          <span class="progression-level-badge">Lv ${gain.levelBefore} → ${gain.levelAfter}</span>
+        </div>
+        <div class="progression-xp-bar" aria-hidden="true">
+          <span class="progression-xp-fill" style="width:${xpFill}%"></span>
+        </div>
+        <span class="progression-xp-label">${xpIntoCurrentLevel(gain.xpTotal)}/${XP_PER_LEVEL} XP</span>
+        ${bumpHtml ? `<div class="progression-bumps">${bumpHtml}</div>` : ""}
+      `;
+      this.progressionListEl.appendChild(li);
     }
   }
 

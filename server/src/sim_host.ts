@@ -2,7 +2,12 @@ import * as path from "path";
 import { normalizeEvent, normalizeTrackGeometry } from "./adapters";
 import { MetaStateManager } from "./meta_state";
 import type { SessionEntryRosters } from "./game/driver_catalog";
-import { buildRaceForRound } from "./game/race_builder";
+import {
+  buildPrivateTestSession,
+  buildRaceForRound,
+  type BuiltRace,
+} from "./game/race_builder";
+import { validatePrivateTestPayload } from "./game/private_test";
 import { loadTrackGeometryById } from "./game/track_loader";
 import { loadGameCatalog } from "./game/catalog";
 import { playerCarPath } from "./game/car_builder";
@@ -22,7 +27,8 @@ import { AiStintGuide } from "./llm/ai_stint_guide";
 import { rivalModifiersForTeam } from "./game/ai_rival_season";
 import { MockSimSession } from "./mock_session";
 import { SessionLogWriter } from "./session_log";
-import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceCompletePayload, RaceControlPayload, SessionInitPayload, SimEvent, TeamCreationDraftPayload, TrackGeometryPayload, WeekendSessionType } from "./ws_protocol";
+import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, MetaStatePayload, RaceCompletePayload, RaceControlPayload, SessionInitPayload, SessionKind, SimEvent, StartPrivateTestPayload, TeamCreationDraftPayload, TrackGeometryPayload, WeekendSessionType } from "./ws_protocol";
+import type { ProgressionSummary } from "./game/progression";
 import { collectQualifyingResults } from "./game/weekend_sessions";
 
 export interface SimSessionLike {
@@ -49,6 +55,7 @@ export interface SessionInitExtra {
   raceFormat: string;
   roundNumber: number;
   weekendSessionType?: WeekendSessionType;
+  sessionKind?: SessionKind;
   weatherContext?: {
     trackId: string;
     month: number;
@@ -110,6 +117,8 @@ export class SimHost {
   private readonly stintGuide = new AiStintGuide();
   private lastRaceComplete: RaceCompletePayload | null = null;
   private sessionEntryRosters: SessionEntryRosters = {};
+  private sessionKind: SessionKind = "weekend";
+  private privateTestPayload: StartPrivateTestPayload | null = null;
 
   private onTick?: (raceTime: number, snapshots: CarSnapshot[]) => void;
   private onEvents?: (events: SimEvent[]) => void;
@@ -201,6 +210,7 @@ export class SimHost {
       raceFormat: this.sessionExtra.raceFormat || round?.format || "",
       roundNumber: this.sessionExtra.roundNumber || meta.currentRound,
       weekendSessionType: this.sessionExtra.weekendSessionType,
+      sessionKind: this.sessionKind,
       simTimestep: this.simTimestep,
       entries: this.entries,
       carNumberByEntryId: Object.fromEntries(
@@ -236,6 +246,14 @@ export class SimHost {
     return null;
   }
 
+  getSessionKind(): SessionKind {
+    return this.sessionKind;
+  }
+
+  getPrivateTestPayload(): StartPrivateTestPayload | null {
+    return this.privateTestPayload;
+  }
+
   startRound(prep?: import("./ws_protocol").StartRoundPayload): string | null {
     const blocked = this.sessionStartBlockedReason();
     if (blocked) return blocked;
@@ -252,6 +270,54 @@ export class SimHost {
     } finally {
       this.sessionStartInProgress = false;
     }
+  }
+
+  startPrivateTest(raw: StartPrivateTestPayload): string | null {
+    const blocked = this.sessionStartBlockedReason();
+    if (blocked) return blocked;
+
+    const validated = validatePrivateTestPayload(this.meta.getState(), raw);
+    if ("error" in validated) return validated.error;
+
+    const payload = validated.payload;
+
+    this.sessionStartInProgress = true;
+    try {
+      if (this.inRaceSession) {
+        this.endSession();
+      }
+
+      if (payload.carSetups?.length) {
+        const prepErr = this.meta.applyPrivateTestPrep(payload);
+        if (prepErr) return prepErr;
+      }
+
+      const built = buildPrivateTestSession(this.repoRoot, this.meta.getState(), {
+        payload,
+      });
+      if (!built) return "Failed to build private test session";
+
+      this.sessionKind = "private_test";
+      this.privateTestPayload = payload;
+      return this.activateBuiltSession(built, "private_test");
+    } finally {
+      this.sessionStartInProgress = false;
+    }
+  }
+
+  completePrivateTest(): {
+    meta: MetaStatePayload;
+    summary: ProgressionSummary;
+  } | null {
+    const payload = this.privateTestPayload;
+    if (!payload || this.sessionKind !== "private_test") return null;
+
+    const snapshots = this.getSnapshots();
+    return this.meta.applyPrivateTestCompletion(
+      payload,
+      snapshots,
+      this.fleetEntryMap,
+    );
   }
 
   private startRoundInner(prep?: import("./ws_protocol").StartRoundPayload): string | null {
@@ -285,13 +351,24 @@ export class SimHost {
       return "No calendar event for the current round";
     }
 
+    this.sessionKind = "weekend";
+    this.privateTestPayload = null;
+    return this.activateBuiltSession(built, "weekend");
+  }
+
+  private activateBuiltSession(
+    built: BuiltRace,
+    sessionKind: SessionKind,
+  ): string | null {
     this.raceConfigPath = path.join(this.repoRoot, built.raceConfigPath);
     this.parsedConfig = parseRaceConfig(this.repoRoot, this.raceConfigPath);
+    this.sessionKind = sessionKind;
     this.sessionExtra = {
       targetDurationSeconds: built.targetDurationSeconds,
       raceFormat: built.raceFormat,
       roundNumber: built.roundNumber,
       weekendSessionType: built.sessionType,
+      sessionKind,
       weatherContext: built.weatherContext,
     };
     this.trackName = built.trackName;
@@ -335,8 +412,12 @@ export class SimHost {
     this.paused = true;
     if (this.timeScale === 0) this.timeScale = 1;
     this.ensureTickLoop();
+    const label =
+      sessionKind === "private_test"
+        ? `Private test — ${built.sessionLabel}`
+        : `Round ${built.roundNumber} — ${built.sessionLabel}`;
     console.log(
-      `[sim_host] Round ${built.roundNumber} — ${built.sessionLabel} @ ${built.trackName} (${this.entries.length} cars, paused until resume)`,
+      `[sim_host] ${label} @ ${built.trackName} (${this.entries.length} cars, paused until resume)`,
     );
     return null;
   }
@@ -669,7 +750,10 @@ export class SimHost {
       raceFormat: "",
       roundNumber: 0,
       weekendSessionType: undefined,
+      sessionKind: undefined,
     };
+    this.sessionKind = "weekend";
+    this.privateTestPayload = null;
     this.pitBot.reset();
     this.stintGuide.reset();
     this.lastRaceComplete = null;

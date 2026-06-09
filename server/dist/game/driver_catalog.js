@@ -411,8 +411,8 @@ function rostersForCompetingEntries(entries, allRosters) {
     }
     return out;
 }
-function exportRuntimeDrivers(repoRoot, options, prebuiltRosters) {
-    const rel = "configs/runtime/drivers.txt";
+function exportRuntimeDrivers(repoRoot, options, prebuiltRosters, relPath = "configs/runtime/drivers.txt") {
+    const rel = relPath;
     const abs = path.join(repoRoot, rel);
     const rosters = prebuiltRosters ?? buildSessionEntryRosters(repoRoot, options);
     const lines = [

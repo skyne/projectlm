@@ -71,6 +71,8 @@ export function trackDisplayName(trackId: string): string {
   return TRACK_NAMES[trackId] ?? trackId.replace(/_/g, " ");
 }
 
+export const ALL_TRACK_IDS = Object.keys(TRACK_NAMES);
+
 export function formatDurationLabel(
   format: string,
   eventType?: "test" | "race",

@@ -497,8 +497,9 @@ export function exportRuntimeDrivers(
     rosterOverrides?: Record<string, DriverProfilePayload[]>;
   },
   prebuiltRosters?: SessionEntryRosters,
+  relPath = "configs/runtime/drivers.txt",
 ): string {
-  const rel = "configs/runtime/drivers.txt";
+  const rel = relPath;
   const abs = path.join(repoRoot, rel);
   const rosters = prebuiltRosters ?? buildSessionEntryRosters(repoRoot, options);
   const lines = [

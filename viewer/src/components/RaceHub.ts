@@ -19,9 +19,11 @@ import {
   WEEKEND_STEPS,
 } from "../utils/weekendSessions";
 import { isSeasonFinished } from "../utils/seasonState";
+import { canStartPrivateTest, privateTestBlockedReason } from "../utils/privateTest";
 
 export interface RaceHubHandlers {
   onStartRace: () => void;
+  onPrivateTest?: () => void;
   onOpenGarage?: () => void;
   onViewSeasonResults?: () => void;
   onStartNextSeason?: () => void;
@@ -42,6 +44,7 @@ export class RaceHub {
   private roundInfoEl: HTMLElement;
   private pointsEl: HTMLElement;
   private startBtn: HTMLButtonElement;
+  private privateTestBtn: HTMLButtonElement;
   private garageBtn: HTMLButtonElement;
   private handlers: RaceHubHandlers;
   private latestMeta: MetaStatePayload | null = null;
@@ -84,6 +87,7 @@ export class RaceHub {
             <div class="race-hub-snapshot"></div>
             <div class="round-actions">
               <button type="button" class="secondary-btn garage-link-btn">⚙ Garage</button>
+              <button type="button" class="secondary-btn private-test-btn" title="Solo practice between race weekends">Private Test</button>
               <button type="button" class="secondary-btn restart-season-btn hidden">↺ Restart Season</button>
               <button type="button" class="primary-btn start-race-btn">
                 <span class="btn-icon" aria-hidden="true">🏁</span>
@@ -131,10 +135,15 @@ export class RaceHub {
     this.roundInfoEl = this.root.querySelector(".round-info")!;
     this.pointsEl = this.root.querySelector(".championship-points")!;
     this.startBtn = this.root.querySelector(".start-race-btn")!;
+    this.privateTestBtn = this.root.querySelector(".private-test-btn")!;
     this.garageBtn = this.root.querySelector(".garage-link-btn")!;
 
     this.startBtn.addEventListener("click", () => {
       this.handlers.onStartRace();
+    });
+
+    this.privateTestBtn.addEventListener("click", () => {
+      this.handlers.onPrivateTest?.();
     });
 
     this.root.querySelector(".garage-link-btn")!.addEventListener("click", () => {
@@ -229,6 +238,19 @@ export class RaceHub {
       !this.hostControlsEnabled;
     this.startBtn.disabled = blocked;
     this.garageBtn.disabled = !this.hostControlsEnabled;
+
+    const privateTestAllowed =
+      Boolean(meta?.setupComplete) &&
+      this.hostControlsEnabled &&
+      !seasonComplete &&
+      meta &&
+      canStartPrivateTest(meta);
+    this.privateTestBtn.disabled = !privateTestAllowed;
+    this.privateTestBtn.title = privateTestAllowed
+      ? "Solo free practice — drivers and crew earn XP"
+      : meta
+        ? privateTestBlockedReason(meta) ?? "Private test unavailable"
+        : "Private test unavailable";
 
     if (!blocked && current) {
       const isTest = current.eventType === "test" || current.format === "test";

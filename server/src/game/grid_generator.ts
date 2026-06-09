@@ -195,6 +195,32 @@ function mergePlayerFleet(
   return merged;
 }
 
+export function generatePlayerOnlyGrid(options: {
+  playerTeamName: string;
+  playerFleet: FleetCarPayload[];
+  playerCarId?: string;
+}): GeneratedEntry[] {
+  const fleet = options.playerFleet;
+  if (!fleet.length) return [];
+
+  let grid = 1;
+  return fleet.map((fleetCar) => {
+    const entry: GeneratedEntry = {
+      entryId: `entry-${grid}`,
+      teamName: options.playerTeamName,
+      carConfigPath: fleetCar.carConfigPath,
+      classId: fleetCar.classId,
+      grid,
+      carNumber: fleetCar.carNumber,
+      isPlayer: true,
+      fleetCarId: fleetCar.id,
+      entryMode: fleetEntryMode(fleetCar),
+    };
+    grid++;
+    return entry;
+  });
+}
+
 export function generateGrid(options: {
   repoRoot: string;
   playerTeamName: string;

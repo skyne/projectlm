@@ -36,6 +36,7 @@ import {
   suggestedExperimentalBuyQuantity,
 } from "../utils/fleetUi";
 import { mmPanelHeader } from "../utils/mmUi";
+import { formatProgressionLine, xpBarPercent } from "../utils/progression";
 import { mountLiveryCanvas } from "../graphics/liveryRenderer";
 import { resolveTeamLivery } from "../utils/teamLivery";
 import { LiveryEditor } from "./LiveryEditor";
@@ -756,7 +757,7 @@ export class TeamHQ {
         const roleCard = document.createElement("div");
         roleCard.className = `hq-crew-role-card${filled ? "" : " vacant"}`;
         const statsLine = filled && member
-          ? `Skill ${member.skill}${member.experience != null ? ` · ${member.experience} yrs` : ""}${member.morale != null ? ` · Morale ${member.morale}` : ""}${member.salaryPerRace ? ` · $${member.salaryPerRace.toLocaleString()}/race` : ""}`
+          ? `Skill ${member.skill}${member.experience != null ? ` · ${member.experience} yrs` : ""} · ${formatProgressionLine(member.progressionXp)}${member.morale != null ? ` · Morale ${member.morale}` : ""}${member.salaryPerRace ? ` · $${member.salaryPerRace.toLocaleString()}/race` : ""}`
           : "";
         const traitsLine = filled && member?.traits?.length
           ? member.traits.join(" · ")
@@ -767,6 +768,7 @@ export class TeamHQ {
             <span class="hq-crew-role-label">${ROLE_LABELS[role]}</span>
             <span class="hq-crew-role-name">${escapeHtml(filled && member ? member.name : "Vacant")}</span>
             ${filled && member ? `<span class="hq-crew-skill-bar"><span class="hq-crew-skill-fill" style="width:${member.skill}%"></span></span>` : ""}
+            ${filled && member ? `<span class="progression-xp-bar hq-crew-xp-bar" aria-hidden="true"><span class="progression-xp-fill" style="width:${xpBarPercent(member.progressionXp ?? 0)}%"></span></span>` : ""}
             ${statsLine ? `<span class="hq-crew-role-stats">${escapeHtml(statsLine)}</span>` : ""}
             ${traitsLine ? `<span class="hq-crew-role-traits">${escapeHtml(traitsLine)}</span>` : ""}
             ${filled && member && status !== "active" ? `<span class="staff-status staff-status-${status}">${STATUS_LABELS[status as Exclude<StaffStatus, "active">]}</span>` : ""}

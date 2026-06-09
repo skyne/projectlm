@@ -8,6 +8,12 @@ import type {
   MetaStatePayload,
 } from "../ws/protocol";
 import { mmPanelHeader, escapeHtml } from "../utils/mmUi";
+import {
+  formatProgressionLine,
+  nextDriverRewardLabel,
+  progressionLevel,
+  xpBarPercent,
+} from "../utils/progression";
 
 export interface DriverCenterHandlers {
   onSaveRoster: (
@@ -386,8 +392,10 @@ export class DriverCenter {
       <li class="driver-roster-item ${i === this.selected ? "active" : ""}" data-idx="${i}">
         <button type="button" class="driver-roster-btn">
           <span class="driver-tier tier-${escapeHtml(d.tier.toLowerCase())}">${escapeHtml(d.tier)}</span>
-          <strong>${escapeHtml(d.name)}</strong>
-          <span class="driver-roster-meta">${escapeHtml(d.nationality)} · DRY ${d.dryPace}</span>
+          <strong>${escapeHtml(d.name)} <span class="progression-level-badge">Lv ${progressionLevel(d.progressionXp ?? 0)}</span></strong>
+          <span class="driver-roster-meta">${escapeHtml(d.nationality)} · DRY ${d.dryPace} · ${formatProgressionLine(d.progressionXp)}</span>
+          <span class="progression-xp-bar" aria-hidden="true"><span class="progression-xp-fill" style="width:${xpBarPercent(d.progressionXp ?? 0)}%"></span></span>
+          <span class="driver-roster-meta progression-next-reward">Next: ${nextDriverRewardLabel(progressionLevel(d.progressionXp ?? 0))}</span>
         </button>
         ${this.roster.length > 1 ? `<button type="button" class="driver-remove-btn" data-remove="${i}" title="Remove">✕</button>` : ""}
       </li>

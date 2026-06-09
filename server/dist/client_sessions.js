@@ -17,6 +17,7 @@ const HOST_PERMISSIONS = [
     "rd_invest",
     "complete_round",
     "start_round",
+    "start_private_test",
     "continue_weekend_session",
     "create_team",
     "save_team_creation_draft",

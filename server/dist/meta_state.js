@@ -44,6 +44,8 @@ const fleet_1 = require("./game/fleet");
 const car_builder_1 = require("./game/car_builder");
 const weekend_setup_1 = require("./game/weekend_setup");
 const weekend_sessions_1 = require("./game/weekend_sessions");
+const progression_1 = require("./game/progression");
+const private_test_1 = require("./game/private_test");
 const driver_catalog_1 = require("./game/driver_catalog");
 const driver_market_1 = require("./game/driver_market");
 const ai_rival_season_1 = require("./game/ai_rival_season");
@@ -715,6 +717,37 @@ class MetaStateManager {
         fleet[idx] = { ...car, carCondition: next };
         this.state.fleet = fleet;
         return this.persist();
+    }
+    applyPrivateTestPrep(prep) {
+        const trackId = String(prep.trackId ?? "").trim();
+        if (!trackId)
+            return "Select a track";
+        for (const entry of prep.carSetups ?? []) {
+            const carId = String(entry.carId ?? "").trim();
+            const preset = entry.preset;
+            if (!carId || !preset)
+                return "Each car setup requires carId and preset";
+            const car = this.state.fleet?.find((c) => c.id === carId);
+            if (!car)
+                return `Unknown car: ${carId}`;
+            const err = (0, weekend_setup_1.validateTrackPreset)({ ...preset, trackId });
+            if (err)
+                return `${car.carNumber}: ${err}`;
+            if (!car.trackSetupPresets)
+                car.trackSetupPresets = {};
+            car.trackSetupPresets[trackId] = { ...preset, trackId };
+        }
+        (0, car_builder_1.writePlayerCarConfig)(this.repoRoot, this.state);
+        this.persist();
+        return null;
+    }
+    applyPrivateTestCompletion(payload, snapshots, entryToFleetCarId) {
+        this.persistSessionCarConditions(snapshots, entryToFleetCarId, "practice");
+        const { driverIds, staffIds } = (0, private_test_1.collectPrivateTestParticipants)(this.state, payload.carIds, payload.driverAssignments);
+        const progression = (0, progression_1.applyPrivateTestProgression)(this.state.driverRoster ?? [], (this.state.staff ?? []), driverIds, staffIds, payload.durationHours);
+        this.state.driverRoster = progression.drivers;
+        this.state.staff = progression.staff;
+        return { meta: this.persist(), summary: progression.summary };
     }
     completeWeekendSession(sessionType, qualiResults) {
         const round = this.state.currentRound;

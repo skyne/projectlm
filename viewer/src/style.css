@@ -8132,3 +8132,255 @@ body.mock-sim-active #app {
   font-size: 0.75rem;
   opacity: 0.7;
 }
+
+/* Private test setup */
+.private-test-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(4, 8, 18, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.private-test-overlay.hidden {
+  display: none;
+}
+
+.private-test-card {
+  width: min(920px, 100%);
+  max-height: min(90vh, 900px);
+  overflow: auto;
+  background: linear-gradient(160deg, #121a2e 0%, #0c1018 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.private-test-header,
+.private-test-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.private-test-footer {
+  border-bottom: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  justify-content: flex-end;
+}
+
+.private-test-body {
+  padding: 1rem 1.5rem 1.5rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.private-test-section h3 {
+  margin: 0 0 0.65rem;
+  font-size: 0.95rem;
+}
+
+.private-test-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
+.private-test-track-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.5rem;
+}
+
+.private-test-track-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.65rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  cursor: pointer;
+}
+
+.private-test-track-btn.active {
+  border-color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.private-test-track-icon svg {
+  width: 72px;
+  height: 42px;
+}
+
+.private-test-track-name {
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.private-test-cars,
+.private-test-driver-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.private-test-car-option,
+.private-test-driver-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.85rem;
+}
+
+.private-test-driver-block h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+}
+
+.private-test-duration {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.private-test-duration input[type="range"] {
+  flex: 1;
+}
+
+.private-test-car-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.private-test-car-tab {
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.private-test-car-tab.active {
+  border-color: #fbbf24;
+  color: #fbbf24;
+}
+
+.private-test-slider-row {
+  display: grid;
+  grid-template-columns: 9rem 1fr 5rem;
+  gap: 0.65rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+  font-size: 0.82rem;
+}
+
+/* Progression XP */
+.progression-level-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(251, 191, 36, 0.18);
+  color: #fbbf24;
+  vertical-align: middle;
+}
+
+.progression-xp-bar {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+
+.progression-xp-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #fbbf24);
+}
+
+.hq-crew-xp-bar {
+  margin-top: 0.35rem;
+}
+
+.progression-next-reward {
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.post-race-progression {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.post-race-progression-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.9rem;
+}
+
+.post-race-progression-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.post-race-progression-item {
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.post-race-progression-item.progression-level-up {
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.progression-gain-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.progression-gain-xp {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.progression-xp-label {
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+.progression-stat-bump {
+  display: inline-block;
+  margin-top: 0.25rem;
+  margin-right: 0.5rem;
+  font-size: 0.78rem;
+  color: #fbbf24;
+}

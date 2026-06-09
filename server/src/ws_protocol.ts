@@ -225,6 +225,8 @@ export interface WeekendProgressPayload {
 
 export type SimBackend = "native" | "mock";
 
+export type SessionKind = "weekend" | "private_test";
+
 export interface SessionInitPayload {
   trackName: string;
   /** Native C++ physics vs TypeScript mock fallback. */
@@ -235,6 +237,8 @@ export interface SessionInitPayload {
   roundNumber?: number;
   /** Active weekend session when raceActive (practice / qualifying / race). */
   weekendSessionType?: WeekendSessionType;
+  /** Distinguishes championship weekends from private tests. */
+  sessionKind?: SessionKind;
   simTimestep: number;
   entries: Array<{
     entryId: string;
@@ -295,6 +299,8 @@ export interface DriverProfilePayload {
   rainRadar: number;
   stamina: number;
   maxStintHours: number;
+  /** Lifetime session XP toward level-ups. */
+  progressionXp?: number;
 }
 
 export interface DriverStatDefPayload {
@@ -359,6 +365,8 @@ export interface StaffMemberPayload {
   status?: StaffStatus;
   unavailableUntilRound?: number;
   traits?: string[];
+  /** Lifetime session XP toward level-ups. */
+  progressionXp?: number;
 }
 
 export type CalendarEventType = "test" | "race";
@@ -944,11 +952,34 @@ export interface EventsPayload {
   events: SimEvent[];
 }
 
+export interface ProgressionStatBumpPayload {
+  stat: string;
+  from: number;
+  to: number;
+}
+
+export interface ProgressionGainPayload {
+  id: string;
+  name: string;
+  xpGained: number;
+  xpTotal: number;
+  levelBefore: number;
+  levelAfter: number;
+  statBumps?: ProgressionStatBumpPayload[];
+}
+
+export interface ProgressionSummaryPayload {
+  drivers: ProgressionGainPayload[];
+  staff: ProgressionGainPayload[];
+}
+
 export interface RaceCompletePayload {
   raceTime: number;
   championshipPoints?: number;
   finances?: RaceFinancesPayload;
   weekendSessionType?: WeekendSessionType;
+  sessionKind?: SessionKind;
+  progressionSummary?: ProgressionSummaryPayload;
   /** Saved session log id (dev tools / post-mortem). */
   sessionLogId?: string;
   /** Next session in the weekend, or null when the weekend is finished. */
@@ -1028,6 +1059,18 @@ export interface StartRoundPayload {
   carSetups?: SessionCarSetupPayload[];
   /** Which weekend session to run (defaults to the next incomplete step). */
   sessionType?: WeekendSessionType;
+}
+
+export interface PrivateTestDriverAssignments {
+  [carId: string]: string[];
+}
+
+export interface StartPrivateTestPayload {
+  trackId: string;
+  carIds: string[];
+  driverAssignments: PrivateTestDriverAssignments;
+  durationHours: number;
+  carSetups?: SessionCarSetupPayload[];
 }
 
 export interface EngineerAdvicePayload {
@@ -1127,6 +1170,7 @@ export type ClientMessageType =
   | "rd_invest"
   | "complete_round"
   | "start_round"
+  | "start_private_test"
   | "continue_weekend_session"
   | "create_team"
   | "save_team_creation_draft"
@@ -1191,6 +1235,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       "rd_invest",
       "complete_round",
       "start_round",
+      "start_private_test",
       "continue_weekend_session",
       "create_team",
       "save_team_creation_draft",

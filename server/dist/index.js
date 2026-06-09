@@ -282,6 +282,36 @@ function main() {
                     broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
                 }
             }
+            else if (msg.type === "start_private_test") {
+                const prep = (msg.payload ?? {});
+                if (!host.getMetaState().setupComplete) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: "Complete team setup first" })));
+                }
+                else {
+                    const fleetErr = host.validateFleetForRace();
+                    if (fleetErr) {
+                        ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: fleetErr })));
+                    }
+                    else {
+                        const startErr = host.startPrivateTest(prep);
+                        if (startErr) {
+                            ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: startErr })));
+                        }
+                        else {
+                            broadcast(clients, (0, ws_protocol_1.serverMessage)("session_init", host.getSessionInit()));
+                            broadcast(clients, (0, ws_protocol_1.serverMessage)("track_geometry", host.getTrackGeometry()));
+                            const payload = {
+                                raceTime: host.getRaceTime(),
+                                snapshots: host.getSnapshots(),
+                                raceControl: host.getRaceControl(),
+                            };
+                            broadcast(clients, (0, ws_protocol_1.serverMessage)("tick", payload));
+                            afterSessionChange();
+                            console.log("[server] Private test started");
+                        }
+                    }
+                }
+            }
             else if (msg.type === "start_round" ||
                 msg.type === "continue_weekend_session") {
                 const prep = (msg.payload ?? {});
@@ -623,6 +653,7 @@ function main() {
         const payload = { events };
         broadcast(clients, (0, ws_protocol_1.serverMessage)("events", payload));
     }, (raceTime, results, weekendSessionType, sessionLogId) => {
+        const sessionKind = host.getSessionKind();
         const meta = host.getMetaState();
         const session = host.getSessionInit();
         const managedIds = session.managedEntryIds?.length
@@ -656,7 +687,15 @@ function main() {
             })
             : undefined;
         let updatedMeta = meta;
-        if (isRaceSession && primaryResult && event && !event.completed) {
+        let progressionSummary;
+        if (sessionKind === "private_test") {
+            const completion = host.completePrivateTest();
+            if (completion) {
+                updatedMeta = completion.meta;
+                progressionSummary = completion.summary;
+            }
+        }
+        else if (isRaceSession && primaryResult && event && !event.completed) {
             updatedMeta = host.completeRound(primaryResult.position, primaryResult.classId, results.map((r) => ({
                 entryId: r.entryId,
                 teamName: r.teamName,
@@ -675,16 +714,22 @@ function main() {
             : isRaceSession
                 ? []
                 : [weekendSessionType];
-        const nextSession = isRaceSession
+        const nextSession = sessionKind === "private_test"
             ? null
-            : (0, weekend_sessions_1.nextWeekendSession)(completedSessions);
-        const finalResults = isRaceSession ? results : (0, weekend_sessions_1.sortTimingResults)(results);
+            : isRaceSession
+                ? null
+                : (0, weekend_sessions_1.nextWeekendSession)(completedSessions);
+        const finalResults = sessionKind === "private_test" || !isRaceSession
+            ? (0, weekend_sessions_1.sortTimingResults)(results)
+            : results;
         const payload = {
             raceTime,
             results: finalResults,
             championshipPoints: finances?.championshipPoints ?? 0,
             finances: isRaceSession ? finances : undefined,
             weekendSessionType,
+            sessionKind,
+            progressionSummary,
             nextWeekendSession: nextSession,
             sessionLogId,
         };
@@ -693,11 +738,14 @@ function main() {
             broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", updatedMeta));
         }
         broadcast(clients, (0, ws_protocol_1.serverMessage)("race_complete", payload));
-        if (updatedMeta.seasonComplete) {
+        if (updatedMeta.seasonComplete && sessionKind !== "private_test") {
             host.endSession();
             broadcast(clients, (0, ws_protocol_1.serverMessage)("session_init", host.getSessionInit()));
         }
-        console.log(`[server] ${weekendSessionType} session complete`);
+        const completeLabel = sessionKind === "private_test"
+            ? "Private test"
+            : `${weekendSessionType} session`;
+        console.log(`[server] ${completeLabel} complete`);
     });
     if (process.env.DEV_TOOLS !== "0") {
         startDevSessionLogApi(host.repoRoot, Number(process.env.DEV_HTTP_PORT ?? PORT + 1));

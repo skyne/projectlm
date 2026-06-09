@@ -14,6 +14,7 @@ import { PostRaceOverlay } from "./components/PostRaceOverlay";
 import { SessionLogDevPanel, isDevToolsEnabled } from "./components/SessionLogDevPanel";
 import { SeasonEndOverlay } from "./components/SeasonEndOverlay";
 import { PreSessionBriefing } from "./components/PreSessionBriefing";
+import { PrivateTestSetup } from "./components/PrivateTestSetup";
 import { TeamCreationWizard } from "./components/TeamCreationWizard";
 import { CarGarage } from "./components/CarGarage";
 import { RaceControls } from "./components/RaceControls";
@@ -315,6 +316,23 @@ const preSessionBriefing = new PreSessionBriefing(
   },
 );
 
+const privateTestSetup = new PrivateTestSetup(
+  document.getElementById("private-test-overlay")!,
+  {
+    onConfirm: (prep) => {
+      privateTestSetup.hide();
+      postRace.hide();
+      pendingRaceStart = true;
+      client.startPrivateTest(prep);
+      syncAudioContext();
+    },
+    onCancel: () => {
+      privateTestSetup.hide();
+      syncAudioContext();
+    },
+  },
+);
+
 function dismissPostRace(): void {
   postRace.hide();
   endRaceSession();
@@ -359,6 +377,7 @@ const seasonEnd = new SeasonEndOverlay(document.body, {
 
 const raceHub = new RaceHub(seasonPanel, {
   onStartRace: () => startNextWeekendSession(),
+  onPrivateTest: () => openPrivateTestSetup(),
   onOpenGarage: () => {
     carGarage.clearEditingCar();
     setMainView("garage");
@@ -895,6 +914,12 @@ function openPreSessionBriefing(): void {
   syncAudioContext();
 }
 
+function openPrivateTestSetup(): void {
+  if (!latestMeta?.setupComplete || !latestMeta.fleet?.length) return;
+  privateTestSetup.open(latestMeta, gameCatalog);
+  syncAudioContext();
+}
+
 function startWeekendSession(sessionType: WeekendSessionType): void {
   if (!latestMeta?.setupComplete) return;
   if (sessionType === "race") {
@@ -1126,6 +1151,7 @@ const client = new ViewerClient({
       // Follow server-driven session starts (host button or pit-bot continue).
       postRace.hide();
       preSessionBriefing.hide();
+      privateTestSetup.hide();
       pendingRaceStart = false;
       const reconnect =
         raceStarted && (payload.raceTime ?? 0) > 0.5

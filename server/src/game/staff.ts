@@ -13,6 +13,8 @@ export interface StaffMember {
   status: StaffStatus;
   unavailableUntilRound?: number;
   traits?: string[];
+  /** Lifetime session XP toward level-ups. */
+  progressionXp?: number;
 }
 
 export const ROLE_LABELS: Record<StaffRole, string> = {
@@ -82,6 +84,7 @@ function normalizeMember(raw: RawStaffMember, assignedCarId: string): StaffMembe
       ? { unavailableUntilRound: Number(raw.unavailableUntilRound) }
       : {}),
     ...(raw.traits?.length ? { traits: [...raw.traits] } : {}),
+    progressionXp: Math.max(0, Number(raw.progressionXp ?? 0)),
   };
 }
 

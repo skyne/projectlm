@@ -358,6 +358,43 @@ function main(): void {
         } else {
           broadcast(clients, serverMessage("meta_state", result));
         }
+      } else if (msg.type === "start_private_test") {
+        const prep = (msg.payload ?? {}) as import("./ws_protocol").StartPrivateTestPayload;
+        if (!host.getMetaState().setupComplete) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", { message: "Complete team setup first" }),
+            ),
+          );
+        } else {
+          const fleetErr = host.validateFleetForRace();
+          if (fleetErr) {
+            ws.send(
+              JSON.stringify(serverMessage("error", { message: fleetErr })),
+            );
+          } else {
+            const startErr = host.startPrivateTest(prep);
+            if (startErr) {
+              ws.send(
+                JSON.stringify(serverMessage("error", { message: startErr })),
+              );
+            } else {
+              broadcast(clients, serverMessage("session_init", host.getSessionInit()));
+              broadcast(
+                clients,
+                serverMessage("track_geometry", host.getTrackGeometry()),
+              );
+              const payload: TickPayload = {
+                raceTime: host.getRaceTime(),
+                snapshots: host.getSnapshots(),
+                raceControl: host.getRaceControl(),
+              };
+              broadcast(clients, serverMessage("tick", payload));
+              afterSessionChange();
+              console.log("[server] Private test started");
+            }
+          }
+        }
       } else if (
         msg.type === "start_round" ||
         msg.type === "continue_weekend_session"
@@ -734,6 +771,7 @@ function main(): void {
       broadcast(clients, serverMessage("events", payload));
     },
     (raceTime, results, weekendSessionType, sessionLogId) => {
+      const sessionKind = host.getSessionKind();
       const meta = host.getMetaState();
       const session = host.getSessionInit();
       const managedIds =
@@ -790,7 +828,15 @@ function main(): void {
           : undefined;
 
       let updatedMeta = meta;
-      if (isRaceSession && primaryResult && event && !event.completed) {
+      let progressionSummary: import("./ws_protocol").ProgressionSummaryPayload | undefined;
+
+      if (sessionKind === "private_test") {
+        const completion = host.completePrivateTest();
+        if (completion) {
+          updatedMeta = completion.meta;
+          progressionSummary = completion.summary;
+        }
+      } else if (isRaceSession && primaryResult && event && !event.completed) {
         updatedMeta = host.completeRound(
           primaryResult.position,
           primaryResult.classId,
@@ -814,11 +860,17 @@ function main(): void {
           : isRaceSession
             ? []
             : [weekendSessionType];
-      const nextSession: WeekendSessionType | null = isRaceSession
-        ? null
-        : nextWeekendSession(completedSessions);
+      const nextSession: WeekendSessionType | null =
+        sessionKind === "private_test"
+          ? null
+          : isRaceSession
+            ? null
+            : nextWeekendSession(completedSessions);
 
-      const finalResults = isRaceSession ? results : sortTimingResults(results);
+      const finalResults =
+        sessionKind === "private_test" || !isRaceSession
+          ? sortTimingResults(results)
+          : results;
 
       const payload: RaceCompletePayload = {
         raceTime,
@@ -826,6 +878,8 @@ function main(): void {
         championshipPoints: finances?.championshipPoints ?? 0,
         finances: isRaceSession ? finances : undefined,
         weekendSessionType,
+        sessionKind,
+        progressionSummary,
         nextWeekendSession: nextSession,
         sessionLogId,
       };
@@ -834,11 +888,15 @@ function main(): void {
         broadcast(clients, serverMessage("meta_state", updatedMeta));
       }
       broadcast(clients, serverMessage("race_complete", payload));
-      if (updatedMeta.seasonComplete) {
+      if (updatedMeta.seasonComplete && sessionKind !== "private_test") {
         host.endSession();
         broadcast(clients, serverMessage("session_init", host.getSessionInit()));
       }
-      console.log(`[server] ${weekendSessionType} session complete`);
+      const completeLabel =
+        sessionKind === "private_test"
+          ? "Private test"
+          : `${weekendSessionType} session`;
+      console.log(`[server] ${completeLabel} complete`);
     },
   );
 
