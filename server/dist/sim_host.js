@@ -457,6 +457,18 @@ class SimHost {
     signStaffContract(listingId, carId) {
         return this.meta.signStaffContract(listingId, carId);
     }
+    startNegotiation(kind, subjectRef) {
+        return this.meta.startNegotiation(kind, subjectRef);
+    }
+    submitNegotiationOffer(negotiationId, terms) {
+        return this.meta.submitNegotiationOffer(negotiationId, terms);
+    }
+    acceptNegotiation(negotiationId) {
+        return this.meta.acceptNegotiation(negotiationId);
+    }
+    withdrawNegotiation(negotiationId) {
+        return this.meta.withdrawNegotiation(negotiationId);
+    }
     saveTeamColors(colors) {
         return this.meta.saveTeamColors(colors);
     }

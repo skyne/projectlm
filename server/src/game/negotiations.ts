@@ -121,6 +121,7 @@ export interface RuleChangeVote {
 
 export interface RegulatoryException {
   id: string;
+  proposalId?: string;
   classId: string;
   powerCapDelta: number;
   grantedRound: number;

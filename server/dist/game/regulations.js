@@ -27,14 +27,6 @@ exports.RULE_CHANGE_PROPOSALS = [
         powerCapDelta: 0.02,
     },
     {
-        id: "private_test_waiver",
-        label: "Extra private test day",
-        description: "Petition for an additional private test session (calendar/sim hook pending).",
-        kind: "exception",
-        petitionFee: 250000,
-        targetClassId: "Hypercar",
-    },
-    {
         id: "vote_lmp2_weight_shift",
         label: "LMP2 minimum weight adjustment",
         description: "Initiate a grid vote on LMP2 weight regulations for next season.",

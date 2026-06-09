@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { MetaStatePayload } from "../ws_protocol";
 import type { ActiveAgreement } from "./negotiations";
 import {
   agreementGameplayFromActive,
   notifyNewAgreementStubs,
+  privateTestXpMultiplier,
 } from "./agreement_hooks";
 
 describe("agreement_hooks", () => {
@@ -30,6 +32,24 @@ describe("agreement_hooks", () => {
     const stubs = agreementGameplayFromActive(agreements, 2);
     assert.equal(stubs.privateTestDayCredits, 2);
     assert.deepEqual(stubs.sharedPartCatalogIds, []);
+  });
+
+  it("applies joint-testing XP bonus from active agreements", () => {
+    const meta = {
+      currentRound: 2,
+      activeAgreements: [
+        {
+          id: "jt",
+          kind: "joint_testing",
+          partnerTeam: "Toyota Racing",
+          signedRound: 1,
+          expiresAtRound: 5,
+          terms: {},
+        },
+      ],
+    } as unknown as MetaStatePayload;
+
+    assert.equal(privateTestXpMultiplier(meta), 1.25);
   });
 
   it("emits stub notes for pending gameplay hooks", () => {

@@ -19,7 +19,11 @@ import {
   WEEKEND_STEPS,
 } from "../utils/weekendSessions";
 import { isSeasonFinished } from "../utils/seasonState";
-import { canStartPrivateTest, privateTestBlockedReason } from "../utils/privateTest";
+import {
+  canStartPrivateTest,
+  privateTestBlockedReason,
+  privateTestBonusHint,
+} from "../utils/privateTest";
 
 export interface RaceHubHandlers {
   onStartRace: () => void;
@@ -246,8 +250,11 @@ export class RaceHub {
       meta &&
       canStartPrivateTest(meta);
     this.privateTestBtn.disabled = !privateTestAllowed;
+    const bonusHint = meta ? privateTestBonusHint(meta) : null;
     this.privateTestBtn.title = privateTestAllowed
-      ? "Solo free practice — drivers and crew earn XP"
+      ? bonusHint
+        ? `Solo free practice — ${bonusHint}`
+        : "Solo free practice — drivers and crew earn XP"
       : meta
         ? privateTestBlockedReason(meta) ?? "Private test unavailable"
         : "Private test unavailable";

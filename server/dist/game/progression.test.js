@@ -58,6 +58,11 @@ const baseStaff = (id) => ({
         strict_1.default.equal(next[0].progressionXp, 112);
         strict_1.default.ok((next[0].dryPace ?? 0) > 80);
     });
+    (0, node_test_1.it)("scales private test xp with joint-testing multiplier", () => {
+        const drivers = [baseDriver("d1", "Marco")];
+        const { summary } = (0, progression_1.applyPrivateTestProgression)(drivers, [], ["d1"], [], 4, { xpMultiplier: 1.25 });
+        strict_1.default.equal(summary.drivers[0]?.xpGained, 40);
+    });
     (0, node_test_1.it)("applies staff skill bump at threshold", () => {
         const staff = [baseStaff("s1")];
         staff[0].progressionXp = 85;

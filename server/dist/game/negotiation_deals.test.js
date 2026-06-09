@@ -79,8 +79,8 @@ const repoRoot = node_path_1.default.resolve(process.cwd(), "..");
             resolved.sessions[0]?.status === "countered" ||
             resolved.sessions[0]?.status === "rejected");
         if (resolved.newAgreements.length > 0) {
-            strict_1.default.equal(resolved.newAgreements[0]?.stubPending, true);
-            strict_1.default.ok(resolved.newAgreements[0]?.stubNote?.includes("pending"));
+            strict_1.default.equal(resolved.newAgreements[0]?.stubPending, false);
+            strict_1.default.ok(resolved.newAgreements[0]?.stubNote?.includes("XP"));
         }
     });
     (0, node_test_1.it)("files regulatory petition and opens vote", () => {

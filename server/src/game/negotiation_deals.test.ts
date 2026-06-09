@@ -108,8 +108,8 @@ describe("negotiation_deals", () => {
         resolved.sessions[0]?.status === "rejected",
     );
     if (resolved.newAgreements.length > 0) {
-      assert.equal(resolved.newAgreements[0]?.stubPending, true);
-      assert.ok(resolved.newAgreements[0]?.stubNote?.includes("pending"));
+      assert.equal(resolved.newAgreements[0]?.stubPending, false);
+      assert.ok(resolved.newAgreements[0]?.stubNote?.includes("XP"));
     }
   });
 

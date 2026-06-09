@@ -153,7 +153,10 @@ import {
   submitRegulatoryPetition,
   synthesizeSponsorDeals,
 } from "./game/negotiation_deals";
-import { notifyNewAgreementStubs } from "./game/agreement_hooks";
+import {
+  notifyNewAgreementStubs,
+  privateTestXpMultiplier,
+} from "./game/agreement_hooks";
 import { ruleProposalById } from "./game/regulations";
 import {
   isNegotiationKindAsync,
@@ -1086,6 +1089,7 @@ export class MetaStateManager {
       driverIds,
       staffIds,
       payload.durationHours,
+      { xpMultiplier: privateTestXpMultiplier(this.state) },
     );
 
     this.state.driverRoster = progression.drivers;

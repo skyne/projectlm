@@ -9,6 +9,24 @@ export function isRaceWeekendInProgress(meta: MetaStatePayload): boolean {
   return meta.weekendProgress?.round === meta.currentRound;
 }
 
+export function activeJointTestingPartners(meta: MetaStatePayload): string[] {
+  return (meta.activeAgreements ?? [])
+    .filter(
+      (agr) =>
+        agr.kind === "joint_testing" &&
+        agr.partnerTeam &&
+        meta.currentRound <= agr.expiresAtRound,
+    )
+    .map((agr) => agr.partnerTeam!);
+}
+
+export function privateTestBonusHint(meta: MetaStatePayload): string | null {
+  const partners = activeJointTestingPartners(meta);
+  if (!partners.length) return null;
+  const pct = Math.min(50, partners.length * 25);
+  return `Joint testing +${pct}% XP (${partners.join(", ")})`;
+}
+
 export function privateTestBlockedReason(meta: MetaStatePayload): string | null {
   if (!meta.setupComplete) return "Complete team setup first";
   if (isSeasonFinished(meta)) {

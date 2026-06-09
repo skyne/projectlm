@@ -436,6 +436,7 @@ export interface RuleChangeVotePayload {
 
 export interface RegulatoryExceptionPayload {
   id: string;
+  proposalId?: string;
   classId: string;
   powerCapDelta: number;
   grantedRound: number;

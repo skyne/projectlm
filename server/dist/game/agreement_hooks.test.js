@@ -31,6 +31,22 @@ const agreement_hooks_1 = require("./agreement_hooks");
         strict_1.default.equal(stubs.privateTestDayCredits, 2);
         strict_1.default.deepEqual(stubs.sharedPartCatalogIds, []);
     });
+    (0, node_test_1.it)("applies joint-testing XP bonus from active agreements", () => {
+        const meta = {
+            currentRound: 2,
+            activeAgreements: [
+                {
+                    id: "jt",
+                    kind: "joint_testing",
+                    partnerTeam: "Toyota Racing",
+                    signedRound: 1,
+                    expiresAtRound: 5,
+                    terms: {},
+                },
+            ],
+        };
+        strict_1.default.equal((0, agreement_hooks_1.privateTestXpMultiplier)(meta), 1.25);
+    });
     (0, node_test_1.it)("emits stub notes for pending gameplay hooks", () => {
         const notes = (0, agreement_hooks_1.notifyNewAgreementStubs)([
             {

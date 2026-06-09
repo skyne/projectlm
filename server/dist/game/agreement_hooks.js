@@ -1,13 +1,39 @@
 "use strict";
 /**
  * Gameplay hooks for partnership and regulatory agreements.
- * Stubs until private-test calendar, tech-share R&D, and runtime BoP exist.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.JOINT_TESTING_XP_BONUS_CAP = exports.JOINT_TESTING_XP_BONUS_PER_PARTNER = void 0;
+exports.activeJointTestingPartners = activeJointTestingPartners;
+exports.privateTestXpMultiplier = privateTestXpMultiplier;
+exports.privateTestBonusHint = privateTestBonusHint;
 exports.agreementGameplayFromActive = agreementGameplayFromActive;
 exports.notifyNewAgreementStubs = notifyNewAgreementStubs;
 const negotiation_deals_1 = require("./negotiation_deals");
-/** Derive stub gameplay bonuses from active agreements (read-only). */
+exports.JOINT_TESTING_XP_BONUS_PER_PARTNER = 0.25;
+exports.JOINT_TESTING_XP_BONUS_CAP = 0.5;
+function activeAgreements(meta, currentRound = meta.currentRound) {
+    return (meta.activeAgreements ?? []).filter((agr) => currentRound <= agr.expiresAtRound);
+}
+function activeJointTestingPartners(meta, currentRound = meta.currentRound) {
+    return activeAgreements(meta, currentRound)
+        .filter((agr) => agr.kind === "joint_testing" && agr.partnerTeam)
+        .map((agr) => agr.partnerTeam);
+}
+/** +25% driver/staff XP per active joint-testing partner (max +50%). */
+function privateTestXpMultiplier(meta, currentRound = meta.currentRound) {
+    const partners = activeJointTestingPartners(meta, currentRound).length;
+    const bonus = Math.min(exports.JOINT_TESTING_XP_BONUS_CAP, partners * exports.JOINT_TESTING_XP_BONUS_PER_PARTNER);
+    return 1 + bonus;
+}
+function privateTestBonusHint(meta) {
+    const partners = activeJointTestingPartners(meta);
+    if (!partners.length)
+        return null;
+    const pct = Math.round(Math.min(exports.JOINT_TESTING_XP_BONUS_CAP, partners.length * exports.JOINT_TESTING_XP_BONUS_PER_PARTNER) * 100);
+    return `Joint testing +${pct}% XP (${partners.join(", ")})`;
+}
+/** Derive gameplay bonuses from active agreements (read-only). */
 function agreementGameplayFromActive(agreements, currentRound) {
     let privateTestDayCredits = 0;
     const sharedPartCatalogIds = [];
@@ -29,7 +55,7 @@ function agreementGameplayFromActive(agreements, currentRound) {
     }
     return { privateTestDayCredits, sharedPartCatalogIds };
 }
-/** Log stub intent when new agreements land — wire calendar/R&D/BoP here later. */
+/** Log stub intent when new agreements still lack gameplay hooks. */
 function notifyNewAgreementStubs(agreements) {
     const notes = [];
     for (const agr of agreements) {

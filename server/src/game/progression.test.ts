@@ -73,6 +73,19 @@ describe("progression", () => {
     assert.ok((next[0].dryPace ?? 0) > 80);
   });
 
+  it("scales private test xp with joint-testing multiplier", () => {
+    const drivers = [baseDriver("d1", "Marco")];
+    const { summary } = applyPrivateTestProgression(
+      drivers,
+      [],
+      ["d1"],
+      [],
+      4,
+      { xpMultiplier: 1.25 },
+    );
+    assert.equal(summary.drivers[0]?.xpGained, 40);
+  });
+
   it("applies staff skill bump at threshold", () => {
     const staff = [baseStaff("s1")];
     staff[0].progressionXp = 85;

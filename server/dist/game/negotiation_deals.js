@@ -347,6 +347,7 @@ function resolvePendingInterTeamNegotiations(sessions, season, options) {
         const acceptThreshold = 0.92 + rnd() * 0.12;
         if (score >= acceptThreshold) {
             const subtype = offer.agreementSubtype ?? "joint_testing";
+            const jointTesting = subtype === "joint_testing";
             const agreement = {
                 id: `agr-${session.id}`,
                 kind: subtype,
@@ -354,8 +355,10 @@ function resolvePendingInterTeamNegotiations(sessions, season, options) {
                 signedRound: options.completingRound,
                 expiresAtRound: options.completingRound + (offer.contractSeasons ?? 1) * 3,
                 terms: { ...offer },
-                stubPending: true,
-                stubNote: stubNoteForAgreement(subtype),
+                stubPending: !jointTesting,
+                stubNote: jointTesting
+                    ? `+25% private test XP with ${partner}`
+                    : stubNoteForAgreement(subtype),
             };
             newAgreements.push(agreement);
             headlines.push(`${partner} agrees to ${subtype === "joint_testing" ? "joint private testing" : "technology sharing"} with ${options.playerTeamName}`);
@@ -416,7 +419,7 @@ function resolvePendingInterTeamNegotiations(sessions, season, options) {
 function stubNoteForAgreement(subtype) {
     switch (subtype) {
         case "joint_testing":
-            return "Private test session unlock pending — sim/calendar hook not wired yet";
+            return "+25% private test XP per joint-testing partner";
         case "tech_share":
             return "Shared parts unlock pending — R&D integration stub only";
         default:
@@ -538,6 +541,7 @@ function resolvePendingRegulatoryNegotiations(sessions, regulatory, season, opti
         }
         const exception = {
             id: `exc-${proposal.id}-${options.completingRound}`,
+            proposalId: proposal.id,
             classId: proposal.targetClassId ?? "Hypercar",
             powerCapDelta: proposal.powerCapDelta ?? 0,
             grantedRound: options.completingRound,
@@ -554,8 +558,10 @@ function resolvePendingRegulatoryNegotiations(sessions, regulatory, season, opti
             signedRound: options.completingRound,
             expiresAtRound: exception.expiresAtRound,
             terms: { ...session.currentOffer },
-            stubPending: true,
-            stubNote: "BoP exception recorded — runtime class rules hook applies delta when wired",
+            stubPending: Boolean(proposal.powerCapDelta),
+            stubNote: proposal.powerCapDelta
+                ? "BoP exception recorded — runtime class rules hook applies delta when wired"
+                : undefined,
         };
         newAgreements.push(agreement);
         headlines.push(`ACR grants temporary exception: ${proposal.label}`);
@@ -569,7 +575,7 @@ function resolvePendingRegulatoryNegotiations(sessions, regulatory, season, opti
                     round: options.completingRound,
                     from: regulations_1.REGULATORY_ENTITY_ID,
                     terms: session.currentOffer,
-                    note: "Exception granted (stub — sim BoP hook pending)",
+                    note: "Exception granted (BoP hook pending for power cap changes)",
                 },
             ],
         };

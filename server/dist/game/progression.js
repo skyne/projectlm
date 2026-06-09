@@ -68,9 +68,10 @@ function applyStaffLevelUps(member, xpBefore, xpAfter) {
     }
     return { member: next, bumps };
 }
-function applyPrivateTestProgression(drivers, staff, participantDriverIds, participantStaffIds, durationHours) {
-    const driverXp = driverXpForPrivateTest(durationHours);
-    const staffXp = staffXpForPrivateTest(durationHours);
+function applyPrivateTestProgression(drivers, staff, participantDriverIds, participantStaffIds, durationHours, options = {}) {
+    const mult = Math.max(1, options.xpMultiplier ?? 1);
+    const driverXp = Math.round(driverXpForPrivateTest(durationHours) * mult);
+    const staffXp = Math.round(staffXpForPrivateTest(durationHours) * mult);
     const driverIdSet = new Set(participantDriverIds);
     const staffIdSet = new Set(participantStaffIds);
     const summary = { drivers: [], staff: [] };
