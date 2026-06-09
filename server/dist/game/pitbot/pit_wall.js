@@ -9,6 +9,8 @@ exports.fmtLap = fmtLap;
 exports.teamResultsByClass = teamResultsByClass;
 exports.sortedTeamClasses = sortedTeamClasses;
 exports.classResults = classResults;
+const briefing_tactics_1 = require("../briefing_tactics");
+const staff_briefing_1 = require("../staff_briefing");
 const tyre_grip_1 = require("../../tyre_grip");
 const pit_planner_1 = require("./pit_planner");
 const WING_HYPER = 0.03;
@@ -30,30 +32,54 @@ function isLmp2(s) {
 }
 /** Prototype / GT setup pit order within a multi-class team. */
 exports.SETUP_CLASS_ORDER = ["Hypercar", "LMP2", "LMGT3"];
-function driverMode(s, wet, tread, plan) {
+function driverMode(s, all, wet, tread, plan, tactics, strategistSkill = 50) {
     const coolant = s.coolantTempC ?? 70;
     const health = s.engineHealth ?? 100;
-    if (coolant >= COOLANT_CONSERVE_C || health <= ENGINE_CONSERVE_HEALTH || tread === "wet") {
+    if (coolant >= COOLANT_CONSERVE_C ||
+        health <= ENGINE_CONSERVE_HEALTH ||
+        tread === "wet" ||
+        tactics?.conserveCar) {
         return "driver_mode=conserve";
     }
-    if (plan?.driverMode === "conserve")
+    let mode = plan?.driverMode ?? "normal";
+    if (tactics) {
+        if (tactics.briefingId === "hold_position" ||
+            tactics.briefingId === "defend" ||
+            tactics.briefingId === "points_protect") {
+            mode = (0, briefing_tactics_1.holdPositionDriverMode)(s, all, tactics);
+        }
+        else {
+            mode = tactics.driverMode;
+        }
+        const yieldThreshold = (0, staff_briefing_1.teammateYieldThresholdSec)(strategistSkill);
+        if ((tactics.teammatePolicy === "yield" || tactics.briefingId === "no_teammate_fight") &&
+            (0, briefing_tactics_1.teammateOnTrackGapSec)(s, all, yieldThreshold)) {
+            mode = mode === "push" ? "normal" : mode;
+        }
+        if (tactics.teammatePolicy === "support" && tactics.priority === "support") {
+            mode = "normal";
+        }
+    }
+    else if (wet < tyre_grip_1.INTER_TYRE_THRESHOLD && tread === "slick" && !plan?.driverMode) {
+        mode = "push";
+    }
+    if (mode === "conserve")
         return "driver_mode=conserve";
-    if (plan?.driverMode === "normal")
-        return "driver_mode=normal";
-    if (plan?.driverMode === "push" && wet < tyre_grip_1.INTER_TYRE_THRESHOLD && tread === "slick") {
+    if (mode === "push" && wet < tyre_grip_1.INTER_TYRE_THRESHOLD && tread === "slick") {
         return "driver_mode=push";
     }
-    if (wet < tyre_grip_1.INTER_TYRE_THRESHOLD)
-        return "driver_mode=push";
     return "driver_mode=normal";
 }
-function hybridStrategy(s, wet, tread, phase) {
+function hybridStrategy(s, wet, tread, phase, tactics) {
     if (!isHypercar(s))
         return null;
     const coolant = s.coolantTempC ?? 70;
     const health = s.engineHealth ?? 100;
     if (coolant >= COOLANT_CONSERVE_C || health <= ENGINE_CONSERVE_HEALTH || tread !== "slick") {
         return "hybrid_strategy=balanced";
+    }
+    if (tactics?.hybridStrategy) {
+        return `hybrid_strategy=${tactics.hybridStrategy}`;
     }
     if (phase === "race" && wet < tyre_grip_1.INTER_TYRE_THRESHOLD)
         return "hybrid_strategy=deploy";
@@ -152,23 +178,34 @@ function needsEmergencyPit(s) {
     return s.meatballFlag === true;
 }
 /** Release cars from garage at session start (practice/qualifying). */
-function releaseFromGarage(snapshots, entryIds, carState, submitCommand) {
-    for (const entryId of entryIds) {
+function releaseFromGarage(snapshots, entryIds, carState, submitCommand, ctx) {
+    const skill = ctx?.strategistSkill ?? 50;
+    const supportDelay = (0, staff_briefing_1.teammateSupportReleaseDelaySec)(skill);
+    const raceTime = ctx?.raceTimeSec ?? 0;
+    const ordered = [...entryIds].sort((a, b) => a.localeCompare(b));
+    for (const entryId of ordered) {
         const s = snapshots.find((x) => x.entryId === entryId);
         const st = carState.get(entryId);
         if (!s || !st || st.released || !s.inGarage)
             continue;
+        const tactics = ctx?.getBriefingTactics?.(entryId);
+        if (tactics?.teammatePolicy === "support" &&
+            tactics.priority === "support" &&
+            raceTime < supportDelay) {
+            continue;
+        }
         if (trySubmit(submitCommand, entryId, "release"))
             st.released = true;
     }
 }
 /** Pre-race grid commands for tyre compound, tread, driver mode, hybrid. */
-function gridSetupCommands(snapshots, entryIds, wet, getStintPlan) {
+function gridSetupCommands(snapshots, entryIds, wet, getStintPlan, getBriefingTactics) {
     const tread = (0, tyre_grip_1.desiredTyreTread)(wet);
     const actions = [];
     for (const entryId of entryIds) {
         const snap = snapshots.find((s) => s.entryId === entryId);
-        const plan = getStintPlan?.(entryId);
+        const tactics = getBriefingTactics?.(entryId);
+        const plan = (0, briefing_tactics_1.effectiveStintPlan)(entryId, 1, tactics, getStintPlan?.(entryId));
         const compound = plan?.compound ?? (tread === "slick" ? "soft" : "medium");
         actions.push({
             entryId,
@@ -190,10 +227,9 @@ function gridSetupCommands(snapshots, entryIds, wet, getStintPlan) {
             });
         }
         if (snap && isHypercar(snap)) {
-            actions.push({
-                entryId,
-                command: tread === "slick" ? "hybrid_strategy=deploy" : "hybrid_strategy=balanced",
-            });
+            const hybrid = hybridStrategy(snap, wet, tread, "race", tactics);
+            if (hybrid)
+                actions.push({ entryId, command: hybrid });
         }
     }
     return actions;
@@ -203,8 +239,9 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
     const actions = [];
     const timing = isTimingSession(ctx.phase);
     if (timing) {
-        releaseFromGarage(snapshots, entryIds, carState, submitCommand);
+        releaseFromGarage(snapshots, entryIds, carState, submitCommand, ctx);
     }
+    const skill = ctx.strategistSkill ?? 50;
     for (const entryId of entryIds) {
         const s = snapshots.find((x) => x.entryId === entryId);
         if (!s || s.retired || s.inGarage || s.inPit || s.pitQueued)
@@ -220,14 +257,18 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
         if (st.fuelAtLastPit <= 0)
             st.fuelAtLastPit = s.fuel;
         const sincePit = s.lap - st.lastPitLap;
+        const rawTactics = ctx.getBriefingTactics?.(entryId);
+        const tactics = rawTactics
+            ? (0, briefing_tactics_1.applyDamageLimitEscalation)(rawTactics, s)
+            : undefined;
+        const stintPlan = (0, briefing_tactics_1.effectiveStintPlan)(entryId, (s.pitCount ?? 0) + 1, tactics, ctx.getStintPlan?.(entryId));
         if (!st.setupDone &&
             timing &&
             !canRunSetupPit(s, snapshots, carState, ctx.phase, st)) {
-            const stintPlan = ctx.getStintPlan?.(entryId);
-            const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase);
+            const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase, tactics);
             if (hybrid)
                 trySubmit(submitCommand, entryId, hybrid);
-            trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread, stintPlan));
+            trySubmit(submitCommand, entryId, driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill));
             continue;
         }
         if ((0, pit_planner_1.mustServePenalty)(s)) {
@@ -248,13 +289,12 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
                 fcyActive: ctx.fcyActive ?? false,
                 scActive: ctx.scActive ?? false,
             })) {
-            const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase);
+            const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase, tactics);
             if (hybrid)
                 trySubmit(submitCommand, entryId, hybrid);
-            trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread, ctx.getStintPlan?.(entryId)));
+            trySubmit(submitCommand, entryId, driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill));
             continue;
         }
-        const stintPlan = ctx.getStintPlan?.(entryId);
         const plan = (0, pit_planner_1.planPitStop)(s, {
             phase: ctx.phase,
             wet: ctx.wet,
@@ -265,6 +305,7 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
             setupBias: setupBias(s),
             pitAggression: ctx.rivalPitAggression?.(s.teamName) ?? 1,
             stintPlan,
+            briefingTactics: tactics,
         }, st.fuelAtLastPit);
         if (plan?.pitNow) {
             const cmd = `pit|${plan.parts.join("|")}`;
@@ -274,10 +315,10 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
                 continue;
             }
         }
-        const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase);
+        const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase, tactics);
         if (hybrid)
             trySubmit(submitCommand, entryId, hybrid);
-        trySubmit(submitCommand, entryId, driverMode(s, ctx.wet, st.tyreTread, ctx.getStintPlan?.(entryId)));
+        trySubmit(submitCommand, entryId, driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill));
     }
     return actions;
 }

@@ -8,6 +8,7 @@ import {
   type PlannerSnap,
 } from "./pit_planner";
 import { fallbackStintPlan } from "../../llm/stint_plan";
+import { resolveBriefingTactics } from "../briefing_tactics";
 
 function snap(overrides: Partial<PlannerSnap>): PlannerSnap {
   const base = {
@@ -169,6 +170,70 @@ describe("pit_planner rival aggression", () => {
     const conservative = scaledFuelThresholds(0.85, { low: 0.3, critical: 0.14 });
     assert.ok(conservative.low < base.low);
     assert.ok(conservative.critical < base.critical);
+  });
+});
+
+describe("pit_planner briefing fuel", () => {
+  it("quali_sim briefing tops up only to partial fuel target on setup pit", () => {
+    const s = snap({
+      lap: 3,
+      fuel: 8,
+      fuelTankCapacity: 110,
+    });
+    const tactics = resolveBriefingTactics(
+      { carId: "c1", briefingId: "quali_sim" },
+      "practice",
+      "Hypercar",
+    );
+    const plan = planPitStop(
+      s,
+      {
+        phase: "practice",
+        wet: 0,
+        sincePit: 2,
+        setupDone: false,
+        tyreTread: "slick",
+        briefingTactics: tactics,
+      },
+      8,
+    );
+    assert.ok(plan);
+    const fuelPart = plan!.parts.find((p) => p.startsWith("fuel="));
+    assert.ok(fuelPart);
+    const liters = Number(fuelPart!.slice("fuel=".length));
+    assert.ok(liters > 0);
+    assert.ok(liters < 60);
+    assert.ok(liters + s.fuel < s.fuelTankCapacity!);
+  });
+
+  it("long_stint briefing fills toward full tank on setup pit", () => {
+    const s = snap({
+      lap: 3,
+      fuel: 40,
+      fuelTankCapacity: 110,
+    });
+    const tactics = resolveBriefingTactics(
+      { carId: "c1", briefingId: "long_stint" },
+      "practice",
+      "Hypercar",
+    );
+    const plan = planPitStop(
+      s,
+      {
+        phase: "practice",
+        wet: 0,
+        sincePit: 2,
+        setupDone: false,
+        tyreTread: "slick",
+        briefingTactics: tactics,
+      },
+      40,
+    );
+    assert.ok(plan);
+    const fuelPart = plan!.parts.find((p) => p.startsWith("fuel="));
+    assert.ok(fuelPart);
+    const liters = Number(fuelPart!.slice("fuel=".length));
+    assert.ok(liters >= 60);
   });
 });
 

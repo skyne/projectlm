@@ -38,6 +38,7 @@ exports.normalizeSetupState = normalizeSetupState;
 exports.buildSeasonStartSnapshot = buildSeasonStartSnapshot;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const briefing_tactics_1 = require("./game/briefing_tactics");
 const game_state_1 = require("./game_state");
 const car_marketplace_1 = require("./game/car_marketplace");
 const fleet_1 = require("./game/fleet");
@@ -1591,6 +1592,23 @@ class MetaStateManager {
         this.state.weekendTireCompound = normalized;
         (0, car_builder_1.writePlayerCarConfig)(this.repoRoot, this.state);
         return this.persist();
+    }
+    saveBriefingDefaults(trackId, sessionType, briefings) {
+        this.state.briefingDefaults = (0, briefing_tactics_1.mergeBriefingDefaults)(this.state.briefingDefaults, trackId, sessionType, briefings);
+        this.persist();
+    }
+    resolveBriefingDefaults(trackId, sessionType) {
+        const fleet = this.state.fleet ?? [];
+        const sessionMap = this.state.briefingDefaults?.[trackId]?.[sessionType];
+        if (!sessionMap)
+            return undefined;
+        const out = [];
+        for (const car of fleet) {
+            const briefingId = sessionMap[car.id];
+            if (briefingId)
+                out.push({ carId: car.id, briefingId });
+        }
+        return out.length ? out : undefined;
     }
     applySessionPrep(prep) {
         const round = this.state.calendar.find((e) => e.round === this.state.currentRound);

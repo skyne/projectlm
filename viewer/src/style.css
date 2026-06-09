@@ -2391,6 +2391,49 @@ body.mock-sim-active #app {
   }
 }
 
+.briefing-role-picker {
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--mm-border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.briefing-team-coord {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.briefing-pitbot-preview {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: var(--mm-text-muted, #9aa3b2);
+}
+
+.briefing-setup-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.briefing-chips-label {
+  font-size: 0.8rem;
+  color: var(--mm-text-muted, #9aa3b2);
+}
+
+.briefing-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.briefing-chip.active {
+  border-color: var(--mm-accent, #e8c547);
+  color: var(--mm-accent, #e8c547);
+}
+
 /* ── Post-race overlay ── */
 
 .post-race-overlay {

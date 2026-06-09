@@ -255,6 +255,8 @@ export interface SessionInitPayload {
   raceTime?: number;
   /** Server-side time compression when reconnecting mid-race. */
   timeScale?: number;
+  carBriefingsByEntryId?: Record<string, EntrySessionBriefing>;
+  strategistSkill?: number;
 }
 
 export type ClientRole = "host" | "player" | "spectator";
@@ -847,6 +849,7 @@ export interface SeasonStartSnapshotPayload {
   aiRivalSeason: AiRivalSeasonPayload;
   weekendTireCompound?: string;
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
+  briefingDefaults?: Record<string, Record<string, Record<string, string>>>;
 }
 
 export interface MetaStatePayload {
@@ -876,6 +879,7 @@ export interface MetaStatePayload {
   weekendTireCompound?: string;
   /** Saved per-track setup sheets keyed by trackId */
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
+  briefingDefaults?: Record<string, Record<string, Record<string, string>>>;
   weekendProgress?: WeekendProgressPayload;
   driverMarket?: DriverMarketListingPayload[];
   driverMarketRefreshCount?: number;
@@ -1183,9 +1187,32 @@ export interface SessionCarSetupPayload {
   preset: TrackSetupPresetPayload;
 }
 
+export interface CarSessionBriefing {
+  carId: string;
+  briefingId: string;
+  priority?: "lead" | "support";
+  teammatePolicy?: "none" | "yield" | "support" | "priority";
+  gapHoldSec?: { ahead?: number; behind?: number };
+}
+
+export interface EntrySessionBriefing {
+  entryId: string;
+  briefingId: string;
+  priority?: "lead" | "support";
+  teammatePolicy?: "none" | "yield" | "support" | "priority";
+  gapHoldSec?: { ahead?: number; behind?: number };
+}
+
+export interface UpdateCarBriefingPayload {
+  entryId: string;
+  briefingId: string;
+  gapHoldSec?: { ahead?: number; behind?: number };
+}
+
 export interface StartRoundPayload {
   trackId?: string;
   carSetups?: SessionCarSetupPayload[];
+  carBriefings?: CarSessionBriefing[];
   sessionType?: WeekendSessionType;
 }
 
@@ -1199,6 +1226,7 @@ export interface StartPrivateTestPayload {
   driverAssignments: PrivateTestDriverAssignments;
   durationHours: number;
   carSetups?: SessionCarSetupPayload[];
+  carBriefings?: CarSessionBriefing[];
 }
 
 export interface EngineerAdvicePayload {
@@ -1290,7 +1318,8 @@ export type ClientMessageType =
   | "repair_car_condition"
   | "start_next_season"
   | "restart_season"
-  | "finalize_season";
+  | "finalize_season"
+  | "update_car_briefing";
 
 export interface ServerMessage<T = unknown> {
   protocol: typeof PROTOCOL_VERSION;

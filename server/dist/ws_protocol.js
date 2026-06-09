@@ -58,6 +58,7 @@ function parseClientMessage(raw) {
             "start_next_season",
             "restart_season",
             "finalize_season",
+            "update_car_briefing",
         ];
         if (!allowed.includes(msg.type))
             return null;

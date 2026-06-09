@@ -328,6 +328,31 @@ function main(): void {
             JSON.stringify(serverMessage("error", { message: commandError })),
           );
         }
+      } else if (msg.type === "update_car_briefing") {
+        const payload = msg.payload as import("./ws_protocol").UpdateCarBriefingPayload;
+        const clientSession = sessions.get(ws);
+        if (
+          clientSession &&
+          !sessions.canSubmitForEntry(ws, payload.entryId)
+        ) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", {
+                message: "Not authorized for this car",
+                code: "forbidden",
+              }),
+            ),
+          );
+          return;
+        }
+        const result = host.updateCarBriefing(payload);
+        if ("error" in result) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: result.error })),
+          );
+        } else {
+          broadcast(clients, serverMessage("session_init", host.getSessionInit()));
+        }
       } else if (msg.type === "hire_staff") {
         const payload = msg.payload as HireStaffPayload;
         const meta = host.hireStaff(payload.role, payload.name, payload.skill);

@@ -243,6 +243,8 @@ const pitWall = new PitWall(document.getElementById("pitwall-container")!, {
     client.submitCommand(entryId, `hybrid_strategy=${strategy}`),
   onSetupChange: (entryId, wingDelta) =>
     client.submitCommand(entryId, `wing_delta=${wingDelta}`),
+  onRaceBriefing: (entryId, briefingId) =>
+    client.updateCarBriefing({ entryId, briefingId }),
   onEntryChange: (entryId) => selectCommandEntry(entryId),
 });
 
@@ -307,7 +309,7 @@ const preSessionBriefing = new PreSessionBriefing(
       preSessionBriefing.hide();
       postRace.hide();
       pendingRaceStart = true;
-      client.startRound({ ...prep, sessionType: "race" });
+      client.startRound(prep);
       syncAudioContext();
     },
     onCancel: () => {
@@ -758,6 +760,8 @@ function applySessionInit(payload: SessionInitPayload): void {
   trackMapPanel.setWeatherContext(payload.weatherContext);
   syncTrackSurfaceTheme();
   playback.setTargetDuration(payload.targetDurationSeconds ?? null);
+  pitWall.setRaceSessionActive(payload.weekendSessionType === "race");
+  pitWall.setEntryBriefing(commandEntryId, payload.carBriefingsByEntryId);
 }
 
 function fleetCarForEntry(entryId: string): FleetCarPayload | null {
@@ -1018,9 +1022,9 @@ function endRaceSession(): void {
   raceHub.setSessionInfo(null);
 }
 
-function openPreSessionBriefing(): void {
+function openPreSessionBriefing(sessionType: WeekendSessionType): void {
   if (!latestMeta?.setupComplete || !latestMeta.fleet?.length) return;
-  preSessionBriefing.open(latestMeta, gameCatalog);
+  preSessionBriefing.open(latestMeta, gameCatalog, sessionType);
   syncAudioContext();
 }
 
@@ -1032,13 +1036,8 @@ function openPrivateTestSetup(): void {
 
 function startWeekendSession(sessionType: WeekendSessionType): void {
   if (!latestMeta?.setupComplete) return;
-  if (sessionType === "race") {
-    openPreSessionBriefing();
-    return;
-  }
   postRace.hide();
-  pendingRaceStart = true;
-  client.startRound({ sessionType });
+  openPreSessionBriefing(sessionType);
 }
 
 function startNextWeekendSession(): void {
@@ -1050,8 +1049,8 @@ function startNextWeekendSession(): void {
   const current = latestMeta.calendar.find((e) => e.round === latestMeta!.currentRound);
   const isTest = current?.eventType === "test" || current?.format === "test";
   const next = resolveNextSession(latestMeta);
-  if (!isTest && next === "race") {
-    openPreSessionBriefing();
+  if (!isTest && next) {
+    startWeekendSession(next);
     return;
   }
   startWeekendSession(next ?? "race");

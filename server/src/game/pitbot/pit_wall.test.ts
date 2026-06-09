@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { resolveBriefingTactics } from "../briefing_tactics";
 import {
+  gridSetupCommands,
   initCarState,
   sortedTeamClasses,
   teamResultsByClass,
@@ -232,5 +234,150 @@ describe("tickPitBot race control", () => {
     );
     assert.ok(!submitted.some((c) => c.includes("drive_through")));
     assert.ok(!submitted.some((c) => c.includes("stop_go")));
+  });
+});
+
+describe("tickPitBot briefing integration", () => {
+  function tacticsFor(briefingId: string, classId: string, sessionType: "practice" | "qualifying" | "race" = "race") {
+    return resolveBriefingTactics(
+      { carId: "car-1", briefingId },
+      sessionType,
+      classId,
+    );
+  }
+
+  it("gridSetupCommands applies pole_attack soft push and deploy hybrid", () => {
+    const entryId = "e-hc";
+    const snapshots = [
+      snap({ entryId, classId: "Hypercar", teamName: "Cursor Racing" }),
+    ];
+    const tactics = tacticsFor("pole_attack", "Hypercar", "qualifying");
+    const commands = gridSetupCommands(
+      snapshots,
+      [entryId],
+      0,
+      undefined,
+      () => tactics,
+    ).map((a) => a.command);
+
+    assert.ok(commands.includes("starting_compound=soft"));
+    assert.ok(commands.includes("driver_mode=push"));
+    assert.ok(commands.includes("hybrid_strategy=deploy"));
+  });
+
+  it("gridSetupCommands applies conserve harvest hybrid on hypercar race", () => {
+    const entryId = "e-hc";
+    const snapshots = [
+      snap({ entryId, classId: "Hypercar", teamName: "Cursor Racing" }),
+    ];
+    const tactics = tacticsFor("conserve", "Hypercar", "race");
+    const commands = gridSetupCommands(
+      snapshots,
+      [entryId],
+      0,
+      undefined,
+      () => tactics,
+    ).map((a) => a.command);
+
+    assert.ok(commands.includes("starting_compound=medium"));
+    assert.ok(commands.includes("driver_mode=conserve"));
+    assert.ok(commands.includes("hybrid_strategy=harvest"));
+  });
+
+  it("tickPitBot uses conserve briefing driver mode during race", () => {
+    const entryId = "e-conserve";
+    const submitted: string[] = [];
+    tickPitBot(
+      [snap({ entryId, classId: "LMP2", teamName: "Us", lap: 5 })],
+      [entryId],
+      initCarState([entryId], 0, { minLap: 3 }),
+      {
+        phase: "race",
+        wet: 0,
+        getBriefingTactics: () => tacticsFor("conserve", "LMP2", "race"),
+      },
+      (_id, cmd) => {
+        submitted.push(cmd);
+        return true;
+      },
+    );
+    assert.ok(submitted.includes("driver_mode=conserve"));
+  });
+
+  it("tickPitBot yields push to normal when teammate is within strategist gap", () => {
+    const lead = "e-lead";
+    const support = "e-support";
+    const snapshots = [
+      snap({
+        entryId: lead,
+        classId: "Hypercar",
+        teamName: "Cursor Racing",
+        gapToLeader: 12,
+        lap: 4,
+      }),
+      snap({
+        entryId: support,
+        classId: "Hypercar",
+        teamName: "Cursor Racing",
+        gapToLeader: 12.2,
+        lap: 4,
+      }),
+    ];
+    const submitted: string[] = [];
+    tickPitBot(
+      snapshots,
+      [lead],
+      initCarState([lead], 0, { minLap: 3 }),
+      {
+        phase: "qualifying",
+        wet: 0,
+        getBriefingTactics: () => tacticsFor("no_teammate_fight", "Hypercar", "qualifying"),
+        strategistSkill: 50,
+      },
+      (_id, cmd) => {
+        submitted.push(cmd);
+        return true;
+      },
+    );
+    assert.ok(submitted.includes("driver_mode=normal"));
+    assert.ok(!submitted.includes("driver_mode=push"));
+  });
+
+  it("tickPitBot keeps push when teammate gap exceeds strategist threshold", () => {
+    const lead = "e-lead";
+    const support = "e-support";
+    const snapshots = [
+      snap({
+        entryId: lead,
+        classId: "Hypercar",
+        teamName: "Cursor Racing",
+        gapToLeader: 12,
+        lap: 4,
+      }),
+      snap({
+        entryId: support,
+        classId: "Hypercar",
+        teamName: "Cursor Racing",
+        gapToLeader: 14,
+        lap: 4,
+      }),
+    ];
+    const submitted: string[] = [];
+    tickPitBot(
+      snapshots,
+      [lead],
+      initCarState([lead], 0, { minLap: 3 }),
+      {
+        phase: "qualifying",
+        wet: 0,
+        getBriefingTactics: () => tacticsFor("pole_attack", "Hypercar", "qualifying"),
+        strategistSkill: 50,
+      },
+      (_id, cmd) => {
+        submitted.push(cmd);
+        return true;
+      },
+    );
+    assert.ok(submitted.includes("driver_mode=push"));
   });
 });

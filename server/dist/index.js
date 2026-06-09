@@ -245,6 +245,25 @@ function main() {
                     ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: commandError })));
                 }
             }
+            else if (msg.type === "update_car_briefing") {
+                const payload = msg.payload;
+                const clientSession = sessions.get(ws);
+                if (clientSession &&
+                    !sessions.canSubmitForEntry(ws, payload.entryId)) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", {
+                        message: "Not authorized for this car",
+                        code: "forbidden",
+                    })));
+                    return;
+                }
+                const result = host.updateCarBriefing(payload);
+                if ("error" in result) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("session_init", host.getSessionInit()));
+                }
+            }
             else if (msg.type === "hire_staff") {
                 const payload = msg.payload;
                 const meta = host.hireStaff(payload.role, payload.name, payload.skill);

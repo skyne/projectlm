@@ -13,7 +13,15 @@ function tankCapacity(s) {
     }
     return profileFor(s.classId).defaultTank;
 }
-function fuelToAdd(s) {
+function fuelToAdd(s, tactics) {
+    if (tactics?.pitFuelLiters != null) {
+        const cap = tankCapacity(s);
+        const target = Math.min(cap, Math.max(0, tactics.pitFuelLiters));
+        const add = target - s.fuel;
+        if (add <= 0)
+            return 0;
+        return Math.max(1, Math.ceil(add));
+    }
     return Math.max(1, Math.ceil(tankCapacity(s) - s.fuel));
 }
 const PIT_LANE_FRACTION = 0.06;
@@ -205,8 +213,13 @@ function buildParts(s, ctx, services, driverIndex) {
         ? ctx.stintPlan?.compound ?? slickCompound(ctx.wet)
         : "medium";
     const parts = [];
-    if (services.fuel)
-        parts.push(`fuel=${fuelToAdd(s)}`);
+    if (services.fuel) {
+        const liters = fuelToAdd(s, ctx.briefingTactics);
+        if (liters > 0)
+            parts.push(`fuel=${liters}`);
+        else
+            parts.push("fuel=0");
+    }
     else
         parts.push("fuel=0");
     if (services.tyres) {
@@ -272,7 +285,8 @@ function planPitStop(s, ctx, fuelAtLastPit) {
             ? Math.min(profile.fuelCritical, ctx.stintPlan.fuelStopFraction * 0.55)
             : profile.fuelCritical,
     };
-    const { low: fuelLow, critical: fuelCrit } = scaledFuelThresholds(ctx.pitAggression, fuelBase);
+    const aggression = (ctx.pitAggression ?? 1) * (ctx.briefingTactics?.pitAggression ?? 1);
+    const { low: fuelLow, critical: fuelCrit } = scaledFuelThresholds(aggression, fuelBase);
     const fuelPct = s.fuel / tankCapacity(s);
     const weatherTyres = (0, tyre_grip_1.needsWeatherTyreSwap)(ctx.tyreTread, ctx.wet);
     const driver = ctx.phase === "race"
@@ -312,9 +326,11 @@ function planPitStop(s, ctx, fuelAtLastPit) {
     if (!ctx.setupDone && !critical && ctx.phase !== "race") {
         if (ctx.sincePit < 1)
             return null;
+        const wantSetup = ctx.briefingTactics?.setupFocus ?? true;
+        const fuelL = fuelToAdd(s, ctx.briefingTactics);
         const services = {
-            setup: true,
-            fuel: true,
+            setup: wantSetup,
+            fuel: fuelL > 0,
             tyres: true,
             driver: false,
             engine: false,
@@ -325,8 +341,8 @@ function planPitStop(s, ctx, fuelAtLastPit) {
             pitNow: true,
             services,
             parts,
-            label: "setup+fuel",
-            estimateSec: estimateStopSec(s, services, fuelToAdd(s), 4),
+            label: wantSetup ? "setup+fuel" : "fuel+tyres",
+            estimateSec: estimateStopSec(s, services, fuelL, 4),
             driverIndex: -1,
         };
     }
@@ -376,7 +392,7 @@ function planPitStop(s, ctx, fuelAtLastPit) {
         !bundleServices.body) {
         return null;
     }
-    const fuelL = bundleServices.fuel ? fuelToAdd(s) : 0;
+    const fuelL = bundleServices.fuel ? fuelToAdd(s, ctx.briefingTactics) : 0;
     const tyreN = bundleServices.tyres ? (bundleServices.tyreWheels?.length || 4) : 0;
     const combinedSec = estimateStopSec(s, bundleServices, fuelL, tyreN);
     const splitStops = [
@@ -428,7 +444,7 @@ function planPitStop(s, ctx, fuelAtLastPit) {
     const driverIndex = bundleServices.driver ? nextDriverIndex(s) : -1;
     const parts = buildParts(s, ctx, bundleServices, driverIndex);
     const label = serviceLabel(bundleServices);
-    const est = estimateStopSec(s, bundleServices, bundleServices.fuel ? fuelToAdd(s) : 0, bundleServices.tyres ? 4 : 0);
+    const est = estimateStopSec(s, bundleServices, bundleServices.fuel ? fuelToAdd(s, ctx.briefingTactics) : 0, bundleServices.tyres ? 4 : 0);
     return {
         pitNow: true,
         services: bundleServices,
@@ -443,8 +459,8 @@ function planPitStop(s, ctx, fuelAtLastPit) {
 function tankCapacityFor(s) {
     return tankCapacity(s);
 }
-function fuelToAddFor(s) {
-    return fuelToAdd(s);
+function fuelToAddFor(s, tactics) {
+    return fuelToAdd(s, tactics);
 }
 const DEFER_FLAG_PHASES = new Set(["fcy", "sc", "sc_in_lap", "slow_zone", "red_flag"]);
 /** Defer routine pit stops under full-course or safety-car conditions. */

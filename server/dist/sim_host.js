@@ -43,6 +43,7 @@ const track_loader_1 = require("./game/track_loader");
 const catalog_1 = require("./game/catalog");
 const config_parser_1 = require("./config_parser");
 const pitbot_manager_1 = require("./game/pitbot/pitbot_manager");
+const session_briefings_1 = require("./game/session_briefings");
 const race_classification_1 = require("./game/race_classification");
 const ai_stint_guide_1 = require("./llm/ai_stint_guide");
 const ai_rival_season_1 = require("./game/ai_rival_season");
@@ -90,6 +91,7 @@ class SimHost {
         this.fleetEntryMap = new Map();
         this.pitBot = new pitbot_manager_1.PitBotManager();
         this.stintGuide = new ai_stint_guide_1.AiStintGuide();
+        this.sessionBriefings = new session_briefings_1.SessionBriefingStore();
         this.lastRaceComplete = null;
         this.sessionEntryRosters = {};
         this.sessionKind = "weekend";
@@ -166,6 +168,8 @@ class SimHost {
             init.raceComplete = this.session.isRaceComplete();
             init.raceTime = this.getRaceTime();
             init.timeScale = this.timeScale;
+            init.carBriefingsByEntryId = this.sessionBriefings.toRecord();
+            init.strategistSkill = this.sessionBriefings.strategistSkill(this.runtimePlayerEntryId);
         }
         return init;
     }
@@ -225,6 +229,9 @@ class SimHost {
                 if (prepErr)
                     return prepErr;
             }
+            if (payload.carBriefings?.length) {
+                this.meta.saveBriefingDefaults(payload.trackId, "practice", payload.carBriefings);
+            }
             const built = (0, race_builder_1.buildPrivateTestSession)(this.repoRoot, this.meta.getState(), {
                 payload,
             });
@@ -260,6 +267,13 @@ class SimHost {
             const prepErr = this.meta.applySessionPrep(prepPayload);
             if (prepErr)
                 return prepErr;
+        }
+        if (prepPayload.carBriefings?.length) {
+            this.meta.saveBriefingDefaults(round.trackId, sessionType, prepPayload.carBriefings);
+            this.pendingCarBriefings = prepPayload.carBriefings;
+        }
+        else {
+            this.pendingCarBriefings = this.meta.resolveBriefingDefaults(round.trackId, sessionType);
         }
         const qualiResults = sessionType === "race"
             ? metaState.weekendProgress?.qualiResults
@@ -309,8 +323,16 @@ class SimHost {
         this.meta.clearLastCompletedRound();
         this.pitBot.reset();
         this.stintGuide.reset();
+        this.sessionBriefings.reset();
         this.lastRaceComplete = null;
         this.sessionEntryRosters = built.sessionEntryRosters;
+        const rivalSeason = this.meta.getState().aiRivalSeason;
+        const briefings = this.pendingCarBriefings ??
+            (this.privateTestPayload?.carBriefings?.length
+                ? this.privateTestPayload.carBriefings
+                : undefined);
+        this.sessionBriefings.load(built.sessionType, this.entries, this.runtimeManagedEntryIds, briefings, this.meta.getState().staff, (teamName) => (0, ai_rival_season_1.rivalModifiersForTeam)(teamName, rivalSeason).pitAggression);
+        this.pendingCarBriefings = undefined;
         this.sessionLog.startSession({
             trackName: built.trackName,
             roundNumber: built.roundNumber,
@@ -570,6 +592,7 @@ class SimHost {
         this.privateTestPayload = null;
         this.pitBot.reset();
         this.stintGuide.reset();
+        this.sessionBriefings.reset();
         this.lastRaceComplete = null;
         this.paused = true;
         if (this.timeScale === 0)
@@ -664,13 +687,39 @@ class SimHost {
         });
         this.pitBot.tick(snapshots, this.runtimeManagedEntryIds, {
             trackWetness: raceControl?.trackWetness,
+            raceTimeSec: raceTime,
             flagPhase: raceControl?.flagPhase,
             fcyActive: raceControl?.fcyActive,
             scActive: raceControl?.scActive,
             weekendSessionType: this.sessionExtra.weekendSessionType,
             rivalPitAggression: (teamName) => (0, ai_rival_season_1.rivalModifiersForTeam)(teamName, rivalSeason).pitAggression,
             getStintPlan: (entryId) => this.stintGuide.getPlan(entryId),
+            getBriefingTactics: (entryId) => this.sessionBriefings.getTactics(entryId),
+            strategistSkill: this.sessionBriefings.strategistSkill(),
         }, (entryId, command) => this.session.submitCommand(entryId, command));
+    }
+    updateCarBriefing(payload) {
+        if (!this.inRaceSession) {
+            return { error: "No active session" };
+        }
+        const entryId = String(payload.entryId ?? "").trim();
+        const briefingId = String(payload.briefingId ?? "").trim();
+        if (!entryId || !briefingId) {
+            return { error: "entryId and briefingId required" };
+        }
+        if (!this.runtimeManagedEntryIds.includes(entryId)) {
+            return { error: "Entry is not on your managed roster" };
+        }
+        const cur = this.sessionBriefings.getEntryBriefing(entryId);
+        if (!cur) {
+            return { error: "Unknown entry" };
+        }
+        this.sessionBriefings.updateEntry(entryId, {
+            briefingId,
+            gapHoldSec: payload.gapHoldSec ?? cur.gapHoldSec,
+        });
+        const next = this.sessionBriefings.getEntryBriefing(entryId);
+        return next;
     }
     step() {
         if (this.paused || this.timeScale === 0)

@@ -7,15 +7,19 @@ import {
   type PitBotAction,
 } from "./pit_wall";
 import type { PlannerSnap } from "./pit_planner";
+import type { BriefingTactics } from "../briefing_tactics";
 
 export interface PitBotManagerContext {
   trackWetness?: number;
+  raceTimeSec?: number;
   flagPhase?: string;
   fcyActive?: boolean;
   scActive?: boolean;
   weekendSessionType?: WeekendSessionType;
   rivalPitAggression?: (teamName: string) => number;
   getStintPlan?: (entryId: string) => import("../../llm/stint_plan").AiStintPlan | undefined;
+  getBriefingTactics?: (entryId: string) => BriefingTactics | undefined;
+  strategistSkill?: number;
 }
 
 /** Built-in opponent AI — PitBot pit-wall for non-player entries. */
@@ -76,6 +80,7 @@ export class PitBotManager {
         opponents,
         wet,
         ctx.getStintPlan,
+        ctx.getBriefingTactics,
       )) {
         if (submitCommand(action.entryId, action.command)) {
           actions.push(action);
@@ -92,11 +97,14 @@ export class PitBotManager {
         {
           phase,
           wet,
+          raceTimeSec: ctx.raceTimeSec,
           flagPhase: ctx.flagPhase,
           fcyActive: ctx.fcyActive,
           scActive: ctx.scActive,
           rivalPitAggression: ctx.rivalPitAggression,
           getStintPlan: ctx.getStintPlan,
+          getBriefingTactics: ctx.getBriefingTactics,
+          strategistSkill: ctx.strategistSkill,
         },
         submitCommand,
       ),

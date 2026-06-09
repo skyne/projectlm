@@ -1,10 +1,20 @@
 import type {
+  CarSessionBriefing,
   FleetCarPayload,
   GameCatalogPayload,
   MetaStatePayload,
   StartRoundPayload,
   TrackSetupPresetPayload,
+  WeekendSessionType,
 } from "../ws/protocol";
+import { BriefingRolePicker } from "./BriefingRolePicker";
+import { SetupSuggestionChips } from "./SetupSuggestionChips";
+import {
+  applyChassisBiasChip,
+  chassisBiasForBriefing,
+  initCarBriefings,
+} from "../utils/briefingUi";
+import { sessionLabel } from "../utils/weekendSessions";
 import {
   compileCarStats,
   DEFAULT_TIRE_GRIP,
@@ -49,6 +59,11 @@ export class PreSessionBriefing {
   /** Working presets per fleet car for this track. */
   private carPresets = new Map<string, TrackSetupPresetPayload>();
   private garageBaselines = new Map<string, CompiledCarStats>();
+  private carBriefings = new Map<string, CarSessionBriefing>();
+  private sessionType: WeekendSessionType = "race";
+  private briefingPicker: BriefingRolePicker;
+  private setupChips: SetupSuggestionChips;
+  private briefingHost!: HTMLElement;
 
   constructor(container: HTMLElement, handlers: PreSessionBriefingHandlers) {
     this.handlers = handlers;
@@ -70,6 +85,7 @@ export class PreSessionBriefing {
             <div class="pre-session-car-tabs"></div>
           </aside>
           <div class="pre-session-main">
+            <div class="pre-session-briefing-host"></div>
             <p class="pre-session-track-notes"></p>
             <div class="pre-session-sliders"></div>
           </div>
@@ -105,17 +121,41 @@ export class PreSessionBriefing {
     this.root.querySelector(".pre-session-reset-btn")!.addEventListener("click", () => {
       this.resetActiveCarToTrackDefault();
     });
+
+    this.briefingHost = this.root.querySelector(".pre-session-briefing-host")!;
+    this.briefingPicker = new BriefingRolePicker({
+      onChange: (carId, briefing) => {
+        this.carBriefings.set(carId, briefing);
+        this.setupChips.setSuggested(chassisBiasForBriefing(briefing.briefingId));
+      },
+    });
+    this.setupChips = new SetupSuggestionChips({
+      onApply: (bias) => {
+        const preset = this.carPresets.get(this.activeCarId);
+        if (!preset) return;
+        this.carPresets.set(this.activeCarId, applyChassisBiasChip(preset, bias));
+        this.renderSliders();
+        this.renderStats();
+      },
+    });
+    this.briefingHost.append(this.briefingPicker.root, this.setupChips.root);
   }
 
-  open(meta: MetaStatePayload, catalog: GameCatalogPayload | null): void {
+  open(
+    meta: MetaStatePayload,
+    catalog: GameCatalogPayload | null,
+    sessionType: WeekendSessionType,
+  ): void {
     const round = meta.calendar.find((e) => e.round === meta.currentRound);
     if (!round || !meta.fleet?.length) return;
 
     this.meta = meta;
     this.catalog = catalog;
     this.trackId = round.trackId;
+    this.sessionType = sessionType;
     this.carPresets.clear();
     this.garageBaselines.clear();
+    this.carBriefings = initCarBriefings(meta, this.trackId, sessionType);
 
     for (const car of meta.fleet) {
       const saved = resolveCarTrackPreset(car, this.trackId, meta);
@@ -131,6 +171,16 @@ export class PreSessionBriefing {
     }
 
     this.activeCarId = meta.playerCarId ?? meta.activeCarId ?? meta.fleet[0].id;
+    this.briefingPicker.load(
+      meta.fleet,
+      sessionType,
+      this.carBriefings,
+      this.activeCarId,
+    );
+    const activeBriefing = this.carBriefings.get(this.activeCarId);
+    this.setupChips.setSuggested(
+      activeBriefing ? chassisBiasForBriefing(activeBriefing.briefingId) : undefined,
+    );
     this.render();
     this.root.classList.remove("hidden");
   }
@@ -160,6 +210,8 @@ export class PreSessionBriefing {
     this.handlers.onConfirm({
       trackId: this.trackId,
       carSetups,
+      carBriefings: this.briefingPicker.getBriefings(),
+      sessionType: this.sessionType,
     });
   }
 
@@ -185,7 +237,7 @@ export class PreSessionBriefing {
     const label = round.eventName ?? trackDisplayName(round.trackId);
     const fmt = formatDurationLabel(round.format, round.eventType);
     this.root.querySelector(".pre-session-title")!.textContent = label;
-    this.root.querySelector(".pre-session-subtitle")!.textContent = `${calendarRoundLabel(round.round, round.eventType)} · ${fmt}`;
+    this.root.querySelector(".pre-session-subtitle")!.textContent = `${calendarRoundLabel(round.round, round.eventType)} · ${sessionLabel(this.sessionType)} · ${fmt}`;
 
     this.renderCarTabs();
     this.renderSliders();
@@ -206,6 +258,11 @@ export class PreSessionBriefing {
       `;
       btn.addEventListener("click", () => {
         this.activeCarId = car.id;
+        this.briefingPicker.setActiveCar(car.id);
+        const briefing = this.carBriefings.get(car.id);
+        this.setupChips.setSuggested(
+          briefing ? chassisBiasForBriefing(briefing.briefingId) : undefined,
+        );
         this.renderCarTabs();
         this.renderSliders();
         this.renderStats();

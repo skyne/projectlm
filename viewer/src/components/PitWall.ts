@@ -12,12 +12,14 @@ import {
   buildSubsystemRepairHtml,
   collectSubsystemRepairs,
 } from "../utils/pitRepairParts";
+import { briefingIdsForSession, briefingLabel } from "../utils/briefingUi";
 
 export interface PitWallHandlers {
   onSubmitPit: (entryId: string, command: string) => void;
   onDriverMode: (entryId: string, mode: string) => void;
   onHybridStrategy: (entryId: string, strategy: HybridStrategy) => void;
   onSetupChange: (entryId: string, wingDelta: number) => void;
+  onRaceBriefing?: (entryId: string, briefingId: string) => void;
   onEntryChange?: (entryId: string) => void;
 }
 
@@ -31,6 +33,7 @@ export class PitWall {
   private repairBody!: HTMLInputElement;
   private driverChange!: HTMLInputElement;
   private modeSelect!: HTMLSelectElement;
+  private raceOrderSelect!: HTMLSelectElement;
   private hybridStrategySelect!: HTMLSelectElement;
   private hybridHintEl!: HTMLElement;
   private statusEl!: HTMLElement;
@@ -82,6 +85,9 @@ export class PitWall {
 
         <fieldset class="mm-fieldset">
           <legend>Stint strategy</legend>
+          <label class="mm-field pit-race-order-field hidden">Race order
+            <select id="pit-race-order"></select>
+          </label>
           <label class="mm-field">Driver mode
             <select id="pit-mode">
               <option value="push">Push</option>
@@ -129,7 +135,14 @@ export class PitWall {
     this.repairBody = this.root.querySelector("#pit-repair-body")!;
     this.driverChange = this.root.querySelector("#pit-driver-change")!;
     this.modeSelect = this.root.querySelector("#pit-mode")!;
+    this.raceOrderSelect = this.root.querySelector("#pit-race-order")!;
     this.hybridStrategySelect = this.root.querySelector("#pit-hybrid-strategy")!;
+    for (const id of briefingIdsForSession("race")) {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = briefingLabel(id);
+      this.raceOrderSelect.appendChild(opt);
+    }
     this.hybridHintEl = this.root.querySelector("#pit-hybrid-hint")!;
     this.statusEl = this.root.querySelector("#pit-status")!;
     this.estimateEl = this.root.querySelector("#pit-estimate")!;
@@ -159,6 +172,12 @@ export class PitWall {
     });
     this.modeSelect.addEventListener("change", () => {
       this.handlers.onDriverMode(this.selectedEntryId(), this.modeSelect.value);
+    });
+    this.raceOrderSelect.addEventListener("change", () => {
+      this.handlers.onRaceBriefing?.(
+        this.selectedEntryId(),
+        this.raceOrderSelect.value,
+      );
     });
     this.hybridStrategySelect.addEventListener("change", () => {
       const strategy = this.hybridStrategySelect.value as HybridStrategy;
@@ -196,6 +215,21 @@ export class PitWall {
     this.teamCarPicker.setSnapshots(snapshots);
     this.syncFromSnapshot();
     this.updateEstimate();
+  }
+
+  setRaceSessionActive(active: boolean): void {
+    this.root.querySelector(".pit-race-order-field")?.classList.toggle("hidden", !active);
+  }
+
+  setEntryBriefing(
+    entryId: string,
+    briefings: Record<string, import("../ws/protocol").EntrySessionBriefing> | undefined,
+  ): void {
+    if (entryId !== this.selectedEntryId()) return;
+    const briefing = briefings?.[entryId];
+    if (briefing?.briefingId) {
+      this.raceOrderSelect.value = briefing.briefingId;
+    }
   }
 
   private syncFromSnapshot(): void {

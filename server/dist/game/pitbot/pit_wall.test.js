@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const strict_1 = __importDefault(require("node:assert/strict"));
 const node_test_1 = require("node:test");
+const briefing_tactics_1 = require("../briefing_tactics");
 const pit_wall_1 = require("./pit_wall");
 function snap(overrides) {
     return {
@@ -176,5 +177,108 @@ function snap(overrides) {
         });
         strict_1.default.ok(!submitted.some((c) => c.includes("drive_through")));
         strict_1.default.ok(!submitted.some((c) => c.includes("stop_go")));
+    });
+});
+(0, node_test_1.describe)("tickPitBot briefing integration", () => {
+    function tacticsFor(briefingId, classId, sessionType = "race") {
+        return (0, briefing_tactics_1.resolveBriefingTactics)({ carId: "car-1", briefingId }, sessionType, classId);
+    }
+    (0, node_test_1.it)("gridSetupCommands applies pole_attack soft push and deploy hybrid", () => {
+        const entryId = "e-hc";
+        const snapshots = [
+            snap({ entryId, classId: "Hypercar", teamName: "Cursor Racing" }),
+        ];
+        const tactics = tacticsFor("pole_attack", "Hypercar", "qualifying");
+        const commands = (0, pit_wall_1.gridSetupCommands)(snapshots, [entryId], 0, undefined, () => tactics).map((a) => a.command);
+        strict_1.default.ok(commands.includes("starting_compound=soft"));
+        strict_1.default.ok(commands.includes("driver_mode=push"));
+        strict_1.default.ok(commands.includes("hybrid_strategy=deploy"));
+    });
+    (0, node_test_1.it)("gridSetupCommands applies conserve harvest hybrid on hypercar race", () => {
+        const entryId = "e-hc";
+        const snapshots = [
+            snap({ entryId, classId: "Hypercar", teamName: "Cursor Racing" }),
+        ];
+        const tactics = tacticsFor("conserve", "Hypercar", "race");
+        const commands = (0, pit_wall_1.gridSetupCommands)(snapshots, [entryId], 0, undefined, () => tactics).map((a) => a.command);
+        strict_1.default.ok(commands.includes("starting_compound=medium"));
+        strict_1.default.ok(commands.includes("driver_mode=conserve"));
+        strict_1.default.ok(commands.includes("hybrid_strategy=harvest"));
+    });
+    (0, node_test_1.it)("tickPitBot uses conserve briefing driver mode during race", () => {
+        const entryId = "e-conserve";
+        const submitted = [];
+        (0, pit_wall_1.tickPitBot)([snap({ entryId, classId: "LMP2", teamName: "Us", lap: 5 })], [entryId], (0, pit_wall_1.initCarState)([entryId], 0, { minLap: 3 }), {
+            phase: "race",
+            wet: 0,
+            getBriefingTactics: () => tacticsFor("conserve", "LMP2", "race"),
+        }, (_id, cmd) => {
+            submitted.push(cmd);
+            return true;
+        });
+        strict_1.default.ok(submitted.includes("driver_mode=conserve"));
+    });
+    (0, node_test_1.it)("tickPitBot yields push to normal when teammate is within strategist gap", () => {
+        const lead = "e-lead";
+        const support = "e-support";
+        const snapshots = [
+            snap({
+                entryId: lead,
+                classId: "Hypercar",
+                teamName: "Cursor Racing",
+                gapToLeader: 12,
+                lap: 4,
+            }),
+            snap({
+                entryId: support,
+                classId: "Hypercar",
+                teamName: "Cursor Racing",
+                gapToLeader: 12.2,
+                lap: 4,
+            }),
+        ];
+        const submitted = [];
+        (0, pit_wall_1.tickPitBot)(snapshots, [lead], (0, pit_wall_1.initCarState)([lead], 0, { minLap: 3 }), {
+            phase: "qualifying",
+            wet: 0,
+            getBriefingTactics: () => tacticsFor("no_teammate_fight", "Hypercar", "qualifying"),
+            strategistSkill: 50,
+        }, (_id, cmd) => {
+            submitted.push(cmd);
+            return true;
+        });
+        strict_1.default.ok(submitted.includes("driver_mode=normal"));
+        strict_1.default.ok(!submitted.includes("driver_mode=push"));
+    });
+    (0, node_test_1.it)("tickPitBot keeps push when teammate gap exceeds strategist threshold", () => {
+        const lead = "e-lead";
+        const support = "e-support";
+        const snapshots = [
+            snap({
+                entryId: lead,
+                classId: "Hypercar",
+                teamName: "Cursor Racing",
+                gapToLeader: 12,
+                lap: 4,
+            }),
+            snap({
+                entryId: support,
+                classId: "Hypercar",
+                teamName: "Cursor Racing",
+                gapToLeader: 14,
+                lap: 4,
+            }),
+        ];
+        const submitted = [];
+        (0, pit_wall_1.tickPitBot)(snapshots, [lead], (0, pit_wall_1.initCarState)([lead], 0, { minLap: 3 }), {
+            phase: "qualifying",
+            wet: 0,
+            getBriefingTactics: () => tacticsFor("pole_attack", "Hypercar", "qualifying"),
+            strategistSkill: 50,
+        }, (_id, cmd) => {
+            submitted.push(cmd);
+            return true;
+        });
+        strict_1.default.ok(submitted.includes("driver_mode=push"));
     });
 });

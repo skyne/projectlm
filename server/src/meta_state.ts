@@ -7,6 +7,7 @@ import type {
   CreateTeamPayload,
   MetaStatePayload,
   SeasonStartSnapshotPayload,
+  CarSessionBriefing,
   StartRoundPayload,
   StartPrivateTestPayload,
   TeamCreationDraftPayload,
@@ -16,6 +17,7 @@ import type {
   StaffMarketListingPayload,
   StaffRole,
 } from "./ws_protocol";
+import { mergeBriefingDefaults } from "./game/briefing_tactics";
 import { GameStateStore } from "./game_state";
 import { loadCarPlatforms } from "./game/car_marketplace";
 import {
@@ -2144,6 +2146,35 @@ export class MetaStateManager {
     this.state.weekendTireCompound = normalized;
     writePlayerCarConfig(this.repoRoot, this.state);
     return this.persist();
+  }
+
+  saveBriefingDefaults(
+    trackId: string,
+    sessionType: WeekendSessionType,
+    briefings: CarSessionBriefing[],
+  ): void {
+    this.state.briefingDefaults = mergeBriefingDefaults(
+      this.state.briefingDefaults,
+      trackId,
+      sessionType,
+      briefings,
+    );
+    this.persist();
+  }
+
+  resolveBriefingDefaults(
+    trackId: string,
+    sessionType: WeekendSessionType,
+  ): CarSessionBriefing[] | undefined {
+    const fleet = this.state.fleet ?? [];
+    const sessionMap = this.state.briefingDefaults?.[trackId]?.[sessionType];
+    if (!sessionMap) return undefined;
+    const out: CarSessionBriefing[] = [];
+    for (const car of fleet) {
+      const briefingId = sessionMap[car.id];
+      if (briefingId) out.push({ carId: car.id, briefingId });
+    }
+    return out.length ? out : undefined;
   }
 
   applySessionPrep(prep: StartRoundPayload): string | null {

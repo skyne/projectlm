@@ -58,6 +58,7 @@ const HOST_PERMISSIONS: ClientMessageType[] = [
   "restart_season",
   "finalize_season",
   "get_track_preview",
+  "update_car_briefing",
 ];
 
 const PLAYER_PERMISSIONS: ClientMessageType[] = [
@@ -70,6 +71,7 @@ const PLAYER_PERMISSIONS: ClientMessageType[] = [
   "ask_engineer",
   "get_engineer_status",
   "get_track_preview",
+  "update_car_briefing",
 ];
 
 const SPECTATOR_PERMISSIONS: ClientMessageType[] = [

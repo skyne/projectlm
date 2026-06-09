@@ -260,6 +260,10 @@ export interface SessionInitPayload {
   raceTime?: number;
   /** Server-side time compression when reconnecting mid-race. */
   timeScale?: number;
+  /** Active car orders keyed by entryId (PitBot + pit wall). */
+  carBriefingsByEntryId?: Record<string, EntrySessionBriefing>;
+  /** Strategist skill used for teammate coordination (0–100). */
+  strategistSkill?: number;
 }
 
 export interface DriverSnapshotPayload {
@@ -889,6 +893,8 @@ export interface MetaStatePayload {
   weekendTireCompound?: string;
   /** Saved per-track setup sheets keyed by trackId */
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
+  /** Last briefing per car per session type per track. */
+  briefingDefaults?: Record<string, Record<string, Record<string, string>>>;
   /** In-progress multi-session weekend for the current round. */
   weekendProgress?: WeekendProgressPayload;
   /** Available drivers to sign — refreshed each round or manually */
@@ -1248,10 +1254,33 @@ export interface SessionCarSetupPayload {
   preset: TrackSetupPresetPayload;
 }
 
+export interface CarSessionBriefing {
+  carId: string;
+  briefingId: string;
+  priority?: "lead" | "support";
+  teammatePolicy?: "none" | "yield" | "support" | "priority";
+  gapHoldSec?: { ahead?: number; behind?: number };
+}
+
+export interface EntrySessionBriefing {
+  entryId: string;
+  briefingId: string;
+  priority?: "lead" | "support";
+  teammatePolicy?: "none" | "yield" | "support" | "priority";
+  gapHoldSec?: { ahead?: number; behind?: number };
+}
+
+export interface UpdateCarBriefingPayload {
+  entryId: string;
+  briefingId: string;
+  gapHoldSec?: { ahead?: number; behind?: number };
+}
+
 /** Optional payload on start_round — applies per-car chassis setup before building the grid. */
 export interface StartRoundPayload {
   trackId?: string;
   carSetups?: SessionCarSetupPayload[];
+  carBriefings?: CarSessionBriefing[];
   /** Which weekend session to run (defaults to the next incomplete step). */
   sessionType?: WeekendSessionType;
 }
@@ -1266,6 +1295,7 @@ export interface StartPrivateTestPayload {
   driverAssignments: PrivateTestDriverAssignments;
   durationHours: number;
   carSetups?: SessionCarSetupPayload[];
+  carBriefings?: CarSessionBriefing[];
 }
 
 export interface EngineerAdvicePayload {
@@ -1396,7 +1426,8 @@ export type ClientMessageType =
   | "repair_car_condition"
   | "start_next_season"
   | "restart_season"
-  | "finalize_season";
+  | "finalize_season"
+  | "update_car_briefing";
 
 export interface ServerMessage<T = unknown> {
   protocol: typeof PROTOCOL_VERSION;
@@ -1466,6 +1497,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       "start_next_season",
       "restart_season",
       "finalize_season",
+      "update_car_briefing",
     ];
     if (!allowed.includes(msg.type)) return null;
     return msg;

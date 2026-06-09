@@ -1,10 +1,18 @@
 import type {
+  CarSessionBriefing,
   FleetCarPayload,
   GameCatalogPayload,
   MetaStatePayload,
   StartPrivateTestPayload,
   TrackSetupPresetPayload,
 } from "../ws/protocol";
+import { BriefingRolePicker } from "./BriefingRolePicker";
+import { SetupSuggestionChips } from "./SetupSuggestionChips";
+import {
+  applyChassisBiasChip,
+  chassisBiasForBriefing,
+  initCarBriefings,
+} from "../utils/briefingUi";
 import { escapeHtml } from "../utils/mmUi";
 import { ALL_TRACK_IDS, trackDisplayName, trackIconSvg } from "../utils/trackIcons";
 import {
@@ -32,6 +40,9 @@ export class PrivateTestSetup {
   private durationHours = PRIVATE_TEST_DEFAULT_HOURS;
   private activeCarId = "";
   private carPresets = new Map<string, TrackSetupPresetPayload>();
+  private carBriefings = new Map<string, CarSessionBriefing>();
+  private briefingPicker: BriefingRolePicker;
+  private setupChips: SetupSuggestionChips;
 
   constructor(container: HTMLElement, handlers: PrivateTestSetupHandlers) {
     this.handlers = handlers;
@@ -69,7 +80,8 @@ export class PrivateTestSetup {
             </label>
           </section>
           <section class="private-test-section private-test-setup-section hidden">
-            <h3>Chassis setup</h3>
+            <h3>Session briefing & setup</h3>
+            <div class="private-test-briefing-host"></div>
             <div class="private-test-car-tabs"></div>
             <div class="private-test-sliders"></div>
           </section>
@@ -93,6 +105,23 @@ export class PrivateTestSetup {
     this.root.querySelector(".private-test-start")!.addEventListener("click", () => {
       this.confirm();
     });
+
+    const briefingHost = this.root.querySelector(".private-test-briefing-host")!;
+    this.briefingPicker = new BriefingRolePicker({
+      onChange: (carId, briefing) => {
+        this.carBriefings.set(carId, briefing);
+        this.setupChips.setSuggested(chassisBiasForBriefing(briefing.briefingId));
+      },
+    });
+    this.setupChips = new SetupSuggestionChips({
+      onApply: (bias) => {
+        const preset = this.carPresets.get(this.activeCarId);
+        if (!preset) return;
+        this.carPresets.set(this.activeCarId, applyChassisBiasChip(preset, bias));
+        this.renderSetup();
+      },
+    });
+    briefingHost.append(this.briefingPicker.root, this.setupChips.root);
     const slider = this.root.querySelector(
       ".private-test-duration-slider",
     ) as HTMLInputElement;
@@ -118,6 +147,17 @@ export class PrivateTestSetup {
     this.durationHours = PRIVATE_TEST_DEFAULT_HOURS;
     this.activeCarId = meta.playerCarId ?? meta.activeCarId ?? meta.fleet?.[0]?.id ?? "";
     this.initPresets();
+    this.carBriefings = initCarBriefings(meta, this.trackId, "practice");
+    this.briefingPicker.load(
+      meta.fleet ?? [],
+      "practice",
+      this.carBriefings,
+      this.activeCarId,
+    );
+    const activeBriefing = this.carBriefings.get(this.activeCarId);
+    this.setupChips.setSuggested(
+      activeBriefing ? chassisBiasForBriefing(activeBriefing.briefingId) : undefined,
+    );
     this.render();
     this.root.classList.remove("hidden");
   }
@@ -173,12 +213,17 @@ export class PrivateTestSetup {
       })
       .filter((e): e is NonNullable<typeof e> => e !== null);
 
+    const briefings = this.briefingPicker
+      .getBriefings()
+      .filter((b) => carIds.includes(b.carId));
+
     this.handlers.onConfirm({
       trackId: this.trackId,
       carIds,
       driverAssignments,
       durationHours: this.durationHours,
       carSetups: carSetups.length ? carSetups : undefined,
+      carBriefings: briefings.length ? briefings : undefined,
     });
   }
 
@@ -323,6 +368,11 @@ export class PrivateTestSetup {
       btn.textContent = `#${car.carNumber}`;
       btn.addEventListener("click", () => {
         this.activeCarId = car.id;
+        this.briefingPicker.setActiveCar(car.id);
+        const briefing = this.carBriefings.get(car.id);
+        this.setupChips.setSuggested(
+          briefing ? chassisBiasForBriefing(briefing.briefingId) : undefined,
+        );
         this.renderSetup();
       });
       tabs.appendChild(btn);

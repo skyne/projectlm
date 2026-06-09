@@ -7,6 +7,7 @@ const strict_1 = __importDefault(require("node:assert/strict"));
 const node_test_1 = require("node:test");
 const pit_planner_1 = require("./pit_planner");
 const stint_plan_1 = require("../../llm/stint_plan");
+const briefing_tactics_1 = require("../briefing_tactics");
 function snap(overrides) {
     const base = {
         entryId: "e1",
@@ -129,6 +130,52 @@ const baseCtx = {
         const conservative = (0, pit_planner_1.scaledFuelThresholds)(0.85, { low: 0.3, critical: 0.14 });
         strict_1.default.ok(conservative.low < base.low);
         strict_1.default.ok(conservative.critical < base.critical);
+    });
+});
+(0, node_test_1.describe)("pit_planner briefing fuel", () => {
+    (0, node_test_1.it)("quali_sim briefing tops up only to partial fuel target on setup pit", () => {
+        const s = snap({
+            lap: 3,
+            fuel: 8,
+            fuelTankCapacity: 110,
+        });
+        const tactics = (0, briefing_tactics_1.resolveBriefingTactics)({ carId: "c1", briefingId: "quali_sim" }, "practice", "Hypercar");
+        const plan = (0, pit_planner_1.planPitStop)(s, {
+            phase: "practice",
+            wet: 0,
+            sincePit: 2,
+            setupDone: false,
+            tyreTread: "slick",
+            briefingTactics: tactics,
+        }, 8);
+        strict_1.default.ok(plan);
+        const fuelPart = plan.parts.find((p) => p.startsWith("fuel="));
+        strict_1.default.ok(fuelPart);
+        const liters = Number(fuelPart.slice("fuel=".length));
+        strict_1.default.ok(liters > 0);
+        strict_1.default.ok(liters < 60);
+        strict_1.default.ok(liters + s.fuel < s.fuelTankCapacity);
+    });
+    (0, node_test_1.it)("long_stint briefing fills toward full tank on setup pit", () => {
+        const s = snap({
+            lap: 3,
+            fuel: 40,
+            fuelTankCapacity: 110,
+        });
+        const tactics = (0, briefing_tactics_1.resolveBriefingTactics)({ carId: "c1", briefingId: "long_stint" }, "practice", "Hypercar");
+        const plan = (0, pit_planner_1.planPitStop)(s, {
+            phase: "practice",
+            wet: 0,
+            sincePit: 2,
+            setupDone: false,
+            tyreTread: "slick",
+            briefingTactics: tactics,
+        }, 40);
+        strict_1.default.ok(plan);
+        const fuelPart = plan.parts.find((p) => p.startsWith("fuel="));
+        strict_1.default.ok(fuelPart);
+        const liters = Number(fuelPart.slice("fuel=".length));
+        strict_1.default.ok(liters >= 60);
     });
 });
 (0, node_test_1.describe)("pit_planner stint guide", () => {

@@ -16,6 +16,8 @@ import {
 } from "../../../server/src/game/pitbot/pit_wall.js";
 import type { WeekendSessionType } from "./weekend_sessions.js";
 import { isTimingSession } from "./weekend_sessions.js";
+import { resolveBriefingTactics } from "../../../server/src/game/briefing_tactics.js";
+import type { EntrySessionBriefing } from "./protocol.js";
 
 export type ExtSnap = CarSnapshot & {
   pitQueued?: boolean;
@@ -92,6 +94,37 @@ export function timeScaleFor(phase: WeekendSessionType): number {
 }
 
 /** One tick of co-op pit-wall logic; returns log lines for notable actions. */
+function briefingCtx(player: SessionPlayer, phase: WeekendSessionType) {
+  const init = player.state.sessionInit as {
+    carBriefingsByEntryId?: Record<string, EntrySessionBriefing>;
+    strategistSkill?: number;
+    raceTime?: number;
+  } | null;
+  const briefings = init?.carBriefingsByEntryId ?? {};
+  const snapshots = (player.state.latestTick?.snapshots ?? []) as ExtSnap[];
+  const classByEntry = new Map(snapshots.map((s) => [s.entryId, s.classId]));
+
+  return {
+    getBriefingTactics: (entryId: string) => {
+      const raw = briefings[entryId];
+      if (!raw) return undefined;
+      return resolveBriefingTactics(
+        {
+          carId: "",
+          briefingId: raw.briefingId,
+          priority: raw.priority,
+          teammatePolicy: raw.teammatePolicy,
+          gapHoldSec: raw.gapHoldSec,
+        },
+        phase,
+        classByEntry.get(entryId) ?? "Hypercar",
+      );
+    },
+    strategistSkill: init?.strategistSkill ?? 50,
+    raceTimeSec: player.state.latestTick?.raceTime ?? init?.raceTime ?? 0,
+  };
+}
+
 export function tickPitWall(
   player: SessionPlayer,
   phase: WeekendSessionType,
@@ -100,12 +133,19 @@ export function tickPitWall(
   const wet = player.raceControl()?.trackWetness ?? 0;
   const snapshots = (player.state.latestTick?.snapshots ?? []) as ExtSnap[];
   const entries = managedEntries(player);
+  const bctx = briefingCtx(player, phase);
 
   const actions = tickPitBot(
     snapshots,
     entries,
     carState,
-    { phase, wet },
+    {
+      phase,
+      wet,
+      raceTimeSec: bctx.raceTimeSec,
+      getBriefingTactics: bctx.getBriefingTactics,
+      strategistSkill: bctx.strategistSkill,
+    },
     (entryId, cmd) => submitCommand(player, entryId, cmd),
   );
 
@@ -121,7 +161,17 @@ export function gridSetup(player: SessionPlayer): void {
   const wet = player.raceControl()?.trackWetness ?? 0;
   const snapshots = (player.state.latestTick?.snapshots ?? []) as ExtSnap[];
   const entries = managedEntries(player);
-  for (const action of gridSetupCommands(snapshots, entries, wet)) {
+  const phase =
+    (player.state.sessionInit as { weekendSessionType?: WeekendSessionType } | null)
+      ?.weekendSessionType ?? "race";
+  const bctx = briefingCtx(player, phase);
+  for (const action of gridSetupCommands(
+    snapshots,
+    entries,
+    wet,
+    undefined,
+    bctx.getBriefingTactics,
+  )) {
     send(player, action.entryId, action.command);
   }
 }

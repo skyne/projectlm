@@ -4,6 +4,7 @@
  */
 import type { CarSnapshot, RaceControlPayload, WeekendSessionType } from "../../ws_protocol";
 import type { AiStintPlan } from "../../llm/stint_plan";
+import type { BriefingTactics } from "../briefing_tactics";
 import {
   desiredTyreTread,
   needsWeatherTyreSwap,
@@ -32,7 +33,14 @@ function tankCapacity(s: PlannerSnap): number {
   return profileFor(s.classId).defaultTank;
 }
 
-function fuelToAdd(s: PlannerSnap): number {
+function fuelToAdd(s: PlannerSnap, tactics?: BriefingTactics): number {
+  if (tactics?.pitFuelLiters != null) {
+    const cap = tankCapacity(s);
+    const target = Math.min(cap, Math.max(0, tactics.pitFuelLiters));
+    const add = target - s.fuel;
+    if (add <= 0) return 0;
+    return Math.max(1, Math.ceil(add));
+  }
   return Math.max(1, Math.ceil(tankCapacity(s) - s.fuel));
 }
 
@@ -108,6 +116,7 @@ export interface PitPlannerContext {
   pitAggression?: number;
   /** LLM/heuristic stint plan from AiStintGuide. */
   stintPlan?: AiStintPlan;
+  briefingTactics?: BriefingTactics;
 }
 
 export interface PitServiceFlags {
@@ -305,7 +314,11 @@ function buildParts(
       : "medium";
   const parts: string[] = [];
 
-  if (services.fuel) parts.push(`fuel=${fuelToAdd(s)}`);
+  if (services.fuel) {
+    const liters = fuelToAdd(s, ctx.briefingTactics);
+    if (liters > 0) parts.push(`fuel=${liters}`);
+    else parts.push("fuel=0");
+  }
   else parts.push("fuel=0");
 
   if (services.tyres) {
@@ -375,8 +388,10 @@ export function planPitStop(
       ? Math.min(profile.fuelCritical, ctx.stintPlan.fuelStopFraction * 0.55)
       : profile.fuelCritical,
   };
+  const aggression =
+    (ctx.pitAggression ?? 1) * (ctx.briefingTactics?.pitAggression ?? 1);
   const { low: fuelLow, critical: fuelCrit } = scaledFuelThresholds(
-    ctx.pitAggression,
+    aggression,
     fuelBase,
   );
   const fuelPct = s.fuel / tankCapacity(s);
@@ -433,9 +448,11 @@ export function planPitStop(
 
   if (!ctx.setupDone && !critical && ctx.phase !== "race") {
     if (ctx.sincePit < 1) return null;
+    const wantSetup = ctx.briefingTactics?.setupFocus ?? true;
+    const fuelL = fuelToAdd(s, ctx.briefingTactics);
     const services: PitServiceFlags = {
-      setup: true,
-      fuel: true,
+      setup: wantSetup,
+      fuel: fuelL > 0,
       tyres: true,
       driver: false,
       engine: false,
@@ -446,8 +463,8 @@ export function planPitStop(
       pitNow: true,
       services,
       parts,
-      label: "setup+fuel",
-      estimateSec: estimateStopSec(s, services, fuelToAdd(s), 4),
+      label: wantSetup ? "setup+fuel" : "fuel+tyres",
+      estimateSec: estimateStopSec(s, services, fuelL, 4),
       driverIndex: -1,
     };
   }
@@ -509,7 +526,7 @@ export function planPitStop(
     return null;
   }
 
-  const fuelL = bundleServices.fuel ? fuelToAdd(s) : 0;
+  const fuelL = bundleServices.fuel ? fuelToAdd(s, ctx.briefingTactics) : 0;
   const tyreN = bundleServices.tyres ? (bundleServices.tyreWheels?.length || 4) : 0;
   const combinedSec = estimateStopSec(s, bundleServices, fuelL, tyreN);
 
@@ -587,7 +604,7 @@ export function planPitStop(
   const est = estimateStopSec(
     s,
     bundleServices,
-    bundleServices.fuel ? fuelToAdd(s) : 0,
+    bundleServices.fuel ? fuelToAdd(s, ctx.briefingTactics) : 0,
     bundleServices.tyres ? 4 : 0,
   );
 
@@ -608,8 +625,8 @@ export function tankCapacityFor(s: PlannerSnap): number {
   return tankCapacity(s);
 }
 
-export function fuelToAddFor(s: PlannerSnap): number {
-  return fuelToAdd(s);
+export function fuelToAddFor(s: PlannerSnap, tactics?: BriefingTactics): number {
+  return fuelToAdd(s, tactics);
 }
 
 const DEFER_FLAG_PHASES = new Set(["fcy", "sc", "sc_in_lap", "slow_zone", "red_flag"]);

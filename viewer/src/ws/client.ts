@@ -293,6 +293,10 @@ export class ViewerClient {
     this.send(clientMessage("submit_command", { entryId, command }));
   }
 
+  updateCarBriefing(payload: import("./protocol").UpdateCarBriefingPayload): void {
+    this.send(clientMessage("update_car_briefing", payload));
+  }
+
   hireStaff(role: string, name: string, skill: number): void {
     this.send(clientMessage("hire_staff", { role, name, skill }));
   }
