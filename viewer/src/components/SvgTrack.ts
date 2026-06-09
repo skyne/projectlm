@@ -17,6 +17,7 @@ import {
 import { PIT_LANE_FRACTION } from "../utils/pitCommands";
 import { resolveTrackTheme, type TrackTheme } from "../utils/trackThemes";
 import type { TeamLiveryPayload } from "../ws/protocol";
+import { sectorFlagTitle } from "../utils/sectorFlags";
 
 const PIT_BOX_FRACTION = 0.48;
 const PIT_LANE_BLEND = 0.34;
@@ -32,11 +33,14 @@ const CLASS_COLORS: Record<string, string> = {
   LMGT3: "#00a651",
   LMP2: "#005aff",
   solo: "#95a5a6",
+  SafetyCar: "#f1c40f",
 };
 
 function classColor(classId: string): string {
   return CLASS_COLORS[classId] ?? "#bdc3c7";
 }
+
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 function hazardFill(kind: string): string {
   switch (kind) {
@@ -49,6 +53,56 @@ function hazardFill(kind: string): string {
     default:
       return "#95a5a6";
   }
+}
+
+function appendSectorFlagMarker(
+  parent: SVGGElement,
+  cx: number,
+  cy: number,
+  level: number,
+  displayName: string,
+): void {
+  const g = document.createElementNS(SVG_NS, "g");
+  g.setAttribute(
+    "class",
+    level >= 2 ? "track-flag-marker track-flag-marker--double" : "track-flag-marker track-flag-marker--yellow",
+  );
+  g.setAttribute("transform", `translate(${cx - 16}, ${cy - 24})`);
+
+  const pole = document.createElementNS(SVG_NS, "line");
+  pole.setAttribute("class", "track-flag-pole");
+  pole.setAttribute("x1", "0");
+  pole.setAttribute("y1", "0");
+  pole.setAttribute("x2", "0");
+  pole.setAttribute("y2", "24");
+
+  const flag = document.createElementNS(SVG_NS, "rect");
+  flag.setAttribute("class", "track-flag-cloth");
+  flag.setAttribute("x", "1");
+  flag.setAttribute("y", "2");
+  flag.setAttribute("width", "14");
+  flag.setAttribute("height", level >= 2 ? "9" : "10");
+  flag.setAttribute("rx", "1");
+
+  g.appendChild(pole);
+  g.appendChild(flag);
+
+  if (level >= 2) {
+    const lower = document.createElementNS(SVG_NS, "rect");
+    lower.setAttribute("class", "track-flag-cloth track-flag-cloth-lower");
+    lower.setAttribute("x", "1");
+    lower.setAttribute("y", "12");
+    lower.setAttribute("width", "14");
+    lower.setAttribute("height", "9");
+    lower.setAttribute("rx", "1");
+    g.appendChild(lower);
+  }
+
+  const title = document.createElementNS(SVG_NS, "title");
+  title.textContent = sectorFlagTitle(level, displayName);
+  g.appendChild(title);
+
+  parent.appendChild(g);
 }
 
 function carGlowStroke(snap: CarSnapshot, classColorValue: string): string {
@@ -188,6 +242,7 @@ export class SvgTrack {
     boxDistance: number;
   } | null = null;
   private hazardsGroup: SVGGElement;
+  private flagsGroup: SVGGElement;
   private sectorBandPaths: SVGPathElement[] = [];
   private sectorMidpoints: SvgPoint[] = [];
   private lastRaceControlKey = "";
@@ -202,6 +257,7 @@ export class SvgTrack {
     this.bgGroup = this.createGroup("bg-layer");
     this.sectorsGroup = this.createGroup("sectors-layer");
     this.hazardsGroup = this.createGroup("hazards-layer");
+    this.flagsGroup = this.createGroup("flags-layer");
     this.trackGroup = this.createGroup("track-layer");
     this.labelsGroup = this.createGroup("labels-layer");
     this.carsGroup = this.createGroup("cars-layer");
@@ -213,6 +269,7 @@ export class SvgTrack {
       this.sectorsGroup,
       this.trackGroup,
       this.hazardsGroup,
+      this.flagsGroup,
       this.pitGroup,
       this.labelsGroup,
       this.carsGroup,
@@ -430,14 +487,32 @@ export class SvgTrack {
       const level = flags[i] ?? 0;
       if (level >= 2) {
         path.setAttribute("stroke", "#e67e22");
-        path.setAttribute("opacity", "0.55");
+        path.setAttribute("opacity", "0.72");
+        path.setAttribute("stroke-width", "22");
       } else if (level >= 1) {
         path.setAttribute("stroke", "#f1c40f");
-        path.setAttribute("opacity", "0.42");
+        path.setAttribute("opacity", "0.62");
+        path.setAttribute("stroke-width", "20");
       } else {
         path.setAttribute("stroke", this.theme.sectorColors[i % this.theme.sectorColors.length]);
         path.setAttribute("opacity", "0.28");
+        path.setAttribute("stroke-width", "18");
       }
+    }
+
+    this.flagsGroup.replaceChildren();
+    for (let i = 0; i < flags.length; i++) {
+      const level = flags[i] ?? 0;
+      if (level < 1) continue;
+      const mid = this.sectorMidpoints[i];
+      if (!mid) continue;
+      appendSectorFlagMarker(
+        this.flagsGroup,
+        mid.x,
+        mid.y,
+        level,
+        this.renderedGeometry?.sectors[i]?.name ?? `Sector ${i + 1}`,
+      );
     }
 
     this.hazardsGroup.replaceChildren();
@@ -494,6 +569,7 @@ export class SvgTrack {
     this.bgGroup.replaceChildren();
     this.sectorsGroup.replaceChildren();
     this.hazardsGroup.replaceChildren();
+    this.flagsGroup.replaceChildren();
     this.pitGroup.replaceChildren();
     this.trackGroup.replaceChildren();
     this.labelsGroup.replaceChildren();
@@ -670,15 +746,17 @@ export class SvgTrack {
       seen.add(snap.entryId);
       const { x, y, angle, onPitLane } = this.resolveCarMapPose(snap);
       const p = { x, y };
-      const numberLabel = formatMapCarLabel(snap);
-      const carNumber = formatCarNumber(snap);
+      const isSafetyCar = snap.entryId === "safety-car";
+      const numberLabel = isSafetyCar ? "SC" : formatMapCarLabel(snap);
+      const carNumber = isSafetyCar ? "SC" : formatCarNumber(snap);
       const lengthPx = Math.max(12, (snap.carLengthM ?? 5) * 1.8);
       const widthPx = Math.max(7, (snap.carWidthM ?? 2) * 1.8);
-      const isPlayer = snap.entryId === this.playerEntryId;
-      const isTeam = this.highlightedEntryIds.has(snap.entryId);
+      const isPlayer = !isSafetyCar && snap.entryId === this.playerEntryId;
+      const isTeam = !isSafetyCar && this.highlightedEntryIds.has(snap.entryId);
       const teamLiveryCar = isPlayer || isTeam;
-      const color =
-        teamLiveryCar && this.teamLivery
+      const color = isSafetyCar
+        ? "#f1c40f"
+        : teamLiveryCar && this.teamLivery
           ? this.teamLivery.primary
           : classColor(snap.classId);
       const accentColor =
@@ -738,11 +816,12 @@ export class SvgTrack {
       if (!marker.group.classList.contains("car-number-visible")) {
         marker.group.classList.add("car-number-visible");
       }
-      const emphasis = isPlayer || isTeam;
+      const emphasis = isPlayer || isTeam || isSafetyCar;
       if (emphasis !== marker.group.classList.contains("car-number-emphasis")) {
         marker.group.classList.toggle("car-number-emphasis", emphasis);
       }
       marker.group.classList.toggle("pit-lane-car", onPitLane);
+      marker.group.classList.toggle("safety-car-marker", isSafetyCar);
       if (marker.group.dataset.classId !== snap.classId) {
         marker.group.dataset.classId = snap.classId;
       }
@@ -752,11 +831,17 @@ export class SvgTrack {
       marker.body.setAttribute("fill", color);
       marker.body.setAttribute(
         "opacity",
-        snap.inPit ? "0.45" : snap.pitQueued ? "0.65" : "0.92",
+        isSafetyCar ? "0.98" : snap.inPit ? "0.45" : snap.pitQueued ? "0.65" : "0.92",
       );
       marker.body.setAttribute(
         "stroke",
-        snap.overtaking ? "#f1c40f" : snap.blocked ? "#e67e22" : "#0f1117",
+        isSafetyCar
+          ? "#f39c12"
+          : snap.overtaking
+            ? "#f1c40f"
+            : snap.blocked
+              ? "#e67e22"
+              : "#0f1117",
       );
       marker.body.setAttribute("stroke-width", isPlayer ? "1.5" : "1");
 

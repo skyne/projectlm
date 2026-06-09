@@ -136,6 +136,18 @@ function validateFuelSystemPowertrain(build: CarBuildPayload): string | null {
   ) {
     return "Hydrogen tank requires Hydrogen fuel in the powertrain";
   }
+  if (
+    build.fuel_system.startsWith("BatteryPack") &&
+    build.engine?.fuel_type !== "Electric"
+  ) {
+    return "Battery pack requires Electric fuel in the powertrain";
+  }
+  if (
+    build.engine?.fuel_type === "Electric" &&
+    !build.fuel_system.startsWith("BatteryPack")
+  ) {
+    return "Electric powertrain requires a battery pack";
+  }
   const eng = build.engine;
   if (eng?.fuel_type === "Hydrogen" && eng.energy_converter === "FuelCell") {
     if (build.hybrid_system && build.hybrid_system !== "None") {
@@ -150,6 +162,17 @@ function validateFuelSystemPowertrain(build: CarBuildPayload): string | null {
   }
   if (eng?.fuel_type === "Hydrogen" && eng.drivetrain === "RangeExtender") {
     return "Hydrogen range-extender is not supported; use fuel cell instead";
+  }
+  if (eng?.fuel_type === "Electric") {
+    if (build.hybrid_system && build.hybrid_system !== "None") {
+      return "Electric powertrain cannot use a separate hybrid system";
+    }
+    if (build.transmission && build.transmission !== "SingleSpeedEDrive") {
+      return "Electric powertrain requires SingleSpeedEDrive transmission";
+    }
+    if (eng.drivetrain && eng.drivetrain !== "FullEV" && eng.drivetrain !== "RangeExtender") {
+      return "Electric powertrain requires FullEV or RangeExtender drivetrain";
+    }
   }
   return null;
 }

@@ -22,7 +22,7 @@ export interface PitBotManagerContext {
   strategistSkill?: number;
 }
 
-/** Built-in opponent AI — PitBot pit-wall for non-player entries. */
+/** Built-in opponent AI — PitBot pit-wall for non-player entries only. */
 export class PitBotManager {
   private carState = new Map<string, CarPitState>();
   private opponentEntryIds: string[] = [];
@@ -58,6 +58,18 @@ export class PitBotManager {
 
     const wet = ctx.trackWetness ?? 0;
     const phase = ctx.weekendSessionType ?? "race";
+    const pitCtx = {
+      phase,
+      wet,
+      raceTimeSec: ctx.raceTimeSec,
+      flagPhase: ctx.flagPhase,
+      fcyActive: ctx.fcyActive,
+      scActive: ctx.scActive,
+      rivalPitAggression: ctx.rivalPitAggression,
+      getStintPlan: ctx.getStintPlan,
+      getBriefingTactics: ctx.getBriefingTactics,
+      strategistSkill: ctx.strategistSkill,
+    };
 
     if (this.carState.size === 0 && opponents.length > 0) {
       this.carState = initCarState(opponents, wet);
@@ -94,18 +106,7 @@ export class PitBotManager {
         snapshots as PlannerSnap[],
         opponents,
         this.carState,
-        {
-          phase,
-          wet,
-          raceTimeSec: ctx.raceTimeSec,
-          flagPhase: ctx.flagPhase,
-          fcyActive: ctx.fcyActive,
-          scActive: ctx.scActive,
-          rivalPitAggression: ctx.rivalPitAggression,
-          getStintPlan: ctx.getStintPlan,
-          getBriefingTactics: ctx.getBriefingTactics,
-          strategistSkill: ctx.strategistSkill,
-        },
+        pitCtx,
         submitCommand,
       ),
     );

@@ -21,7 +21,9 @@ exports.EV_ONLY_OUTLET_PARTS = new Set([
 function isElectricDriveOutletBuild(engine) {
     if (!engine)
         return false;
-    return (engine.drivetrain === "FullEV" ||
+    return (engine.fuel_type === "Electric" ||
+        engine.drivetrain === "FullEV" ||
+        engine.drivetrain === "RangeExtender" ||
         (engine.fuel_type === "Hydrogen" && engine.energy_converter === "FuelCell"));
 }
 function isEvLegalOutlet(part) {

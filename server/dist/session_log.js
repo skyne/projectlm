@@ -38,7 +38,16 @@ exports.listSessionLogs = listSessionLogs;
 exports.readSessionLog = readSessionLog;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
-const INCIDENT_TYPES = new Set(["Collision", "Retirement", "Blocked"]);
+const INCIDENT_TYPES = new Set([
+    "Collision",
+    "Retirement",
+    "Blocked",
+    "RacingIncident",
+    "Stranded",
+    "PenaltyIssued",
+    "PenaltyWarning",
+    "Disqualified",
+]);
 function logDir(repoRoot) {
     return path.join(repoRoot, "server", "data", "session_logs");
 }

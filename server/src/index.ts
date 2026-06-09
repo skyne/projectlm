@@ -34,6 +34,7 @@ import {
   type SessionInitPayload,
   type StartRoundPayload,
   type GetTrackPreviewPayload,
+  type DebugRaceControlPayload,
   type SubmitCommandPayload,
   type TickPayload,
   type TrackGeometryPayload,
@@ -41,7 +42,10 @@ import {
 } from "./ws_protocol";
 import { listSessionLogs, readSessionLog } from "./session_log";
 
-const PORT = Number(process.env.PORT ?? 8765);
+/** Default 9785 — 8765 is commonly used by other local tools (e.g. clipboard sync). */
+const PORT = Number(
+  process.env.PROJECTLM_WS_PORT ?? process.env.PORT ?? 9785,
+);
 
 function broadcast(clients: Set<WebSocket>, data: unknown): void {
   const text = JSON.stringify(data);
@@ -122,6 +126,14 @@ function main(): void {
   const garageEngineer = new GarageEngineerService();
   const sessions = new ClientSessionManager();
   const wss = new WebSocketServer({ port: PORT });
+  wss.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `[server] Port ${PORT} is already in use. Stop the other process, or run: PORT=<free-port> npm run dev`,
+      );
+    }
+    process.exit(1);
+  });
   const clients = new Set<WebSocket>();
   let trackSent = false;
 
@@ -353,6 +365,24 @@ function main(): void {
         } else {
           broadcast(clients, serverMessage("session_init", host.getSessionInit()));
         }
+      } else if (msg.type === "debug_race_control") {
+        if (process.env.DEV_TOOLS === "0") {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", {
+                message: "Debug race control disabled (DEV_TOOLS=0)",
+              }),
+            ),
+          );
+          return;
+        }
+        const payload = msg.payload as DebugRaceControlPayload;
+        const debugError = host.debugRaceControl(payload);
+        if (debugError) {
+          ws.send(
+            JSON.stringify(serverMessage("error", { message: debugError })),
+          );
+        }
       } else if (msg.type === "hire_staff") {
         const payload = msg.payload as HireStaffPayload;
         const meta = host.hireStaff(payload.role, payload.name, payload.skill);
@@ -382,6 +412,24 @@ function main(): void {
           ws.send(JSON.stringify(serverMessage("error", { message: result.error })));
         } else {
           broadcast(clients, serverMessage("meta_state", result));
+        }
+      } else if (msg.type === "continue_private_test") {
+        if (!host.getMetaState().setupComplete) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", { message: "Complete team setup first" }),
+            ),
+          );
+        } else {
+          const startErr = host.continuePrivateTest();
+          if (startErr) {
+            ws.send(
+              JSON.stringify(serverMessage("error", { message: startErr })),
+            );
+          } else {
+            broadcast(clients, serverMessage("session_init", host.getSessionInit()));
+            broadcast(clients, serverMessage("meta_state", host.getMetaState()));
+          }
         }
       } else if (msg.type === "start_private_test") {
         const prep = (msg.payload ?? {}) as import("./ws_protocol").StartPrivateTestPayload;
@@ -908,11 +956,16 @@ function main(): void {
       let updatedMeta = meta;
       let progressionSummary: import("./ws_protocol").ProgressionSummaryPayload | undefined;
 
+      let nextJointTestSessionIndex: number | null = null;
+      let jointTestSessionCount: number | undefined;
+
       if (sessionKind === "private_test") {
         const completion = host.completePrivateTest();
         if (completion) {
           updatedMeta = completion.meta;
           progressionSummary = completion.summary;
+          nextJointTestSessionIndex = completion.nextJointTestSessionIndex;
+          jointTestSessionCount = completion.jointTestSessionCount;
         }
       } else if (isRaceSession && primaryResult && event && !event.completed) {
         updatedMeta = host.completeRound(
@@ -959,6 +1012,8 @@ function main(): void {
         sessionKind,
         progressionSummary,
         nextWeekendSession: nextSession,
+        nextJointTestSessionIndex,
+        jointTestSessionCount,
         sessionLogId,
       };
       host.setLastRaceComplete(payload);

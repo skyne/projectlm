@@ -9,7 +9,7 @@ export function isDevToolsEnabled(): boolean {
   return localStorage.getItem(DEV_TOOLS_KEY) === "1";
 }
 
-export function devSessionLogApiBase(wsPort = 8765): string {
+export function devSessionLogApiBase(wsPort = 9785): string {
   const devPort = Number(
     import.meta.env.VITE_DEV_HTTP_PORT ?? wsPort + DEV_API_PORT_OFFSET,
   );

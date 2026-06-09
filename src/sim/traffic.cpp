@@ -3,6 +3,8 @@
 #include "driver.hpp"
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
+#include <sstream>
 #include <unordered_map>
 
 namespace {
@@ -82,6 +84,44 @@ double WrapDistanceGap(double aheadDistance, double behindDistance,
   return WrapRaceGap(aheadDistance, behindDistance, lapLength);
 }
 
+bool PitMergeGapSafe(const Car &rejoining, const std::vector<Car> &cars,
+                     double lapLength, double mergeDistance,
+                     double rejoinSpeedMs) {
+  if (lapLength <= 0.0)
+    return true;
+
+  const CarBodyDimensions dim = rejoining.bodyDimensions();
+  const double minAheadGap = dim.lengthM + 12.0;
+  const double minBehindGap = dim.lengthM * 2.0 + 20.0;
+  const double rejoinRaceDist =
+      mergeDistance +
+      static_cast<double>(rejoining.state().currentLap) * lapLength;
+
+  for (const Car &other : cars) {
+    if (other.entryId() == rejoining.entryId())
+      continue;
+    if (other.isRetired() || other.inPitLane())
+      continue;
+    if (other.rcState().trackStatus == TrackStatus::Cleared)
+      continue;
+
+    const double gap = WrapRaceGap(RaceDistance(other, lapLength), rejoinRaceDist,
+                                   lapLength);
+    if (gap > 0.0 && gap < minAheadGap)
+      return false;
+
+    if (gap < 0.0) {
+      const double behind = -gap;
+      const double closing = other.state().currentSpeed - rejoinSpeedMs;
+      if (behind < minBehindGap)
+        return false;
+      if (closing > 4.0 && behind < minBehindGap + closing * 2.5)
+        return false;
+    }
+  }
+  return true;
+}
+
 void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
                     double trackWidthM, double raceTime,
                     std::unordered_map<std::string, double> &eventCooldowns,
@@ -150,6 +190,17 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
 
       const double relativeSpeed =
           self.state().currentSpeed - other.state().currentSpeed;
+
+      // Rejoining cars yield — faster on-track traffic must not rear-end them.
+      if (other.isRejoiningYield() && gap > 0.0 && relativeSpeed > 4.0) {
+        TrafficModifiers &otherMod = modifiersOut[j];
+        otherMod.blueFlag = true;
+        otherMod.speedCapMs = std::max(
+            otherMod.speedCapMs,
+            std::max(kMinTrafficSpeedMs, self.state().currentSpeed * 0.97));
+        if (gap < combinedLength * 1.25)
+          continue;
+      }
       const double lateralSep =
           std::abs(self.lateralOffset() - other.lateralOffset()) *
           trackWidthM * 0.5;
@@ -171,8 +222,13 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
             ev.type = TrafficEvent::Type::Collision;
             ev.entryId = self.entryId();
             ev.otherEntryId = other.entryId();
-            ev.message =
-                self.teamName() + " contact with " + other.teamName();
+            {
+              std::ostringstream oss;
+              oss << EntryDisplayLabel(self) << " contact with "
+                  << EntryDisplayLabel(other) << " (impact " << std::fixed
+                  << std::setprecision(1) << impact << ")";
+              ev.message = oss.str();
+            }
             ev.impact = impact;
             ev.relativeSpeedMs = relativeSpeed;
             ev.lateralSepM = lateralSep;

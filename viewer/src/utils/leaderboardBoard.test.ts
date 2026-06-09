@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { CarSnapshot } from "../ws/protocol";
 import {
   dedupeSnapshotsByEntryId,
+  effectiveLeaderboardGapScope,
   orderLeaderboardBoard,
   uniqueEntryIds,
 } from "./leaderboardBoard";
@@ -44,6 +45,20 @@ function row(
 }
 
 describe("leaderboardBoard", () => {
+  it("orders practice and quali by best lap", () => {
+    const snaps = [
+      { ...row("fast", "Hypercar", 3), bestLapTime: 90.1 },
+      { ...row("leader", "Hypercar", 1), bestLapTime: 92.0 },
+      { ...row("mid", "Hypercar", 2), bestLapTime: 91.0 },
+    ];
+    const board = orderLeaderboardBoard(snaps, {
+      timingMode: true,
+      gapScope: "overall",
+      playerEntryId: "leader",
+    });
+    assert.deepEqual(board.map((s) => s.entryId), ["fast", "mid", "leader"]);
+  });
+
   it("orders overall race by racePosition", () => {
     const board = orderLeaderboardBoard(
       [row("e3", "LMGT3", 3), row("e1", "Hypercar", 1), row("e2", "LMP2", 2)],
@@ -96,6 +111,22 @@ describe("leaderboardBoard", () => {
     ]);
     assert.equal(deduped.length, 2);
     assert.equal(deduped.find((s) => s.entryId === "entry-1")?.racePosition, 8);
+  });
+
+  it("private_test sessions use overall scope so joint partners in other classes appear", () => {
+    assert.equal(
+      effectiveLeaderboardGapScope("class", "private_test"),
+      "overall",
+    );
+    const board = orderLeaderboardBoard(
+      [row("h1", "Hypercar", 1, 1), row("g1", "LMGT3", 2, 1)],
+      {
+        timingMode: false,
+        gapScope: effectiveLeaderboardGapScope("class", "private_test"),
+        playerEntryId: "h1",
+      },
+    );
+    assert.deepEqual(board.map((s) => s.entryId), ["h1", "g1"]);
   });
 
   it("uniqueEntryIds flags duplicate map keys", () => {

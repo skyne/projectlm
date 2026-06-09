@@ -9,7 +9,11 @@ import {
 import { formatCarNumber } from "../entryNumbers";
 import { formatDuration, formatLapTime } from "../utils/formatTime";
 import { mmPanelHeader } from "../utils/mmUi";
-import { resolveRetireReason } from "../utils/retireReason";
+import {
+  hasCarDamage,
+  resolveTimingStatusTags,
+  renderTimingStatusTagsHtml,
+} from "../utils/carStatus";
 import {
   personalSectorBests,
   sessionBestLap,
@@ -257,16 +261,17 @@ export class Timetable {
           snap.retired ? "retired" : "",
           this.managedEntryIds.has(snap.entryId) ? "is-player" : "",
           snap.entryId === this.selectedEntryId ? "is-selected" : "",
+          snap.trackStatus === "stranded" || snap.trackStatus === "recovering" ? "is-stranded" : "",
+          this.managedEntryIds.has(snap.entryId) && hasCarDamage(snap) ? "is-damaged" : "",
         ]
           .filter(Boolean)
           .join(" ");
-        const statusCell = snap.retired
-          ? `<td><span class="status-tag status-retired" title="${escapeHtml(resolveRetireReason(snap))}">OUT</span></td>`
-          : snap.inGarage
-            ? `<td><span class="status-tag">GAR</span></td>`
-            : snap.inPit
-              ? `<td><span class="status-tag status-pit" title="In pits">PIT</span></td>`
-              : `<td></td>`;
+        const statusCell = `<td class="timing-status-cell">${renderTimingStatusTagsHtml(
+          resolveTimingStatusTags(snap, {
+            showDamage: this.managedEntryIds.has(snap.entryId),
+          }),
+          "status-tag",
+        )}</td>`;
         const lastLap = snap.lastLapTime ?? 0;
         const bestLap = snap.bestLapTime ?? 0;
         const lastClass = timingCompareClass(lastLap, bestLap, sessionLapBest);

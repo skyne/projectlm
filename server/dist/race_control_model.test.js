@@ -15,6 +15,8 @@ const race_control_model_1 = require("./race_control_model");
         strict_1.default.deepEqual(rc.surfaceHazards, []);
         strict_1.default.equal(rc.activeIncidentEntryId, "");
         strict_1.default.equal(rc.scLapsRemaining, 0);
+        strict_1.default.equal(rc.redFlagActive, false);
+        strict_1.default.equal(rc.redFlagSecondsRemaining, 0);
     });
     (0, node_test_1.it)("countTrackObstructions counts stranded and recovering cars", () => {
         strict_1.default.equal((0, race_control_model_1.countTrackObstructions)(["racing", "stranded"]), 1);

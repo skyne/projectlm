@@ -3,6 +3,7 @@
 
 #include "cooling_layout.hpp"
 #include "part_catalog.hpp"
+#include <algorithm>
 #include <string>
 
 struct ClassRule;
@@ -72,6 +73,9 @@ struct SuspensionPart {
 struct FuelSystemPart {
   double mass = 0.0;
   double capacityLiters = 100.0;
+  double energyMj = 0.0;
+  double rexFuelLiters = 0.0;
+  bool isBatteryPack = false;
 };
 
 struct BrakePart {
@@ -138,6 +142,8 @@ struct EngineConfig {
   double generatorKw = 0.0;
   /// Fuel-cell buffer sizing hint (0–1) from garage UI.
   double bufferSize = 0.5;
+  /// Hypercar BoP power target (hp); drives BEV deploy when set.
+  double powerTargetHp = 0.0;
 };
 
 struct AssemblyConfig {
@@ -266,6 +272,9 @@ struct CarConfig {
   bool isGeneratorOnly = false;
   bool isElectricDrive = false;
   bool isFuelCell = false;
+
+  /** Battery-only traction (BEV) — energy in hybridStintDeployBudgetMJ / batteryChargeMJ. */
+  bool isBatteryPrimaryEv = false;
   double generatorPowerKW = 0.0;
   double drivetrainEfficiency = 1.0;
   double electricalDeployKW = 0.0;
@@ -279,6 +288,61 @@ struct CarConfig {
   double startingWingDelta = 0.0;
   double startingBrakeBias = 0.5;
 };
+
+inline bool IsBatteryPrimaryEv(const CarConfig &car) {
+  return car.isBatteryPrimaryEv;
+}
+
+/** True when the car can still produce propulsion (fuel, battery, or hybrid deploy). */
+inline bool HasDrivableEnergy(const CarConfig &car, double fuelRemaining,
+                              double batteryChargeMJ,
+                              double hybridDeployRemainingMJ) {
+  if (IsBatteryPrimaryEv(car))
+    return batteryChargeMJ > 0.0;
+  if (car.isGeneratorOnly)
+    return fuelRemaining > 0.0 || batteryChargeMJ > 0.0 ||
+           hybridDeployRemainingMJ > 0.0;
+  if (car.isFuelCell)
+    return fuelRemaining > 0.0 || hybridDeployRemainingMJ > 0.0;
+  if (car.hybridDeployPowerKW > 0.0)
+    return fuelRemaining > 0.0 || hybridDeployRemainingMJ > 0.0;
+  return fuelRemaining > 0.0;
+}
+
+/** ICE/REX fuel exhausted but electric storage can still propel the car. */
+inline bool ElectricFallbackActive(const CarConfig &car, double fuelRemaining,
+                                   double batteryChargeMJ,
+                                   double hybridDeployRemainingMJ) {
+  if (IsBatteryPrimaryEv(car) || fuelRemaining > 0.0)
+    return false;
+  if (car.isGeneratorOnly)
+    return batteryChargeMJ > 0.0 || hybridDeployRemainingMJ > 0.0;
+  if (car.isFuelCell)
+    return hybridDeployRemainingMJ > 0.0;
+  if (car.hybridDeployPowerKW > 0.0)
+    return hybridDeployRemainingMJ > 0.0;
+  return false;
+}
+
+inline double ElectricFallbackPowerKW(const CarConfig &car) {
+  if (car.isGeneratorOnly) {
+    if (car.hybridDeployPowerKW > 0.0)
+      return car.hybridDeployPowerKW;
+    return std::max(car.electricalDeployKW * 0.75, 80.0);
+  }
+  if (car.hybridDeployPowerKW > 0.0)
+    return car.hybridDeployPowerKW;
+  if (car.isElectricDrive)
+    return car.electricalDeployKW;
+  return 0.0;
+}
+
+inline double ElectricFallbackSpeedCapMs(const CarConfig &car) {
+  const double kw = ElectricFallbackPowerKW(car);
+  if (kw <= 0.0)
+    return 0.0;
+  return std::clamp(12.0 + kw * 0.14, 14.0, 48.0);
+}
 
 std::string PartChoiceForSlot(const CarConfig &car, const std::string &slot);
 std::string TireCompoundCatalogId(ETireCompound compound);

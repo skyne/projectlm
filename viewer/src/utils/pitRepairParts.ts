@@ -1,5 +1,9 @@
 import type { CarSnapshot } from "../ws/protocol";
-import { PIT_REPAIR_PART_SEC } from "./pitCommands";
+import {
+  estimateGarageRebuildSeconds,
+  formatGarageRebuildDuration,
+  PIT_REPAIR_PART_SEC,
+} from "./pitCommands";
 import { escapeHtml } from "./mmUi";
 
 export const REPAIR_HEALTH_THRESHOLD = 85;
@@ -89,4 +93,17 @@ export function collectSubsystemRepairs(root: ParentNode): string[] {
 
 export function estimateSubsystemRepairSeconds(parts: string[]): number {
   return parts.reduce((sum, part) => sum + (PIT_REPAIR_PART_SEC[part] ?? 8), 0);
+}
+
+export function canRequestGarageRebuild(snap: CarSnapshot | null | undefined): boolean {
+  if (!snap) return false;
+  if (snap.garageRebuildActive) return false;
+  if (snap.physicallyRepairable === false) return false;
+  if (snap.sessionRepairable === false) return false;
+  return true;
+}
+
+export function garageRebuildEstimateLabel(snap: CarSnapshot | null | undefined): string {
+  const sec = estimateGarageRebuildSeconds(snap?.totalRepairSec ?? 0);
+  return formatGarageRebuildDuration(sec);
 }

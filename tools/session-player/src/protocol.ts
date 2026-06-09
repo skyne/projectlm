@@ -91,6 +91,7 @@ export interface SimEvent {
 }
 
 export type WeekendSessionType = "practice" | "qualifying" | "race";
+export type SessionKind = "weekend" | "private_test";
 
 export interface WeekendProgressPayload {
   round: number;
@@ -109,6 +110,7 @@ export interface SessionInitPayload {
   raceFormat?: string;
   roundNumber?: number;
   weekendSessionType?: WeekendSessionType;
+  sessionKind?: SessionKind;
   simTimestep: number;
   entries: Array<{
     entryId: string;
@@ -163,12 +165,43 @@ export interface FleetCarPayload {
   id: string;
   carNumber: string;
   classId: string;
+  assignedDriverIds?: string[];
 }
 
-export interface DriverProfilePayload {
-  name: string;
-  nationality: string;
-  tier: string;
+export interface ActiveAgreementPayload {
+  id: string;
+  kind: string;
+  partnerTeam?: string;
+  partnerTeams?: string[];
+  signedRound: number;
+  expiresAtRound: number;
+  terms: {
+    sharedTrackId?: string;
+    testDays?: number;
+    testHoursPerDay?: number;
+    partnerTeams?: string[];
+  };
+}
+
+export interface PrivateTestProgressPayload {
+  trackId: string;
+  carIds: string[];
+  driverAssignments: Record<string, string[]>;
+  jointAgreementId: string;
+  jointPartnerTeams: string[];
+  testDays: number;
+  testHoursPerDay: number;
+  sessionMode: "continuous" | "per_day";
+  completedSessionIndices: number[];
+}
+
+export interface StartPrivateTestPayload {
+  trackId: string;
+  carIds: string[];
+  driverAssignments: Record<string, string[]>;
+  durationHours: number;
+  jointAgreementId?: string;
+  jointPartnerTeams?: string[];
 }
 
 export interface AiRivalTeamPayload {
@@ -214,6 +247,8 @@ export interface MetaStatePayload {
   currentRound: number;
   setupComplete?: boolean;
   weekendProgress?: WeekendProgressPayload;
+  privateTestProgress?: PrivateTestProgressPayload;
+  activeAgreements?: ActiveAgreementPayload[];
   fleet?: FleetCarPayload[];
   driverRoster?: DriverProfilePayload[];
   aiRivalSeason?: AiRivalSeasonPayload;
@@ -249,7 +284,10 @@ export interface RaceCompletePayload {
     lastLapTime?: number;
   }>;
   weekendSessionType?: WeekendSessionType;
+  sessionKind?: SessionKind;
   nextWeekendSession?: WeekendSessionType | null;
+  nextJointTestSessionIndex?: number | null;
+  jointTestSessionCount?: number;
   championshipPoints?: number;
 }
 
@@ -260,6 +298,7 @@ export interface StaffMemberPayload {
 }
 
 export interface DriverProfilePayload {
+  id?: string;
   name: string;
   nationality: string;
   tier: string;
@@ -343,6 +382,8 @@ export type ClientMessageType =
   | "reload_definitions"
   | "submit_command"
   | "start_round"
+  | "start_private_test"
+  | "continue_private_test"
   | "continue_weekend_session"
   | "set_player_entry"
   | "create_team"

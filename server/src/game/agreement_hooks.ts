@@ -21,7 +21,9 @@ function activeAgreements(
   currentRound = meta.currentRound,
 ): ActiveAgreement[] {
   return (meta.activeAgreements ?? []).filter(
-    (agr) => currentRound <= agr.expiresAtRound,
+    (agr) =>
+      currentRound <= agr.expiresAtRound &&
+      !(agr.kind === "joint_testing" && agr.fulfilledAtRound),
   );
 }
 
@@ -29,20 +31,42 @@ export function activeJointTestingPartners(
   meta: MetaStatePayload,
   currentRound = meta.currentRound,
 ): string[] {
-  return activeAgreements(meta, currentRound)
-    .filter((agr) => agr.kind === "joint_testing" && agr.partnerTeam)
-    .map((agr) => agr.partnerTeam!);
+  const seen = new Set<string>();
+  const partners: string[] = [];
+  for (const agr of activeAgreements(meta, currentRound)) {
+    if (agr.kind !== "joint_testing" || agr.fulfilledAtRound) continue;
+    const teams =
+      agr.partnerTeams?.length
+        ? agr.partnerTeams
+        : agr.terms.partnerTeams?.length
+          ? agr.terms.partnerTeams
+          : agr.partnerTeam
+            ? [agr.partnerTeam]
+            : [];
+    for (const team of teams) {
+      const key = team.trim().toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      partners.push(team);
+    }
+  }
+  return partners;
 }
 
-/** +25% driver/staff XP per active joint-testing partner (max +50%). */
+/** +25% driver/staff XP per joint-testing partner on track (max +50%). */
 export function privateTestXpMultiplier(
   meta: MetaStatePayload,
   currentRound = meta.currentRound,
+  partnerTeams?: string[],
 ): number {
-  const partners = activeJointTestingPartners(meta, currentRound).length;
+  let partners = activeJointTestingPartners(meta, currentRound);
+  if (partnerTeams?.length) {
+    const keys = new Set(partnerTeams.map((name) => name.trim().toLowerCase()));
+    partners = partners.filter((name) => keys.has(name.trim().toLowerCase()));
+  }
   const bonus = Math.min(
     JOINT_TESTING_XP_BONUS_CAP,
-    partners * JOINT_TESTING_XP_BONUS_PER_PARTNER,
+    partners.length * JOINT_TESTING_XP_BONUS_PER_PARTNER,
   );
   return 1 + bonus;
 }

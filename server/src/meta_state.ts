@@ -50,7 +50,17 @@ import {
   applyPrivateTestProgression,
   type ProgressionSummary,
 } from "./game/progression";
-import { collectPrivateTestParticipants } from "./game/private_test";
+import {
+  buildPrivateTestProgress,
+  collectPrivateTestParticipants,
+  consolidateJointTestingAgreements,
+  fulfillJointTestingAgreement,
+  jointTestCampaignComplete,
+  jointTestSessionPlan,
+  nextJointTestSessionIndex,
+  pendingJointTestingBundles,
+  privateTestPayloadFromProgress,
+} from "./game/private_test";
 import {
   assignUnassignedDriversToCars,
   defaultDriverAssignments,
@@ -150,6 +160,7 @@ import {
   ensureRegulatoryState,
   evaluateSponsorOffer,
   negotiationAsyncSeed,
+  parseInterTeamSubjectRef,
   resolveAsyncNegotiations,
   submitInterTeamOffer,
   submitRegulatoryPetition,
@@ -517,12 +528,26 @@ export class MetaStateManager {
       this.state.negotiations = expired;
       changed = true;
     }
+    if (this.hasPendingAsyncNegotiations()) {
+      this.resolvePendingAsyncNegotiations(this.state.currentRound);
+      changed = true;
+    }
     if (this.ensureDriverMarketChanged()) changed = true;
     if (this.ensureStaffMarketChanged()) changed = true;
     const before = this.state.aiRivalSeason?.teams.length ?? 0;
     this.ensureAiRivalSeason();
     if ((this.state.aiRivalSeason?.teams.length ?? 0) !== before) changed = true;
     if (this.ensureSeasonFinalized()) changed = true;
+    const consolidated = consolidateJointTestingAgreements(
+      this.state.activeAgreements ?? [],
+    );
+    if (
+      JSON.stringify(consolidated) !==
+      JSON.stringify(this.state.activeAgreements ?? [])
+    ) {
+      this.state.activeAgreements = consolidated;
+      changed = true;
+    }
     if (changed) this.store.save(this.state);
     return structuredClone(this.state);
   }
@@ -751,7 +776,23 @@ export class MetaStateManager {
       console.log(`[ai_rivals] ${resolved.note}`);
     }
 
+    this.resolvePendingAsyncNegotiations(completingRound);
+  }
+
+  private hasPendingAsyncNegotiations(): boolean {
+    return (this.state.negotiations ?? []).some(
+      (n) =>
+        n.status === "pending_response" &&
+        (n.kind === "inter_team_agreement" ||
+          n.kind === "regulatory_petition"),
+    );
+  }
+
+  /** Until off-week day progression exists, also called right after async deal submission. */
+  private resolvePendingAsyncNegotiations(completingRound: number): void {
+    this.ensureAiRivalSeason();
     this.ensureRegulatoryState();
+    const season = this.state.aiRivalSeason!;
     const asyncSeed = negotiationAsyncSeed(
       this.state.teamName,
       completingRound,
@@ -770,12 +811,20 @@ export class MetaStateManager {
     this.state.negotiations = asyncResult.sessions;
     this.state.regulatoryState = asyncResult.regulatory;
     if (asyncResult.newAgreements.length > 0) {
-      this.state.activeAgreements = [
-        ...(this.state.activeAgreements ?? []),
-        ...asyncResult.newAgreements,
-      ];
-      for (const note of notifyNewAgreementStubs(asyncResult.newAgreements)) {
-        console.log(note);
+      const existingIds = new Set(
+        (this.state.activeAgreements ?? []).map((agr) => agr.id),
+      );
+      const freshAgreements = asyncResult.newAgreements.filter(
+        (agr) => !existingIds.has(agr.id),
+      );
+      if (freshAgreements.length > 0) {
+        this.state.activeAgreements = [
+          ...(this.state.activeAgreements ?? []),
+          ...freshAgreements,
+        ];
+        for (const note of notifyNewAgreementStubs(freshAgreements)) {
+          console.log(note);
+        }
       }
     }
     for (const headline of asyncResult.headlines) {
@@ -1072,6 +1121,74 @@ export class MetaStateManager {
     return null;
   }
 
+  preparePrivateTestStart(
+    payload: StartPrivateTestPayload,
+  ): { payload: StartPrivateTestPayload } | { error: string } {
+    if (!payload.jointAgreementId) {
+      this.state.privateTestProgress = undefined;
+      return { payload };
+    }
+
+    const agreement = pendingJointTestingBundles(this.state).find(
+      (agr) => agr.id === payload.jointAgreementId,
+    );
+    if (!agreement) {
+      return { error: "Joint-testing agreement is no longer pending" };
+    }
+
+    const plan = jointTestSessionPlan(agreement);
+    const sessionIndex = nextJointTestSessionIndex(
+      plan,
+      this.state.privateTestProgress,
+    );
+    if (sessionIndex == null) {
+      return { error: "Joint-testing campaign already complete" };
+    }
+
+    const slot = plan.sessions[sessionIndex];
+    if (!slot) {
+      return { error: "Joint-testing session plan is invalid" };
+    }
+
+    const effectivePayload: StartPrivateTestPayload = {
+      ...payload,
+      durationHours: slot.durationHours,
+      jointPartnerTeams: payload.jointPartnerTeams ?? agreement.partnerTeams,
+    };
+
+    if (!this.state.privateTestProgress) {
+      this.state.privateTestProgress = buildPrivateTestProgress(
+        effectivePayload,
+        plan,
+      );
+    }
+
+    return { payload: effectivePayload };
+  }
+
+  continuePrivateTestCampaign():
+    | { payload: StartPrivateTestPayload }
+    | { error: string }
+    | null {
+    const progress = this.state.privateTestProgress;
+    if (!progress) return null;
+
+    const agreement = pendingJointTestingBundles(this.state).find(
+      (agr) => agr.id === progress.jointAgreementId,
+    );
+    if (!agreement) {
+      this.state.privateTestProgress = undefined;
+      return { error: "Joint-testing agreement is no longer pending" };
+    }
+
+    const plan = jointTestSessionPlan(agreement);
+    const payload = privateTestPayloadFromProgress(progress, plan);
+    if (!payload) {
+      return { error: "Joint-testing campaign already complete" };
+    }
+    return { payload };
+  }
+
   applyPrivateTestCompletion(
     payload: StartPrivateTestPayload,
     snapshots: CarSnapshot[],
@@ -1091,11 +1208,61 @@ export class MetaStateManager {
       driverIds,
       staffIds,
       payload.durationHours,
-      { xpMultiplier: privateTestXpMultiplier(this.state) },
+      {
+        xpMultiplier: privateTestXpMultiplier(
+          this.state,
+          this.state.currentRound,
+          payload.jointPartnerTeams,
+        ),
+      },
     );
 
     this.state.driverRoster = progression.drivers;
     this.state.staff = progression.staff;
+
+    if (payload.jointAgreementId) {
+      const agreement = pendingJointTestingBundles(this.state).find(
+        (agr) => agr.id === payload.jointAgreementId,
+      );
+      const plan = agreement ? jointTestSessionPlan(agreement) : null;
+      let progress = this.state.privateTestProgress;
+
+      if (!progress || progress.jointAgreementId !== payload.jointAgreementId) {
+        progress = plan
+          ? buildPrivateTestProgress(payload, plan)
+          : undefined;
+      }
+
+      if (progress && plan) {
+        const sessionIndex = nextJointTestSessionIndex(plan, progress);
+        if (sessionIndex != null && !progress.completedSessionIndices.includes(sessionIndex)) {
+          progress = {
+            ...progress,
+            completedSessionIndices: [
+              ...progress.completedSessionIndices,
+              sessionIndex,
+            ],
+          };
+        }
+
+        if (jointTestCampaignComplete(plan, progress)) {
+          this.state.activeAgreements = fulfillJointTestingAgreement(
+            this.state.activeAgreements ?? [],
+            payload.jointAgreementId,
+            this.state.currentRound,
+          );
+          this.state.privateTestProgress = undefined;
+        } else {
+          this.state.privateTestProgress = progress;
+        }
+      } else {
+        this.state.activeAgreements = fulfillJointTestingAgreement(
+          this.state.activeAgreements ?? [],
+          payload.jointAgreementId,
+          this.state.currentRound,
+        );
+      }
+    }
 
     return { meta: this.persist(), summary: progression.summary };
   }
@@ -1768,14 +1935,8 @@ export class MetaStateManager {
 
   private parseInterTeamSubject(
     subjectRef: string,
-  ): { subtype: InterTeamAgreementSubtype; partnerTeam: string } | null {
-    const sep = subjectRef.indexOf(":");
-    if (sep <= 0) return null;
-    const subtype = subjectRef.slice(0, sep) as InterTeamAgreementSubtype;
-    if (subtype !== "joint_testing" && subtype !== "tech_share") return null;
-    const partnerTeam = subjectRef.slice(sep + 1).trim();
-    if (!partnerTeam) return null;
-    return { subtype, partnerTeam };
+  ): { subtype: InterTeamAgreementSubtype; partnerTeams: string[] } | null {
+    return parseInterTeamSubjectRef(subjectRef);
   }
 
   private rivalTeamNames(): string[] {
@@ -1934,18 +2095,25 @@ export class MetaStateManager {
       const parsed = this.parseInterTeamSubject(subjectRef);
       if (!parsed) {
         return {
-          error: "subjectRef must be joint_testing:Team or tech_share:Team",
+          error:
+            "subjectRef must be joint_testing:Team or joint_testing:TeamA|TeamB or tech_share:Team",
         };
       }
       this.ensureAiRivalSeason();
+      const seasonTeams = this.state.aiRivalSeason?.teams ?? [];
       created = createInterTeamNegotiation(
         parsed.subtype,
-        parsed.partnerTeam,
+        parsed.partnerTeams,
         {
           playerTeamName: this.state.teamName,
           currentRound: this.state.currentRound,
           existing: this.state.negotiations,
           rivalTeams: this.rivalTeamNames(),
+          rivalTeamByName: (name) =>
+            seasonTeams.find(
+              (t) =>
+                t.teamName.trim().toLowerCase() === name.trim().toLowerCase(),
+            ),
         },
       );
     } else if (kind === "regulatory_petition") {
@@ -2013,6 +2181,7 @@ export class MetaStateManager {
         this.state.currentRound,
       );
       this.replaceNegotiation(evaluated.session);
+      this.resolvePendingAsyncNegotiations(this.state.currentRound);
       return this.persist();
     }
 
@@ -2031,6 +2200,7 @@ export class MetaStateManager {
         this.state.currentRound,
       );
       this.replaceNegotiation(evaluated.session);
+      this.resolvePendingAsyncNegotiations(this.state.currentRound);
       return this.persist();
     }
 
@@ -2077,7 +2247,7 @@ export class MetaStateManager {
 
     if (isNegotiationKindAsync(session.kind)) {
       return {
-        error: "Submit a revised offer — async deals resolve after the race weekend",
+        error: "Submit a revised offer — inter-team and regulatory deals resolve when you submit",
       };
     }
 

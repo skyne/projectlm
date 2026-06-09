@@ -6,6 +6,7 @@ import { rivalModifiersForTeam } from "./ai_rival_season";
 import { regulationForRound } from "./regulations";
 import {
   generateGrid,
+  generateJointPrivateTestGrid,
   generatePlayerOnlyGrid,
   writeEntriesFile,
   type GeneratedEntry,
@@ -325,13 +326,53 @@ export function buildPrivateTestSession(
   const playerCarId =
     meta.playerCarId ?? meta.activeCarId ?? selectedFleet[0]?.id;
 
-  const entries = generatePlayerOnlyGrid({
-    playerTeamName: meta.teamName,
-    playerFleet: selectedFleet,
-    playerCarId,
-  });
+  const jointPartners = payload.jointPartnerTeams ?? [];
+  const entries =
+    jointPartners.length > 0
+      ? generateJointPrivateTestGrid({
+          repoRoot,
+          playerTeamName: meta.teamName,
+          playerFleet: selectedFleet,
+          playerCarId,
+          partnerTeams: jointPartners,
+        })
+      : generatePlayerOnlyGrid({
+          playerTeamName: meta.teamName,
+          playerFleet: selectedFleet,
+          playerCarId,
+        });
 
-  const managedEntryIds = entries.map((e) => e.entryId);
+  if (jointPartners.length > 0) {
+    const foundPartners = new Set(
+      entries.filter((e) => !e.isPlayer).map((e) => e.teamName.trim().toLowerCase()),
+    );
+    for (const partner of jointPartners) {
+      if (!foundPartners.has(partner.trim().toLowerCase())) {
+        return null;
+      }
+    }
+
+    for (const entry of entries) {
+      if (entry.isPlayer) continue;
+      const rel = `configs/runtime/private_test/grid_${entry.grid}_${path.basename(entry.carConfigPath)}`;
+      const src = path.join(repoRoot, entry.carConfigPath);
+      const dest = path.join(repoRoot, rel);
+      if (!fs.existsSync(src)) continue;
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(src, dest);
+      entry.carConfigPath = rel;
+    }
+    materializeAiGridConfigs(
+      repoRoot,
+      entries,
+      trackId,
+      (teamName) => rivalModifiersForTeam(teamName, meta.aiRivalSeason),
+    );
+  }
+
+  const managedEntryIds = entries
+    .filter((e) => e.isPlayer)
+    .map((e) => e.entryId);
 
   const playerFleetEntry = entries.find((e) => e.fleetCarId === playerCarId);
   const resolvedPlayerEntryId =
@@ -433,7 +474,10 @@ export function buildPrivateTestSession(
     entriesPath,
     staffConfigPath,
     driverConfigPath,
-    trackName: `Private Test — ${trackDisplayName(trackId)}`,
+    trackName:
+      jointPartners.length > 0
+        ? `Joint Test — ${trackDisplayName(trackId)} (${jointPartners.join(", ")})`
+        : `Private Test — ${trackDisplayName(trackId)}`,
     trackConfigPath,
     targetLaps: 0,
     targetDurationSeconds: durationSec,

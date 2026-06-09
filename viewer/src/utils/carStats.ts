@@ -16,6 +16,7 @@ import {
 } from "./chassisSetup";
 import { computeCoolingStats, decodeCoolingLayout } from "./cooling_model";
 import { EV_ONLY_OUTLET_PARTS } from "./ev_outlet";
+import { fuelSystemEnergyMj, fuelSystemRexFuelL } from "./fuelSystem";
 
 /** Assembly constants from configs/physics_config.txt — must match C++ AssemblyConfig. */
 export const ASSEMBLY = {
@@ -167,10 +168,13 @@ export const SIM_STAT_BARS: SimStatBarDef[] = [
   },
   {
     id: "fuel",
-    label: "Fuel capacity",
+    label: "Energy storage",
     color: "#c084fc",
     lowerIsBetter: false,
-    formatValue: (c) => `${Math.round(c.fuelTankCapacity)} L`,
+    formatValue: (c) =>
+      c.fuelCapacityIsBatteryMj
+        ? `${c.fuelTankCapacity.toFixed(1)} MJ`
+        : `${Math.round(c.fuelTankCapacity)} L`,
   },
   {
     id: "pitWork",
@@ -216,6 +220,8 @@ export interface CompiledCarStats {
   brakeFadeResistance: number;
   shiftDelaySec: number;
   fuelTankCapacity: number;
+  fuelCapacityIsBatteryMj: boolean;
+  batteryEnergyMj: number;
   coolingCapacity: number;
   vibrationIndex: number;
   engineMassKg: number;
@@ -367,7 +373,15 @@ export function compileCarStats(
   const brakePressure = bp ? num(bp.stats, "max_pressure", 0.72) : 0.72;
   const brakeFade = bp ? num(bp.stats, "fade", 0.14) : 0.14;
   let shiftDelay = tr ? num(tr.stats, "shift_delay", 0.07) : 0.07;
-  const fuelCapacity = fs ? num(fs.stats, "capacity", 100) : 100;
+  const batteryEnergyMj = fuelSystemEnergyMj(fs);
+  const isElectricPack = engine?.fuel_type === "Electric" && batteryEnergyMj > 0;
+  const fuelCapacity = isElectricPack
+    ? engine?.drivetrain === "RangeExtender"
+      ? fuelSystemRexFuelL(fs) || batteryEnergyMj
+      : batteryEnergyMj
+    : fs
+      ? num(fs.stats, "capacity", 100)
+      : 100;
   const cooling = coolingStats.dissipation;
   let hybridKw = hp ? num(hp.stats, "deploy_kw") : 0;
   if (traits && traits.deployKw > 0) hybridKw = traits.deployKw;
@@ -403,6 +417,8 @@ export function compileCarStats(
     brakeFadeResistance: 1 - brakeFade,
     shiftDelaySec: shiftDelay,
     fuelTankCapacity: fuelCapacity,
+    fuelCapacityIsBatteryMj: isElectricPack && engine?.drivetrain !== "RangeExtender",
+    batteryEnergyMj: isElectricPack ? batteryEnergyMj : 0,
     coolingCapacity: cooling,
     vibrationIndex: vibration,
     engineMassKg: engMass,
@@ -442,7 +458,13 @@ export function toBarValues(compiled: CompiledCarStats): Record<SimBarId, number
       0.86,
     ),
     shiftTime: lerpNorm(compiled.shiftDelaySec, 0.075, 0.045, true),
-    fuel: lerpNorm(compiled.fuelTankCapacity, 85, 115),
+    fuel: lerpNorm(
+      compiled.fuelCapacityIsBatteryMj
+        ? compiled.batteryEnergyMj
+        : compiled.fuelTankCapacity,
+      compiled.fuelCapacityIsBatteryMj ? 4.5 : 85,
+      compiled.fuelCapacityIsBatteryMj ? 9 : 115,
+    ),
     pitWork: lerpNorm(compiled.serviceabilityFactor, 0.88, 1.1),
     driverSwap: lerpNorm(compiled.driverChangeFactor, 0.86, 1.12),
     durability: lerpNorm(compiled.structuralRigidityFactor, 0.9, 1.36),
@@ -714,6 +736,16 @@ export function partStatLines(
         stat("Mass", `${part.mass} kg`, false),
       ];
     case "fuel_system":
+      if (num(s, "energy_mj") > 0) {
+        const rows = [
+          stat("Pack energy", `${num(s, "energy_mj").toFixed(1)} MJ`, true),
+          stat("Mass", `${part.mass} kg`, false),
+        ];
+        if (num(s, "rex_fuel_l") > 0) {
+          rows.splice(1, 0, stat("REX fuel", `${num(s, "rex_fuel_l").toFixed(0)} L`, true));
+        }
+        return rows;
+      }
       return [
         stat("Capacity", `${num(s, "capacity").toFixed(0)} L`, true),
         stat("Mass", `${part.mass} kg`, false),

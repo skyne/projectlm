@@ -1,7 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SETUP_CLASS_ORDER = void 0;
+exports.SETUP_CLASS_ORDER = exports.GARAGE_RELEASE_GAP_QUALIFYING_SEC = exports.GARAGE_RELEASE_GAP_PRACTICE_SEC = void 0;
 exports.initCarState = initCarState;
+exports.penaltyDisplayName = penaltyDisplayName;
+exports.penaltyServeCommand = penaltyServeCommand;
+exports.garageReleaseTimeSec = garageReleaseTimeSec;
 exports.releaseFromGarage = releaseFromGarage;
 exports.gridSetupCommands = gridSetupCommands;
 exports.tickPitBot = tickPitBot;
@@ -21,6 +24,10 @@ const BIAS_GT3 = 0.01;
 const BIAS_LMP2 = 0.01;
 const COOLANT_CONSERVE_C = 100;
 const ENGINE_CONSERVE_HEALTH = 92;
+/** Gap between successive cars leaving garage in practice (sim seconds). */
+exports.GARAGE_RELEASE_GAP_PRACTICE_SEC = 3;
+/** Gap between successive cars leaving garage in qualifying (sim seconds). */
+exports.GARAGE_RELEASE_GAP_QUALIFYING_SEC = 2;
 function isTimingSession(phase) {
     return phase === "practice" || phase === "qualifying";
 }
@@ -162,6 +169,18 @@ function applyPitSuccess(s, st, wet, plan) {
 function trySubmit(submitCommand, entryId, command) {
     return submitCommand(entryId, command);
 }
+function penaltyDisplayName(penalty) {
+    switch (penalty) {
+        case "drive_through":
+            return "drive-through";
+        case "stop_go":
+            return "stop-and-go";
+        case "black":
+            return "black flag";
+        default:
+            return penalty.replace(/_/g, " ");
+    }
+}
 function penaltyServeCommand(s) {
     const penalty = s.pendingPenalty ?? "none";
     if (penalty === "drive_through")
@@ -170,32 +189,57 @@ function penaltyServeCommand(s) {
         return "pit|stop_go";
     return "pit|penalty";
 }
-function needsEmergencyPit(s) {
-    const limp = s.limpMode ?? "none";
-    if (limp === "barely_driveable" || limp === "hybrid_only" || limp === "immobilized") {
-        return true;
-    }
-    return s.meatballFlag === true;
+function penaltyServeLabel(s) {
+    return `Serve ${penaltyDisplayName(s.pendingPenalty ?? "penalty")}`;
 }
-/** Release cars from garage at session start (practice/qualifying). */
-function releaseFromGarage(snapshots, entryIds, carState, submitCommand, ctx) {
-    const skill = ctx?.strategistSkill ?? 50;
+function parseEntryGrid(entryId) {
+    const match = /^entry-(\d+)$/.exec(entryId);
+    return match ? parseInt(match[1], 10) : 999;
+}
+function gridSortKey(snap) {
+    return parseEntryGrid(snap.entryId);
+}
+/** When this entry may leave garage during practice/qualifying (sim seconds). */
+function garageReleaseTimeSec(phase, gridIndex) {
+    const gap = phase === "qualifying"
+        ? exports.GARAGE_RELEASE_GAP_QUALIFYING_SEC
+        : exports.GARAGE_RELEASE_GAP_PRACTICE_SEC;
+    return gridIndex * gap;
+}
+/**
+ * Release cars from garage at session start (practice/qualifying), one at a time.
+ * Server PitBot uses this for AI opponents; session-player uses it for managed team cars.
+ */
+function releaseFromGarage(snapshots, entryIds, carState, ctx, submitCommand) {
+    const skill = ctx.strategistSkill ?? 50;
     const supportDelay = (0, staff_briefing_1.teammateSupportReleaseDelaySec)(skill);
-    const raceTime = ctx?.raceTimeSec ?? 0;
-    const ordered = [...entryIds].sort((a, b) => a.localeCompare(b));
-    for (const entryId of ordered) {
+    const raceTime = ctx.raceTimeSec ?? 0;
+    const ordered = [...entryIds].sort((a, b) => {
+        const sa = snapshots.find((s) => s.entryId === a);
+        const sb = snapshots.find((s) => s.entryId === b);
+        const ga = sa ? gridSortKey(sa) : parseEntryGrid(a);
+        const gb = sb ? gridSortKey(sb) : parseEntryGrid(b);
+        return ga - gb || a.localeCompare(b);
+    });
+    for (let gridIndex = 0; gridIndex < ordered.length; gridIndex++) {
+        const entryId = ordered[gridIndex];
         const s = snapshots.find((x) => x.entryId === entryId);
         const st = carState.get(entryId);
         if (!s || !st || st.released || !s.inGarage)
             continue;
-        const tactics = ctx?.getBriefingTactics?.(entryId);
+        const releaseAt = garageReleaseTimeSec(ctx.phase, gridIndex);
+        if (raceTime < releaseAt)
+            continue;
+        const tactics = ctx.getBriefingTactics?.(entryId);
         if (tactics?.teammatePolicy === "support" &&
             tactics.priority === "support" &&
             raceTime < supportDelay) {
             continue;
         }
-        if (trySubmit(submitCommand, entryId, "release"))
+        if (trySubmit(submitCommand, entryId, "release")) {
             st.released = true;
+            return;
+        }
     }
 }
 /** Pre-race grid commands for tyre compound, tread, driver mode, hybrid. */
@@ -239,24 +283,45 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
     const actions = [];
     const timing = isTimingSession(ctx.phase);
     if (timing) {
-        releaseFromGarage(snapshots, entryIds, carState, submitCommand, ctx);
+        releaseFromGarage(snapshots, entryIds, carState, ctx, submitCommand);
     }
     const skill = ctx.strategistSkill ?? 50;
     for (const entryId of entryIds) {
         const s = snapshots.find((x) => x.entryId === entryId);
-        if (!s || s.retired || s.inGarage || s.inPit || s.pitQueued)
+        if (!s || s.retired)
             continue;
         const st = carState.get(entryId);
         if (!st)
+            continue;
+        const redFlag = (0, pit_planner_1.isRedFlagPhase)(ctx.flagPhase);
+        if (st.fuelAtLastPit <= 0)
+            st.fuelAtLastPit = s.fuel;
+        const sincePit = s.lap - st.lastPitLap;
+        // Penalties before routine strategy — unless fuel/damage needs service first.
+        if ((0, pit_planner_1.mustServePenalty)(s) &&
+            !s.inGarage &&
+            (0, pit_planner_1.shouldServeDeferrablePenaltyNow)(s, sincePit, st.fuelAtLastPit)) {
+            const cmd = penaltyServeCommand(s);
+            if (trySubmit(submitCommand, entryId, cmd)) {
+                actions.push({
+                    entryId,
+                    command: cmd,
+                    label: penaltyServeLabel(s),
+                });
+                continue;
+            }
+        }
+        if (s.inGarage && !redFlag)
+            continue;
+        if (s.pitQueued && !s.inPit && !redFlag)
+            continue;
+        if (s.inPit && !redFlag && !(0, pit_planner_1.needsEmergencyPit)(s))
             continue;
         (0, tyre_grip_1.syncTyreTreadFromSnap)(st, s.tireCompound, ctx.wet);
         if ((s.bestLapTime ?? 0) > 0 &&
             (st.bestLap <= 0 || (s.bestLapTime ?? 0) < st.bestLap)) {
             st.bestLap = s.bestLapTime ?? 0;
         }
-        if (st.fuelAtLastPit <= 0)
-            st.fuelAtLastPit = s.fuel;
-        const sincePit = s.lap - st.lastPitLap;
         const rawTactics = ctx.getBriefingTactics?.(entryId);
         const tactics = rawTactics
             ? (0, briefing_tactics_1.applyDamageLimitEscalation)(rawTactics, s)
@@ -265,24 +330,27 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
         if (!st.setupDone &&
             timing &&
             !canRunSetupPit(s, snapshots, carState, ctx.phase, st)) {
-            const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase, tactics);
-            if (hybrid)
-                trySubmit(submitCommand, entryId, hybrid);
-            trySubmit(submitCommand, entryId, driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill));
+            if (!redFlag) {
+                const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase, tactics);
+                if (hybrid)
+                    trySubmit(submitCommand, entryId, hybrid);
+                trySubmit(submitCommand, entryId, driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill));
+            }
             continue;
         }
-        if ((0, pit_planner_1.mustServePenalty)(s)) {
-            const cmd = penaltyServeCommand(s);
-            if (trySubmit(submitCommand, entryId, cmd)) {
-                actions.push({
-                    entryId,
-                    command: cmd,
-                    label: `Serve ${s.pendingPenalty ?? "penalty"}`,
-                });
-                continue;
+        if (redFlag) {
+            if ((0, pit_planner_1.needsEmergencyPit)(s)) {
+                const rfPlan = (0, pit_planner_1.planRedFlagEmergencyPit)(s, { wet: ctx.wet });
+                if (rfPlan?.pitNow) {
+                    const cmd = `pit|${rfPlan.parts.join("|")}`;
+                    if (trySubmit(submitCommand, entryId, cmd)) {
+                        actions.push({ entryId, command: cmd, label: rfPlan.label });
+                    }
+                }
             }
+            continue;
         }
-        const emergency = needsEmergencyPit(s);
+        const emergency = (0, pit_planner_1.needsEmergencyPit)(s);
         if (!emergency &&
             (0, pit_planner_1.shouldDeferPitForRaceControl)({
                 flagPhase: ctx.flagPhase ?? "green",
@@ -311,7 +379,11 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
             const cmd = `pit|${plan.parts.join("|")}`;
             if (trySubmit(submitCommand, entryId, cmd)) {
                 applyPitSuccess(s, st, ctx.wet, plan);
-                actions.push({ entryId, command: cmd, label: plan.label });
+                const label = (0, pit_planner_1.mustServePenalty)(s) &&
+                    !(0, pit_planner_1.shouldServeDeferrablePenaltyNow)(s, sincePit, st.fuelAtLastPit)
+                    ? `${plan.label} before ${penaltyDisplayName(s.pendingPenalty ?? "penalty")}`
+                    : plan.label;
+                actions.push({ entryId, command: cmd, label });
                 continue;
             }
         }

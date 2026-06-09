@@ -12,7 +12,9 @@ import { buildTyreTelemetryPanelHtml, formatTyreTemp, formatTyreWear, wheelTempF
 import { escapeHtml } from "../utils/mmUi";
 import {
   buildSubsystemRepairHtml,
+  canRequestGarageRebuild,
   collectSubsystemRepairs,
+  garageRebuildEstimateLabel,
 } from "../utils/pitRepairParts";
 
 export interface PitStopModalHandlers {
@@ -29,6 +31,8 @@ export class PitStopModal {
   private tireChecks!: NodeListOf<HTMLInputElement>;
   private repairEngine!: HTMLInputElement;
   private repairBody!: HTMLInputElement;
+  private garageRebuild!: HTMLInputElement;
+  private garageRebuildLabel!: HTMLSpanElement;
   private driverChange!: HTMLInputElement;
   private driverSelectWrap!: HTMLElement;
   private driverSelect!: HTMLSelectElement;
@@ -96,6 +100,11 @@ export class PitStopModal {
           <label><input type="checkbox" class="pit-modal-repair-engine" /> Engine repair</label>
           <label><input type="checkbox" class="pit-modal-repair-body" /> Bodywork repair</label>
           <div class="pit-modal-subsystem-host"></div>
+          <label class="pit-garage-rebuild-field">
+            <input type="checkbox" class="pit-modal-garage-rebuild" />
+            <span class="pit-modal-garage-rebuild-label">Full garage rebuild</span>
+          </label>
+          <p class="pit-garage-rebuild-hint hidden">After pit services, car stays in garage until all parts are restored to 100%.</p>
           <label><input type="checkbox" class="pit-modal-driver-change" /> <span class="pit-modal-driver-change-label">Driver change</span></label>
           <label class="pit-driver-select-wrap hidden">Swap to
             <select class="pit-modal-driver-select"></select>
@@ -208,6 +217,8 @@ export class PitStopModal {
     this.tireChecks = this.root.querySelectorAll("[data-tire]");
     this.repairEngine = this.root.querySelector(".pit-modal-repair-engine")!;
     this.repairBody = this.root.querySelector(".pit-modal-repair-body")!;
+    this.garageRebuild = this.root.querySelector(".pit-modal-garage-rebuild")!;
+    this.garageRebuildLabel = this.root.querySelector(".pit-modal-garage-rebuild-label")!;
     this.driverChange = this.root.querySelector(".pit-modal-driver-change")!;
     this.driverSelectWrap = this.root.querySelector(".pit-driver-select-wrap")!;
     this.driverSelect = this.root.querySelector(".pit-modal-driver-select")!;
@@ -228,6 +239,10 @@ export class PitStopModal {
     }
     this.repairEngine.addEventListener("change", refresh);
     this.repairBody.addEventListener("change", refresh);
+    this.garageRebuild.addEventListener("change", () => {
+      this.syncGarageRebuildState();
+      refresh();
+    });
     for (const sel of this.root.querySelectorAll<HTMLSelectElement>(
       ".pit-setup-fieldset select",
     )) {
@@ -298,6 +313,7 @@ export class PitStopModal {
       if ((snap.engineHealth ?? 100) < 78) this.repairEngine.checked = true;
       if (snap.limpMode && snap.limpMode !== "none") this.repairBody.checked = true;
       this.refreshSubsystemRepairs(snap);
+      this.syncGarageRebuildAvailability(snap);
       this.populateDriverSelect(snap);
     } else {
       this.carSummaryEl.textContent = "Your car";
@@ -331,9 +347,9 @@ export class PitStopModal {
     const sec = estimatePitSeconds({
       fuel: Number(this.fuelInput.value) || 0,
       tireCount: tires,
-      repairEngine: this.repairEngine.checked,
-      repairBody: this.repairBody.checked,
-      repairParts,
+      repairEngine: this.repairEngine.checked && !this.garageRebuild.checked,
+      repairBody: this.repairBody.checked && !this.garageRebuild.checked,
+      repairParts: this.garageRebuild.checked ? [] : repairParts,
       driverChange: this.driverChange.checked,
       setup: this.setupDelta,
       serviceabilityFactor: serviceability,
@@ -342,6 +358,38 @@ export class PitStopModal {
     });
     this.estimateEl.textContent = `Estimated stop ~${sec.toFixed(0)}s (chassis serviceability ×${serviceability.toFixed(2)})`;
     this.setupSummaryEl.textContent = `Setup plan: ${formatSetupSummary(this.setupDelta)}`;
+    const rebuildSec = this.garageRebuild.checked
+      ? ` · garage rebuild ~${garageRebuildEstimateLabel(this.latestSnap)} after stop`
+      : "";
+    if (this.garageRebuild.checked) {
+      this.estimateEl.textContent += rebuildSec;
+    }
+  }
+
+  private syncGarageRebuildAvailability(snap: CarSnapshot): void {
+    const allowed = canRequestGarageRebuild(snap);
+    this.garageRebuild.disabled = !allowed;
+    this.garageRebuildLabel.textContent = allowed
+      ? `Full garage rebuild (~${garageRebuildEstimateLabel(snap)} in garage)`
+      : "Full garage rebuild (unavailable)";
+    if (!allowed) this.garageRebuild.checked = false;
+    this.syncGarageRebuildState();
+  }
+
+  private syncGarageRebuildState(): void {
+    const rebuild = this.garageRebuild.checked;
+    this.repairEngine.disabled = rebuild;
+    this.repairBody.disabled = rebuild;
+    for (const input of this.subsystemHost.querySelectorAll<HTMLInputElement>(
+      "[data-repair-part]",
+    )) {
+      input.disabled = rebuild;
+      if (rebuild) input.checked = false;
+    }
+    this.root.querySelector(".pit-garage-rebuild-hint")?.classList.toggle(
+      "hidden",
+      !rebuild,
+    );
   }
 
   private resetSetupForm(): void {
@@ -503,9 +551,11 @@ export class PitStopModal {
       if (cb.checked) tires.push(cb.getAttribute("data-tire") ?? "");
     }
     const repairs: string[] = [];
-    if (this.repairEngine.checked) repairs.push("engine");
-    if (this.repairBody.checked) repairs.push("body");
-    repairs.push(...collectSubsystemRepairs(this.subsystemHost));
+    if (!this.garageRebuild.checked) {
+      if (this.repairEngine.checked) repairs.push("engine");
+      if (this.repairBody.checked) repairs.push("body");
+      repairs.push(...collectSubsystemRepairs(this.subsystemHost));
+    }
     const tread = this.selectedTyreTread();
     return buildPitCommand({
       fuel: Number(this.fuelInput.value) || 0,
@@ -516,6 +566,7 @@ export class PitStopModal {
       driverChange: this.driverChange.checked,
       driverIndex: this.driverChange.checked ? Number(this.driverSelect.value) : undefined,
       setup: this.setupDelta,
+      garageRebuild: this.garageRebuild.checked,
     });
   }
 }

@@ -3,6 +3,7 @@
 
 #include "car_entity.hpp"
 #include "race.hpp"
+#include "race_control.hpp"
 #include "team_config.hpp"
 #include "weather.hpp"
 #include "track_sampler.hpp"
@@ -94,6 +95,7 @@ enum class SimEventType {
 struct SimEvent {
   SimEventType type = SimEventType::SectorCross;
   std::string entryId;
+  std::string otherEntryId;
   int lap = 0;
   int sectorIndex = 0;
   double timestamp = 0.0;
@@ -117,6 +119,8 @@ public:
   RaceControlState getRaceControl() const;
 
   bool submitCommand(const std::string &entryId, const std::string &command);
+  bool debugRaceControl(const DebugRaceControlRequest &req,
+                        std::string *errorOut = nullptr);
   void applyCarConditions(const std::string &conditionsPath);
   const TeamConfig &teamConfig() const { return teamConfig_; }
 

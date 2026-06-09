@@ -337,6 +337,9 @@ FuelSystemPart GetFuelSystemStats(const PartCatalog &catalog,
   FuelSystemPart part;
   part.mass = PartStatD(s, "mass");
   part.capacityLiters = PartStatD(s, "capacity", 100.0);
+  part.energyMj = PartStatD(s, "energy_mj", 0.0);
+  part.rexFuelLiters = PartStatD(s, "rex_fuel_l", 0.0);
+  part.isBatteryPack = part.energyMj > 0.0;
   return part;
 }
 
@@ -693,6 +696,22 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
     car.hybridDeployPowerKW = pt.deployKw;
     car.hybridRegenRate = pt.regenRate;
     car.hybridStintDeployBudgetMJ = pt.stintBudgetMj;
+  }
+
+  if (car.engine.fuelType == "Electric" && fs.isBatteryPack) {
+    car.hybridStintDeployBudgetMJ = fs.energyMj;
+    if (pt.isGeneratorOnly && fs.rexFuelLiters > 0.0) {
+      car.fuelTankCapacity = fs.rexFuelLiters;
+    } else {
+      car.fuelTankCapacity = fs.energyMj;
+    }
+  }
+
+  car.isBatteryPrimaryEv =
+      car.isElectricDrive && !car.isGeneratorOnly && !car.isFuelCell;
+  if (car.isBatteryPrimaryEv) {
+    car.hybridDeployPowerKW = 0.0;
+    car.fuelTankCapacity = car.hybridStintDeployBudgetMJ;
   }
 
   if (!pt.isFuelCell && !pt.isElectricDrive)

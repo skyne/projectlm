@@ -6,12 +6,13 @@ export type MainView =
   | "map"
   | "timing"
   | "telemetry"
+  | "racelog"
   | "team"
   | "garage"
   | "drivers";
 
 const OFFSEASON_TABS: MainView[] = ["season", "calendar", "garage", "drivers", "team"];
-const RACE_TABS: MainView[] = ["map", "timing", "telemetry"];
+const RACE_TABS: MainView[] = ["map", "timing", "telemetry", "racelog"];
 
 const TAB_LABELS: Record<MainView, string> = {
   season: "Championship",
@@ -19,6 +20,7 @@ const TAB_LABELS: Record<MainView, string> = {
   map: "Track Map",
   timing: "Live Timing",
   telemetry: "Telemetry",
+  racelog: "Race Log",
   garage: "Garage",
   drivers: "Drivers",
   team: "Headquarters",
@@ -29,6 +31,7 @@ export class HeaderNav {
   private onChange?: (view: MainView) => void;
   private active: MainView = "season";
   private raceActive = false;
+  private raceLogAvailable = false;
   private garageBuildLocked = false;
   private buttons = new Map<MainView, HTMLButtonElement>();
 
@@ -43,6 +46,7 @@ export class HeaderNav {
       "map",
       "timing",
       "telemetry",
+      "racelog",
       "garage",
       "drivers",
       "team",
@@ -52,6 +56,7 @@ export class HeaderNav {
       button.type = "button";
       button.className = "view-tab";
       button.dataset.view = view;
+      button.title = TAB_LABELS[view];
       button.innerHTML = `
         <span class="view-tab-icon" aria-hidden="true">${NAV_ICONS[view] ?? "•"}</span>
         <span class="view-tab-label">${TAB_LABELS[view]}</span>
@@ -87,10 +92,19 @@ export class HeaderNav {
       this.setActive("map");
     } else if (
       !active &&
-      (this.active === "map" || this.active === "timing" || this.active === "telemetry")
+      !this.raceLogAvailable &&
+      (this.active === "map" ||
+        this.active === "timing" ||
+        this.active === "telemetry" ||
+        this.active === "racelog")
     ) {
       this.setActive(this.garageBuildLocked ? "garage" : "season");
     }
+  }
+
+  setRaceLogAvailable(available: boolean): void {
+    this.raceLogAvailable = available;
+    this.applyTabVisibility();
   }
 
   isRaceActive(): boolean {
@@ -118,7 +132,11 @@ export class HeaderNav {
     }
     for (const view of RACE_TABS) {
       const btn = this.buttons.get(view)!;
-      btn.hidden = !this.raceActive;
+      if (view === "racelog") {
+        btn.hidden = !(this.raceActive || this.raceLogAvailable);
+      } else {
+        btn.hidden = !this.raceActive;
+      }
     }
   }
 
@@ -134,6 +152,9 @@ export class HeaderNav {
       return;
     }
     if (!this.raceActive && (view === "map" || view === "timing" || view === "telemetry")) {
+      return;
+    }
+    if (!this.raceActive && !this.raceLogAvailable && view === "racelog") {
       return;
     }
     this.active = view;

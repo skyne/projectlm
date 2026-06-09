@@ -52,9 +52,26 @@ function prospectListing(overrides) {
         if ("error" in session)
             return;
         strict_1.default.equal(session.kind, "driver_employment");
-        strict_1.default.equal(session.status, "open");
+        strict_1.default.equal(session.status, "countered");
         strict_1.default.equal(session.anchorTerms.signingFee, 120000);
         strict_1.default.equal(session.anchorTerms.salaryPerRace, 7200);
+        strict_1.default.ok(session.lastCounterOffer);
+        strict_1.default.ok(session.history.length > 0);
+        strict_1.default.ok((session.lastCounterOffer?.signingFee ?? 0) >= 120000);
+    });
+    (0, node_test_1.it)("produces deterministic driver opening offers", () => {
+        const listing = prospectListing();
+        const ctx = (0, negotiations_1.buildDriverNegotiationContext)(listing, {
+            playerTeamName: "Sky Racing",
+            currentRound: 2,
+            seasonYear: 2026,
+            prestigeScore: 0.3,
+        });
+        const anchor = (0, negotiations_1.anchorTermsFromDriverListing)(listing);
+        const first = (0, negotiations_1.driverOpeningOfferForNegotiation)(anchor, listing, ctx);
+        const second = (0, negotiations_1.driverOpeningOfferForNegotiation)(anchor, listing, ctx);
+        strict_1.default.deepEqual(first.terms, second.terms);
+        strict_1.default.equal(first.note, second.note);
     });
     (0, node_test_1.it)("uses driver_buyout kind for active WEC listings", () => {
         const listing = prospectListing({

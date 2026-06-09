@@ -33,6 +33,10 @@ import {
   normalizeExhaustType,
 } from "../utils/ev_outlet";
 import {
+  filterFuelSystemPartsForEngine,
+  normalizeFuelSystemForEngine,
+} from "../utils/fuelSystem";
+import {
   classAllowsHybrid,
   filterPartsForClass,
   legalPartsForSlot,
@@ -187,6 +191,9 @@ function slotLabelForBuild(slot: BuildSlot, build?: CarBuildPayload | null): str
   if (slot === "exhaust" && isElectricDriveOutletBuild(build?.engine)) {
     return "Underbody Outlet";
   }
+  if (slot === "fuel_system" && build?.engine?.fuel_type === "Electric") {
+    return "Battery Pack";
+  }
   return SLOT_LABELS[slot];
 }
 
@@ -197,7 +204,11 @@ function buildGuideLabel(step: BuildGuideStep, build?: CarBuildPayload | null): 
   return slotLabelForBuild(step.slot, build);
 }
 
-function buildGuideText(step: BuildGuideStep, classId: string): string {
+function buildGuideText(
+  step: BuildGuideStep,
+  classId: string,
+  build?: CarBuildPayload | null,
+): string {
   switch (step.kind) {
     case "intro":
       return `You chose to build your own ${classId}. We'll walk through each system — pick parts within class rules, then save your platform.`;
@@ -220,7 +231,9 @@ function buildGuideText(step: BuildGuideStep, classId: string): string {
         case "suspension":
           return "Pick front and rear suspension architecture, then fine-tune ride height, spring rates, ARB, and damper clickers per axle. Front e-axle / hybrid drivetrains need compatible front packaging.";
         case "fuel_system":
-          return "Tank size and flow rate affect stint length and refuelling time in the pits.";
+          return build?.engine?.fuel_type === "Electric"
+            ? "Pack size trades energy (MJ) against mass. REX builds also carry ICE fuel volume for the range extender."
+            : "Tank size and flow rate affect stint length and refuelling time in the pits.";
         case "brake":
           return "Brake torque and thermal capacity matter for multi-class traffic and night driving.";
         case "transmission":
@@ -393,14 +406,15 @@ export class CarGarage {
           }
           if (suggestions?.fuel_system && this.catalog?.partsBySlot.fuel_system?.some((p) => p.partType === suggestions.fuel_system)) {
             next = { ...next, fuel_system: suggestions.fuel_system };
-          } else if (
-            engine.fuel_type !== "Hydrogen" &&
-            next.fuel_system === "HydrogenTank"
-          ) {
+          } else {
             const classId = this.activeClassId();
             next = {
               ...next,
-              fuel_system: classId === "Hypercar" ? "LeMans110L" : "StandardTank",
+              fuel_system: normalizeFuelSystemForEngine(
+                next.fuel_system,
+                engine,
+                classId,
+              ),
             };
           }
           if (suggestions?.transmission && this.catalog?.partsBySlot.transmission?.some((p) => p.partType === suggestions.transmission)) {
@@ -629,7 +643,7 @@ export class CarGarage {
 
     const step = this.currentGuideStep();
     const classId = this.activeClassId();
-    this.guideTextEl.textContent = buildGuideText(step, classId);
+    this.guideTextEl.textContent = buildGuideText(step, classId, this.build);
     this.guideBackBtn.disabled = this.buildGuideStepIndex === 0;
     this.guideNextBtn.textContent =
       step.kind === "confirm" ? "Save Build & Finish" : "Continue";
@@ -909,7 +923,11 @@ export class CarGarage {
   /** Parts legal for the active class; assembly/drivetrain filters applied separately. */
   private classVisibleParts(slot: PartSlot): PartOptionPayload[] {
     const parts = this.catalog?.partsBySlot[slot] ?? [];
-    return filterPartsForClass(this.activeClassInfo(), slot, parts);
+    let visible = filterPartsForClass(this.activeClassInfo(), slot, parts);
+    if (slot === "fuel_system" && this.build?.engine) {
+      visible = filterFuelSystemPartsForEngine(visible, this.build.engine);
+    }
+    return visible;
   }
 
   private renderActivePanel(): void {

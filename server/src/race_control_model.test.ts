@@ -20,6 +20,8 @@ describe("race_control_model", () => {
     assert.deepEqual(rc.surfaceHazards, []);
     assert.equal(rc.activeIncidentEntryId, "");
     assert.equal(rc.scLapsRemaining, 0);
+    assert.equal(rc.redFlagActive, false);
+    assert.equal(rc.redFlagSecondsRemaining, 0);
   });
 
   it("countTrackObstructions counts stranded and recovering cars", () => {

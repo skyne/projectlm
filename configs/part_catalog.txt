@@ -445,6 +445,18 @@ fuel_system.LeMans110L.capacity=110.0
 fuel_system.HydrogenTank.mass=56.0
 fuel_system.HydrogenTank.capacity=75.0
 
+fuel_system.BatteryPackSprint.mass=38.0
+fuel_system.BatteryPackSprint.energy_mj=4.8
+fuel_system.BatteryPackSprint.rex_fuel_l=28.0
+
+fuel_system.BatteryPackStandard.mass=48.0
+fuel_system.BatteryPackStandard.energy_mj=6.2
+fuel_system.BatteryPackStandard.rex_fuel_l=35.0
+
+fuel_system.BatteryPackEndurance.mass=62.0
+fuel_system.BatteryPackEndurance.energy_mj=8.8
+fuel_system.BatteryPackEndurance.rex_fuel_l=42.0
+
 # =====================
 # BRAKES
 # =====================
@@ -862,6 +874,9 @@ attach.fuel_system.StandardTank=chassis.mount.fuel_cell
 attach.fuel_system.LeMans90L=chassis.mount.fuel_cell
 attach.fuel_system.LeMans110L=chassis.mount.fuel_cell
 attach.fuel_system.HydrogenTank=chassis.mount.fuel_cell
+attach.fuel_system.BatteryPackSprint=chassis.mount.fuel_cell
+attach.fuel_system.BatteryPackStandard=chassis.mount.fuel_cell
+attach.fuel_system.BatteryPackEndurance=chassis.mount.fuel_cell
 attach.brake.StandardCaliper=chassis.mount.brake_front
 attach.brake.StandardCaliperLight=chassis.mount.brake_front
 attach.brake.CarbonCeramic=chassis.mount.brake_front

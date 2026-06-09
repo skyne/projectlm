@@ -27,6 +27,7 @@ function parseClientMessage(raw) {
             "complete_round",
             "start_round",
             "start_private_test",
+            "continue_private_test",
             "continue_weekend_session",
             "create_team",
             "save_team_creation_draft",
@@ -59,6 +60,7 @@ function parseClientMessage(raw) {
             "restart_season",
             "finalize_season",
             "update_car_briefing",
+            "debug_race_control",
         ];
         if (!allowed.includes(msg.type))
             return null;

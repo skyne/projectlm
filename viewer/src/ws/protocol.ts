@@ -168,6 +168,8 @@ export type SimEventType =
 export interface SimEvent {
   type: SimEventType;
   entryId?: string;
+  /** Other car involved (collisions, blocked). */
+  otherEntryId?: string;
   lap?: number;
   sectorIndex?: number;
   timestamp: number;
@@ -219,6 +221,19 @@ export interface WeekendProgressPayload {
   round: number;
   completedSessions: WeekendSessionType[];
   qualiResults?: QualifyingResultPayload[];
+}
+
+export interface PrivateTestProgressPayload {
+  trackId: string;
+  carIds: string[];
+  driverAssignments: PrivateTestDriverAssignments;
+  jointAgreementId: string;
+  jointPartnerTeams: string[];
+  testDays: number;
+  testHoursPerDay: number;
+  sessionMode: "continuous" | "per_day";
+  completedSessionIndices: number[];
+  carSetups?: SessionCarSetupPayload[];
 }
 
 export type SimBackend = "native" | "mock";
@@ -398,8 +413,10 @@ export interface NegotiationTermsPayload {
   brandingTier?: "title" | "major" | "minor";
   agreementSubtype?: InterTeamAgreementSubtype;
   partnerTeam?: string;
+  partnerTeams?: string[];
   sharedTrackId?: string;
   testDays?: number;
+  testHoursPerDay?: number;
   costContribution?: number;
   techSharePartIds?: string[];
   ruleProposalId?: string;
@@ -412,9 +429,11 @@ export interface ActiveAgreementPayload {
   id: string;
   kind: InterTeamAgreementSubtype | "regulatory_exception";
   partnerTeam?: string;
+  partnerTeams?: string[];
   signedRound: number;
   expiresAtRound: number;
   terms: NegotiationTermsPayload;
+  fulfilledAtRound?: number;
   stubPending?: boolean;
   stubNote?: string;
 }
@@ -881,6 +900,7 @@ export interface MetaStatePayload {
   trackSetupPresets?: Record<string, TrackSetupPresetPayload>;
   briefingDefaults?: Record<string, Record<string, Record<string, string>>>;
   weekendProgress?: WeekendProgressPayload;
+  privateTestProgress?: PrivateTestProgressPayload;
   driverMarket?: DriverMarketListingPayload[];
   driverMarketRefreshCount?: number;
   driverMarketRound?: number;
@@ -1115,6 +1135,18 @@ export interface RaceControlPayload {
   weatherBiome?: string;
 }
 
+export interface DebugRaceControlPayload {
+  action: string;
+  phase?: string;
+  sectorIndex?: number;
+  level?: number;
+  entryId?: string;
+  reason?: string;
+  kind?: string;
+  gripMultiplier?: number;
+  active?: boolean;
+}
+
 export interface TickPayload {
   raceTime: number;
   snapshots: CarSnapshot[];
@@ -1155,6 +1187,8 @@ export interface RaceCompletePayload {
   progressionSummary?: ProgressionSummaryPayload;
   sessionLogId?: string;
   nextWeekendSession?: WeekendSessionType | null;
+  nextJointTestSessionIndex?: number | null;
+  jointTestSessionCount?: number;
   results: Array<{
     entryId: string;
     teamName: string;
@@ -1227,6 +1261,10 @@ export interface StartPrivateTestPayload {
   durationHours: number;
   carSetups?: SessionCarSetupPayload[];
   carBriefings?: CarSessionBriefing[];
+  /** Rival teams from active joint-testing agreements to include on track. */
+  jointPartnerTeams?: string[];
+  /** Pending bundled joint-testing agreement this session fulfills. */
+  jointAgreementId?: string;
 }
 
 export interface EngineerAdvicePayload {
@@ -1284,6 +1322,7 @@ export type ClientMessageType =
   | "end_session"
   | "start_round"
   | "start_private_test"
+  | "continue_private_test"
   | "reload_definitions"
   | "submit_command"
   | "hire_staff"
@@ -1319,7 +1358,8 @@ export type ClientMessageType =
   | "start_next_season"
   | "restart_season"
   | "finalize_season"
-  | "update_car_briefing";
+  | "update_car_briefing"
+  | "debug_race_control";
 
 export interface ServerMessage<T = unknown> {
   protocol: typeof PROTOCOL_VERSION;

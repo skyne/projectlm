@@ -1,5 +1,6 @@
 import type { CarBuildPayload, PartOptionPayload } from "../ws/protocol";
 import { normalizeExhaustType } from "./ev_outlet";
+import { normalizeFuelSystemForEngine } from "./fuelSystem";
 
 export interface WheelSetup {
   frontDiameterIn: number;
@@ -761,6 +762,11 @@ export function normalizeCarBuild(
   return {
     ...build,
     diffuser_type: diffuserType,
+    fuel_system: normalizeFuelSystemForEngine(
+      build.fuel_system,
+      build.engine,
+      classId,
+    ),
     exhaust_type: normalizeExhaustType(build.exhaust_type, build.engine),
     suspension_layout: build.suspension_layout || frontLayout,
     front_suspension_layout: frontLayout,

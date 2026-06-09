@@ -21,7 +21,9 @@ export function isElectricDriveOutletBuild(
 ): boolean {
   if (!engine) return false;
   return (
+    engine.fuel_type === "Electric" ||
     engine.drivetrain === "FullEV" ||
+    engine.drivetrain === "RangeExtender" ||
     (engine.fuel_type === "Hydrogen" && engine.energy_converter === "FuelCell")
   );
 }

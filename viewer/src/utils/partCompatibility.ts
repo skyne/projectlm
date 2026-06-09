@@ -8,6 +8,7 @@ import {
   isElectricDriveOutletBuild,
   isEvLegalOutlet,
 } from "./ev_outlet";
+import { isBatteryPackPart } from "./fuelSystem";
 
 const BUILD_FIELD_BY_CONFIG_SLOT: Record<string, keyof CarBuildPayload> = {
   chassis: "chassis_type",
@@ -82,6 +83,14 @@ export type AssemblyConflict =
       otherPart: string;
     }
   | {
+      kind: "electric_battery";
+      otherPart: string;
+    }
+  | {
+      kind: "liquid_tank_electric";
+      otherPart: string;
+    }
+  | {
       kind: "fuel_cell_hybrid";
       otherPart: string;
     }
@@ -136,6 +145,24 @@ function findFuelSystemConflict(
       otherPart: build.engine?.fuel_type ?? "Gasoline",
     };
   }
+  if (
+    isBatteryPackPart(build.fuel_system) &&
+    build.engine?.fuel_type !== "Electric"
+  ) {
+    return {
+      kind: "electric_battery",
+      otherPart: build.engine?.fuel_type ?? "Gasoline",
+    };
+  }
+  if (
+    build.engine?.fuel_type === "Electric" &&
+    !isBatteryPackPart(build.fuel_system)
+  ) {
+    return {
+      kind: "liquid_tank_electric",
+      otherPart: build.fuel_system,
+    };
+  }
   const eng = build.engine;
   if (eng?.fuel_type === "Hydrogen" && eng.energy_converter === "FuelCell") {
     if (build.hybrid_system && build.hybrid_system !== "None") {
@@ -150,6 +177,17 @@ function findFuelSystemConflict(
   }
   if (eng?.fuel_type === "Hydrogen" && eng.drivetrain === "RangeExtender") {
     return { kind: "h2_rex_blocked" };
+  }
+  if (eng?.fuel_type === "Electric") {
+    if (build.hybrid_system && build.hybrid_system !== "None") {
+      return { kind: "fuel_cell_hybrid", otherPart: build.hybrid_system };
+    }
+    if (build.transmission && build.transmission !== "SingleSpeedEDrive") {
+      return { kind: "fuel_cell_transmission", otherPart: build.transmission };
+    }
+    if (eng.drivetrain && eng.drivetrain !== "FullEV" && eng.drivetrain !== "RangeExtender") {
+      return { kind: "fuel_cell_drivetrain", otherPart: eng.drivetrain };
+    }
   }
   return null;
 }
@@ -257,6 +295,14 @@ export function formatAssemblyConflict(
     const fuel = partLabel("engine", conflict.otherPart);
     return `Requires hydrogen powertrain — current fuel: ${fuel}`;
   }
+  if (conflict.kind === "electric_battery") {
+    const fuel = partLabel("engine", conflict.otherPart);
+    return `Requires electric powertrain — current fuel: ${fuel}`;
+  }
+  if (conflict.kind === "liquid_tank_electric") {
+    const tank = partLabel("fuel_system", conflict.otherPart);
+    return `Electric powertrain requires a battery pack — fitted: ${tank}`;
+  }
 
   if (conflict.kind === "fuel_cell_hybrid") {
     return "Fuel cell powertrain cannot use a separate hybrid system";
@@ -339,6 +385,12 @@ export function validateAssemblyCompatibility(
   }
   if (conflict.kind === "hydrogen_fuel") {
     return "Hydrogen tank requires Hydrogen fuel in the powertrain";
+  }
+  if (conflict.kind === "electric_battery") {
+    return "Battery pack requires Electric fuel in the powertrain";
+  }
+  if (conflict.kind === "liquid_tank_electric") {
+    return "Electric powertrain requires a battery pack";
   }
   if (conflict.kind === "fuel_cell_hybrid") {
     return "Fuel cell powertrain cannot use a separate hybrid system";

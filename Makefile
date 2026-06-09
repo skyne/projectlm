@@ -49,11 +49,13 @@ TEST_SRCS = \
   tests/unit/test_fuel_cell.cpp \
   tests/unit/test_part_compatibility.cpp \
   tests/unit/test_sim_bridge.cpp \
+  tests/unit/test_pit_stop.cpp \
   tests/unit/test_weather.cpp \
   tests/unit/test_track_obstruction.cpp \
   tests/unit/test_race_control.cpp \
   tests/unit/test_race_control_penalties.cpp \
   tests/unit/test_race_control_collisions.cpp \
+  tests/unit/test_traffic_pit_rejoin.cpp \
   tests/unit/test_race_control_escalation.cpp \
   tests/integration/test_lap_golden.cpp \
   tests/integration/test_multicar.cpp \
@@ -95,7 +97,10 @@ run: $(BIN_DIR)/projectlm
 	$(BIN_DIR)/projectlm $(RUN_ARGS)
 
 native:
-	cd bindings/node && npm install && npm run build
+	cd bindings/node && npm install --ignore-scripts && rm -rf build && npm run build
+
+native-clean:
+	cd bindings/node && rm -rf build && npm run build
 
 clean:
 	rm -rf $(BUILD_DIR)

@@ -200,15 +200,21 @@ public:
   bool releaseFromGarage(const TrackDefinition &track);
   bool inGarageHold() const { return garageHold_; }
   bool redFlagHold() const { return redFlagHold_; }
+  bool redFlagEmergencyWorked() const { return redFlagEmergencyWorked_; }
   bool isUnderPitService() const;
   void applyRedFlagHold();
   void clearRedFlagHold();
   void beginGarageRebuild(const TrackDefinition &track, double raceTime,
-                          double durationSec, const std::string &status);
+                          double durationSec, const std::string &status,
+                          bool damageRebuild = true,
+                          double restoreTargetHealth = 70.0);
   void tickGarageRebuild(const TrackDefinition &track, double raceTime,
                          double remainingSessionSec);
   bool deliverTowedToGarage(const TrackDefinition &track, double raceTime,
                             double remainingSessionSec);
+  /** Practice / qualifying: tow off track for refuel (not a damage rebuild). */
+  void beginOpenSessionEnergyRecovery(const TrackDefinition &track,
+                                      double raceTime);
   bool inGarageRebuild() const { return garageRebuildActive_; }
   double garageRebuildRemainingSec(double raceTime) const;
   bool onFire() const { return onFire_; }
@@ -229,14 +235,19 @@ public:
                      const TrafficModifiers *traffic = nullptr,
                      const WeatherState &weather = WeatherState{},
                      bool isNight = false,
-                     double remainingSessionSec = 86400.0 * 7.0);
+                     double remainingSessionSec = 86400.0 * 7.0,
+                     bool pauseDriverStint = false);
 
   bool processPitEntry(double normalizedT, bool lapJustCompleted,
                        bool redFlagActive = false);
   bool processPitLaneTick(const TrackDefinition &track, double deltaTime,
                           const StaffModifiers &staff,
                           double remainingSessionSec = 86400.0 * 7.0,
-                          bool redFlagActive = false);
+                          bool redFlagActive = false,
+                          const std::vector<Car> *peerCars = nullptr,
+                          bool requireMergeGap = false);
+  void beginRejoinYield(double seconds = kPitRejoinYieldSec);
+  bool isRejoiningYield() const { return rejoinYieldSec_ > 0.0; }
   void applyCommand(const SimCommand &command);
   void applyTrafficVisuals(const TrafficModifiers &traffic, double deltaTime);
 
@@ -251,6 +262,12 @@ private:
   void tickFireDamage(double deltaTime);
   bool handlePostPitRepairDecision(const TrackDefinition &track, double raceTime,
                                    double remainingSessionSec);
+  bool startGarageRebuildAfterPit(const TrackDefinition &track, double raceTime,
+                                  double remainingSessionSec,
+                                  double restoreTargetHealth,
+                                  bool evenIfRaceable,
+                                  const std::string &status);
+  void restoreFullStintEnergy();
   std::string entryId_;
   std::string teamName_;
   std::string carNumber_;
@@ -266,6 +283,7 @@ private:
   TelemetryLog telemetry_;
   double bestLapTime_ = 0.0;
   double lateralOffset_ = 0.0;
+  double rejoinYieldSec_ = 0.0;
   double wingAngleDelta_ = 0.0;
   double brakeBias_ = 0.5;
   double collisionCooldown_ = 0.0;
@@ -288,8 +306,10 @@ private:
   double maxDriverStintSeconds_ = 0.0;
   bool garageHold_ = false;
   bool redFlagHold_ = false;
+  bool redFlagEmergencyWorked_ = false;
   bool garageRebuildActive_ = false;
   double garageRebuildEndTime_ = 0.0;
+  double garageRestoreTargetHealth_ = 70.0;
   bool onFire_ = false;
   CarRaceControlState rc_;
 };
@@ -306,5 +326,12 @@ struct CarTickResult {
   int completedSectorIndex = 0;
   int completedLap = 0;
 };
+
+/** Race log / race control label: "#42 Team Name" when a car number is set. */
+inline std::string EntryDisplayLabel(const Car &car) {
+  if (!car.carNumber().empty())
+    return "#" + car.carNumber() + " " + car.teamName();
+  return car.teamName();
+}
 
 #endif

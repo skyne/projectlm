@@ -3,6 +3,7 @@
 
 #include "commands.hpp"
 #include "car_parts.hpp"
+#include "race_control_common.hpp"
 #include <string>
 
 struct SimulationState;
@@ -47,10 +48,16 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
 
 bool ShouldEnterPitLane(const PitStopState &pit, double normalizedT,
                         bool lapJustCompleted, int currentLap,
-                        double fuelRemaining = -1.0,
-                        double fuelTankCapacity = 0.0,
                         bool redFlagActive = false);
 
 bool PitPlanHasActiveService(const PitStopPlan &plan);
+
+bool CarNeedsEmergencyPit(const CarConfig &car, const SimulationState &state,
+                          const CarRaceControlState &rc);
+
+/** Strip routine work; keep fuel / deflated tyres / damage repairs only. */
+void SanitizeRedFlagEmergencyPlan(PitStopPlan &plan, const CarConfig &car,
+                                const SimulationState &state,
+                                const CarRaceControlState &rc);
 
 #endif

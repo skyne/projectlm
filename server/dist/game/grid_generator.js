@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.LEMANS_OFFICIAL_GRID_SIZE = exports.LEMANS_ENTRIES_PATH = void 0;
 exports.loadLeMansEntries = loadLeMansEntries;
 exports.loadClassTemplates = loadClassTemplates;
+exports.generateJointPrivateTestGrid = generateJointPrivateTestGrid;
 exports.generatePlayerOnlyGrid = generatePlayerOnlyGrid;
 exports.generateGrid = generateGrid;
 exports.writeEntriesFile = writeEntriesFile;
@@ -182,6 +183,42 @@ function mergePlayerFleet(base, options) {
     }
     merged.sort((a, b) => a.grid - b.grid);
     return merged;
+}
+function teamNameKey(name) {
+    return name.trim().toLowerCase();
+}
+function generateJointPrivateTestGrid(options) {
+    const playerEntries = generatePlayerOnlyGrid({
+        playerTeamName: options.playerTeamName,
+        playerFleet: options.playerFleet,
+        playerCarId: options.playerCarId,
+    });
+    const partnerKeys = new Set(options.partnerTeams.map(teamNameKey).filter(Boolean));
+    if (!partnerKeys.size)
+        return playerEntries;
+    const lemans = loadLeMansEntries(options.repoRoot);
+    const partnerEntries = [];
+    for (const entry of lemans) {
+        if (!partnerKeys.has(teamNameKey(entry.teamName)))
+            continue;
+        partnerEntries.push({
+            entryId: "",
+            teamName: entry.teamName,
+            carConfigPath: entry.carConfigPath,
+            classId: entry.classId,
+            grid: 0,
+            carNumber: entry.carNumber,
+            isPlayer: false,
+        });
+    }
+    const combined = [...playerEntries, ...partnerEntries];
+    let grid = 1;
+    for (const entry of combined) {
+        entry.grid = grid;
+        entry.entryId = `entry-${grid}`;
+        grid++;
+    }
+    return combined;
 }
 function generatePlayerOnlyGrid(options) {
     const fleet = options.playerFleet;

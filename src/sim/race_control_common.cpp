@@ -1,5 +1,19 @@
 #include "race_control_common.hpp"
 
+FlagPhase ParseFlagPhase(const std::string &name) {
+  if (name == "slow_zone")
+    return FlagPhase::SlowZone;
+  if (name == "fcy")
+    return FlagPhase::FCY;
+  if (name == "sc")
+    return FlagPhase::SC;
+  if (name == "sc_in_lap")
+    return FlagPhase::SCInLap;
+  if (name == "red_flag")
+    return FlagPhase::RedFlag;
+  return FlagPhase::Green;
+}
+
 const char *FlagPhaseName(FlagPhase phase) {
   switch (phase) {
   case FlagPhase::SlowZone:
@@ -44,6 +58,18 @@ const char *PendingPenaltyName(PendingPenalty penalty) {
   default:
     return "none";
   }
+}
+
+HazardKind ParseHazardKind(const std::string &name) {
+  if (name == "oil")
+    return HazardKind::Oil;
+  if (name == "coolant")
+    return HazardKind::Coolant;
+  if (name == "fuel")
+    return HazardKind::Fuel;
+  if (name == "fire")
+    return HazardKind::Fire;
+  return HazardKind::Debris;
 }
 
 const char *HazardKindName(HazardKind kind) {

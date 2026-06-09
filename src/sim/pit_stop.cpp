@@ -7,6 +7,35 @@
 #include <cmath>
 
 namespace {
+constexpr double kEmergencyFuelFraction = 0.18;
+constexpr double kEmergencyFuelTargetFraction = 0.25;
+constexpr double kEmergencyRepairHealthThreshold = 90.0;
+
+bool WheelNeedsEmergencyChange(const SimulationState &state, int wheelIdx) {
+  if (wheelIdx < 0 || wheelIdx > 3)
+    return false;
+  const TyreDeflationState defl = state.tyreDeflation.state[wheelIdx];
+  return defl == TyreDeflationState::Soft || defl == TyreDeflationState::Flat;
+}
+
+bool RepairTokenAllowed(const std::string &token, const PartDamageState &damage,
+                        bool meatball) {
+  if (meatball)
+    return true;
+  if (token == "body" || token == "bodywork") {
+    for (DamagePart p = DamagePart::BodyFL; p <= DamagePart::BodyRR;
+         p = static_cast<DamagePart>(DamagePartIndex(p) + 1)) {
+      if (PartHealth(damage, p) < kEmergencyRepairHealthThreshold)
+        return true;
+    }
+    return false;
+  }
+  const DamagePart part = DamagePartFromToken(token);
+  if (part == DamagePart::Count)
+    return false;
+  return PartHealth(damage, part) < kEmergencyRepairHealthThreshold;
+}
+
 constexpr double kFuelRateSecPerLiter = 0.038;
 constexpr double kTireChangeSec = 2.8;
 constexpr double kRepairBodySec = 8.0;
@@ -129,7 +158,11 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
                                   car.fuelTankCapacity - state.fuelRemaining);
     state.fuelRemaining = std::min(car.fuelTankCapacity,
                                    state.fuelRemaining + added);
-    car.calculatedTotalMass += added * 0.75;
+    if (IsBatteryPrimaryEv(car)) {
+      state.batteryChargeMJ = state.fuelRemaining;
+      state.hybridDeployRemainingMJ = state.fuelRemaining;
+    }
+    car.calculatedTotalMass += added * (IsBatteryPrimaryEv(car) ? 0.45 : 0.75);
   }
 
   if (!plan.tiresToChange.empty()) {
@@ -177,6 +210,12 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
   ApplySuspensionSetupDelta(car, suspensionDelta);
 
   (void)plan.brakeBiasDelta;
+
+  if (car.isGeneratorOnly && car.hybridStintDeployBudgetMJ > 0.0 &&
+      !plan.driveThrough) {
+    state.batteryChargeMJ = car.hybridStintDeployBudgetMJ;
+    state.hybridDeployRemainingMJ = car.hybridStintDeployBudgetMJ;
+  }
 }
 
 bool PitPlanHasActiveService(const PitStopPlan &plan) {
@@ -190,25 +229,88 @@ bool PitPlanHasActiveService(const PitStopPlan &plan) {
     return true;
   if (plan.changeDriver)
     return true;
+  if (plan.garageRebuild)
+    return true;
   return false;
+}
+
+bool CarNeedsEmergencyPit(const CarConfig &car, const SimulationState &state,
+                          const CarRaceControlState &rc) {
+  const LimpMode limp = EvaluateLimpMode(state.partDamage, car,
+                                         state.tyreDeflation, state.batteryChargeMJ);
+  if (limp == LimpMode::BarelyDriveable || limp == LimpMode::HybridOnly ||
+      limp == LimpMode::Immobilized)
+    return true;
+  if (rc.meatballActive)
+    return true;
+  for (int i = 0; i < 4; ++i) {
+    if (WheelNeedsEmergencyChange(state, i))
+      return true;
+  }
+  const double tank = car.fuelTankCapacity;
+  if (tank > 0.0 && state.fuelRemaining >= 0.0 &&
+      state.fuelRemaining / tank <= kEmergencyFuelFraction)
+    return true;
+  const double hybridBudget = car.hybridStintDeployBudgetMJ;
+  if (hybridBudget > 0.0 && state.hybridDeployRemainingMJ >= 0.0 &&
+      state.hybridDeployRemainingMJ / hybridBudget <= kEmergencyFuelFraction)
+    return true;
+  return false;
+}
+
+void SanitizeRedFlagEmergencyPlan(PitStopPlan &plan, const CarConfig &car,
+                                const SimulationState &state,
+                                const CarRaceControlState &rc) {
+  plan.changeDriver = false;
+  plan.garageRebuild = false;
+  plan.driveThrough = false;
+  plan.stopGo = false;
+  plan.wingAngleDelta = 0.0;
+  plan.brakeBiasDelta = 0.0;
+  plan.rideHeightDelta = 0.0;
+  plan.suspension = SuspensionSetupDelta{};
+
+  const double tank = car.fuelTankCapacity;
+  if (plan.fuelLiters > 0.0) {
+    if (tank <= 0.0 || state.fuelRemaining / tank > kEmergencyFuelFraction) {
+      plan.fuelLiters = 0.0;
+    } else {
+      const double target = tank * kEmergencyFuelTargetFraction;
+      const double maxAdd = std::max(0.0, target - state.fuelRemaining);
+      plan.fuelLiters = std::min(plan.fuelLiters, maxAdd);
+      if (plan.fuelLiters < 0.01)
+        plan.fuelLiters = 0.0;
+    }
+  }
+
+  std::vector<std::string> allowedTires;
+  allowedTires.reserve(plan.tiresToChange.size());
+  for (const std::string &wheelLabel : plan.tiresToChange) {
+    const int wheelIdx = WheelIndexFromLabel(wheelLabel);
+    if (WheelNeedsEmergencyChange(state, wheelIdx))
+      allowedTires.push_back(wheelLabel);
+  }
+  plan.tiresToChange = std::move(allowedTires);
+
+  std::vector<std::string> allowedRepairs;
+  allowedRepairs.reserve(plan.repairs.size());
+  for (const std::string &repair : plan.repairs) {
+    if (RepairTokenAllowed(repair, state.partDamage, rc.meatballActive))
+      allowedRepairs.push_back(repair);
+  }
+  plan.repairs = std::move(allowedRepairs);
 }
 
 bool ShouldEnterPitLane(const PitStopState &pit, double normalizedT,
                         bool lapJustCompleted, int currentLap,
-                        double fuelRemaining, double fuelTankCapacity,
                         bool redFlagActive) {
   if (!pit.pendingEnter || pit.inPit)
     return false;
   if (lapJustCompleted)
     return true;
-  if (redFlagActive)
-    return true;
-  // Emergency fuel — do not force another full lap to reach the pit window.
-  if (fuelTankCapacity > 0.0 && fuelRemaining >= 0.0 &&
-      fuelRemaining <= fuelTankCapacity * 0.18)
-    return true;
-  // On the opening lap cars sit on the start/finish line — wait until lap 2+
-  // before allowing mid-lap pit entry via track position.
+  (void)redFlagActive;
+  // Pit entry only at the start/finish straight — no mid-lap teleport. Cars that
+  // cannot reach the pits must stop on track and use marshal recovery instead.
   if (currentLap <= 1)
     return false;
   return normalizedT >= 0.985 || normalizedT <= 0.015;

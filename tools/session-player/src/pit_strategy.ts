@@ -37,6 +37,11 @@ export type ExtSnap = CarSnapshot & {
   serviceabilityFactor?: number;
   driverChangeFactor?: number;
   tireCompound?: string;
+  pendingPenalty?: string;
+  lapsToComply?: number;
+  penaltyReason?: string;
+  meatballFlag?: boolean;
+  blackFlag?: boolean;
 };
 
 export type { CarPitState };
@@ -142,7 +147,7 @@ export function tickPitWall(
     {
       phase,
       wet,
-      raceTimeSec: bctx.raceTimeSec,
+      raceTimeSec: bctx.raceTimeSec ?? player.state.latestTick?.raceTime ?? 0,
       getBriefingTactics: bctx.getBriefingTactics,
       strategistSkill: bctx.strategistSkill,
     },

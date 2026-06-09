@@ -14,7 +14,7 @@ Play ProjectLM alongside a human in the browser — co-op pit wall, spectator, o
 
 1. **Server running** (multiplayer branch / worktree):
    ```bash
-   cd .worktrees/multiplayer-foundation/server && PORT=8765 npm run dev
+   cd .worktrees/multiplayer-foundation/server && PORT=9785 npm run dev
    ```
 2. **Viewer** (human client):
    ```bash
@@ -28,7 +28,7 @@ Play ProjectLM alongside a human in the browser — co-op pit wall, spectator, o
    ```
    From repo root, or use the worktree copy at `.worktrees/multiplayer-foundation/scripts/session-player.sh`.
 
-Default WebSocket: `ws://localhost:8765` (`--url` or `PROJECTLM_WS_URL`).
+Default WebSocket: `ws://localhost:9785` (`--url`, `PROJECTLM_WS_URL`, or `PROJECTLM_WS_PORT`).
 
 ## Human vs LLM setup (recommended)
 
@@ -44,7 +44,7 @@ Default WebSocket: `ws://localhost:8765` (`--url` or `PROJECTLM_WS_URL`).
 3. Agent joins as pit crew:
    ```bash
    ./scripts/session-player.sh roster \
-     --url ws://localhost:8765 \
+     --url ws://localhost:9785 \
      --name "PitBot" \
      --role player \
      --pretty

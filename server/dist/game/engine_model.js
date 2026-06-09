@@ -14,7 +14,7 @@ exports.DIESEL_WEIGHT_MULT = 1.3;
 exports.ENGINE_LAYOUTS = [
     "I4", "I6", "V6", "V8", "V10", "V12", "Flat4", "Flat6", "Rotary", "LMP2Spec",
 ];
-exports.FUEL_TYPES = ["Gasoline", "Diesel", "Hydrogen"];
+exports.FUEL_TYPES = ["Gasoline", "Diesel", "Hydrogen", "Electric"];
 exports.ASPIRATION_TYPES = [
     "NA", "Single", "TwinParallel", "TwinSequential", "Quad", "EBoost",
 ];
@@ -63,6 +63,35 @@ function validateEngineBuild(engine) {
             return "Fuel cell requires FullEV drivetrain";
         if (!engine.generator_kw || engine.generator_kw < 200)
             return "Fuel cell stack kW out of range";
+        return null;
+    }
+    /** BEV / battery pack — peak_torque_nm is motor-model fiction (hp×4.2), not ICE Nm. */
+    const isBatteryBev = engine.drivetrain === "FullEV" && !isFuelCell;
+    if (isBatteryBev) {
+        if (engine.max_rpm < 3500 || engine.max_rpm > 13000)
+            return "Max RPM out of range";
+        return null;
+    }
+    const isElectricFuel = engine.fuel_type === "Electric";
+    if (isElectricFuel) {
+        if (engine.drivetrain !== "FullEV" && engine.drivetrain !== "RangeExtender") {
+            return "Electric requires FullEV or RangeExtender drivetrain";
+        }
+        if (engine.drivetrain === "RangeExtender") {
+            if (!engine.generator_kw || engine.generator_kw < 120) {
+                return "Electric REX generator kW out of range";
+            }
+            if (engine.bore < 0.04 || engine.bore > 0.12)
+                return "Bore out of range";
+            if (engine.stroke < 0.03 || engine.stroke > 0.12)
+                return "Stroke out of range";
+        }
+        if (engine.max_rpm < 3500 || engine.max_rpm > 13000)
+            return "Max RPM out of range";
+        // REX charge path uses generator_kW×3.2 — above ICE cap at max generator.
+        if (engine.peak_torque_nm < 100 || engine.peak_torque_nm > 1500) {
+            return "Peak torque out of range";
+        }
         return null;
     }
     if (!exports.ENGINE_LAYOUTS.includes(engine.engine_layout)) {

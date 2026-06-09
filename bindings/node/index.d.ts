@@ -278,6 +278,7 @@ export interface SimSession {
   getRaceTime(): number;
   getRaceControl(): RaceControlPayload;
   submitCommand(entryId: string, command: string): boolean;
+  debugRaceControl(payload: Record<string, unknown>): string | null;
 }
 
 declare const sim: SimSession;

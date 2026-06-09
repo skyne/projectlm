@@ -195,6 +195,53 @@ function mergePlayerFleet(
   return merged;
 }
 
+function teamNameKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+export function generateJointPrivateTestGrid(options: {
+  repoRoot: string;
+  playerTeamName: string;
+  playerFleet: FleetCarPayload[];
+  playerCarId?: string;
+  partnerTeams: string[];
+}): GeneratedEntry[] {
+  const playerEntries = generatePlayerOnlyGrid({
+    playerTeamName: options.playerTeamName,
+    playerFleet: options.playerFleet,
+    playerCarId: options.playerCarId,
+  });
+
+  const partnerKeys = new Set(
+    options.partnerTeams.map(teamNameKey).filter(Boolean),
+  );
+  if (!partnerKeys.size) return playerEntries;
+
+  const lemans = loadLeMansEntries(options.repoRoot);
+  const partnerEntries: GeneratedEntry[] = [];
+  for (const entry of lemans) {
+    if (!partnerKeys.has(teamNameKey(entry.teamName))) continue;
+    partnerEntries.push({
+      entryId: "",
+      teamName: entry.teamName,
+      carConfigPath: entry.carConfigPath,
+      classId: entry.classId,
+      grid: 0,
+      carNumber: entry.carNumber,
+      isPlayer: false,
+    });
+  }
+
+  const combined = [...playerEntries, ...partnerEntries];
+  let grid = 1;
+  for (const entry of combined) {
+    entry.grid = grid;
+    entry.entryId = `entry-${grid}`;
+    grid++;
+  }
+  return combined;
+}
+
 export function generatePlayerOnlyGrid(options: {
   playerTeamName: string;
   playerFleet: FleetCarPayload[];

@@ -40,6 +40,9 @@ function snap(overrides) {
         lapsToComply: overrides.lapsToComply,
         meatballFlag: overrides.meatballFlag,
         limpMode: overrides.limpMode,
+        fuelTankCapacity: overrides.fuelTankCapacity,
+        tyreDeflation: overrides.tyreDeflation,
+        partHealth: overrides.partHealth,
     };
 }
 (0, node_test_1.describe)("teamResultsByClass", () => {
@@ -65,7 +68,87 @@ function snap(overrides) {
         strict_1.default.deepEqual(order, ["Hypercar", "LMP2", "LMGT3"]);
     });
 });
+(0, node_test_1.describe)("releaseFromGarage", () => {
+    (0, node_test_1.it)("staggers practice releases by grid order", () => {
+        const entryIds = ["entry-1", "entry-2", "entry-3"];
+        const snapshots = entryIds.map((entryId) => snap({
+            entryId,
+            classId: "Hypercar",
+            teamName: "Cursor Racing",
+            inGarage: true,
+            lap: 0,
+            speed: 0,
+        }));
+        const carState = (0, pit_wall_1.initCarState)(entryIds);
+        const submitted = [];
+        const submit = (id, cmd) => {
+            submitted.push(`${id}:${cmd}`);
+            return true;
+        };
+        (0, pit_wall_1.releaseFromGarage)(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 0 }, submit);
+        strict_1.default.deepEqual(submitted, ["entry-1:release"]);
+        (0, pit_wall_1.releaseFromGarage)(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 2 }, submit);
+        strict_1.default.deepEqual(submitted, ["entry-1:release"]);
+        (0, pit_wall_1.releaseFromGarage)(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 3 }, submit);
+        strict_1.default.deepEqual(submitted, ["entry-1:release", "entry-2:release"]);
+        (0, pit_wall_1.releaseFromGarage)(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 6 }, submit);
+        strict_1.default.deepEqual(submitted, [
+            "entry-1:release",
+            "entry-2:release",
+            "entry-3:release",
+        ]);
+    });
+    (0, node_test_1.it)("releases at most one car per call even when race time jumped ahead", () => {
+        const entryIds = ["entry-1", "entry-2", "entry-3"];
+        const snapshots = entryIds.map((entryId) => snap({
+            entryId,
+            classId: "Hypercar",
+            teamName: "Cursor Racing",
+            inGarage: true,
+            lap: 0,
+            speed: 0,
+        }));
+        const carState = (0, pit_wall_1.initCarState)(entryIds);
+        const submitted = [];
+        const submit = (id, cmd) => {
+            submitted.push(id);
+            return true;
+        };
+        (0, pit_wall_1.releaseFromGarage)(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 120 }, submit);
+        strict_1.default.deepEqual(submitted, ["entry-1"]);
+        (0, pit_wall_1.releaseFromGarage)(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 120 }, submit);
+        strict_1.default.deepEqual(submitted, ["entry-1", "entry-2"]);
+        (0, pit_wall_1.releaseFromGarage)(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 120 }, submit);
+        strict_1.default.deepEqual(submitted, ["entry-1", "entry-2", "entry-3"]);
+    });
+    (0, node_test_1.it)("uses shorter gaps in qualifying", () => {
+        strict_1.default.equal((0, pit_wall_1.garageReleaseTimeSec)("practice", 1), pit_wall_1.GARAGE_RELEASE_GAP_PRACTICE_SEC);
+        strict_1.default.equal((0, pit_wall_1.garageReleaseTimeSec)("qualifying", 1), pit_wall_1.GARAGE_RELEASE_GAP_QUALIFYING_SEC);
+        strict_1.default.ok(pit_wall_1.GARAGE_RELEASE_GAP_QUALIFYING_SEC < pit_wall_1.GARAGE_RELEASE_GAP_PRACTICE_SEC);
+    });
+});
 (0, node_test_1.describe)("tickPitBot race control", () => {
+    (0, node_test_1.it)("submits stop-and-go when penalty is pending in the pit lane", () => {
+        const entryId = "ai-pit";
+        const snapshots = [
+            snap({
+                entryId,
+                classId: "LMP2",
+                teamName: "Rival",
+                inPit: true,
+                pendingPenalty: "stop_go",
+                lapsToComply: 2,
+            }),
+        ];
+        const carState = (0, pit_wall_1.initCarState)([entryId], 0, { minLap: 3 });
+        const submitted = [];
+        const actions = (0, pit_wall_1.tickPitBot)(snapshots, [entryId], carState, { phase: "race", wet: 0 }, (_id, cmd) => {
+            submitted.push(cmd);
+            return true;
+        });
+        strict_1.default.equal(submitted[0], "pit|stop_go");
+        strict_1.default.equal(actions[0]?.label, "Serve stop-and-go");
+    });
     (0, node_test_1.it)("submits drive-through when penalty is pending", () => {
         const entryId = "ai-1";
         const snapshots = [
@@ -85,6 +168,114 @@ function snap(overrides) {
         });
         strict_1.default.equal(submitted[0], "pit|drive_through");
         strict_1.default.equal(actions[0]?.command, "pit|drive_through");
+        strict_1.default.equal(actions[0]?.label, "Serve drive-through");
+    });
+    (0, node_test_1.it)("defers penalty serve when fuel cannot cover in-penalty-out-service", () => {
+        const entryId = "ai-fuel-pen";
+        const snapshots = [
+            snap({
+                entryId,
+                classId: "LMP2",
+                teamName: "Rival",
+                lap: 10,
+                fuel: 3,
+                fuelTankCapacity: 100,
+                pendingPenalty: "stop_go",
+                lapsToComply: 3,
+            }),
+        ];
+        const carState = (0, pit_wall_1.initCarState)([entryId], 0, { minLap: 3 });
+        const st = carState.get(entryId);
+        st.lastPitLap = 5;
+        st.fuelAtLastPit = 13;
+        const submitted = [];
+        const actions = (0, pit_wall_1.tickPitBot)(snapshots, [entryId], carState, { phase: "race", wet: 0 }, (_id, cmd) => {
+            submitted.push(cmd);
+            return true;
+        });
+        strict_1.default.ok(!submitted.some((c) => c === "pit|stop_go"));
+        strict_1.default.ok(submitted.some((c) => c.includes("fuel")));
+        strict_1.default.match(actions[0]?.label ?? "", /before stop-and-go/i);
+    });
+    (0, node_test_1.it)("defers penalty serve when car has a flat tyre", () => {
+        const entryId = "ai-flat-pen";
+        const snapshots = [
+            snap({
+                entryId,
+                classId: "LMP2",
+                teamName: "Rival",
+                lap: 10,
+                fuel: 50,
+                fuelTankCapacity: 100,
+                inPit: true,
+                pendingPenalty: "drive_through",
+                lapsToComply: 3,
+                tyreDeflation: { FL: "flat" },
+            }),
+        ];
+        const carState = (0, pit_wall_1.initCarState)([entryId], 0, { minLap: 3 });
+        const submitted = [];
+        const actions = (0, pit_wall_1.tickPitBot)(snapshots, [entryId], carState, { phase: "race", wet: 0 }, (_id, cmd) => {
+            submitted.push(cmd);
+            return true;
+        });
+        strict_1.default.ok(!submitted.some((c) => c === "pit|drive_through"));
+        strict_1.default.ok(submitted.some((c) => c.includes("tires")));
+        strict_1.default.match(actions[0]?.label ?? "", /before drive-through/i);
+    });
+    (0, node_test_1.it)("serves penalty when fuel covers in-penalty-out-service buffer", () => {
+        const entryId = "ai-fuel-ok";
+        const snapshots = [
+            snap({
+                entryId,
+                classId: "LMP2",
+                teamName: "Rival",
+                lap: 10,
+                fuel: 50,
+                fuelTankCapacity: 100,
+                inPit: true,
+                pendingPenalty: "drive_through",
+                lapsToComply: 3,
+            }),
+        ];
+        const carState = (0, pit_wall_1.initCarState)([entryId], 0, { minLap: 3 });
+        const submitted = [];
+        (0, pit_wall_1.tickPitBot)(snapshots, [entryId], carState, { phase: "race", wet: 0 }, (_id, cmd) => {
+            submitted.push(cmd);
+            return true;
+        });
+        strict_1.default.equal(submitted[0], "pit|drive_through");
+    });
+    (0, node_test_1.it)("defers routine pit under red flag but submits emergency tyre work in pits", () => {
+        const entryId = "ai-rf";
+        const base = snap({
+            entryId,
+            classId: "LMP2",
+            teamName: "Rival",
+            tireWear: 0.95,
+            fuel: 60,
+            fuelTankCapacity: 100,
+        });
+        const carState = (0, pit_wall_1.initCarState)([entryId], 0, { minLap: 3 });
+        const routine = [];
+        (0, pit_wall_1.tickPitBot)([base], [entryId], carState, { phase: "race", wet: 0, flagPhase: "red_flag" }, (_id, cmd) => {
+            routine.push(cmd);
+            return true;
+        });
+        strict_1.default.ok(!routine.some((c) => c.includes("driver_change")));
+        const emergency = [];
+        (0, pit_wall_1.tickPitBot)([
+            {
+                ...base,
+                inPit: true,
+                tyreDeflation: { FL: "flat" },
+            },
+        ], [entryId], carState, { phase: "race", wet: 0, flagPhase: "red_flag" }, (_id, cmd) => {
+            emergency.push(cmd);
+            return true;
+        });
+        strict_1.default.ok(emergency.some((c) => c.includes("tires=FL")));
+        strict_1.default.ok(!emergency.some((c) => c.includes("tires=all")));
     });
     (0, node_test_1.it)("defers routine pit under FCY but not limp emergency", () => {
         const entryId = "ai-2";
@@ -137,7 +328,8 @@ function snap(overrides) {
                 pendingPenalty: "drive_through",
                 lapsToComply: 2,
                 tireWear: 0.99,
-                fuel: 3,
+                fuel: 50,
+                fuelTankCapacity: 100,
             }),
         ], [entryId], (0, pit_wall_1.initCarState)([entryId], 0, { minLap: 3 }), {
             phase: "race",

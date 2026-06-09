@@ -158,6 +158,34 @@ describe("partCompatibility", () => {
     assert.match(message, /Gasoline/);
   });
 
+  it("explains battery pack powertrain requirement", () => {
+    const build = {
+      ...baseBuild,
+      fuel_system: "BatteryPackStandard",
+      engine: { ...baseBuild.engine!, fuel_type: "Gasoline" },
+    };
+    const conflict = findAssemblyConflict(build, []);
+    assert.equal(conflict?.kind, "electric_battery");
+    const message = formatAssemblyConflict(
+      conflict!,
+      resolvePartName,
+      "fuel_system",
+      "BatteryPackStandard",
+    );
+    assert.match(message, /electric powertrain/i);
+  });
+
+  it("blocks liquid tanks on electric powertrain", () => {
+    const build = {
+      ...baseBuild,
+      fuel_system: "LeMans110L",
+      exhaust_type: "None",
+      engine: { ...baseBuild.engine!, fuel_type: "Electric", drivetrain: "FullEV" },
+    };
+    const conflict = findAssemblyConflict(build, []);
+    assert.equal(conflict?.kind, "liquid_tank_electric");
+  });
+
   it("allows wingless rear with a floor diffuser package", () => {
     const build = {
       ...baseBuild,

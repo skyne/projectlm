@@ -172,6 +172,21 @@ PowertrainTraits ResolvePowertrainTraits(const EngineConfig &engine) {
     t.drivetrainEfficiency = 0.55;
     t.torquePeakRatio = 0.85;
     t.torqueFalloff = 0.8;
+  } else if (engine.fuelType == "Electric" &&
+             engine.drivetrain == "FullEV") {
+    double targetHp = engine.powerTargetHp;
+    if (targetHp <= 0.0 && engine.peakTorqueNm > 0.0)
+      targetHp = engine.peakTorqueNm / 4.2;
+    if (targetHp <= 0.0)
+      targetHp = 520.0;
+    t.deployKw = std::clamp(targetHp / 1.34, 260.0, 520.0);
+    t.isElectricDrive = true;
+    t.isGeneratorOnly = false;
+    t.isFuelCell = false;
+    t.throttleMult *= 1.15;
+    t.serviceabilityMult *= 0.78;
+    t.stressMult *= 0.85;
+    t.drivetrainEfficiency = 0.92;
   }
   return t;
 }

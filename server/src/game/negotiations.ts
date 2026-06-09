@@ -52,9 +52,14 @@ export interface NegotiationTerms {
   brandingTier?: "title" | "major" | "minor";
   /** Inter-team agreements */
   agreementSubtype?: InterTeamAgreementSubtype;
+  /** Primary / legacy single partner. */
   partnerTeam?: string;
+  /** Multi-party joint testing — all invited rival teams. */
+  partnerTeams?: string[];
   sharedTrackId?: string;
   testDays?: number;
+  /** Hours on track per contracted test day (1–24). Missing saves default to 24. */
+  testHoursPerDay?: number;
   costContribution?: number;
   techSharePartIds?: string[];
   /** Regulatory petitions */
@@ -98,9 +103,13 @@ export interface ActiveAgreement {
   id: string;
   kind: InterTeamAgreementSubtype | "regulatory_exception";
   partnerTeam?: string;
+  /** All rivals bound together in one joint-testing deal. */
+  partnerTeams?: string[];
   signedRound: number;
   expiresAtRound: number;
   terms: NegotiationTerms;
+  /** Set when a joint-testing session fulfills the bundled deal. */
+  fulfilledAtRound?: number;
   /** Game hook not wired yet — agreement is recorded only. */
   stubPending?: boolean;
   stubNote?: string;
@@ -204,6 +213,74 @@ function clamp(n: number, min: number, max: number): number {
 
 function roundMoney(n: number): number {
   return Math.round(n);
+}
+
+function seededFromHash(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 0x100000000;
+  };
+}
+
+function formatMoneyNote(n: number): string {
+  return `$${n.toLocaleString("en-US")}`;
+}
+
+export function driverOpeningOfferForNegotiation(
+  anchor: NegotiationTerms,
+  listing: DriverMarketListing | DriverMarketListingPayload,
+  ctx: DriverNegotiationContext,
+): {
+  terms: NegotiationTerms;
+  note: string;
+  mood: NegotiationSession["counterpartyMood"];
+} {
+  const rnd = seededFromHash(
+    negotiationSeed(listing.id, "driver-opening", 0),
+  );
+  const tierMul =
+    listing.driver.tier === "Platinum"
+      ? 1.12
+      : listing.driver.tier === "Gold"
+        ? 1.08
+        : 1.04;
+  const signingFee = roundMoney(
+    (anchor.signingFee ?? 0) * (tierMul + rnd() * 0.08),
+  );
+  const salaryPerRace = roundMoney(
+    (anchor.salaryPerRace ?? 0) * (tierMul + rnd() * 0.06),
+  );
+  const contractSeasons = rnd() > 0.4 ? 2 : 3;
+  let buyoutToTeam = anchor.buyoutToTeam;
+  let note = `${listing.driver.name} asks for ${formatMoneyNote(signingFee)} signing and ${formatMoneyNote(salaryPerRace)} per race over ${contractSeasons} season(s).`;
+  if (ctx.requiresBuyout) {
+    buyoutToTeam = roundMoney(
+      Math.max(
+        ctx.minBuyout,
+        (anchor.buyoutToTeam ?? ctx.minBuyout) * (1.05 + rnd() * 0.12),
+      ),
+    );
+    note += ` ${ctx.releasingTeam} wants ${formatMoneyNote(buyoutToTeam)} release fee.`;
+  }
+  const mood: NegotiationSession["counterpartyMood"] =
+    listing.driver.tier === "Platinum"
+      ? "neutral"
+      : listing.source === "prospect"
+        ? "keen"
+        : "neutral";
+  return {
+    terms: {
+      ...anchor,
+      signingFee,
+      salaryPerRace,
+      contractSeasons,
+      seatGuarantee: "primary",
+      buyoutToTeam,
+    },
+    note,
+    mood,
+  };
 }
 
 export function negotiationSeed(
@@ -328,20 +405,30 @@ export function createDriverNegotiation(
     });
   }
 
+  const opening = driverOpeningOfferForNegotiation(anchor, listing, ctx);
+
   return {
     id: `neg-${kind}-${listing.id}`,
     kind,
-    status: "open",
+    status: "countered",
     parties,
     subjectRef: listing.id,
     anchorTerms: anchor,
-    currentOffer: { ...anchor },
+    currentOffer: { ...opening.terms },
+    lastCounterOffer: { ...opening.terms },
     patience: patienceBase + Math.round(ctx.prestigeScore * 10),
     rounds: 0,
     maxRounds: MAX_NEGOTIATION_ROUNDS,
     expiresAtRound: options.currentRound + NEGOTIATION_ROUND_WINDOW,
-    history: [],
-    counterpartyMood: "neutral",
+    history: [
+      {
+        round: options.currentRound,
+        from: listing.driver.name,
+        terms: { ...opening.terms },
+        note: opening.note,
+      },
+    ],
+    counterpartyMood: opening.mood,
     releasingTeam: ctx.releasingTeam,
   };
 }

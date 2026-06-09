@@ -10,6 +10,7 @@ import { trackDisplayName, trackIconSvg } from "../utils/trackIcons";
 import { trackSurfaceBackgroundUrl } from "../utils/trackBackgroundAssets";
 import { formatTrackWetnessConditions } from "../utils/trackWetnessDisplay";
 import { applyTrackTimePhase } from "../utils/trackWeatherVisual";
+import { formatSectorFlagBanner } from "../utils/sectorFlags";
 import { resolveTrackTheme, type TrackTheme } from "../utils/trackThemes";
 import type { SvgTrack } from "./SvgTrack";
 
@@ -26,6 +27,7 @@ export class TrackMapPanel {
   private metaEl: HTMLElement;
   private weatherEl: HTMLElement;
   private sectorLegendEl: HTMLElement;
+  private flagStatusEl: HTMLElement;
   private classLegendEl: HTMLElement;
   private carCountEl: HTMLElement;
   private trackRef: SvgTrack | null = null;
@@ -35,6 +37,7 @@ export class TrackMapPanel {
   private weather: WeatherContextPayload | undefined;
   private trackId: string | undefined;
   private sessionType?: WeekendSessionType;
+  private lastSectorFlagsKey = "";
 
   constructor(mapPanel: HTMLElement) {
     this.mapPanel = mapPanel;
@@ -71,6 +74,7 @@ export class TrackMapPanel {
         <div id="track-container" class="track-map-canvas-host"></div>
         <div class="track-map-overlays">
           <div class="track-sector-legend"></div>
+          <div class="track-flag-status hidden" role="status" aria-live="polite"></div>
           <div class="track-class-legend"></div>
           <div class="track-map-toolbar">
             <button type="button" class="track-map-btn" data-action="reset" title="Reset zoom">⌖</button>
@@ -89,6 +93,7 @@ export class TrackMapPanel {
     this.metaEl = shell.querySelector(".track-map-meta")!;
     this.weatherEl = shell.querySelector(".track-map-weather")!;
     this.sectorLegendEl = shell.querySelector(".track-sector-legend")!;
+    this.flagStatusEl = shell.querySelector(".track-flag-status")!;
     this.classLegendEl = shell.querySelector(".track-class-legend")!;
     this.carCountEl = shell.querySelector(".track-map-car-count")!;
 
@@ -169,6 +174,32 @@ export class TrackMapPanel {
       this.weatherEl.textContent = parts.join(" · ");
     }
 
+    this.updateSectorFlags(raceControl?.sectorFlags ?? []);
+  }
+
+  private updateSectorFlags(flags: number[]): void {
+    const key = flags.join(",");
+    if (key === this.lastSectorFlagsKey) return;
+    this.lastSectorFlagsKey = key;
+
+    const chips = this.sectorLegendEl.querySelectorAll<HTMLElement>(".track-sector-chip");
+    chips.forEach((chip, idx) => {
+      const level = flags[idx] ?? 0;
+      chip.classList.remove("track-sector-chip--yellow", "track-sector-chip--double-yellow");
+      if (level >= 2) chip.classList.add("track-sector-chip--double-yellow");
+      else if (level >= 1) chip.classList.add("track-sector-chip--yellow");
+    });
+
+    const sectorNames = this.geometry?.sectors.map((sector) => sector.name);
+    const banner = formatSectorFlagBanner(flags, sectorNames);
+    if (!banner) {
+      this.flagStatusEl.className = "track-flag-status hidden";
+      this.flagStatusEl.textContent = "";
+      return;
+    }
+
+    this.flagStatusEl.className = `track-flag-status track-flag-status--${banner.severity}`;
+    this.flagStatusEl.textContent = banner.label;
   }
 
   private applyThemeToStage(): void {
@@ -214,9 +245,12 @@ export class TrackMapPanel {
       chip.className = "track-sector-chip";
       const color = this.theme.sectorColors[idx % this.theme.sectorColors.length];
       chip.style.setProperty("--sector-color", color);
+      chip.dataset.sectorIndex = String(idx);
       chip.textContent = sector.name;
       this.sectorLegendEl.appendChild(chip);
     });
+    this.lastSectorFlagsKey = "";
+    this.updateSectorFlags([]);
   }
 
   private renderClassLegend(): void {

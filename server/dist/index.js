@@ -11,7 +11,8 @@ const garage_engineer_service_1 = require("./llm/garage_engineer_service");
 const sim_host_1 = require("./sim_host");
 const ws_protocol_1 = require("./ws_protocol");
 const session_log_1 = require("./session_log");
-const PORT = Number(process.env.PORT ?? 8765);
+/** Default 9785 — 8765 is commonly used by other local tools (e.g. clipboard sync). */
+const PORT = Number(process.env.PROJECTLM_WS_PORT ?? process.env.PORT ?? 9785);
 function broadcast(clients, data) {
     const text = JSON.stringify(data);
     for (const client of clients) {
@@ -77,6 +78,12 @@ function main() {
     const garageEngineer = new garage_engineer_service_1.GarageEngineerService();
     const sessions = new client_sessions_1.ClientSessionManager();
     const wss = new ws_1.WebSocketServer({ port: PORT });
+    wss.on("error", (err) => {
+        if (err.code === "EADDRINUSE") {
+            console.error(`[server] Port ${PORT} is already in use. Stop the other process, or run: PORT=<free-port> npm run dev`);
+        }
+        process.exit(1);
+    });
     const clients = new Set();
     let trackSent = false;
     console.log(`[server] WebSocket listening on ws://localhost:${PORT}`);
@@ -264,6 +271,19 @@ function main() {
                     broadcast(clients, (0, ws_protocol_1.serverMessage)("session_init", host.getSessionInit()));
                 }
             }
+            else if (msg.type === "debug_race_control") {
+                if (process.env.DEV_TOOLS === "0") {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", {
+                        message: "Debug race control disabled (DEV_TOOLS=0)",
+                    })));
+                    return;
+                }
+                const payload = msg.payload;
+                const debugError = host.debugRaceControl(payload);
+                if (debugError) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: debugError })));
+                }
+            }
             else if (msg.type === "hire_staff") {
                 const payload = msg.payload;
                 const meta = host.hireStaff(payload.role, payload.name, payload.skill);
@@ -299,6 +319,21 @@ function main() {
                 }
                 else {
                     broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
+                }
+            }
+            else if (msg.type === "continue_private_test") {
+                if (!host.getMetaState().setupComplete) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: "Complete team setup first" })));
+                }
+                else {
+                    const startErr = host.continuePrivateTest();
+                    if (startErr) {
+                        ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: startErr })));
+                    }
+                    else {
+                        broadcast(clients, (0, ws_protocol_1.serverMessage)("session_init", host.getSessionInit()));
+                        broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", host.getMetaState()));
+                    }
                 }
             }
             else if (msg.type === "start_private_test") {
@@ -749,11 +784,15 @@ function main() {
             : undefined;
         let updatedMeta = meta;
         let progressionSummary;
+        let nextJointTestSessionIndex = null;
+        let jointTestSessionCount;
         if (sessionKind === "private_test") {
             const completion = host.completePrivateTest();
             if (completion) {
                 updatedMeta = completion.meta;
                 progressionSummary = completion.summary;
+                nextJointTestSessionIndex = completion.nextJointTestSessionIndex;
+                jointTestSessionCount = completion.jointTestSessionCount;
             }
         }
         else if (isRaceSession && primaryResult && event && !event.completed) {
@@ -792,6 +831,8 @@ function main() {
             sessionKind,
             progressionSummary,
             nextWeekendSession: nextSession,
+            nextJointTestSessionIndex,
+            jointTestSessionCount,
             sessionLogId,
         };
         host.setLastRaceComplete(payload);

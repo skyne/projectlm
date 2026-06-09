@@ -100,6 +100,10 @@ function profileFor(classId: string): ClassFuelProfile {
 const ENGINE_REPAIR_HEALTH = 78;
 const DRIVER_STINT_SWAP_FRACTION = 0.88;
 const DRIVER_STAMINA_THRESHOLD = 35;
+/** Match src/sim/pit_stop.cpp red-flag emergency thresholds. */
+export const EMERGENCY_FUEL_FRACTION = 0.18;
+export const EMERGENCY_FUEL_TARGET_FRACTION = 0.25;
+const EMERGENCY_REPAIR_HEALTH_THRESHOLD = 90;
 
 /** Bundle a soon need if it hits within this many laps. */
 const BUNDLE_LOOKAHEAD_LAPS = 5;
@@ -258,6 +262,133 @@ function deflatedWheels(s: PlannerSnap): string[] {
   return Object.entries(td)
     .filter(([, v]) => v === "flat" || v === "soft")
     .map(([w]) => w.toUpperCase());
+}
+
+export function isRedFlagPhase(flagPhase?: string): boolean {
+  return (flagPhase ?? "green").toLowerCase() === "red_flag";
+}
+
+/** True when the car needs immediate pit work (matches sim CarNeedsEmergencyPit). */
+export function needsEmergencyPit(s: PlannerSnap): boolean {
+  if (deflatedWheels(s).length > 0) return true;
+  const limp = s.limpMode ?? "none";
+  if (limp === "barely_driveable" || limp === "hybrid_only" || limp === "immobilized") {
+    return true;
+  }
+  if (s.meatballFlag === true) return true;
+  const tank =
+    s.fuelTankCapacity != null && s.fuelTankCapacity > 0 ? s.fuelTankCapacity : 0;
+  if (tank > 0 && s.fuel >= 0 && s.fuel / tank <= EMERGENCY_FUEL_FRACTION) return true;
+  const hybridBudget = s.hybridBudgetMJ ?? 0;
+  const hybridRemain = s.hybridDeployMJ ?? 0;
+  if (
+    hybridBudget > 0 &&
+    hybridRemain >= 0 &&
+    hybridRemain / hybridBudget <= EMERGENCY_FUEL_FRACTION
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function emergencyFuelLiters(s: PlannerSnap): number {
+  const tank = tankCapacity(s);
+  if (tank <= 0 || s.fuel < 0) return 0;
+  if (s.fuel / tank > EMERGENCY_FUEL_FRACTION) return 0;
+  const target = tank * EMERGENCY_FUEL_TARGET_FRACTION;
+  const maxAdd = Math.max(0, target - s.fuel);
+  return maxAdd < 0.01 ? 0 : maxAdd;
+}
+
+function bodyNeedsEmergencyRepair(s: PlannerSnap): boolean {
+  const ph = s.partHealth ?? {};
+  for (const key of ["body_fl", "body_fr", "body_rl", "body_rr", "bodyFL", "bodyFR", "bodyRL", "bodyRR"]) {
+    const health = ph[key];
+    if (health != null && health < EMERGENCY_REPAIR_HEALTH_THRESHOLD) return true;
+  }
+  return false;
+}
+
+function emergencyRepairs(s: PlannerSnap): string[] {
+  if (!canRepairThisSession(s)) return [];
+  const repairs: string[] = [];
+  if (s.meatballFlag) {
+    if ((s.engineHealth ?? 100) < EMERGENCY_REPAIR_HEALTH_THRESHOLD) repairs.push("engine");
+    if (needsLimpPit(s) || bodyNeedsEmergencyRepair(s)) repairs.push("body");
+    return [...new Set(repairs)];
+  }
+  if ((s.engineHealth ?? 100) < EMERGENCY_REPAIR_HEALTH_THRESHOLD) repairs.push("engine");
+  if (needsLimpPit(s) || bodyNeedsEmergencyRepair(s)) repairs.push("body");
+  return [...new Set(repairs)];
+}
+
+function buildRedFlagEmergencyParts(
+  s: PlannerSnap,
+  wet: number,
+  services: PitServiceFlags,
+  fuelLiters: number,
+): string[] {
+  const tread = desiredTyreTread(wet);
+  const compound = tread === "slick" ? slickCompound(wet) : "medium";
+  const parts: string[] = [];
+  if (fuelLiters > 0) parts.push(`fuel=${Math.max(1, Math.ceil(fuelLiters))}`);
+  else parts.push("fuel=0");
+
+  if (services.tyres && services.tyreWheels?.length) {
+    parts.push(
+      `compound=${compound}`,
+      `tyre_tread=${tread}`,
+      `tires=${services.tyreWheels.join(",")}`,
+    );
+  } else {
+    parts.push("tires=");
+  }
+
+  const repairs = emergencyRepairs(s);
+  if (repairs.length) parts.push(`repairs=${repairs.join(",")}`);
+  return parts;
+}
+
+/** Emergency-only pit plan during red flag — no driver swap, setup, or strategy work. */
+export function planRedFlagEmergencyPit(
+  s: PlannerSnap,
+  ctx: Pick<PitPlannerContext, "wet">,
+): PitStopPlan | null {
+  if (!needsEmergencyPit(s)) return null;
+
+  const flatWheels = deflatedWheels(s);
+  const fuelLiters = emergencyFuelLiters(s);
+  const repairs = emergencyRepairs(s);
+
+  const services: PitServiceFlags = {
+    fuel: fuelLiters > 0,
+    tyres: flatWheels.length > 0,
+    tyreWheels: flatWheels,
+    driver: false,
+    engine: repairs.includes("engine"),
+    body: repairs.includes("body"),
+    setup: false,
+  };
+
+  if (
+    !services.fuel &&
+    !services.tyres &&
+    !services.engine &&
+    !services.body
+  ) {
+    return null;
+  }
+
+  const parts = buildRedFlagEmergencyParts(s, ctx.wet, services, fuelLiters);
+  const tyreCount = services.tyres ? flatWheels.length : 0;
+  return {
+    pitNow: true,
+    services,
+    parts,
+    label: `red flag ${serviceLabel(services)}`,
+    estimateSec: estimateStopSec(s, services, fuelLiters, tyreCount),
+    driverIndex: -1,
+  };
 }
 
 function canRepairThisSession(s: PlannerSnap): boolean {
@@ -646,4 +777,45 @@ export function mustServePenalty(s: PlannerSnap): boolean {
   const penalty = s.pendingPenalty ?? "none";
   if (penalty === "none") return false;
   return (s.lapsToComply ?? 0) > 0 || penalty === "black";
+}
+
+/**
+ * On-track fuel laps needed before serving drive-through / stop-and-go:
+ * in-lap → penalty → out-lap → in-lap for service.
+ */
+export const PENALTY_SERVE_FUEL_BUFFER_LAPS = 2;
+
+/** Flat tyres, limp mode, meatball, engine/body damage — service before penalty. */
+export function hasSevereCarIssue(s: PlannerSnap): boolean {
+  if (deflatedWheels(s).length > 0) return true;
+  if (needsLimpPit(s)) return true;
+  const limp = s.limpMode ?? "none";
+  if (limp === "reduced_power") return true;
+  if (s.meatballFlag === true) return true;
+  if ((s.engineHealth ?? 100) <= ENGINE_REPAIR_HEALTH) return true;
+  if (bodyNeedsEmergencyRepair(s)) return true;
+  return false;
+}
+
+/**
+ * True when a deferrable penalty (drive-through / stop-and-go) can be served now.
+ * Defers when fuel is too low for in-penalty-out-service or severe damage needs fixing first.
+ * Black-flag penalties always return true (serve immediately).
+ */
+export function shouldServeDeferrablePenaltyNow(
+  s: PlannerSnap,
+  sincePit: number,
+  fuelAtLastPit: number,
+): boolean {
+  const penalty = s.pendingPenalty ?? "none";
+  if (penalty === "none") return true;
+  if (penalty === "black") return true;
+  if (penalty !== "drive_through" && penalty !== "stop_go") return true;
+
+  if (hasSevereCarIssue(s)) return false;
+
+  const burn = burnPerLap(s, sincePit, fuelAtLastPit);
+  if (burn <= 0) return true;
+
+  return s.fuel >= burn * PENALTY_SERVE_FUEL_BUFFER_LAPS;
 }

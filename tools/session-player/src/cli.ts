@@ -12,8 +12,13 @@ import {
   catalogSummary,
   type TeamPresetId,
 } from "./team_presets.js";
+import {
+  runContinuePrivateTestOnly,
+  runPrivateTestCampaign,
+} from "./private_test_orchestrator.js";
 import { runFullSeason, runFullWeekend } from "./weekend_orchestrator.js";
 import { resolveNextSession } from "./weekend_sessions.js";
+import { defaultWsUrl } from "./ws_url.js";
 
 interface GlobalOptions {
   url: string;
@@ -79,7 +84,7 @@ Usage:
   npx tsx tools/session-player/src/cli.ts <command> [options]
 
 Global options:
-  --url <ws://host:port>   WebSocket URL (default: ws://localhost:8765)
+  --url <ws://host:port>   WebSocket URL (default: ws://localhost:9785)
   --timeout <ms>           Connect / wait timeout (default: 5000)
   --pretty                 Pretty-print JSON output
 
@@ -99,6 +104,10 @@ Commands:
   restart                  Restart the race
   start-round              Start the current calendar round (game mode)
   continue-weekend         Start the next weekend session (practice/quali/race)
+  private-test             Run private test with PitBot on your cars
+                             --joint for pending joint-testing contract
+                             --agreement-id <id> --track <trackId>
+  continue-private-test    Continue an in-progress multi-day joint test campaign
   weekend                  Run full weekend (practice → quali → race)
                              Co-op default: --advance host (you click Continue)
                              Solo host: --advance auto
@@ -169,7 +178,7 @@ function parseRole(raw: unknown): ClientRole {
 
 function globalOptions(raw: Record<string, string | boolean | number>): GlobalOptions {
   return {
-    url: String(raw.url ?? process.env.PROJECTLM_WS_URL ?? "ws://localhost:8765"),
+    url: String(raw.url ?? defaultWsUrl()),
     pretty: Boolean(raw.pretty),
     timeoutMs: Number(raw.timeout ?? 5000),
     displayName: String(raw.name ?? "Session Player"),
@@ -599,6 +608,37 @@ async function main(): Promise<void> {
         });
         printJson(result, opts.pretty);
         process.exit(result.ok ? 0 : 1);
+      }
+
+      case "private-test": {
+        try {
+          await runPrivateTestCampaign({
+            url: opts.url,
+            displayName: opts.displayName,
+            joint: Boolean(options.joint),
+            agreementId: options["agreement-id"]
+              ? String(options["agreement-id"])
+              : undefined,
+            trackId: options.track ? String(options.track) : undefined,
+          });
+          printJson({ ok: true }, opts.pretty);
+        } catch (err) {
+          fail(err instanceof Error ? err.message : String(err));
+        }
+        return;
+      }
+
+      case "continue-private-test": {
+        try {
+          await runContinuePrivateTestOnly({
+            url: opts.url,
+            displayName: opts.displayName,
+          });
+          printJson({ ok: true }, opts.pretty);
+        } catch (err) {
+          fail(err instanceof Error ? err.message : String(err));
+        }
+        return;
       }
 
       case "weekend": {

@@ -222,6 +222,11 @@ const baseCtx = {
             fcyActive: false,
             scActive: true,
         }), true);
+        strict_1.default.equal((0, pit_planner_1.shouldDeferPitForRaceControl)({
+            flagPhase: "red_flag",
+            fcyActive: false,
+            scActive: false,
+        }), true);
     });
     (0, node_test_1.it)("shouldDeferPitForRaceControl returns false when race control payload missing", () => {
         strict_1.default.equal((0, pit_planner_1.shouldDeferPitForRaceControl)(undefined), false);
@@ -232,6 +237,65 @@ const baseCtx = {
         strict_1.default.equal((0, pit_planner_1.mustServePenalty)(snap({ pendingPenalty: "drive_through", lapsToComply: 2 })), true);
         strict_1.default.equal((0, pit_planner_1.mustServePenalty)(snap({ pendingPenalty: "black", lapsToComply: 0 })), true);
         strict_1.default.equal((0, pit_planner_1.mustServePenalty)(snap({ pendingPenalty: "stop_go", lapsToComply: 1 })), true);
+    });
+    (0, node_test_1.it)("hasSevereCarIssue detects flats, limp, and body damage", () => {
+        strict_1.default.equal((0, pit_planner_1.hasSevereCarIssue)(snap({ tyreDeflation: { FL: "flat" } })), true);
+        strict_1.default.equal((0, pit_planner_1.hasSevereCarIssue)(snap({ limpMode: "barely_driveable" })), true);
+        strict_1.default.equal((0, pit_planner_1.hasSevereCarIssue)(snap({ limpMode: "reduced_power" })), true);
+        strict_1.default.equal((0, pit_planner_1.hasSevereCarIssue)(snap({ partHealth: { body_fl: 50 }, engineHealth: 95 })), true);
+        strict_1.default.equal((0, pit_planner_1.hasSevereCarIssue)(snap({ engineHealth: 70 })), true);
+        strict_1.default.equal((0, pit_planner_1.hasSevereCarIssue)(snap({ engineHealth: 95 })), false);
+    });
+    (0, node_test_1.it)("shouldServeDeferrablePenaltyNow defers when fuel or damage needs service first", () => {
+        const lowFuel = snap({
+            pendingPenalty: "stop_go",
+            lapsToComply: 3,
+            fuel: 3,
+            fuelTankCapacity: 100,
+            lap: 10,
+        });
+        const sincePit = 5;
+        const fuelAtLastPit = 13;
+        strict_1.default.equal((0, pit_planner_1.shouldServeDeferrablePenaltyNow)(lowFuel, sincePit, fuelAtLastPit), false);
+        strict_1.default.equal((0, pit_planner_1.shouldServeDeferrablePenaltyNow)(snap({
+            ...lowFuel,
+            fuel: pit_planner_1.PENALTY_SERVE_FUEL_BUFFER_LAPS * 2,
+        }), sincePit, fuelAtLastPit), true);
+        strict_1.default.equal((0, pit_planner_1.shouldServeDeferrablePenaltyNow)(snap({ ...lowFuel, pendingPenalty: "black" }), sincePit, fuelAtLastPit), true);
+        strict_1.default.equal((0, pit_planner_1.shouldServeDeferrablePenaltyNow)(snap({
+            pendingPenalty: "drive_through",
+            lapsToComply: 3,
+            fuel: 50,
+            fuelTankCapacity: 100,
+            tyreDeflation: { RR: "flat" },
+        }), sincePit, fuelAtLastPit), false);
+    });
+});
+(0, node_test_1.describe)("planRedFlagEmergencyPit", () => {
+    (0, node_test_1.it)("needsEmergencyPit includes deflated tyres", () => {
+        strict_1.default.equal((0, pit_planner_1.needsEmergencyPit)(snap({ tyreDeflation: { FL: "flat" } })), true);
+        strict_1.default.equal((0, pit_planner_1.needsEmergencyPit)(snap({ tyreDeflation: {} })), false);
+    });
+    (0, node_test_1.it)("allows only deflated wheel and blocks strategic fuel", () => {
+        const plan = (0, pit_planner_1.planRedFlagEmergencyPit)(snap({
+            fuel: 80,
+            fuelTankCapacity: 100,
+            tyreDeflation: { FL: "flat" },
+        }), { wet: 0 });
+        strict_1.default.ok(plan);
+        strict_1.default.ok(plan.parts.some((p) => p.includes("tires=FL")));
+        strict_1.default.ok(!plan.parts.some((p) => p.startsWith("fuel=") && !p.includes("fuel=0")));
+        strict_1.default.ok(!plan.services.driver);
+    });
+    (0, node_test_1.it)("caps low-fuel top-up and excludes driver swap", () => {
+        const plan = (0, pit_planner_1.planRedFlagEmergencyPit)(snap({ fuel: 10, fuelTankCapacity: 100 }), { wet: 0 });
+        strict_1.default.ok(plan);
+        strict_1.default.match(plan.parts.join("|"), /fuel=15/);
+        strict_1.default.ok(!plan.parts.some((p) => p.includes("driver_change")));
+    });
+    (0, node_test_1.it)("returns null for routine wear without emergency trigger", () => {
+        const plan = (0, pit_planner_1.planRedFlagEmergencyPit)(snap({ fuel: 60, fuelTankCapacity: 100, tireWear: 0.95 }), { wet: 0 });
+        strict_1.default.equal(plan, null);
     });
 });
 (0, node_test_1.describe)("planPitStop when session repair is not viable", () => {

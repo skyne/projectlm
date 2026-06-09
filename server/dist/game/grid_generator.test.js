@@ -4,8 +4,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const strict_1 = __importDefault(require("node:assert/strict"));
+const node_path_1 = __importDefault(require("node:path"));
 const node_test_1 = require("node:test");
 const grid_generator_1 = require("./grid_generator");
+const repoRoot = node_path_1.default.resolve(process.cwd(), "..");
 const minimalBuild = {
     carName: "Test",
     chassis_type: "lmp2",
@@ -50,5 +52,27 @@ const minimalBuild = {
         strict_1.default.ok(entries.every((e) => e.isPlayer));
         strict_1.default.ok(entries.every((e) => e.teamName === "My Team"));
         strict_1.default.deepEqual(entries.map((e) => e.fleetCarId), ["car-a", "car-b"]);
+    });
+    (0, node_test_1.it)("adds partner team entries from the Le Mans entry list", () => {
+        const fleet = [
+            {
+                id: "car-a",
+                carNumber: "7",
+                classId: "Hypercar",
+                carConfigPath: "configs/a.txt",
+                affiliation: "privateer",
+                acquisition: "privateer",
+                build: { ...minimalBuild, carName: "A" },
+            },
+        ];
+        const entries = (0, grid_generator_1.generateJointPrivateTestGrid)({
+            repoRoot,
+            playerTeamName: "My Team",
+            playerFleet: fleet,
+            partnerTeams: ["Peugeot TotalEnergies"],
+        });
+        strict_1.default.ok(entries.length > 1);
+        strict_1.default.equal(entries[0]?.isPlayer, true);
+        strict_1.default.ok(entries.some((e) => e.teamName === "Peugeot TotalEnergies" && !e.isPlayer));
     });
 });

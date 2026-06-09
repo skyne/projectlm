@@ -25,7 +25,7 @@ For **multiplayer** (co-op pit wall, human vs LLM agent, spectator), use the ded
    ./scripts/session-player.sh ping
    ```
 
-Default WebSocket URL: `ws://localhost:8765` (override with `--url` or `PROJECTLM_WS_URL`).
+Default WebSocket URL: `ws://localhost:9785` (override with `--url`, `PROJECTLM_WS_URL`, or `PROJECTLM_WS_PORT`).
 
 Global join flags: `--name <displayName>`, `--role host|player|spectator`.
 

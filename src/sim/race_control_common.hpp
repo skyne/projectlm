@@ -14,6 +14,17 @@ enum class PendingPenalty { None, DriveThrough, StopGo, Black };
 
 enum class HazardKind { Oil, Coolant, Debris, Fuel, Fire };
 
+enum class SafetyCarPhase { Parked, ExitingPit, OnTrack, EnteringPit };
+
+struct SafetyCarState {
+  SafetyCarPhase phase = SafetyCarPhase::Parked;
+  bool inPit = true;
+  double pitLaneDistance = 0.0;
+  double trackDistance = 0.0;
+  int currentLap = 0;
+  double currentSpeed = 0.0;
+};
+
 struct TrackSurfaceHazard {
   std::string id;
   double centerDistance = 0.0;
@@ -39,14 +50,22 @@ struct SessionRaceControl {
   std::string activeIncidentEntryId;
   double slowZoneHoldUntil = 0.0;
   double scRestartUntil = 0.0;
+  /** After SC peels off: train rules until race leader crosses start/finish. */
+  bool scAwaitingLeaderSfCross = false;
   bool whiteFlagActive = false;
   bool redFlagActive = false;
   double redFlagUntil = 0.0;
   double redFlagReviewAt = -1.0;
   int redFlagExtensions = 0;
   bool redFlagWeatherCause = false;
+  /** Race order snapshot when red flag deploys — SC pit release uses this. */
+  std::vector<std::string> redFlagPitOrder;
   std::vector<std::string> scPitReleaseQueue;
   double scPitReleaseNextAt = 0.0;
+  /** After red flag: restore race order on track before SC peels off. */
+  bool scFormationRestore = false;
+  std::vector<std::string> scFormationOrder;
+  SafetyCarState safetyCar;
   std::vector<TrackSurfaceHazard> hazards;
 };
 
@@ -78,8 +97,10 @@ struct CarRaceControlState {
 };
 
 const char *FlagPhaseName(FlagPhase phase);
+FlagPhase ParseFlagPhase(const std::string &name);
 const char *TrackStatusName(TrackStatus status);
 const char *PendingPenaltyName(PendingPenalty penalty);
 const char *HazardKindName(HazardKind kind);
+HazardKind ParseHazardKind(const std::string &name);
 
 #endif

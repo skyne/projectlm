@@ -18,7 +18,9 @@ cd viewer
 npm run dev
 ```
 
-Open **http://localhost:5173**. WebSocket traffic is proxied from `/ws` → `ws://localhost:8765`.
+Open **http://localhost:5173**. WebSocket traffic is proxied from `/ws` → `ws://localhost:9785` (override with `PORT` / `PROJECTLM_WS_PORT`).
+
+Prefer **`./dev-viewer.sh`** from the repo root — it builds deps, starts the WS server, and launches Vite with matching ports.
 
 ## UI
 

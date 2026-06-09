@@ -148,9 +148,25 @@ void SimBridge::applyCarConditions(const std::string &conditionsPath) {
   }
 }
 
+bool SimBridge::debugRaceControl(const DebugRaceControlRequest &req,
+                                 std::string *errorOut) {
+  if (session_.cars.empty()) {
+    if (errorOut)
+      *errorOut = "no cars in session";
+    return false;
+  }
+  SetRaceEventOut(&pendingEvents_);
+  const bool ok = ApplyDebugRaceControl(session_, req, errorOut);
+  SetRaceEventOut(nullptr);
+  return ok;
+}
+
 bool SimBridge::submitCommand(const std::string &entryId,
                               const std::string &command) {
   pendingCommands_.push_back({entryId, command});
+  // Apply immediately so pit-queue state is visible while the session is paused.
+  if (!session_.cars.empty())
+    processCommands();
   return true;
 }
 
@@ -276,6 +292,10 @@ std::vector<CarSnapshot> SimBridge::getSnapshots() const {
     snap.classPosition = ++classRank[car.raceClass().id];
     snapshots.push_back(std::move(snap));
   }
+
+  CarSnapshot safetyCar = MakeSafetyCarSnapshot(session_);
+  if (!safetyCar.entryId.empty())
+    snapshots.push_back(std::move(safetyCar));
 
   return snapshots;
 }

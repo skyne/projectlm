@@ -1,5 +1,12 @@
 import type { SimEvent, SimEventType } from "../ws/protocol";
 import { mmPanelHeader } from "../utils/mmUi";
+import {
+  formatRaceLogHtml,
+  formatRaceTime,
+  isRaceLogEvent,
+  isWeatherEvent,
+  type RaceLogEntryMaps,
+} from "../utils/raceLog";
 
 const MAX_EVENTS = 120;
 
@@ -61,7 +68,10 @@ export class EventLog {
   private list: HTMLUListElement;
   private playerEntryId = "entry-1";
   private managedEntryIds = new Set<string>(["entry-1"]);
-  private teamNameByEntry = new Map<string, string>();
+  private entryMaps: RaceLogEntryMaps = {
+    teamNameByEntry: new Map(),
+    carNumberByEntry: new Map(),
+  };
   private allEvents: SimEvent[] = [];
   private filters: EventLogFilterState = {
     myTeam: true,
@@ -104,8 +114,12 @@ export class EventLog {
   }
 
   setEntryNames(entries: Array<{ entryId: string; teamName: string }>): void {
-    this.teamNameByEntry.clear();
-    for (const e of entries) this.teamNameByEntry.set(e.entryId, e.teamName);
+    this.entryMaps.teamNameByEntry.clear();
+    for (const e of entries) this.entryMaps.teamNameByEntry.set(e.entryId, e.teamName);
+  }
+
+  setEntryMaps(maps: RaceLogEntryMaps): void {
+    this.entryMaps = maps;
   }
 
   append(events: SimEvent[]): void {
@@ -135,7 +149,7 @@ export class EventLog {
     const li = document.createElement("li");
     li.className = `event event-${event.type}${isWeatherEvent(event) ? " event-weather" : ""}`;
     const time = formatRaceTime(event.timestamp);
-    li.innerHTML = `<span class="time">${time}</span> ${this.formatEventContent(event)}`;
+    li.innerHTML = `<span class="time">${time}</span> ${formatRaceLogHtml(event, this.entryMaps)}`;
     return li;
   }
 
@@ -144,7 +158,7 @@ export class EventLog {
   }
 
   private shouldShow(event: SimEvent): boolean {
-    if (event.type === "SectorCross" || event.type === "LapComplete") return false;
+    if (!isRaceLogEvent(event)) return false;
 
     if (isWeatherEvent(event) && this.filters.director) return true;
 
@@ -160,48 +174,4 @@ export class EventLog {
     if (isTrack && this.filters.track) return true;
     return false;
   }
-
-  private formatEventContent(event: SimEvent): string {
-    let msg = event.message ?? "";
-    if (msg.includes("undefined")) {
-      msg = msg.replace(/\s+undefined/g, "");
-    }
-
-    if (isWeatherEvent(event)) {
-      const detail = msg.replace(/^Weather:\s*/i, "");
-      return `<span class="event-incident-label">WEATHER</span> ${escapeHtml(detail || msg)}`;
-    }
-
-    if (event.type === "Retirement") {
-      const match = msg.match(/^(.+?) retired: (.+)$/i);
-      if (match) {
-        return `${escapeHtml(match[1])} <span class="event-incident-label">RETIRED</span> <span class="event-incident-reason">${escapeHtml(match[2])}</span>`;
-      }
-    }
-
-    if (event.type === "Collision" || event.type === "Blocked") {
-      const label = event.type === "Collision" ? "COLLISION" : "BLOCKED";
-      return `<span class="event-incident-label">${label}</span> ${escapeHtml(msg || event.type)}`;
-    }
-
-    return escapeHtml(msg || event.type);
-  }
-}
-
-function isWeatherEvent(event: SimEvent): boolean {
-  return event.message?.startsWith("Weather:") ?? false;
-}
-
-function formatRaceTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

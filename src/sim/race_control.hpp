@@ -46,6 +46,35 @@ void SyncRaceControlFlags(SessionRaceControl &rc);
 
 void UpdateRedFlagPitProcedure(RaceSession &session);
 
+void TransitionRedFlagToSc(RaceSession &session);
+
 void UpdateScPitRelease(RaceSession &session);
+
+void TickSafetyCar(RaceSession &session, double deltaTime);
+
+void OnSafetyCarDeploy(RaceSession &session);
+
+void OnSafetyCarPeelOff(RaceSession &session);
+
+void EnforceSafetyCarTrainPositions(RaceSession &session);
+
+CarSnapshot MakeSafetyCarSnapshot(const RaceSession &session);
+
+struct DebugRaceControlRequest {
+  std::string action;
+  std::string phase;
+  int sectorIndex = 0;
+  int level = 0;
+  std::string entryId;
+  std::string reason;
+  std::string kind;
+  double gripMultiplier = 0.7;
+  bool active = true;
+};
+
+/** Dev-only race director injection — emits control events when g_raceEventOut is set. */
+bool ApplyDebugRaceControl(RaceSession &session,
+                           const DebugRaceControlRequest &req,
+                           std::string *errorOut = nullptr);
 
 #endif

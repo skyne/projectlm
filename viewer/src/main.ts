@@ -3,7 +3,10 @@ import { RaceSidebar } from "./components/RaceSidebar";
 import { SvgTrack } from "./components/SvgTrack";
 import { CompactLeaderboard } from "./components/CompactLeaderboard";
 import { EventLog } from "./components/EventLog";
+import { RaceLogPanel } from "./components/RaceLogPanel";
+import { normalizeSimEvent } from "./utils/raceLog";
 import { PlaybackControls } from "./components/PlaybackControls";
+import { HeaderTimeControls } from "./components/HeaderTimeControls";
 import { Timetable } from "./components/Timetable";
 import { HeaderNav, type MainView } from "./components/HeaderNav";
 import { CarPreview } from "./components/CarPreview";
@@ -12,9 +15,11 @@ import { RaceHub } from "./components/RaceHub";
 import { SeasonCalendar } from "./components/SeasonCalendar";
 import { PostRaceOverlay } from "./components/PostRaceOverlay";
 import { SessionLogDevPanel, isDevToolsEnabled } from "./components/SessionLogDevPanel";
+import { RaceDirectorDevPanel } from "./components/RaceDirectorDevPanel";
 import { SeasonEndOverlay } from "./components/SeasonEndOverlay";
 import { PreSessionBriefing } from "./components/PreSessionBriefing";
 import { PrivateTestSetup } from "./components/PrivateTestSetup";
+import { InterTeamDealModal } from "./components/InterTeamDealModal";
 import { TeamCreationWizard } from "./components/TeamCreationWizard";
 import { CarGarage } from "./components/CarGarage";
 import { RaceControls } from "./components/RaceControls";
@@ -39,10 +44,12 @@ import {
 } from "./ws/client";
 import type { ClientRole, RosterUpdatePayload } from "./ws/protocol";
 import { enrichSnapshots, setEntryNumbersFromSession } from "./entryNumbers";
+import { orderSnapshotsForMap } from "./utils/mapSnapshots";
 import { resolveRetireReason } from "./utils/retireReason";
 import { resolveTeamLivery } from "./utils/teamLivery";
 import { setTrackLapLengthMeters } from "./utils/pitCommands";
 import { carBuildToVisual } from "./graphics/visualCatalog";
+import { formatSectorFlagBanner } from "./utils/sectorFlags";
 import type {
   CarSnapshot,
   FleetCarPayload,
@@ -71,6 +78,7 @@ const calendarPanel = document.getElementById("calendar-container")!;
 const mapPanel = document.getElementById("map-panel")!;
 const timetableContainer = document.getElementById("timetable-container")!;
 const telemetryContainer = document.getElementById("telemetry-container")!;
+const raceLogContainer = document.getElementById("race-log-container")!;
 const teamContainer = document.getElementById("team-container")!;
 const garageContainer = document.getElementById("garage-container")!;
 const driversContainer = document.getElementById("drivers-container")!;
@@ -96,6 +104,76 @@ const compactLeaderboard = new CompactLeaderboard(
   document.getElementById("compact-leaderboard-container")!,
 );
 const eventLog = new EventLog(document.getElementById("event-log-container")!);
+const raceLogPanel = new RaceLogPanel(raceLogContainer);
+let raceLogEvents: SimEvent[] = [];
+let lastSessionLogId: string | null = null;
+const teamNameByEntry = new Map<string, string>();
+const carNumberByEntry = new Map<string, string>();
+
+function raceLogEntryMaps() {
+  return { teamNameByEntry, carNumberByEntry };
+}
+
+function syncEntryMaps(
+  entries: Array<{ entryId: string; teamName: string; carNumber: string }>,
+): void {
+  teamNameByEntry.clear();
+  carNumberByEntry.clear();
+  for (const e of entries) {
+    teamNameByEntry.set(e.entryId, e.teamName);
+    if (e.carNumber) carNumberByEntry.set(e.entryId, e.carNumber);
+  }
+  eventLog.setEntryMaps(raceLogEntryMaps());
+}
+
+function raceLogMeta() {
+  return {
+    trackName: latestSession?.trackName,
+    roundNumber: latestMeta?.currentRound,
+    weekendSessionType: latestSession?.weekendSessionType,
+    raceFormat: latestMeta?.calendar.find((e) => e.round === latestMeta?.currentRound)?.format,
+    teamName: latestMeta?.teamName,
+    raceTimeSec: latestRaceTime,
+  };
+}
+
+function syncRaceLogPanel(): void {
+  if (lastSessionLogId && raceLogEvents.length === 0) {
+    void raceLogPanel.loadFromSessionLogId(lastSessionLogId);
+    return;
+  }
+  raceLogPanel.setContext({
+    events: raceLogEvents,
+    meta: raceLogMeta(),
+    entryMaps: raceLogEntryMaps(),
+    managedEntryIds,
+  });
+}
+
+function appendRaceLogEvents(events: SimEvent[]): void {
+  if (!events.length) return;
+  raceLogEvents.push(...events.map(normalizeSimEvent));
+  headerNav.setRaceLogAvailable(raceLogEvents.length > 0 || lastSessionLogId != null);
+  if (headerNav.getActive() === "racelog") syncRaceLogPanel();
+}
+
+function clearRaceLogStore(): void {
+  raceLogEvents = [];
+  lastSessionLogId = null;
+  headerNav.setRaceLogAvailable(false);
+}
+
+function clearRaceLogUi(): void {
+  eventLog.clear();
+  clearRaceLogStore();
+}
+
+function openRaceLogScreen(): void {
+  postRace.hide();
+  headerNav.setRaceLogAvailable(raceLogEvents.length > 0 || lastSessionLogId != null);
+  syncRaceLogPanel();
+  setMainView("racelog");
+}
 const weatherRadar = new WeatherRadar(document.getElementById("weather-radar-container")!);
 const weatherForecast = new WeatherForecastPanel(
   document.getElementById("weather-forecast-container")!,
@@ -162,7 +240,9 @@ changeIdentityBtn.addEventListener("click", () => {
 function applyClientRole(role: ClientRole): void {
   const canControl = role === "host" || role === "player";
   playback.setControlsEnabled(canControl);
+  headerTimeControls.setControlsEnabled(canControl);
   raceControls.setInteractionEnabled(canControl);
+  raceDirectorDev.setCanControl(role === "host");
   pitWall.setInteractionEnabled(canControl);
   engineerPanel.setInteractionEnabled(canControl);
   raceHub.setInteractionEnabled(role === "host");
@@ -180,6 +260,7 @@ let latestRaceTime = 0;
 let pendingRaceStart = false;
 let latestSession: SessionInitPayload | null = null;
 let latestMeta: MetaStatePayload | null = null;
+let latestSectorNames: string[] = [];
 let gameCatalog: GameCatalogPayload | null = null;
 let liverySavePending = false;
 const retiredSeen = new Set<string>();
@@ -210,9 +291,9 @@ function inferTimeScaleFromTick(raceTime: number): void {
     ) {
       const estimated = Math.round((deltaRace / simStep) * 2) / 2;
       if (estimated >= 0 && estimated <= 100) {
-        const current = playback.getTimeScale();
+        const current = headerTimeControls.getTimeScale();
         if (Math.abs(estimated - current) >= 0.5) {
-          playback.setTimeScale(estimated);
+          syncTimeScale(estimated);
         }
       }
     }
@@ -336,6 +417,15 @@ const privateTestSetup = new PrivateTestSetup(
   },
 );
 
+const interTeamDealModal = new InterTeamDealModal(
+  document.getElementById("inter-team-deal-overlay")!,
+  {
+    onPrivateTest: () => openPrivateTestSetup(),
+    onStartJointTesting: (teamNames) => startInterTeamDeals("joint_testing", teamNames),
+    onStartTechSharing: (teamName) => startInterTeamDeals("tech_share", [teamName]),
+  },
+);
+
 function dismissPostRace(): void {
   postRace.hide();
   endRaceSession();
@@ -403,16 +493,29 @@ const sessionLogDev = new SessionLogDevPanel(
   document.getElementById("session-log-dev-root")!,
 );
 
+const raceDirectorDev = new RaceDirectorDevPanel(
+  document.getElementById("race-director-dev-root")!,
+  {
+    onDebug: (payload) => client.debugRaceControl(payload),
+    onPenalty: (entryId, command) => client.submitCommand(entryId, command),
+  },
+);
+
 const postRace = new PostRaceOverlay(document.getElementById("post-race-overlay")!, {
   onContinue: () => returnToChampionshipHub(),
   onContinueWeekend: (nextSession) => {
     dismissPostRace();
     startWeekendSession(nextSession);
   },
+  onContinueJointTest: () => {
+    dismissPostRace();
+    client.continuePrivateTest();
+  },
   onViewSeasonResults: () => showSeasonEndOverlay(),
   onRestart: () => {
     void requestRestartSession(true);
   },
+  onOpenRaceLog: () => openRaceLogScreen(),
   onOpenSessionLog: (sessionLogId) => sessionLogDev.show(sessionLogId),
 });
 
@@ -422,6 +525,12 @@ const negotiationPanel = new NegotiationPanel(document.body, {
     driverCenter.setStatus("Submitting offer…");
   },
   onAcceptCounter: (negotiationId) => {
+    const session = latestMeta?.negotiations?.find((n) => n.id === negotiationId);
+    if (session?.kind === "inter_team_agreement" && session.lastCounterOffer) {
+      client.submitNegotiationOffer(negotiationId, session.lastCounterOffer);
+      driverCenter.setStatus("Accepting rival terms…");
+      return;
+    }
     client.acceptNegotiation(negotiationId);
     driverCenter.setStatus("Accepting counter-offer…");
   },
@@ -431,6 +540,7 @@ const negotiationPanel = new NegotiationPanel(document.body, {
   },
   onClose: () => {
     driverCenter.setStatus("");
+    if (latestMeta) advanceInterTeamDealQueue(latestMeta);
   },
 });
 
@@ -475,6 +585,178 @@ type PendingNegotiation =
     };
 
 let pendingNegotiation: PendingNegotiation | null = null;
+let interTeamDealQueue: PendingNegotiation[] = [];
+
+function interTeamDealTitle(
+  subtype: "joint_testing" | "tech_share",
+  teamName: string,
+): string {
+  const label =
+    subtype === "joint_testing" ? "Joint testing" : "Technology sharing";
+  return `${label} — ${teamName}`;
+}
+
+function encodeInterTeamSubjectRef(
+  subtype: "joint_testing" | "tech_share",
+  teamNames: string[],
+): string {
+  const teams =
+    subtype === "joint_testing" && teamNames.length > 1
+      ? [...teamNames].sort((a, b) => a.localeCompare(b))
+      : teamNames;
+  return `${subtype}:${teams.join("|")}`;
+}
+
+function parseInterTeamPartnerKeys(subjectRef: string): Set<string> | null {
+  const sep = subjectRef.indexOf(":");
+  if (sep <= 0) return null;
+  const raw = subjectRef.slice(sep + 1).trim();
+  if (!raw) return null;
+  return new Set(
+    raw
+      .split("|")
+      .map((team) => team.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+function negotiationPartnerKeys(
+  session: import("./ws/protocol").NegotiationSessionPayload,
+): Set<string> {
+  const teams =
+    session.anchorTerms.partnerTeams ??
+    (session.anchorTerms.partnerTeam ? [session.anchorTerms.partnerTeam] : []);
+  if (teams.length) {
+    return new Set(teams.map((team) => team.trim().toLowerCase()));
+  }
+  return new Set(
+    session.parties
+      .filter((party) => party.role === "counterparty")
+      .map((party) => party.displayName.trim().toLowerCase()),
+  );
+}
+
+function partnerSetsMatch(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const key of a) {
+    if (!b.has(key)) return false;
+  }
+  return true;
+}
+
+function findNegotiationSession(
+  meta: import("./ws/protocol").MetaStatePayload,
+  pending: PendingNegotiation | null,
+  openRef: string | null,
+): import("./ws/protocol").NegotiationSessionPayload | undefined {
+  const negotiations = meta.negotiations ?? [];
+
+  if (pending?.subjectRef) {
+    const exact = negotiations.find((n) => n.subjectRef === pending.subjectRef);
+    if (exact) return exact;
+
+    if (pending.kind === "inter_team") {
+      const pendingTeams = parseInterTeamPartnerKeys(pending.subjectRef);
+      if (pendingTeams) {
+        const byPartners = negotiations.find(
+          (n) =>
+            n.kind === "inter_team_agreement" &&
+            partnerSetsMatch(negotiationPartnerKeys(n), pendingTeams),
+        );
+        if (byPartners) return byPartners;
+      }
+    }
+  }
+
+  if (openRef) {
+    const openMatch = negotiations.find((n) => n.subjectRef === openRef);
+    if (openMatch) return openMatch;
+  }
+
+  if (!pending) {
+    return negotiations.find(
+      (n) =>
+        n.status === "open" ||
+        n.status === "countered" ||
+        n.status === "pending_response",
+    );
+  }
+
+  return undefined;
+}
+
+function startInterTeamDeals(
+  subtype: "joint_testing" | "tech_share",
+  teamNames: string[],
+): void {
+  const uniqueTeams = [...new Set(teamNames.map((t) => t.trim()).filter(Boolean))];
+  if (!uniqueTeams.length) return;
+
+  if (!client.canSend("start_negotiation")) {
+    const message =
+      "Only the session host can start partnership negotiations — rejoin as Host from the identity menu.";
+    teamHQ.setPartnershipStatus(message, true);
+    driverCenter.setStatus(message);
+    return;
+  }
+
+  interTeamDealQueue = [];
+
+  const subjectRef =
+    subtype === "joint_testing" && uniqueTeams.length > 1
+      ? encodeInterTeamSubjectRef(subtype, uniqueTeams)
+      : encodeInterTeamSubjectRef(subtype, [uniqueTeams[0]!]);
+  const title =
+    subtype === "joint_testing" && uniqueTeams.length > 1
+      ? `Joint testing — ${uniqueTeams.join(", ")}`
+      : interTeamDealTitle(subtype, uniqueTeams[0]!);
+
+  pendingNegotiation = {
+    kind: "inter_team",
+    subjectRef,
+    title,
+  };
+  teamHQ.setPartnershipStatus("Opening negotiations…");
+  client.startNegotiation("inter_team_agreement", subjectRef);
+  driverCenter.setStatus(
+    uniqueTeams.length > 1
+      ? `Opening joint testing talks with ${uniqueTeams.length} teams…`
+      : `Opening talks with ${uniqueTeams[0]}…`,
+  );
+}
+
+function advanceInterTeamDealQueue(meta: import("./ws/protocol").MetaStatePayload): void {
+  if (!interTeamDealQueue.length) return;
+
+  const currentRef = pendingNegotiation?.subjectRef;
+  const currentSession = currentRef
+    ? meta.negotiations?.find((n) => n.subjectRef === currentRef)
+    : null;
+  if (!currentSession) return;
+
+  const currentDone =
+    currentSession.status === "pending_response" ||
+    currentSession.status === "accepted" ||
+    currentSession.status === "rejected" ||
+    currentSession.status === "withdrawn";
+
+  if (!currentDone) return;
+
+  while (interTeamDealQueue.length > 0) {
+    const next = interTeamDealQueue.shift()!;
+    if (next.kind !== "inter_team") continue;
+    const session = meta.negotiations?.find((n) => n.subjectRef === next.subjectRef);
+    if (session && (session.status === "open" || session.status === "countered")) {
+      pendingNegotiation = next;
+      if (!negotiationPanel.isOpen()) {
+        negotiationPanel.show(session, { title: next.title });
+      } else {
+        negotiationPanel.updateSession(session);
+      }
+      return;
+    }
+  }
+}
 
 const teamHQ = new TeamHQ(teamContainer, {
   onRefreshStaffMarket: () => {
@@ -497,13 +779,69 @@ const teamHQ = new TeamHQ(teamContainer, {
     };
   },
   onDropSponsor: (offerId) => client.dropSponsor(offerId),
-  onStartInterTeamDeal: (subtype, teamName) => {
-    client.startNegotiation("inter_team_agreement", `${subtype}:${teamName}`);
-    pendingNegotiation = {
-      kind: "inter_team",
-      subjectRef: `${subtype}:${teamName}`,
-      title: `${subtype === "joint_testing" ? "Joint testing" : "Tech share"} — ${teamName}`,
-    };
+  onOrganizeTesting: () => {
+    if (!latestMeta?.setupComplete) return;
+    interTeamDealModal.openTesting(latestMeta);
+  },
+  onDealTechSharing: () => {
+    if (!latestMeta?.setupComplete) return;
+    interTeamDealModal.openTechSharing(latestMeta);
+  },
+  onScheduleJointTest: (agreementId) => {
+    setMainView("season");
+    openPrivateTestSetup(agreementId);
+  },
+  onResumeNegotiation: (session) => {
+    const partners =
+      session.anchorTerms.partnerTeams ??
+      (session.anchorTerms.partnerTeam ? [session.anchorTerms.partnerTeam] : []);
+    let title = "Negotiation";
+    if (session.kind === "inter_team_agreement") {
+      const label =
+        session.anchorTerms.agreementSubtype === "tech_share"
+          ? "Technology sharing"
+          : "Joint testing";
+      title =
+        partners.length > 1
+          ? `${label} — ${partners.join(", ")}`
+          : `${label} — ${partners[0] ?? session.parties.find((p) => p.role === "counterparty")?.displayName ?? "Rival"}`;
+      pendingNegotiation = {
+        kind: "inter_team",
+        subjectRef: session.subjectRef,
+        title,
+      };
+    } else if (session.kind === "regulatory_petition") {
+      const proposal = gameCatalog?.ruleChangeProposals?.find(
+        (p) => p.id === session.subjectRef,
+      );
+      title = proposal?.label ?? "Regulatory petition";
+      pendingNegotiation = {
+        kind: "regulatory",
+        subjectRef: session.subjectRef,
+        title,
+      };
+    } else if (session.kind === "sponsor_partnership") {
+      const offer = gameCatalog?.sponsorOffers?.find((o) => o.id === session.subjectRef);
+      title = offer?.name ?? "Sponsor partnership";
+      pendingNegotiation = {
+        kind: "sponsor",
+        subjectRef: session.subjectRef,
+        title,
+      };
+    }
+    teamHQ.setPartnershipStatus("");
+    negotiationPanel.show(session, { title });
+  },
+  onWithdrawNegotiation: (negotiationId) => {
+    client.withdrawNegotiation(negotiationId);
+    teamHQ.setPartnershipStatus("Negotiation ended.");
+    if (pendingNegotiation) {
+      const session = latestMeta?.negotiations?.find((n) => n.id === negotiationId);
+      if (session?.subjectRef === pendingNegotiation.subjectRef) {
+        pendingNegotiation = null;
+      }
+    }
+    negotiationPanel.hide();
   },
   onStartRegulatoryPetition: (proposalId) => {
     client.startNegotiation("regulatory_petition", proposalId);
@@ -554,8 +892,10 @@ const teamHQ = new TeamHQ(teamContainer, {
     endRaceSession();
     postRace.hide();
     playback.resetSession();
+    headerTimeControls.resetSession();
     syncPlaybackPaused(true);
-    eventLog.clear();
+    syncTimeScale(1);
+    clearRaceLogUi();
     track.clearCars();
     telemetryTrack.clearCars();
     timetable.reset();
@@ -711,6 +1051,8 @@ function updateRaceControlBanner(rc: RaceControlPayload | undefined): void {
     "race-control-banner--sc",
     "race-control-banner--white",
     "race-control-banner--red",
+    "race-control-banner--sector-yellow",
+    "race-control-banner--double-yellow",
   );
 
   let label = "";
@@ -731,6 +1073,16 @@ function updateRaceControlBanner(rc: RaceControlPayload | undefined): void {
   } else if (showWhite) {
     label = "White Flag — Final Lap";
     raceControlBanner.classList.add("race-control-banner--white");
+  } else {
+    const localFlags = rc ? formatSectorFlagBanner(rc.sectorFlags ?? [], latestSectorNames) : null;
+    if (localFlags) {
+      label = localFlags.label;
+      raceControlBanner.classList.add(
+        localFlags.severity === "double-yellow"
+          ? "race-control-banner--double-yellow"
+          : "race-control-banner--sector-yellow",
+      );
+    }
   }
 
   const active = label.length > 0;
@@ -754,10 +1106,12 @@ function applySessionInit(payload: SessionInitPayload): void {
   syncManagedEntryPickers();
   selectCommandEntry(commandEntryId);
   syncCarPreview(commandEntryId);
+  syncEntryMaps(payload.entries ?? []);
   eventLog.setEntryNames(payload.entries ?? []);
   eventLog.setManagedEntryIds(managedEntryIds);
   raceHub.setSessionInfo(payload);
   trackMapPanel.setWeatherContext(payload.weatherContext);
+  compactLeaderboard.setSessionKind(payload.sessionKind);
   syncTrackSurfaceTheme();
   playback.setTargetDuration(payload.targetDurationSeconds ?? null);
   pitWall.setRaceSessionActive(payload.weekendSessionType === "race");
@@ -831,20 +1185,13 @@ function applyMetaState(meta: MetaStatePayload): void {
   syncGarageBuildLockNav();
 
   const openRef = negotiationPanel.activeSubjectRef();
-  const pendingRef = pendingNegotiation?.subjectRef;
-  const activeSession =
-    meta.negotiations?.find(
-      (n) =>
-        (openRef && n.subjectRef === openRef) ||
-        (pendingRef && n.subjectRef === pendingRef),
-    ) ??
-    meta.negotiations?.find(
-      (n) =>
-        n.status === "open" ||
-        n.status === "countered" ||
-        n.status === "pending_response",
-    );
+  const activeSession = findNegotiationSession(
+    meta,
+    pendingNegotiation,
+    openRef,
+  );
   if (activeSession && pendingNegotiation) {
+    teamHQ.setPartnershipStatus("");
     const ctx =
       pendingNegotiation.kind === "driver"
         ? { listing: pendingNegotiation.listing }
@@ -861,11 +1208,27 @@ function applyMetaState(meta: MetaStatePayload): void {
     ) {
       if (activeSession.status === "accepted") {
         driverCenter.setStatus("Deal agreed");
+        teamHQ.setPartnershipStatus("Deal agreed");
+      } else if (
+        pendingNegotiation.kind === "inter_team" &&
+        activeSession.status === "rejected"
+      ) {
+        teamHQ.setPartnershipStatus("Proposal declined", true);
+      }
+      if (pendingNegotiation.kind === "inter_team") {
+        advanceInterTeamDealQueue(meta);
       }
       pendingNegotiation = null;
+    } else if (
+      pendingNegotiation.kind === "inter_team" &&
+      activeSession.status === "pending_response"
+    ) {
+      advanceInterTeamDealQueue(meta);
     }
   } else if (activeSession && openRef) {
     negotiationPanel.updateSession(activeSession);
+  } else if (pendingNegotiation?.kind === "inter_team") {
+    advanceInterTeamDealQueue(meta);
   }
 
   if (!meta.setupComplete) {
@@ -881,7 +1244,11 @@ function applyMetaState(meta: MetaStatePayload): void {
 }
 
 function isRaceView(view: MainView): boolean {
-  return view === "map" || view === "timing" || view === "telemetry";
+  return view === "map" || view === "timing" || view === "telemetry" || view === "racelog";
+}
+
+function isWideRaceView(view: MainView): boolean {
+  return view === "telemetry" || view === "racelog";
 }
 
 function isGarageBuildLocked(): boolean {
@@ -913,18 +1280,29 @@ function setMainView(view: MainView): boolean {
   ) {
     return false;
   }
-  if (!raceStarted && isRaceView(view)) return false;
+  if (!raceStarted && view !== "racelog" && isRaceView(view)) return false;
+  if (
+    !raceStarted &&
+    view === "racelog" &&
+    raceLogEvents.length === 0 &&
+    !lastSessionLogId
+  ) {
+    return false;
+  }
 
   seasonPanel.classList.toggle("hidden", view !== "season");
   calendarPanel.classList.toggle("hidden", view !== "calendar");
   mapPanel.classList.toggle("hidden", view !== "map");
   timetableContainer.classList.toggle("hidden", view !== "timing");
   telemetryContainer.classList.toggle("hidden", view !== "telemetry");
+  raceLogContainer.classList.toggle("hidden", view !== "racelog");
   teamContainer.classList.toggle("hidden", view !== "team");
   garageContainer.classList.toggle("hidden", view !== "garage");
   driversContainer.classList.toggle("hidden", view !== "drivers");
   timetable.setVisible(view === "timing");
   telemetryPanel.setVisible(view === "telemetry");
+  if (view === "racelog") syncRaceLogPanel();
+  raceLogPanel.setVisible(view === "racelog");
   headerNav.setActive(view);
   syncGarageBuildLockNav();
 
@@ -932,24 +1310,28 @@ function setMainView(view: MainView): boolean {
     sessionStorage.setItem(RACE_MAIN_VIEW_KEY, view);
   }
 
-  document.getElementById("live-badge")?.classList.toggle("hidden", !raceStarted || !isRaceView(view));
+  document.getElementById("live-badge")?.classList.toggle("hidden", !raceStarted || view !== "map");
 
-  const showRaceSidebar = raceStarted && isRaceView(view);
+  const showRaceSidebar = raceStarted && isRaceView(view) && !isWideRaceView(view);
   const showGaragePreview = view === "garage";
   const showSidebar = showRaceSidebar || showGaragePreview;
   sidebar.classList.toggle("hidden", !showSidebar);
   sidebar.classList.toggle("garage-preview-only", showGaragePreview && !showRaceSidebar);
-  compactLbColumn.classList.toggle("hidden", !showRaceSidebar || view === "telemetry");
-  compactLeaderboard.setVisible(showRaceSidebar && view !== "telemetry");
+  compactLbColumn.classList.toggle("hidden", !showRaceSidebar || isWideRaceView(view));
+  compactLeaderboard.setVisible(showRaceSidebar && !isWideRaceView(view));
   raceControls.setRaceActive(showRaceSidebar);
   engineerPanel.setRaceActive(showRaceSidebar);
   syncAudioContext();
   return true;
 }
 
+function syncTimeScale(scale: number): void {
+  headerTimeControls.setTimeScale(scale);
+}
+
 function syncPlaybackPaused(paused: boolean): void {
   racePlaybackPaused = paused;
-  playback.setPaused(paused);
+  headerTimeControls.setPaused(paused);
   if (paused) client.pause();
   else client.resume();
   if (raceStarted) {
@@ -960,13 +1342,20 @@ function syncPlaybackPaused(paused: boolean): void {
 
 function applySessionPlayback(payload: SessionInitPayload): void {
   playback.resetSession();
+  headerTimeControls.resetSession();
+  syncTimeScale(1);
   client.setTimeScale(1);
   syncPlaybackPaused(payload.paused ?? true);
 }
 
 function restoreRaceMainView(): MainView {
   const stored = sessionStorage.getItem(RACE_MAIN_VIEW_KEY);
-  if (stored === "map" || stored === "timing" || stored === "telemetry") {
+  if (
+    stored === "map" ||
+    stored === "timing" ||
+    stored === "telemetry" ||
+    stored === "racelog"
+  ) {
     return stored;
   }
   return "map";
@@ -985,15 +1374,17 @@ function beginRaceSession(startPaused = true, reconnect?: BeginRaceReconnectOpti
   raceStarted = true;
   document.body.classList.add("race-live");
   headerNav.setRaceActive(true);
+  headerTimeControls.setSessionActive(true);
 
   if (reconnect) {
     const scale = reconnect.timeScale ?? 1;
-    playback.setTimeScale(scale);
+    syncTimeScale(scale);
     if (reconnect.raceTime != null) playback.setRaceTime(reconnect.raceTime);
-    playback.setPaused(startPaused || scale === 0);
+    headerTimeControls.setPaused(startPaused || scale === 0);
   } else {
     playback.resetSession();
-    playback.setPaused(startPaused);
+    headerTimeControls.resetSession();
+    headerTimeControls.setPaused(startPaused);
   }
 
   raceControls.setRaceActive(true);
@@ -1011,6 +1402,7 @@ function endRaceSession(): void {
   raceStarted = false;
   document.body.classList.remove("race-live");
   headerNav.setRaceActive(false);
+  headerTimeControls.setSessionActive(false);
   syncSessionTypeUi(undefined);
   raceControls.setRaceActive(false);
   engineerPanel.setRaceActive(false);
@@ -1020,6 +1412,7 @@ function endRaceSession(): void {
   gameAudio.onSessionEnd();
   latestSession = null;
   raceHub.setSessionInfo(null);
+  compactLeaderboard.setSessionKind(undefined);
 }
 
 function openPreSessionBriefing(sessionType: WeekendSessionType): void {
@@ -1028,9 +1421,9 @@ function openPreSessionBriefing(sessionType: WeekendSessionType): void {
   syncAudioContext();
 }
 
-function openPrivateTestSetup(): void {
+function openPrivateTestSetup(agreementId?: string): void {
   if (!latestMeta?.setupComplete || !latestMeta.fleet?.length) return;
-  privateTestSetup.open(latestMeta, gameCatalog);
+  privateTestSetup.open(latestMeta, gameCatalog, { agreementId });
   syncAudioContext();
 }
 
@@ -1059,7 +1452,7 @@ function startNextWeekendSession(): void {
 function restartRaceSession(): void {
   clearRetirementTracking();
   beginRaceSession(false);
-  eventLog.clear();
+  clearRaceLogUi();
   track.clearCars();
   telemetryTrack.clearCars();
   timetable.reset();
@@ -1100,8 +1493,10 @@ async function requestRestartSeason(): Promise<void> {
   clearRetirementTracking();
   endRaceSession();
   playback.resetSession();
+  headerTimeControls.resetSession();
   syncPlaybackPaused(true);
-  eventLog.clear();
+  syncTimeScale(1);
+  clearRaceLogUi();
   track.clearCars();
   telemetryTrack.clearCars();
   timetable.reset();
@@ -1116,8 +1511,10 @@ function endSessionAndReturn(): void {
   clearRetirementTracking();
   endRaceSession();
   playback.resetSession();
+  headerTimeControls.resetSession();
   syncPlaybackPaused(true);
-  eventLog.clear();
+  syncTimeScale(1);
+  clearRaceLogUi();
   track.clearCars();
   telemetryTrack.clearCars();
   timetable.reset();
@@ -1173,7 +1570,7 @@ function updateFromTick(
   latestRaceTime = raceTime;
   const normalized = normalizeSnapshots(snapshots);
   latestSnapshots = normalized;
-  track.updateCars(normalized);
+  track.updateCars(orderSnapshotsForMap(normalized));
   compactLeaderboard.update(normalized);
   timetable.update(normalized);
   telemetryPanel.update(normalized);
@@ -1184,6 +1581,8 @@ function updateFromTick(
   raceControls.setPreGreenFlag(raceTime < 0.5);
   updateWeather(raceControl, raceTime);
   updateRaceControlBanner(raceControl);
+  raceDirectorDev.updateRaceControl(raceControl);
+  raceDirectorDev.updateEntries(normalized);
   const teamSnapshots = normalized.filter((s) => managedEntryIds.includes(s.entryId));
   telemetryTrack.updateCars(teamSnapshots);
   const selectedSnap =
@@ -1196,7 +1595,9 @@ function updateFromTick(
     raceControls.updateManagedSnapshots(teamSnapshots);
     raceControls.updateSnapshot(selectedSnap);
   }
-  eventLog.append(detectRetirements(normalized, raceTime));
+  const retirements = detectRetirements(normalized, raceTime);
+  appendRaceLogEvents(retirements);
+  eventLog.append(retirements);
   gameAudio.maybePlayGreenFlag(raceTime, racePlaybackPaused);
   updateRacePassByAmbience(raceTime);
 }
@@ -1268,19 +1669,19 @@ const client = new ViewerClient({
           : undefined;
       beginRaceSession(payload.paused ?? true, reconnect);
       if (!reconnect) {
-        eventLog.clear();
+        clearRaceLogUi();
         track.clearCars();
         telemetryTrack.clearCars();
         timetable.reset();
         telemetryPanel.reset();
       }
       syncPlaybackPaused(payload.paused ?? true);
-      if (payload.timeScale != null) playback.setTimeScale(payload.timeScale);
+      if (payload.timeScale != null) syncTimeScale(payload.timeScale);
       raceControls.setPreGreenFlag((payload.raceTime ?? 0) < 0.5);
       setMainView(reconnect ? restoreRaceMainView() : "map");
     } else {
       endRaceSession();
-      eventLog.clear();
+      clearRaceLogUi();
       applySessionPlayback(payload);
       if (!teamWizard.isVisible()) {
         if (wasLive) {
@@ -1292,6 +1693,7 @@ const client = new ViewerClient({
     }
   },
   onTrackGeometry: (geometry) => {
+    latestSectorNames = geometry.sectors.map((sector) => sector.name);
     trackMapPanel.setGeometry(geometry, latestSession?.weatherContext?.trackId);
     syncTrackSurfaceTheme();
     const trackId = latestSession?.weatherContext?.trackId;
@@ -1302,6 +1704,7 @@ const client = new ViewerClient({
     timetable.setGeometry(geometry);
     compactLeaderboard.setLapLength(geometry.lapLength);
     setTrackLapLengthMeters(geometry.lapLength);
+    raceDirectorDev.setSectorCount(geometry.sectors.length);
   },
   onTrackPreview: (payload) => {
     seasonCalendar.setTrackPreview(payload.trackId, payload.geometry);
@@ -1317,6 +1720,7 @@ const client = new ViewerClient({
       if (event.type === "Overtake") gameAudio.onOvertake(event.timestamp);
       gameAudio.handleSimEvent(event.type, event.entryId, managedEntryIds);
     }
+    appendRaceLogEvents(payload.events);
     eventLog.append(payload.events);
   },
   onMetaState: (payload) => {
@@ -1353,13 +1757,16 @@ const client = new ViewerClient({
     endRaceSession();
     playback.setRaceTime(payload.raceTime);
     playback.markRaceComplete();
-    eventLog.append([
-      {
-        type: "RaceComplete",
-        timestamp: payload.raceTime,
-        message: "Race complete — check final standings",
-      },
-    ]);
+    headerTimeControls.markRaceComplete();
+    const completeEvent: SimEvent = {
+      type: "RaceComplete",
+      timestamp: payload.raceTime,
+      message: "Race complete — check final standings",
+    };
+    appendRaceLogEvents([completeEvent]);
+    eventLog.append([completeEvent]);
+    lastSessionLogId = payload.sessionLogId ?? null;
+    headerNav.setRaceLogAvailable(raceLogEvents.length > 0 || lastSessionLogId != null);
     if (latestMeta && isSeasonFinished(latestMeta)) {
       client.endSession();
       setMainView("season");
@@ -1396,16 +1803,25 @@ const client = new ViewerClient({
       teamHQ.setLiveryStatus(message, true);
       liverySavePending = false;
     }
+    if (pendingNegotiation?.kind === "inter_team") {
+      teamHQ.setPartnershipStatus(message, true);
+      pendingNegotiation = null;
+    }
   },
 });
 
-const playback = new PlaybackControls(document.getElementById("playback-container")!, {
-  onTimeScale: (scale) => {
-    lastLocalScaleChangeMs = performance.now();
-    client.setTimeScale(scale);
+const headerTimeControls = new HeaderTimeControls(
+  document.getElementById("header-time-controls")!,
+  {
+    onTimeScale: (scale) => {
+      lastLocalScaleChangeMs = performance.now();
+      client.setTimeScale(scale);
+    },
+    onTogglePause: (paused) => syncPlaybackPaused(paused),
   },
-  onPause: () => client.pause(),
-  onResume: () => client.resume(),
+);
+
+const playback = new PlaybackControls(document.getElementById("playback-container")!, {
   onRestartRace: () => {
     void requestRestartSession();
   },
@@ -1413,13 +1829,16 @@ const playback = new PlaybackControls(document.getElementById("playback-containe
   onReloadDefinitions: () => {
     endRaceSession();
     playback.resetSession();
+    headerTimeControls.resetSession();
     syncPlaybackPaused(true);
-    eventLog.clear();
+    syncTimeScale(1);
+    clearRaceLogUi();
     track.clearCars();
     telemetryTrack.clearCars();
     timetable.reset();
     telemetryPanel.reset();
     compactLeaderboard.update([]);
+    client.setTimeScale(1);
     client.reloadDefinitions();
     setMainView("season");
   },
@@ -1442,6 +1861,10 @@ if (isDevToolsEnabled()) {
     if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "l") {
       e.preventDefault();
       sessionLogDev.toggle();
+    }
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "r") {
+      e.preventDefault();
+      raceDirectorDev.toggle();
     }
   });
 }

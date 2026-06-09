@@ -28,6 +28,8 @@ export interface MockRaceControlState {
   scLapsRemaining: number;
   activeIncidentEntryId: string;
   whiteFlagActive: boolean;
+  redFlagActive: boolean;
+  redFlagSecondsRemaining: number;
   surfaceHazards: SurfaceHazardSummary[];
 }
 
@@ -68,6 +70,8 @@ export function defaultMockRaceControlState(): MockRaceControlState {
     scLapsRemaining: 0,
     activeIncidentEntryId: "",
     whiteFlagActive: false,
+    redFlagActive: false,
+    redFlagSecondsRemaining: 0,
     surfaceHazards: [],
   };
 }

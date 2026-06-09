@@ -38,8 +38,15 @@ export interface ConnectOptions {
   reconnectClientId?: string;
 }
 
+export type TickListener = (tick: TickPayload) => void;
+export type RaceCompleteListener = (payload: RaceCompletePayload) => void;
+export type EventsListener = (events: SimEvent[]) => void;
+
 export class SessionPlayer {
   private ws: WebSocket | null = null;
+  private tickListeners: TickListener[] = [];
+  private raceCompleteListeners: RaceCompleteListener[] = [];
+  private eventListeners: EventsListener[] = [];
   readonly state: SessionState = {
     sessionInit: null,
     clientAssignment: null,
@@ -102,21 +109,80 @@ export class SessionPlayer {
 
       this.ws.on("error", (err) => {
         clearTimeout(timer);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("hang up") || msg.includes("ECONNREFUSED")) {
+          reject(
+            new Error(
+              `${msg} (${options.url}). Is the ProjectLM server running? Default port is 9785 — try --url ws://localhost:9785 or start ./dev-viewer.sh`,
+            ),
+          );
+          return;
+        }
         reject(err);
       });
 
       this.ws.on("close", () => {
         if (!sessionReady) {
           clearTimeout(timer);
-          reject(new Error("Connection closed before session_init"));
+          reject(
+            new Error(
+              `Connection closed before session_init (${options.url}). Is the server running on port 9785?`,
+            ),
+          );
         }
       });
     });
   }
 
   close(): void {
+    this.tickListeners = [];
+    this.raceCompleteListeners = [];
+    this.eventListeners = [];
     this.ws?.close();
     this.ws = null;
+  }
+
+  /** React to each server `tick` message (sim step), not on a poll interval. */
+  onTick(listener: TickListener): () => void {
+    this.tickListeners.push(listener);
+    return () => {
+      this.tickListeners = this.tickListeners.filter((l) => l !== listener);
+    };
+  }
+
+  onRaceComplete(listener: RaceCompleteListener): () => void {
+    this.raceCompleteListeners.push(listener);
+    return () => {
+      this.raceCompleteListeners = this.raceCompleteListeners.filter(
+        (l) => l !== listener,
+      );
+    };
+  }
+
+  /** React to each server `events` batch (penalties, flags, incidents). */
+  onEvents(listener: EventsListener): () => void {
+    this.eventListeners.push(listener);
+    return () => {
+      this.eventListeners = this.eventListeners.filter((l) => l !== listener);
+    };
+  }
+
+  private emitTick(tick: TickPayload): void {
+    for (const listener of this.tickListeners) {
+      listener(tick);
+    }
+  }
+
+  private emitRaceComplete(payload: RaceCompletePayload): void {
+    for (const listener of this.raceCompleteListeners) {
+      listener(payload);
+    }
+  }
+
+  private emitEvents(events: SimEvent[]): void {
+    for (const listener of this.eventListeners) {
+      listener(events);
+    }
   }
 
   send(type: Parameters<typeof clientMessage>[0], payload: unknown): void {
@@ -149,11 +215,32 @@ export class SessionPlayer {
   async waitForTick(timeoutMs = 3000): Promise<TickPayload | null> {
     if (this.state.latestTick) return this.state.latestTick;
     if (!this.hasActiveRace() || this.isPaused()) return null;
-    return this.waitFor(
-      () => this.state.latestTick,
-      timeoutMs,
-      "Timed out waiting for tick",
-    );
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unsub();
+        reject(new Error("Timed out waiting for tick"));
+      }, timeoutMs);
+      const unsub = this.onTick((tick) => {
+        clearTimeout(timer);
+        unsub();
+        resolve(tick);
+      });
+    });
+  }
+
+  async waitForRaceComplete(timeoutMs: number): Promise<RaceCompletePayload> {
+    if (this.state.raceComplete) return this.state.raceComplete;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unsub();
+        reject(new Error("Timed out waiting for race_complete"));
+      }, timeoutMs);
+      const unsub = this.onRaceComplete((payload) => {
+        clearTimeout(timer);
+        unsub();
+        resolve(payload);
+      });
+    });
   }
 
   async waitForTicks(count: number, timeoutMs = 8000): Promise<TickPayload[]> {
@@ -391,17 +478,26 @@ export class SessionPlayer {
       case "game_catalog":
         this.state.gameCatalog = msg.payload as GameCatalogPayload;
         break;
-      case "tick":
-        this.state.latestTick = msg.payload as TickPayload;
-        break;
-      case "events": {
-        const payload = msg.payload as EventsPayload;
-        this.state.events.push(...payload.events);
+      case "tick": {
+        const tick = msg.payload as TickPayload;
+        this.state.latestTick = tick;
+        this.emitTick(tick);
         break;
       }
-      case "race_complete":
-        this.state.raceComplete = msg.payload as RaceCompletePayload;
+      case "events": {
+        const payload = msg.payload as EventsPayload;
+        if (payload.events.length > 0) {
+          this.state.events.push(...payload.events);
+          this.emitEvents(payload.events);
+        }
         break;
+      }
+      case "race_complete": {
+        const payload = msg.payload as RaceCompletePayload;
+        this.state.raceComplete = payload;
+        this.emitRaceComplete(payload);
+        break;
+      }
       case "error":
         this.state.errors.push((msg.payload as { message: string }).message);
         break;

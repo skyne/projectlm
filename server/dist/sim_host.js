@@ -218,7 +218,10 @@ class SimHost {
         const validated = (0, private_test_1.validatePrivateTestPayload)(this.meta.getState(), raw);
         if ("error" in validated)
             return validated.error;
-        const payload = validated.payload;
+        const prepared = this.meta.preparePrivateTestStart(validated.payload);
+        if ("error" in prepared)
+            return prepared.error;
+        const payload = prepared.payload;
         this.sessionStartInProgress = true;
         try {
             if (this.inRaceSession) {
@@ -250,7 +253,34 @@ class SimHost {
         if (!payload || this.sessionKind !== "private_test")
             return null;
         const snapshots = this.getSnapshots();
-        return this.meta.applyPrivateTestCompletion(payload, snapshots, this.fleetEntryMap);
+        const result = this.meta.applyPrivateTestCompletion(payload, snapshots, this.fleetEntryMap);
+        const progress = result.meta.privateTestProgress;
+        let sessionCount = 1;
+        if (progress) {
+            const agreement = (0, private_test_1.pendingJointTestingBundles)(result.meta).find((agr) => agr.id === progress.jointAgreementId);
+            sessionCount = agreement
+                ? (0, private_test_1.jointTestSessionPlan)(agreement).sessions.length
+                : progress.testDays;
+        }
+        const nextIndex = progress?.completedSessionIndices.length ?? null;
+        return {
+            ...result,
+            nextJointTestSessionIndex: progress && nextIndex != null && nextIndex < sessionCount
+                ? nextIndex
+                : null,
+            jointTestSessionCount: sessionCount,
+        };
+    }
+    continuePrivateTest() {
+        const blocked = this.sessionStartBlockedReason();
+        if (blocked)
+            return blocked;
+        const continued = this.meta.continuePrivateTestCampaign();
+        if (!continued)
+            return "No joint test campaign in progress";
+        if ("error" in continued)
+            return continued.error;
+        return this.startPrivateTest(continued.payload);
     }
     startRoundInner(prep) {
         const prepPayload = prep ?? {};
@@ -372,6 +402,24 @@ class SimHost {
     }
     getNextWeekendSessionAfter(sessionType) {
         return this.meta.getNextWeekendSessionAfter(sessionType);
+    }
+    debugRaceControl(payload) {
+        if (!this.inRaceSession)
+            return "No live session";
+        if (!this.session.debugRaceControl) {
+            return "Debug race control unavailable for this sim backend";
+        }
+        const err = this.session.debugRaceControl(payload);
+        if (err)
+            return err;
+        const rawEvents = this.session.drainEvents();
+        const events = this.applyCommandAttribution(rawEvents.map((e) => (0, adapters_1.coerceSimEvent)(e)));
+        if (events.length > 0) {
+            this.sessionLog.recordEvents(events);
+            this.onEvents?.(events);
+        }
+        this.onTick?.(this.getRaceTime(), this.enrichSnapshots(this.session.getSnapshots()));
+        return null;
     }
     submitCommand(entryId, command, attribution) {
         if (!this.session.submitCommand)
@@ -750,9 +798,7 @@ class SimHost {
         const snapshots = this.enrichSnapshots(this.session.getSnapshots());
         const raceTime = this.getRaceTime();
         const rawEvents = this.session.drainEvents();
-        const events = this.applyCommandAttribution(rawEvents.map((e) => typeof e.type === "string" && e.type.includes("_")
-            ? (0, adapters_1.normalizeEvent)(e)
-            : e));
+        const events = this.applyCommandAttribution(rawEvents.map((e) => (0, adapters_1.coerceSimEvent)(e)));
         if (events.length > 0) {
             this.sessionLog.recordEvents(events);
             this.onEvents?.(events);

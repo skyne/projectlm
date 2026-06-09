@@ -145,6 +145,24 @@ bool ValidatePartCompatibility(const CarConfig &car,
     return false;
   }
 
+  if (car.fuelSystemId.rfind("BatteryPack", 0) == 0 &&
+      car.engine.fuelType != "Electric") {
+    if (errorOut) {
+      *errorOut =
+          "Battery pack requires Electric fuel in the powertrain";
+    }
+    return false;
+  }
+
+  if (car.engine.fuelType == "Electric" &&
+      car.fuelSystemId.rfind("BatteryPack", 0) != 0) {
+    if (errorOut) {
+      *errorOut =
+          "Electric powertrain requires a battery pack fuel system";
+    }
+    return false;
+  }
+
   if (car.engine.fuelType == "Hydrogen" &&
       car.engine.energyConverter == "FuelCell") {
     if (car.engine.drivetrain != "FullEV") {

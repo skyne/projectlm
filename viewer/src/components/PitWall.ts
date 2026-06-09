@@ -10,7 +10,9 @@ import { buildHybridChargeBarHtml, hybridStrategyHint, hybridStrategyLabel, type
 import { TeamCarPicker, type ManagedEntryOption } from "./TeamCarPicker";
 import {
   buildSubsystemRepairHtml,
+  canRequestGarageRebuild,
   collectSubsystemRepairs,
+  garageRebuildEstimateLabel,
 } from "../utils/pitRepairParts";
 import { briefingIdsForSession, briefingLabel } from "../utils/briefingUi";
 
@@ -31,6 +33,8 @@ export class PitWall {
   private tireChecks!: NodeListOf<HTMLInputElement>;
   private repairEngine!: HTMLInputElement;
   private repairBody!: HTMLInputElement;
+  private garageRebuild!: HTMLInputElement;
+  private garageRebuildLabel!: HTMLSpanElement;
   private driverChange!: HTMLInputElement;
   private modeSelect!: HTMLSelectElement;
   private raceOrderSelect!: HTMLSelectElement;
@@ -77,6 +81,11 @@ export class PitWall {
           <label><input type="checkbox" id="pit-repair-engine" /> Engine repair</label>
           <label><input type="checkbox" id="pit-repair-body" /> Bodywork repair</label>
           <div id="pit-subsystem-host"></div>
+          <label class="pit-garage-rebuild-field">
+            <input type="checkbox" id="pit-garage-rebuild" />
+            <span id="pit-garage-rebuild-label">Full garage rebuild</span>
+          </label>
+          <p id="pit-garage-rebuild-hint" class="pit-garage-rebuild-hint hidden">After pit services, car stays in garage until all parts are restored to 100%.</p>
           <label><input type="checkbox" id="pit-driver-change" /> <span id="pit-driver-change-label">Driver change</span></label>
           <p id="pit-estimate" class="pit-estimate"></p>
           <button type="button" id="pit-request" class="primary-btn">⛽ Request pit stop</button>
@@ -133,6 +142,8 @@ export class PitWall {
     this.tireChecks = this.root.querySelectorAll("[data-tire]");
     this.repairEngine = this.root.querySelector("#pit-repair-engine")!;
     this.repairBody = this.root.querySelector("#pit-repair-body")!;
+    this.garageRebuild = this.root.querySelector("#pit-garage-rebuild")!;
+    this.garageRebuildLabel = this.root.querySelector("#pit-garage-rebuild-label")!;
     this.driverChange = this.root.querySelector("#pit-driver-change")!;
     this.modeSelect = this.root.querySelector("#pit-mode")!;
     this.raceOrderSelect = this.root.querySelector("#pit-race-order")!;
@@ -156,6 +167,10 @@ export class PitWall {
     this.fuelInput.addEventListener("input", refreshEstimate);
     this.repairEngine.addEventListener("change", refreshEstimate);
     this.repairBody.addEventListener("change", refreshEstimate);
+    this.garageRebuild.addEventListener("change", () => {
+      this.syncGarageRebuildState();
+      refreshEstimate();
+    });
     this.driverChange.addEventListener("change", refreshEstimate);
     for (const cb of this.tireChecks) {
       cb.addEventListener("change", refreshEstimate);
@@ -261,6 +276,7 @@ export class PitWall {
       this.repairBody.checked = true;
     }
     this.subsystemHost.innerHTML = buildSubsystemRepairHtml(snap, "pit-subsystem-repairs");
+    this.syncGarageRebuildAvailability(snap);
 
     const hasHybrid =
       snap.hybridDeployMJ != null &&
@@ -328,14 +344,43 @@ export class PitWall {
     const sec = estimatePitSeconds({
       fuel: Number(this.fuelInput.value) || 0,
       tireCount: tires,
-      repairEngine: this.repairEngine.checked,
-      repairBody: this.repairBody.checked,
-      repairParts,
+      repairEngine: this.repairEngine.checked && !this.garageRebuild.checked,
+      repairBody: this.repairBody.checked && !this.garageRebuild.checked,
+      repairParts: this.garageRebuild.checked ? [] : repairParts,
       driverChange: this.driverChange.checked,
       serviceabilityFactor: serviceability,
       driverChangeFactor,
     });
-    this.estimateEl.textContent = `Est. stop ~${sec.toFixed(0)}s (incl. pit lane @ ${PIT_LANE_SPEED_KMH} km/h) · pit work ×${serviceability.toFixed(2)}`;
+    const rebuildNote = this.garageRebuild.checked
+      ? ` · then garage rebuild ~${garageRebuildEstimateLabel(snap)}`
+      : "";
+    this.estimateEl.textContent = `Est. stop ~${sec.toFixed(0)}s (incl. pit lane @ ${PIT_LANE_SPEED_KMH} km/h) · pit work ×${serviceability.toFixed(2)}${rebuildNote}`;
+  }
+
+  private syncGarageRebuildAvailability(snap: CarSnapshot): void {
+    const allowed = canRequestGarageRebuild(snap);
+    this.garageRebuild.disabled = !allowed;
+    this.garageRebuildLabel.textContent = allowed
+      ? `Full garage rebuild (~${garageRebuildEstimateLabel(snap)} in garage)`
+      : "Full garage rebuild (unavailable)";
+    if (!allowed) this.garageRebuild.checked = false;
+    this.syncGarageRebuildState();
+  }
+
+  private syncGarageRebuildState(): void {
+    const rebuild = this.garageRebuild.checked;
+    this.repairEngine.disabled = rebuild;
+    this.repairBody.disabled = rebuild;
+    for (const input of this.subsystemHost.querySelectorAll<HTMLInputElement>(
+      "[data-repair-part]",
+    )) {
+      input.disabled = rebuild;
+      if (rebuild) input.checked = false;
+    }
+    this.root.querySelector("#pit-garage-rebuild-hint")?.classList.toggle(
+      "hidden",
+      !rebuild,
+    );
   }
 
   private selectedEntryId(): string {
@@ -350,8 +395,9 @@ export class PitWall {
     for (const cb of this.tireChecks) {
       (cb as HTMLInputElement).disabled = !enabled;
     }
-    this.repairEngine.disabled = !enabled;
-    this.repairBody.disabled = !enabled;
+    this.repairEngine.disabled = !enabled || this.garageRebuild.checked;
+    this.repairBody.disabled = !enabled || this.garageRebuild.checked;
+    this.garageRebuild.disabled = !enabled || !canRequestGarageRebuild(this.selectedSnapshot());
     this.driverChange.disabled = !enabled;
     this.root.querySelector<HTMLButtonElement>("#pit-request")!.disabled = !enabled;
     this.root.querySelector<HTMLButtonElement>("#pit-cancel")!.disabled = !enabled;
@@ -368,9 +414,11 @@ export class PitWall {
       }
     }
     const repairs: string[] = [];
-    if (this.repairEngine.checked) repairs.push("engine");
-    if (this.repairBody.checked) repairs.push("body");
-    repairs.push(...collectSubsystemRepairs(this.subsystemHost));
+    if (!this.garageRebuild.checked) {
+      if (this.repairEngine.checked) repairs.push("engine");
+      if (this.repairBody.checked) repairs.push("body");
+      repairs.push(...collectSubsystemRepairs(this.subsystemHost));
+    }
     const parts = [
       "pit",
       `fuel=${this.fuelInput.value}`,
@@ -379,6 +427,7 @@ export class PitWall {
     ];
     if (repairs.length) parts.push(`repairs=${repairs.join(",")}`);
     if (this.driverChange.checked) parts.push("driver_change=true");
+    if (this.garageRebuild.checked) parts.push("rebuild=true");
     return parts.join("|");
   }
 }

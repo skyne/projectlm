@@ -28,6 +28,7 @@ const HOST_PERMISSIONS: ClientMessageType[] = [
   "complete_round",
   "start_round",
   "start_private_test",
+  "continue_private_test",
   "continue_weekend_session",
   "create_team",
   "save_team_creation_draft",
@@ -59,6 +60,7 @@ const HOST_PERMISSIONS: ClientMessageType[] = [
   "finalize_season",
   "get_track_preview",
   "update_car_briefing",
+  "debug_race_control",
 ];
 
 const PLAYER_PERMISSIONS: ClientMessageType[] = [
@@ -72,6 +74,12 @@ const PLAYER_PERMISSIONS: ClientMessageType[] = [
   "get_engineer_status",
   "get_track_preview",
   "update_car_briefing",
+  "start_negotiation",
+  "submit_negotiation_offer",
+  "accept_negotiation",
+  "withdraw_negotiation",
+  "sign_sponsor",
+  "drop_sponsor",
 ];
 
 const SPECTATOR_PERMISSIONS: ClientMessageType[] = [

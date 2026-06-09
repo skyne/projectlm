@@ -25,8 +25,10 @@ import { isDevToolsEnabled } from "./SessionLogDevPanel";
 export interface PostRaceHandlers {
   onContinue: () => void;
   onContinueWeekend?: (nextSession: WeekendSessionType) => void;
+  onContinueJointTest?: () => void;
   onViewSeasonResults?: () => void;
   onRestart?: () => void;
+  onOpenRaceLog?: () => void;
   onOpenSessionLog?: (sessionLogId: string) => void;
 }
 
@@ -88,10 +90,13 @@ export class PostRaceOverlay {
   private devToolsEl: HTMLElement;
   private continueBtn: HTMLButtonElement;
   private weekendBtn: HTMLButtonElement;
+  private raceLogBtn: HTMLButtonElement;
   private progressionEl: HTMLElement;
   private progressionListEl: HTMLElement;
   private handlers: PostRaceHandlers;
   private pendingNextSession: WeekendSessionType | null = null;
+  private pendingJointTestSessionIndex: number | null = null;
+  private jointTestSessionCount = 0;
   private pendingSeasonResults = false;
 
   constructor(container: HTMLElement, handlers: PostRaceHandlers) {
@@ -139,6 +144,7 @@ export class PostRaceOverlay {
         <div class="post-race-actions">
           <button type="button" class="primary-btn btn-weekend-next hidden">Continue to Qualifying</button>
           <button type="button" class="primary-btn btn-continue">Continue Championship</button>
+          <button type="button" class="secondary-btn btn-race-log">View race log</button>
           <button type="button" class="secondary-btn btn-restart">↺ Restart Session</button>
         </div>
       </div>
@@ -157,10 +163,17 @@ export class PostRaceOverlay {
     this.devToolsEl = this.root.querySelector(".post-race-dev-tools")!;
     this.continueBtn = this.root.querySelector(".btn-continue")!;
     this.weekendBtn = this.root.querySelector(".btn-weekend-next")!;
+    this.raceLogBtn = this.root.querySelector(".btn-race-log")!;
+    this.raceLogBtn.addEventListener("click", () => this.handlers.onOpenRaceLog?.());
     this.progressionEl = this.root.querySelector(".post-race-progression")!;
     this.progressionListEl = this.root.querySelector(".post-race-progression-list")!;
 
     this.weekendBtn.addEventListener("click", () => {
+      if (this.pendingJointTestSessionIndex != null) {
+        this.hide();
+        this.handlers.onContinueJointTest?.();
+        return;
+      }
       const next = this.pendingNextSession;
       if (!next) return;
       this.hide();
@@ -198,6 +211,11 @@ export class PostRaceOverlay {
     this.pendingNextSession = isPrivateTest
       ? null
       : resolvePendingNextSession(payload, sessionType, meta);
+    this.pendingJointTestSessionIndex =
+      isPrivateTest && payload.nextJointTestSessionIndex != null
+        ? payload.nextJointTestSessionIndex
+        : null;
+    this.jointTestSessionCount = payload.jointTestSessionCount ?? 0;
     this.pendingSeasonResults = Boolean(
       isRace && !this.pendingNextSession && meta && isSeasonFinished(meta),
     );
@@ -213,7 +231,11 @@ export class PostRaceOverlay {
       : sessionElapsedLabel(sessionType);
 
     const weekendLabel = continueSessionButtonLabel(this.pendingNextSession);
-    if (this.pendingNextSession) {
+    if (this.pendingJointTestSessionIndex != null && this.jointTestSessionCount > 1) {
+      this.weekendBtn.textContent = `Continue joint test — session ${this.pendingJointTestSessionIndex + 1} of ${this.jointTestSessionCount}`;
+      this.weekendBtn.classList.remove("hidden");
+      this.continueBtn.classList.add("hidden");
+    } else if (this.pendingNextSession) {
       this.weekendBtn.textContent = weekendLabel;
       this.weekendBtn.classList.remove("hidden");
       this.continueBtn.classList.add("hidden");
@@ -345,7 +367,7 @@ export class PostRaceOverlay {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "secondary-btn btn-session-log-dev";
-      btn.textContent = "View session log (developer)";
+      btn.textContent = "Browse saved logs (developer)";
       btn.addEventListener("click", () => {
         this.handlers.onOpenSessionLog?.(payload.sessionLogId!);
       });

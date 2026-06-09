@@ -139,6 +139,13 @@ PartDamageRepairSpec RepairSpecForPart(DamagePart part);
 constexpr double kRaceableHealthThreshold = 70.0;
 /** Single pit stop cannot exceed this — longer work uses in-garage rebuild. */
 constexpr double kMaxPitLaneRepairSec = 1800.0;
+/** Minimum in-garage damage rebuild after tow or heavy pit work (seconds). */
+constexpr double kGarageRebuildMinSec = 900.0;
+/** Strip-down / reassembly on top of assessed part work (seconds). */
+constexpr double kGarageRebuildOverheadSec = 300.0;
+
+double ComputeGarageRebuildDurationSec(double assessedRepairSec,
+                                       bool damageRebuild = true);
 /** Collision impact at/above this stresses the safety cell. */
 constexpr double kMonocoqueStressImpact = 10.0;
 /** Severe impacts that can breach the tub or ignite a fire. */

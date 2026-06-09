@@ -8,7 +8,15 @@ PID_FILE="$ROOT/.dev-viewer.pid"
 NATIVE_DIR="$ROOT/bindings/node"
 NATIVE_NODE="$NATIVE_DIR/build/Release/projectlm_native.node"
 
-SERVER_PORT="${PORT:-8765}"
+# Cursor/agent sandboxes set npm_config_devdir to a temp path; incremental gyp then
+# breaks when you run ./dev-viewer.sh in a normal shell. Pin headers under the repo.
+if [[ "${npm_config_devdir:-}" == *cursor-sandbox-cache* ]]; then
+  unset npm_config_devdir
+fi
+export npm_config_devdir="${npm_config_devdir:-$ROOT/.cache/node-gyp}"
+mkdir -p "$npm_config_devdir"
+
+SERVER_PORT="${PROJECTLM_WS_PORT:-${PORT:-9785}}"
 VIEWER_PORT="${VIEWER_PORT:-5173}"
 SKIP_BUILD=false
 FORCE_PORTS=false
@@ -28,7 +36,8 @@ Options:
   -h, --help    Show this help
 
 Environment:
-  PORT          WebSocket server port (default: 8765)
+  PORT          WebSocket server port (default: 9785)
+  PROJECTLM_WS_PORT  Same as PORT (takes precedence)
   VIEWER_PORT   Vite dev server port (default: 5173)
   PROJECTLM_ROOT  Repo root (set automatically)
 EOF
@@ -164,22 +173,29 @@ native_needs_build() {
     -newer "$NATIVE_NODE" -print -quit | grep -q .
 }
 
+native_gyp_stale() {
+  [[ ! -d "$NATIVE_DIR/build" ]] && return 1
+  grep -rq 'cursor-sandbox-cache' "$NATIVE_DIR/build" 2>/dev/null
+}
+
 ensure_native_addon() {
   # gypfile:true runs node-gyp rebuild on every npm install — skip scripts here.
   ensure_npm_deps "$NATIVE_DIR" "native addon" --ignore-scripts
 
-  if [[ "$FORCE_REBUILD" == true ]]; then
-    echo "==> Rebuilding Node native addon (full rebuild)..."
+  if [[ "$FORCE_REBUILD" == true ]] || native_gyp_stale; then
+    if native_gyp_stale; then
+      echo "==> Native build used a stale sandbox cache — cleaning and rebuilding..."
+    else
+      echo "==> Rebuilding Node native addon (full rebuild)..."
+    fi
+    rm -rf "$NATIVE_DIR/build"
     npm run build --prefix "$NATIVE_DIR"
     return
   fi
 
   if native_needs_build; then
-    echo "==> Building Node native addon (incremental)..."
-    if [[ ! -d "$NATIVE_DIR/build" ]]; then
-      npm run configure --prefix "$NATIVE_DIR"
-    fi
-    (cd "$NATIVE_DIR" && npx node-gyp build)
+    echo "==> Building Node native addon..."
+    npm run build --prefix "$NATIVE_DIR"
   else
     echo "==> Native addon up to date"
   fi
@@ -198,6 +214,22 @@ else
 fi
 
 stop_previous
+
+if port_in_use "$SERVER_PORT" && [[ "$FORCE_PORTS" != true ]]; then
+  base="$SERVER_PORT"
+  picked=""
+  for try in $(seq "$base" $((base + 10))); do
+    if ! port_in_use "$try"; then
+      picked="$try"
+      break
+    fi
+  done
+  if [[ -n "$picked" ]]; then
+    echo "==> Port $SERVER_PORT in use — using ws://localhost:${picked} instead"
+    SERVER_PORT="$picked"
+  fi
+fi
+
 require_port "$SERVER_PORT" "WS server" "PORT"
 require_port "$VIEWER_PORT" "Vite viewer" "VIEWER_PORT"
 
@@ -215,7 +247,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "==> Starting WS server on ws://localhost:${SERVER_PORT}..."
-PORT="$SERVER_PORT" npm run start --prefix "$ROOT/server" &
+PROJECTLM_WS_PORT="$SERVER_PORT" PORT="$SERVER_PORT" npm run start --prefix "$ROOT/server" &
 SERVER_PID=$!
 echo "$SERVER_PID" > "$PID_FILE"
 
@@ -231,7 +263,7 @@ if ! port_in_use "$SERVER_PORT"; then
 fi
 
 echo "==> Starting Vite viewer on http://localhost:${VIEWER_PORT}..."
-PORT="$SERVER_PORT" VIEWER_PORT="$VIEWER_PORT" npm run dev --prefix "$ROOT/viewer" -- --port "$VIEWER_PORT" --strictPort &
+PROJECTLM_WS_PORT="$SERVER_PORT" PORT="$SERVER_PORT" VIEWER_PORT="$VIEWER_PORT" npm run dev --prefix "$ROOT/viewer" -- --port "$VIEWER_PORT" --strictPort &
 VIEWER_PID=$!
 echo "$VIEWER_PID" >> "$PID_FILE"
 

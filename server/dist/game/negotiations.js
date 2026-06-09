@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.driverOpeningOfferForNegotiation = driverOpeningOfferForNegotiation;
 exports.negotiationSeed = negotiationSeed;
 exports.anchorTermsFromDriverListing = anchorTermsFromDriverListing;
 exports.computeMinBuyout = computeMinBuyout;
@@ -26,6 +27,50 @@ function clamp(n, min, max) {
 }
 function roundMoney(n) {
     return Math.round(n);
+}
+function seededFromHash(seed) {
+    let s = seed >>> 0;
+    return () => {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 0x100000000;
+    };
+}
+function formatMoneyNote(n) {
+    return `$${n.toLocaleString("en-US")}`;
+}
+function driverOpeningOfferForNegotiation(anchor, listing, ctx) {
+    const rnd = seededFromHash(negotiationSeed(listing.id, "driver-opening", 0));
+    const tierMul = listing.driver.tier === "Platinum"
+        ? 1.12
+        : listing.driver.tier === "Gold"
+            ? 1.08
+            : 1.04;
+    const signingFee = roundMoney((anchor.signingFee ?? 0) * (tierMul + rnd() * 0.08));
+    const salaryPerRace = roundMoney((anchor.salaryPerRace ?? 0) * (tierMul + rnd() * 0.06));
+    const contractSeasons = rnd() > 0.4 ? 2 : 3;
+    let buyoutToTeam = anchor.buyoutToTeam;
+    let note = `${listing.driver.name} asks for ${formatMoneyNote(signingFee)} signing and ${formatMoneyNote(salaryPerRace)} per race over ${contractSeasons} season(s).`;
+    if (ctx.requiresBuyout) {
+        buyoutToTeam = roundMoney(Math.max(ctx.minBuyout, (anchor.buyoutToTeam ?? ctx.minBuyout) * (1.05 + rnd() * 0.12)));
+        note += ` ${ctx.releasingTeam} wants ${formatMoneyNote(buyoutToTeam)} release fee.`;
+    }
+    const mood = listing.driver.tier === "Platinum"
+        ? "neutral"
+        : listing.source === "prospect"
+            ? "keen"
+            : "neutral";
+    return {
+        terms: {
+            ...anchor,
+            signingFee,
+            salaryPerRace,
+            contractSeasons,
+            seatGuarantee: "primary",
+            buyoutToTeam,
+        },
+        note,
+        mood,
+    };
 }
 function negotiationSeed(teamName, subjectRef, round) {
     let hash = (round + 9127) * 2654435761;
@@ -105,20 +150,29 @@ function createDriverNegotiation(listing, options) {
             displayName: ctx.releasingTeam,
         });
     }
+    const opening = driverOpeningOfferForNegotiation(anchor, listing, ctx);
     return {
         id: `neg-${kind}-${listing.id}`,
         kind,
-        status: "open",
+        status: "countered",
         parties,
         subjectRef: listing.id,
         anchorTerms: anchor,
-        currentOffer: { ...anchor },
+        currentOffer: { ...opening.terms },
+        lastCounterOffer: { ...opening.terms },
         patience: patienceBase + Math.round(ctx.prestigeScore * 10),
         rounds: 0,
         maxRounds: MAX_NEGOTIATION_ROUNDS,
         expiresAtRound: options.currentRound + NEGOTIATION_ROUND_WINDOW,
-        history: [],
-        counterpartyMood: "neutral",
+        history: [
+            {
+                round: options.currentRound,
+                from: listing.driver.name,
+                terms: { ...opening.terms },
+                note: opening.note,
+            },
+        ],
+        counterpartyMood: opening.mood,
         releasingTeam: ctx.releasingTeam,
     };
 }

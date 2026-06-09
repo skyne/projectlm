@@ -91,7 +91,7 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
 
 .header-wec {
   position: relative;
-  padding: 0.65rem 1.35rem 0.75rem;
+  padding: 0.4rem 0.85rem 0.5rem;
   background:
     linear-gradient(180deg, rgba(26, 35, 50, 0.97) 0%, rgba(12, 16, 24, 0.98) 100%);
   backdrop-filter: blur(12px);
@@ -120,9 +120,9 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
 }
 
 .wec-chequer {
-  width: 34px;
-  height: 34px;
-  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
   box-shadow: var(--hud-gold-glow), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
@@ -134,9 +134,9 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
 
 .header-wec h1 {
   font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-size: 1.05rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   background: linear-gradient(180deg, #fff 0%, #c8d0dc 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -293,21 +293,26 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
 /* ── Navigation tabs ── */
 
 .view-nav-wec {
-  padding: 0.25rem;
-  border-radius: 10px;
+  padding: 0.15rem;
+  border-radius: 8px;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.06);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
+.header-time-controls {
+  font-family: var(--font-display);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
 .view-tab {
   font-family: var(--font-display);
-  font-size: 0.82rem;
+  font-size: 0.68rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  border-radius: 7px;
+  letter-spacing: 0.04em;
+  border-radius: 6px;
   border-bottom: none;
-  padding: 0.5rem 1rem;
+  padding: 0.28rem 0.5rem;
 }
 
 .view-tab.active {
@@ -323,6 +328,46 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
 
 .view-tab-icon {
   filter: drop-shadow(0 0 4px rgba(212, 168, 67, 0.3));
+}
+
+body.race-live .header-series {
+  display: none;
+}
+
+body.race-live .header-endurance-tag {
+  display: none;
+}
+
+body.race-live .header-status-wrap .status.status-open {
+  display: none;
+}
+
+body.race-live .session-roster-mode {
+  display: none;
+}
+
+@media (max-width: 1280px) {
+  body.race-live .view-tab-label {
+    display: none;
+  }
+
+  body.race-live .view-tab {
+    padding: 0.28rem 0.38rem;
+  }
+}
+
+@media (max-width: 1080px) {
+  body.race-live .header-wec h1 {
+    font-size: 0.92rem;
+  }
+
+  body.race-live .session-roster-name {
+    max-width: 4.5rem;
+  }
+
+  body.race-live .header-scale-preset[data-scale="40"] {
+    display: none;
+  }
 }
 
 /* ── Status pill ── */
@@ -1937,6 +1982,61 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
   border: 1px solid color-mix(in srgb, var(--sector-color) 60%, transparent);
   color: #eef2f7;
   box-shadow: inset 3px 0 0 var(--sector-color);
+}
+
+.track-sector-chip--yellow {
+  border-color: rgba(241, 196, 15, 0.75);
+  box-shadow:
+    inset 3px 0 0 #f1c40f,
+    0 0 0 1px rgba(241, 196, 15, 0.35);
+  color: #fff6bf;
+}
+
+.track-sector-chip--yellow::before {
+  content: "⚑ ";
+  color: #ffd700;
+}
+
+.track-sector-chip--double-yellow {
+  border-color: rgba(230, 126, 34, 0.85);
+  box-shadow:
+    inset 3px 0 0 #e67e22,
+    0 0 0 1px rgba(230, 126, 34, 0.45);
+  color: #ffe0bf;
+}
+
+.track-sector-chip--double-yellow::before {
+  content: "⚑⚑ ";
+  color: #f39c12;
+}
+
+.track-flag-status {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  max-width: 42%;
+  padding: 0.28rem 0.55rem;
+  border-radius: 8px;
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.35;
+  text-align: right;
+  background: rgba(0, 0, 0, 0.68);
+  border: 1px solid rgba(241, 196, 15, 0.45);
+  color: #fff6bf;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.track-flag-status.hidden {
+  display: none;
+}
+
+.track-flag-status--double-yellow {
+  border-color: rgba(230, 126, 34, 0.65);
+  color: #ffe0bf;
 }
 
 .track-class-legend {

@@ -218,6 +218,8 @@ SimCommand ParseSimCommand(const std::string &raw) {
         cmd.pit.changeDriver = val == "1" || ToLower(val) == "true";
       else if (key == "driver_index")
         cmd.pit.swapToDriverIndex = std::stoi(val);
+      else if (key == "rebuild" || key == "garage_rebuild")
+        cmd.pit.garageRebuild = val == "1" || ToLower(val) == "true";
       else if (key == "drive_through")
         cmd.pit.driveThrough = val == "1" || ToLower(val) == "true";
       else if (key == "stop_go")

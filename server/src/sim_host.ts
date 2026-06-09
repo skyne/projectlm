@@ -1,5 +1,5 @@
 import * as path from "path";
-import { normalizeEvent, normalizeTrackGeometry } from "./adapters";
+import { coerceSimEvent, normalizeTrackGeometry } from "./adapters";
 import { MetaStateManager } from "./meta_state";
 import type { SessionEntryRosters } from "./game/driver_catalog";
 import {
@@ -7,7 +7,11 @@ import {
   buildRaceForRound,
   type BuiltRace,
 } from "./game/race_builder";
-import { validatePrivateTestPayload } from "./game/private_test";
+import {
+  jointTestSessionPlan,
+  pendingJointTestingBundles,
+  validatePrivateTestPayload,
+} from "./game/private_test";
 import { loadTrackGeometryById } from "./game/track_loader";
 import { loadGameCatalog } from "./game/catalog";
 import { playerCarPath } from "./game/car_builder";
@@ -44,6 +48,7 @@ export interface SimSessionLike {
   getRaceTime?(): number;
   getRaceControl?(): RaceControlPayload;
   submitCommand?(entryId: string, command: string): boolean;
+  debugRaceControl?(payload: import("./ws_protocol").DebugRaceControlPayload): string | null;
 }
 
 export interface SimHostOptions {
@@ -286,7 +291,9 @@ export class SimHost {
     const validated = validatePrivateTestPayload(this.meta.getState(), raw);
     if ("error" in validated) return validated.error;
 
-    const payload = validated.payload;
+    const prepared = this.meta.preparePrivateTestStart(validated.payload);
+    if ("error" in prepared) return prepared.error;
+    const payload = prepared.payload;
 
     this.sessionStartInProgress = true;
     try {
@@ -323,16 +330,48 @@ export class SimHost {
   completePrivateTest(): {
     meta: MetaStatePayload;
     summary: ProgressionSummary;
+    nextJointTestSessionIndex: number | null;
+    jointTestSessionCount: number;
   } | null {
     const payload = this.privateTestPayload;
     if (!payload || this.sessionKind !== "private_test") return null;
 
     const snapshots = this.getSnapshots();
-    return this.meta.applyPrivateTestCompletion(
+    const result = this.meta.applyPrivateTestCompletion(
       payload,
       snapshots,
       this.fleetEntryMap,
     );
+    const progress = result.meta.privateTestProgress;
+    let sessionCount = 1;
+    if (progress) {
+      const agreement = pendingJointTestingBundles(result.meta).find(
+        (agr) => agr.id === progress.jointAgreementId,
+      );
+      sessionCount = agreement
+        ? jointTestSessionPlan(agreement).sessions.length
+        : progress.testDays;
+    }
+    const nextIndex = progress?.completedSessionIndices.length ?? null;
+    return {
+      ...result,
+      nextJointTestSessionIndex:
+        progress && nextIndex != null && nextIndex < sessionCount
+          ? nextIndex
+          : null,
+      jointTestSessionCount: sessionCount,
+    };
+  }
+
+  continuePrivateTest(): string | null {
+    const blocked = this.sessionStartBlockedReason();
+    if (blocked) return blocked;
+
+    const continued = this.meta.continuePrivateTestCampaign();
+    if (!continued) return "No joint test campaign in progress";
+    if ("error" in continued) return continued.error;
+
+    return this.startPrivateTest(continued.payload);
   }
 
   private startRoundInner(prep?: import("./ws_protocol").StartRoundPayload): string | null {
@@ -515,6 +554,29 @@ export class SimHost {
     string,
     { displayName: string; clientId: string }
   >();
+
+  debugRaceControl(payload: import("./ws_protocol").DebugRaceControlPayload): string | null {
+    if (!this.inRaceSession) return "No live session";
+    if (!this.session.debugRaceControl) {
+      return "Debug race control unavailable for this sim backend";
+    }
+    const err = this.session.debugRaceControl(payload);
+    if (err) return err;
+
+    const rawEvents = this.session.drainEvents();
+    const events: SimEvent[] = this.applyCommandAttribution(
+      rawEvents.map((e) => coerceSimEvent(e)),
+    );
+    if (events.length > 0) {
+      this.sessionLog.recordEvents(events);
+      this.onEvents?.(events);
+    }
+    this.onTick?.(
+      this.getRaceTime(),
+      this.enrichSnapshots(this.session.getSnapshots()),
+    );
+    return null;
+  }
 
   submitCommand(
     entryId: string,
@@ -1022,11 +1084,7 @@ export class SimHost {
 
     const rawEvents = this.session.drainEvents();
     const events: SimEvent[] = this.applyCommandAttribution(
-      rawEvents.map((e) =>
-        typeof e.type === "string" && e.type.includes("_")
-          ? normalizeEvent(e)
-          : (e as SimEvent),
-      ),
+      rawEvents.map((e) => coerceSimEvent(e)),
     );
 
     if (events.length > 0) {

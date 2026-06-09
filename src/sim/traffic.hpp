@@ -46,6 +46,14 @@ struct TrafficEvent {
 
 CarBodyDimensions DimensionsForClass(const std::string &classId);
 
+/** Seconds after pit exit where the car must yield to faster on-track traffic. */
+constexpr double kPitRejoinYieldSec = 12.0;
+
+/** True when merge point has room for a pit-exit car at rejoinSpeedMs. */
+bool PitMergeGapSafe(const Car &rejoining, const std::vector<Car> &cars,
+                     double lapLength, double mergeDistance,
+                     double rejoinSpeedMs);
+
 void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
                     double trackWidthM, double raceTime,
                     std::unordered_map<std::string, double> &eventCooldowns,

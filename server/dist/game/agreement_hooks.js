@@ -13,17 +13,40 @@ const negotiation_deals_1 = require("./negotiation_deals");
 exports.JOINT_TESTING_XP_BONUS_PER_PARTNER = 0.25;
 exports.JOINT_TESTING_XP_BONUS_CAP = 0.5;
 function activeAgreements(meta, currentRound = meta.currentRound) {
-    return (meta.activeAgreements ?? []).filter((agr) => currentRound <= agr.expiresAtRound);
+    return (meta.activeAgreements ?? []).filter((agr) => currentRound <= agr.expiresAtRound &&
+        !(agr.kind === "joint_testing" && agr.fulfilledAtRound));
 }
 function activeJointTestingPartners(meta, currentRound = meta.currentRound) {
-    return activeAgreements(meta, currentRound)
-        .filter((agr) => agr.kind === "joint_testing" && agr.partnerTeam)
-        .map((agr) => agr.partnerTeam);
+    const seen = new Set();
+    const partners = [];
+    for (const agr of activeAgreements(meta, currentRound)) {
+        if (agr.kind !== "joint_testing" || agr.fulfilledAtRound)
+            continue;
+        const teams = agr.partnerTeams?.length
+            ? agr.partnerTeams
+            : agr.terms.partnerTeams?.length
+                ? agr.terms.partnerTeams
+                : agr.partnerTeam
+                    ? [agr.partnerTeam]
+                    : [];
+        for (const team of teams) {
+            const key = team.trim().toLowerCase();
+            if (seen.has(key))
+                continue;
+            seen.add(key);
+            partners.push(team);
+        }
+    }
+    return partners;
 }
-/** +25% driver/staff XP per active joint-testing partner (max +50%). */
-function privateTestXpMultiplier(meta, currentRound = meta.currentRound) {
-    const partners = activeJointTestingPartners(meta, currentRound).length;
-    const bonus = Math.min(exports.JOINT_TESTING_XP_BONUS_CAP, partners * exports.JOINT_TESTING_XP_BONUS_PER_PARTNER);
+/** +25% driver/staff XP per joint-testing partner on track (max +50%). */
+function privateTestXpMultiplier(meta, currentRound = meta.currentRound, partnerTeams) {
+    let partners = activeJointTestingPartners(meta, currentRound);
+    if (partnerTeams?.length) {
+        const keys = new Set(partnerTeams.map((name) => name.trim().toLowerCase()));
+        partners = partners.filter((name) => keys.has(name.trim().toLowerCase()));
+    }
+    const bonus = Math.min(exports.JOINT_TESTING_XP_BONUS_CAP, partners.length * exports.JOINT_TESTING_XP_BONUS_PER_PARTNER);
     return 1 + bonus;
 }
 function privateTestBonusHint(meta) {

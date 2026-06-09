@@ -43,6 +43,8 @@ const path = __importStar(require("path"));
 const weather_model_1 = require("./weather_model");
 const config_parser_1 = require("./config_parser");
 const race_control_model_1 = require("./race_control_model");
+const race_control_debug_1 = require("./race_control_debug");
+const mock_safety_car_1 = require("./mock_safety_car");
 const tyre_grip_1 = require("./tyre_grip");
 const PIT_LANE_FRACTION = 0.06;
 const PIT_LANE_SPEED_MS = 60 / 3.6;
@@ -556,6 +558,7 @@ class MockSimSession {
         this.weatherBiome = "";
         this.weather = (0, weather_model_1.initWeatherState)("changeable", 0, 0);
         this.mockRaceControl = (0, race_control_model_1.defaultMockRaceControlState)();
+        this.mockSafetyCar = (0, mock_safety_car_1.createParkedMockSafetyCar)(1);
         this.rngSeed = 20260306;
         this.rngState = 20260306;
         this.repoRoot = repoRoot;
@@ -699,6 +702,7 @@ class MockSimSession {
             this.pendingEvents = [];
             this.pendingCommands = [];
             this.raceComplete = false;
+            this.mockSafetyCar = (0, mock_safety_car_1.createParkedMockSafetyCar)(this.lapLength);
             this.resetWeather();
             return true;
         }
@@ -876,6 +880,19 @@ class MockSimSession {
             const maxStintSec = 2.5 * 3600;
             car.driverStamina = Math.max(0, 100 - (car.stintTimeSec / maxStintSec) * 100);
             if (car.fuel <= 0 && car.speed * deltaTime < 0.5) {
+                if (isOpenSessionMode(this.raceConfig?.sessionMode ?? "race")) {
+                    placeCarInGarage(car, this.lapLength);
+                    car.fuel = car.fuelTankCapacity;
+                    car.speed = 0;
+                    this.pendingEvents.push({
+                        type: "RecoveryDispatched",
+                        entryId: car.entryId,
+                        lap: car.lap,
+                        timestamp: this.raceTime,
+                        message: `${car.teamName} towed to garage for refuel`,
+                    });
+                    continue;
+                }
                 car.retired = true;
                 car.retireReason = "Out of fuel";
                 this.pendingEvents.push({
@@ -988,6 +1005,7 @@ class MockSimSession {
             }
         }
         this.updateStrandedCars();
+        this.tickMockSafetyCar(deltaTime);
         if (this.checkRaceComplete()) {
             this.raceComplete = true;
             this.pendingEvents.push({
@@ -1016,12 +1034,35 @@ class MockSimSession {
         }
         return !anyRacing && this.cars.length > 0;
     }
+    frontPackRaceDistance() {
+        let best = 0;
+        for (const car of this.cars) {
+            if (car.retired || car.inPit || car.inGarage)
+                continue;
+            if (car.trackStatus !== "racing")
+                continue;
+            const raceDist = car.distance + (car.lap - 1) * this.lapLength;
+            best = Math.max(best, raceDist);
+        }
+        return best;
+    }
+    tickMockSafetyCar(deltaTime) {
+        (0, mock_safety_car_1.tickMockSafetyCar)(this.mockSafetyCar, this.lapLength, this.frontPackRaceDistance(), deltaTime);
+    }
+    syncMockSafetyCarForFlagPhase(phase) {
+        if (phase === "sc")
+            (0, mock_safety_car_1.deployMockSafetyCar)(this.mockSafetyCar, this.lapLength);
+        else if (phase === "sc_in_lap")
+            (0, mock_safety_car_1.peelOffMockSafetyCar)(this.mockSafetyCar);
+        else if (phase === "green")
+            (0, mock_safety_car_1.parkMockSafetyCar)(this.mockSafetyCar, this.lapLength);
+    }
     getSnapshots() {
         const timingMode = isOpenSessionMode(this.raceConfig?.sessionMode ?? "race");
         const board = sortCarsForBoard(this.cars, timingMode);
         const classLeaders = {};
         const classRank = {};
-        return board.map((car, rank) => {
+        const carSnapshots = board.map((car, rank) => {
             if (timingMode && !classLeaders[car.classId]) {
                 classLeaders[car.classId] = car;
             }
@@ -1128,6 +1169,8 @@ class MockSimSession {
                     : undefined,
             };
         });
+        const safetyCar = (0, mock_safety_car_1.buildMockSafetyCarSnapshot)(this.mockSafetyCar, this.lapLength, this.samples);
+        return safetyCar ? [...carSnapshots, safetyCar] : carSnapshots;
     }
     drainEvents() {
         const drained = this.pendingEvents;
@@ -1195,6 +1238,7 @@ class MockSimSession {
         this.pendingEvents = [];
         this.raceComplete = false;
         this.mockRaceControl = (0, race_control_model_1.defaultMockRaceControlState)();
+        this.mockSafetyCar = (0, mock_safety_car_1.createParkedMockSafetyCar)(this.lapLength);
         this.resetWeather();
         return true;
     }
@@ -1211,6 +1255,8 @@ class MockSimSession {
             scLapsRemaining: rc.scLapsRemaining,
             obstructionsOnTrack: (0, race_control_model_1.countTrackObstructions)(this.cars.map((c) => c.trackStatus)),
             whiteFlagActive: rc.whiteFlagActive,
+            redFlagActive: rc.redFlagActive,
+            redFlagSecondsRemaining: rc.redFlagSecondsRemaining,
             surfaceHazards: rc.surfaceHazards.map((h) => ({ ...h })),
             trackWetness: this.weather.trackWetness,
             ambientTempC: this.weather.ambientTempC,
@@ -1232,6 +1278,56 @@ class MockSimSession {
     }
     getRaceTime() {
         return this.raceTime;
+    }
+    debugRaceControl(payload) {
+        if (this.raceComplete)
+            return "session complete";
+        const err = (0, race_control_debug_1.applyMockDebugRaceControl)(payload, {
+            raceTime: this.raceTime,
+            sectorCount: this.trackJson?.sectors.length ?? 0,
+            mockRaceControl: this.mockRaceControl,
+            pushEvent: (event) => this.pendingEvents.push(event),
+            strandCar: (entryId, reason) => {
+                const car = this.cars.find((c) => c.entryId === entryId);
+                if (!car)
+                    return "entry not found";
+                if (car.retired)
+                    return "car retired";
+                if (car.inPit || car.inGarage)
+                    return "car not on track";
+                this.strandCarOnTrack(car, reason);
+                return null;
+            },
+            clearObstructionCar: (entryId) => {
+                const car = this.cars.find((c) => c.entryId === entryId);
+                if (car)
+                    this.clearObstructionCar(car);
+            },
+            findCar: (entryId) => {
+                const car = this.cars.find((c) => c.entryId === entryId);
+                if (!car)
+                    return undefined;
+                return { trackStatus: car.trackStatus, retired: car.retired };
+            },
+            obstructedEntryIds: () => this.cars
+                .filter((c) => c.trackStatus === "stranded" || c.trackStatus === "recovering")
+                .map((c) => c.entryId),
+            obstructedSectorIndices: () => this.cars
+                .filter((c) => c.trackStatus === "stranded" || c.trackStatus === "recovering")
+                .map((c) => c.sectorIndex),
+            releaseGarageCars: () => {
+                for (const car of this.cars) {
+                    if (!car.retired)
+                        releaseCarFromGarage(car);
+                }
+            },
+        });
+        if (err)
+            return err;
+        if (payload.action === "flag_phase" && payload.phase) {
+            this.syncMockSafetyCarForFlagPhase(payload.phase);
+        }
+        return null;
     }
 }
 exports.MockSimSession = MockSimSession;

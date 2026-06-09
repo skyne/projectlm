@@ -67,6 +67,8 @@ bool LoadCarConfig(const std::string &filename, CarConfig &car) {
         car.engine.bufferSize = std::stod(value);
       else if (key == "generator_kw")
         car.engine.generatorKw = std::stod(value);
+      else if (key == "power_target")
+        car.engine.powerTargetHp = std::stod(value);
       else if (key == "chassis_type")
         car.chassisId = value;
       else if (key == "front_aero_type")

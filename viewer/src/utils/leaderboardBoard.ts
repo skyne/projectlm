@@ -1,7 +1,15 @@
-import type { CarSnapshot } from "../ws/protocol";
+import type { CarSnapshot, SessionKind } from "../ws/protocol";
 import { sortByTiming } from "./weekendSessions";
 
 export type GapScope = "overall" | "class";
+
+/** Joint / private tests often span classes — show every entry on the rail. */
+export function effectiveLeaderboardGapScope(
+  gapScope: GapScope,
+  sessionKind?: SessionKind,
+): GapScope {
+  return sessionKind === "private_test" ? "overall" : gapScope;
+}
 
 function compareRacePosition(a: CarSnapshot, b: CarSnapshot): number {
   const diff = a.racePosition - b.racePosition;
@@ -9,10 +17,15 @@ function compareRacePosition(a: CarSnapshot, b: CarSnapshot): number {
   return a.entryId.localeCompare(b.entryId);
 }
 
+export function isSafetyCarSnapshot(snap: CarSnapshot): boolean {
+  return snap.entryId === "safety-car";
+}
+
 /** One snapshot per entryId — last tick wins if duplicates appear. */
 export function dedupeSnapshotsByEntryId(snapshots: CarSnapshot[]): CarSnapshot[] {
   const byId = new Map<string, CarSnapshot>();
   for (const snap of snapshots) {
+    if (isSafetyCarSnapshot(snap)) continue;
     byId.set(snap.entryId, snap);
   }
   return [...byId.values()];

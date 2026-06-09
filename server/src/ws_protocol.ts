@@ -170,6 +170,8 @@ export type SimEventType =
 export interface SimEvent {
   type: SimEventType;
   entryId?: string;
+  /** Other car involved (collisions, blocked). */
+  otherEntryId?: string;
   lap?: number;
   sectorIndex?: number;
   timestamp: number;
@@ -221,6 +223,19 @@ export interface WeekendProgressPayload {
   round: number;
   completedSessions: WeekendSessionType[];
   qualiResults?: QualifyingResultPayload[];
+}
+
+export interface PrivateTestProgressPayload {
+  trackId: string;
+  carIds: string[];
+  driverAssignments: PrivateTestDriverAssignments;
+  jointAgreementId: string;
+  jointPartnerTeams: string[];
+  testDays: number;
+  testHoursPerDay: number;
+  sessionMode: "continuous" | "per_day";
+  completedSessionIndices: number[];
+  carSetups?: SessionCarSetupPayload[];
 }
 
 export type SimBackend = "native" | "mock";
@@ -377,8 +392,10 @@ export interface NegotiationTermsPayload {
   brandingTier?: "title" | "major" | "minor";
   agreementSubtype?: InterTeamAgreementSubtype;
   partnerTeam?: string;
+  partnerTeams?: string[];
   sharedTrackId?: string;
   testDays?: number;
+  testHoursPerDay?: number;
   costContribution?: number;
   techSharePartIds?: string[];
   ruleProposalId?: string;
@@ -418,9 +435,11 @@ export interface ActiveAgreementPayload {
   id: string;
   kind: InterTeamAgreementSubtype | "regulatory_exception";
   partnerTeam?: string;
+  partnerTeams?: string[];
   signedRound: number;
   expiresAtRound: number;
   terms: NegotiationTermsPayload;
+  fulfilledAtRound?: number;
   stubPending?: boolean;
   stubNote?: string;
 }
@@ -897,6 +916,8 @@ export interface MetaStatePayload {
   briefingDefaults?: Record<string, Record<string, Record<string, string>>>;
   /** In-progress multi-session weekend for the current round. */
   weekendProgress?: WeekendProgressPayload;
+  /** In-progress multi-day joint private test campaign. */
+  privateTestProgress?: PrivateTestProgressPayload;
   /** Available drivers to sign — refreshed each round or manually */
   driverMarket?: DriverMarketListingPayload[];
   driverMarketRefreshCount?: number;
@@ -1143,6 +1164,18 @@ export interface RaceControlPayload {
   weatherBiome?: string;
 }
 
+export interface DebugRaceControlPayload {
+  action: string;
+  phase?: string;
+  sectorIndex?: number;
+  level?: number;
+  entryId?: string;
+  reason?: string;
+  kind?: string;
+  gripMultiplier?: number;
+  active?: boolean;
+}
+
 export interface TickPayload {
   raceTime: number;
   snapshots: CarSnapshot[];
@@ -1185,6 +1218,9 @@ export interface RaceCompletePayload {
   sessionLogId?: string;
   /** Next session in the weekend, or null when the weekend is finished. */
   nextWeekendSession?: WeekendSessionType | null;
+  /** Remaining joint-test day when a multi-day campaign is in progress. */
+  nextJointTestSessionIndex?: number | null;
+  jointTestSessionCount?: number;
   results: Array<{
     entryId: string;
     teamName: string;
@@ -1296,6 +1332,10 @@ export interface StartPrivateTestPayload {
   durationHours: number;
   carSetups?: SessionCarSetupPayload[];
   carBriefings?: CarSessionBriefing[];
+  /** Rival teams from active joint-testing agreements to include on track. */
+  jointPartnerTeams?: string[];
+  /** Pending bundled joint-testing agreement this session fulfills. */
+  jointAgreementId?: string;
 }
 
 export interface EngineerAdvicePayload {
@@ -1396,6 +1436,7 @@ export type ClientMessageType =
   | "complete_round"
   | "start_round"
   | "start_private_test"
+  | "continue_private_test"
   | "continue_weekend_session"
   | "create_team"
   | "save_team_creation_draft"
@@ -1427,7 +1468,8 @@ export type ClientMessageType =
   | "start_next_season"
   | "restart_season"
   | "finalize_season"
-  | "update_car_briefing";
+  | "update_car_briefing"
+  | "debug_race_control";
 
 export interface ServerMessage<T = unknown> {
   protocol: typeof PROTOCOL_VERSION;
@@ -1466,6 +1508,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       "complete_round",
       "start_round",
       "start_private_test",
+      "continue_private_test",
       "continue_weekend_session",
       "create_team",
       "save_team_creation_draft",
@@ -1498,6 +1541,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       "restart_season",
       "finalize_season",
       "update_car_briefing",
+      "debug_race_control",
     ];
     if (!allowed.includes(msg.type)) return null;
     return msg;

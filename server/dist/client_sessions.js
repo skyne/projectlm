@@ -18,6 +18,7 @@ const HOST_PERMISSIONS = [
     "complete_round",
     "start_round",
     "start_private_test",
+    "continue_private_test",
     "continue_weekend_session",
     "create_team",
     "save_team_creation_draft",
@@ -49,6 +50,7 @@ const HOST_PERMISSIONS = [
     "finalize_season",
     "get_track_preview",
     "update_car_briefing",
+    "debug_race_control",
 ];
 const PLAYER_PERMISSIONS = [
     "set_time_scale",
@@ -61,6 +63,12 @@ const PLAYER_PERMISSIONS = [
     "get_engineer_status",
     "get_track_preview",
     "update_car_briefing",
+    "start_negotiation",
+    "submit_negotiation_offer",
+    "accept_negotiation",
+    "withdraw_negotiation",
+    "sign_sponsor",
+    "drop_sponsor",
 ];
 const SPECTATOR_PERMISSIONS = [
     "get_engineer_status",

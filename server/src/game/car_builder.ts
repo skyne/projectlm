@@ -71,6 +71,9 @@ function engineToConfigLines(engine: EngineBuildPayload): string[] {
   if (engine.energy_converter) lines.push(`energy_converter=${engine.energy_converter}`);
   if (engine.buffer_size != null) lines.push(`buffer_size=${engine.buffer_size}`);
   if (engine.generator_kw) lines.push(`generator_kw=${engine.generator_kw}`);
+  if (engine.power_target != null && engine.power_target > 0) {
+    lines.push(`power_target=${engine.power_target}`);
+  }
   return lines;
 }
 

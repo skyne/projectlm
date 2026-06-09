@@ -6,7 +6,9 @@
 import { SessionPlayer } from "./client.js";
 import { buildCreateTeamPayload } from "./team_presets.js";
 
-const WS_URL = process.env.PROJECTLM_WS_URL ?? "ws://localhost:8765";
+import { defaultWsUrl } from "./ws_url.js";
+
+const WS_URL = defaultWsUrl();
 const WATCH_WALL_SEC = Number(process.env.WATCH_SEC ?? 90);
 const TIME_SCALE = Number(process.env.TIME_SCALE ?? 40);
 

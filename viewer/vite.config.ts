@@ -3,7 +3,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { defineConfig, type Plugin } from "vite";
 
-const wsPort = process.env.PORT ?? "8765";
+/** Keep in sync with server default (9785). Set PORT or PROJECTLM_WS_PORT when overriding. */
+const wsPort =
+  process.env.PROJECTLM_WS_PORT ?? process.env.PORT ?? "9785";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function serveConfigs(): Plugin {

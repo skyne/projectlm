@@ -2,7 +2,7 @@
  * Autonomous full WEC weekend: practice → qualifying → race.
  *
  * Usage:
- *   npx tsx src/weekend_orchestrator.ts [--url ws://localhost:8765] [--role host|player]
+ *   npx tsx src/weekend_orchestrator.ts [--url ws://localhost:9785] [--role host|player]
  *
  * Co-op: join as player — uses continue_weekend_session between sessions.
  * Solo: join as host (first client) — uses start_round / continue_weekend_session.
@@ -13,6 +13,7 @@ import type {
   RaceCompletePayload,
   WeekendSessionType,
 } from "./protocol.js";
+import { attachPenaltyWatcher } from "./penalty_watch.js";
 import {
   classDisplayLabel,
   classPosition,
@@ -25,15 +26,15 @@ import {
   sortedTeamClasses,
   teamClassResults,
   tickPitWall,
-  timeScaleFor,
 } from "./pit_strategy.js";
 import {
   isTimingSession,
   resolveNextSession,
   sessionTargetSeconds,
 } from "./weekend_sessions.js";
+import { defaultWsUrl } from "./ws_url.js";
 
-const URL = process.argv.find((a) => a.startsWith("ws://")) ?? "ws://localhost:8765";
+const URL = process.argv.find((a) => a.startsWith("ws://")) ?? defaultWsUrl();
 const ROLE = (process.argv.find((a) => a === "--role") &&
   process.argv[process.argv.indexOf("--role") + 1]) as "host" | "player" | undefined;
 const ADVANCE_FLAG = process.argv.find((a) => a === "--advance") &&
@@ -137,113 +138,191 @@ async function startNextSession(player: SessionPlayer): Promise<void> {
   );
 }
 
-async function waitForRaceComplete(
+export async function waitForRaceComplete(
   player: SessionPlayer,
   timeoutMs: number,
 ): Promise<RaceCompletePayload> {
-  const payload = await player.waitFor(
-    () => player.state.raceComplete,
-    timeoutMs,
-    "Timed out waiting for race_complete",
-  );
-  return payload!;
+  return player.waitForRaceComplete(timeoutMs);
 }
 
-function sessionAlreadyComplete(player: SessionPlayer): boolean {
+/** Optional override — session-player does not force time compression by default. */
+function optionalPlayerTimeScale(): number | undefined {
+  const raw = process.env.TIME_SCALE ?? process.env.PROJECTLM_PLAYER_TIME_SCALE;
+  if (raw == null || raw === "") return undefined;
+  const scale = Number(raw);
+  return Number.isFinite(scale) && scale > 0 ? scale : undefined;
+}
+
+function sessionWallTimeoutMs(
+  targetSimSec: number,
+  timeScale: number,
+  timing: boolean,
+): number {
+  const scale = Math.max(1, timeScale);
+  const simBudgetMs = Math.ceil((targetSimSec / scale) * 1000 * 2.5);
+  const floorMs = timing ? 15 * 60 * 1000 : 30 * 60 * 1000;
+  return Math.max(floorMs, simBudgetMs) + 300_000;
+}
+
+export function sessionAlreadyComplete(player: SessionPlayer): boolean {
   return Boolean(
     player.state.raceComplete || player.state.sessionInit?.raceComplete,
   );
 }
 
-async function runSession(player: SessionPlayer, phase: WeekendSessionType): Promise<RaceCompletePayload> {
-  const wet = player.raceControl()?.trackWetness ?? 0;
-  await player.sleep(200);
+export async function runSession(
+  player: SessionPlayer,
+  phase: WeekendSessionType,
+): Promise<RaceCompletePayload> {
   const minLap = managedMinLap(player);
+  const wet = player.raceControl()?.trackWetness ?? 0;
   const carState = initCarState(player, wet, { minLap });
   const midRace = minLap >= 3;
+
   if (!midRace) {
+    try {
+      await player.waitForTick(5000);
+    } catch {
+      /* paused pre-green — grid setup may still apply on first tick */
+    }
     gridSetup(player);
-    await player.sleep(300);
   }
 
-  const scale = timeScaleFor(phase);
-  player.send("set_time_scale", { timeScale: scale });
+  const forcedScale = optionalPlayerTimeScale();
+  if (forcedScale != null) {
+    player.send("set_time_scale", { timeScale: forcedScale });
+  }
   player.send("resume", {});
-  await player.sleep(400);
 
   const target =
     player.state.sessionInit?.targetDurationSeconds ??
     sessionTargetSeconds(phase, player.state.sessionInit?.raceFormat);
   const timing = isTimingSession(phase);
+  const scale =
+    forcedScale ??
+    player.state.sessionInit?.timeScale ??
+    1;
 
   console.log(
-    `[PitBot] ▶ ${phase.toUpperCase()} @ ${scale}× (${Math.floor(target / 60)}m sim)`,
+    `[PitBot] ▶ ${phase.toUpperCase()} @ ${scale}× (${Math.floor(target / 60)}m sim, tick-driven)`,
   );
 
-  let lastLog = 0;
+  const maxRealMs = sessionWallTimeoutMs(target, scale, timing);
+  const startMs = Date.now();
+  let lastLogMs = 0;
   let lastRaceTime = -1;
   let lastRaceAdvanceMs = Date.now();
-  const startMs = Date.now();
-  const maxRealMs = timing
-    ? 5 * 60 * 1000
-    : Math.ceil((target / scale) * 1000 * 1.8) + 120_000;
+  let waitingForComplete = false;
 
-  while (Date.now() - startMs < maxRealMs) {
-    if (sessionAlreadyComplete(player)) break;
-    const tick = player.state.latestTick;
-    if (tick && (tick.raceTime ?? 0) >= target - 2) break;
+  const detachPenaltyWatcher = attachPenaltyWatcher(player);
 
-    const rt = tick?.raceTime ?? 0;
-    if (rt > lastRaceTime + 0.5) {
-      lastRaceTime = rt;
-      lastRaceAdvanceMs = Date.now();
-    } else if (Date.now() - lastRaceAdvanceMs > 25_000) {
-      console.log("[PitBot] Sim stalled — re-sending resume + time scale");
-      player.send("set_time_scale", { timeScale: scale });
-      player.send("resume", {});
-      lastRaceAdvanceMs = Date.now();
-    }
+  return new Promise<RaceCompletePayload>((resolve, reject) => {
+    let settled = false;
 
-    if (!sessionAlreadyComplete(player)) {
+    const finish = (payload: RaceCompletePayload) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(payload);
+    };
+
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
+
+    const cleanup = () => {
+      clearInterval(stallTimer);
+      unsubTick();
+      unsubComplete();
+      detachPenaltyWatcher();
+    };
+
+    const maybeWaitForRaceComplete = () => {
+      if (waitingForComplete || settled) return;
+      waitingForComplete = true;
+      void player
+        .waitForRaceComplete(
+          Math.min(600_000, Math.max(60_000, maxRealMs - (Date.now() - startMs))),
+        )
+        .then(finish)
+        .catch(fail);
+    };
+
+    const unsubComplete = player.onRaceComplete((payload) => finish(payload));
+
+    const unsubTick = player.onTick((tick) => {
+      if (settled) return;
+
+      if (player.state.raceComplete) {
+        finish(player.state.raceComplete);
+        return;
+      }
+
+      const rt = tick.raceTime ?? 0;
+      if (rt > lastRaceTime + 0.01) {
+        lastRaceTime = rt;
+        lastRaceAdvanceMs = Date.now();
+      }
+
+      if (sessionAlreadyComplete(player)) {
+        maybeWaitForRaceComplete();
+        return;
+      }
+
+      if (rt >= target - 2) {
+        maybeWaitForRaceComplete();
+        return;
+      }
+
       const notes = tickPitWall(player, phase, carState);
       for (const n of notes) console.log(`[PitBot]   ${n}`);
-    }
 
-    const now = Date.now();
-    if (now - lastLog >= 12000) {
-      lastLog = now;
-      const rt = tick?.raceTime ?? 0;
-      const entries = managedEntryIds(player);
-      const lines = entries.map((id) => {
-        const s = snap(player, id);
-        const st = carState.get(id);
-        if (!s || !st) return "";
-        return `#${s.carNumber} P${s.classPosition ?? "?"} ${fmtLap(st.bestLap)}`;
-      }).filter(Boolean);
-      console.log(
-        `[PitBot]   ${Math.floor(rt / 60)}:${String(Math.floor(rt % 60)).padStart(2, "0")} | ${lines.join(" | ")}`,
-      );
-    }
+      const now = Date.now();
+      if (now - lastLogMs >= 12_000) {
+        lastLogMs = now;
+        const entries = managedEntryIds(player);
+        const lines = entries
+          .map((id) => {
+            const s = snap(player, id);
+            const st = carState.get(id);
+            if (!s || !st) return "";
+            return `#${s.carNumber} P${s.classPosition ?? "?"} ${fmtLap(st.bestLap)}`;
+          })
+          .filter(Boolean);
+        console.log(
+          `[PitBot]   ${Math.floor(rt / 60)}:${String(Math.floor(rt % 60)).padStart(2, "0")} | ${lines.join(" | ")}`,
+        );
+      }
+    });
 
-    await player.sleep(timing ? 1500 : 2000);
-  }
+    const stallTimer = setInterval(() => {
+      if (settled) return;
 
-  if (!player.state.raceComplete) {
-    if (player.state.sessionInit?.raceComplete) {
-      await player.sleep(500);
-    }
-    if (!player.state.raceComplete) {
-      const graceMs = Math.min(
-        600_000,
-        Math.max(120_000, Math.ceil((target / scale) * 250)),
-      );
-      return await waitForRaceComplete(player, graceMs);
-    }
-  }
-  return player.state.raceComplete!;
+      if (Date.now() - startMs > maxRealMs) {
+        if (player.state.raceComplete) {
+          finish(player.state.raceComplete);
+          return;
+        }
+        maybeWaitForRaceComplete();
+        return;
+      }
+
+      if (Date.now() - lastRaceAdvanceMs > 25_000) {
+        console.log("[PitBot] Sim stalled — re-sending resume");
+        player.send("resume", {});
+        if (forcedScale != null) {
+          player.send("set_time_scale", { timeScale: forcedScale });
+        }
+        lastRaceAdvanceMs = Date.now();
+      }
+    }, 2000);
+  });
 }
 
-function reportSessionComplete(
+export function reportSessionComplete(
   player: SessionPlayer,
   phase: WeekendSessionType,
   payload: RaceCompletePayload,

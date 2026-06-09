@@ -163,6 +163,7 @@ void TickRace(RaceSession &session, double deltaTime) {
                  GetLeaderboard(session));
 
   UpdateRaceControl(session, trafficEvents);
+  TickSafetyCar(session, deltaTime);
   UpdateRedFlagPitProcedure(session);
   UpdatePenalties(session, deltaTime, trafficMods);
   ApplyFlagModifiers(session, trafficMods);
@@ -182,6 +183,7 @@ void TickRace(RaceSession &session, double deltaTime) {
       continue;
     SimEvent event;
     event.entryId = ev.entryId;
+    event.otherEntryId = ev.otherEntryId;
     event.timestamp = session.elapsedRaceTime;
     event.message = ev.message;
     if (ev.type == TrafficEvent::Type::Overtake)
@@ -233,8 +235,11 @@ void TickRace(RaceSession &session, double deltaTime) {
 
     if (car.inPitLane()) {
       const double remaining = RemainingSessionSec(session, car);
+      const bool requireMergeGap =
+          session.raceControl.flagPhase == FlagPhase::Green;
       if (car.processPitLaneTick(session.track, deltaTime, session.staff,
-                                 remaining, redFlagActive)) {
+                                 remaining, redFlagActive, &session.cars,
+                                 requireMergeGap)) {
         if (car.isRetired()) {
           EmitRaceEvent(SimEventType::Retirement, car, car.state().currentLap,
                         static_cast<int>(car.state().currentTrackNodeIndex),
@@ -261,7 +266,7 @@ void TickRace(RaceSession &session, double deltaTime) {
     const double remaining = RemainingSessionSec(session, car);
     const CarTickResult result = car.tick(
         session.track, session.physics, deltaTime, session.elapsedRaceTime,
-        nullptr, traffic, session.weather, night, remaining);
+        nullptr, traffic, session.weather, night, remaining, redFlagActive);
 
     if (result.lapCompleted && car.pit().pendingEnter) {
       if (car.processPitEntry(0.0, true, redFlagActive)) {
@@ -299,6 +304,8 @@ void TickRace(RaceSession &session, double deltaTime) {
                     car.teamName() + " retired: " + car.retireReason());
     }
   }
+
+  EnforceSafetyCarTrainPositions(session);
 
   if (lateTrackObstruction) {
     UpdateRaceControl(session, {});

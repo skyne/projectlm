@@ -6,6 +6,31 @@
 
 namespace {
 
+void SyncRexBatteryPack(const CarConfig &car, SimulationState &state) {
+  if (!car.isGeneratorOnly)
+    return;
+  const double pack =
+      std::max(state.batteryChargeMJ, state.hybridDeployRemainingMJ);
+  state.batteryChargeMJ = pack;
+  state.hybridDeployRemainingMJ = pack;
+}
+
+double RexBatteryMJ(const CarConfig &car, const SimulationState &state) {
+  if (!car.isGeneratorOnly)
+    return state.batteryChargeMJ;
+  return std::max(state.batteryChargeMJ, state.hybridDeployRemainingMJ);
+}
+
+void ConsumeRexBatteryMJ(const CarConfig &car, SimulationState &state,
+                         double mj) {
+  if (!car.isGeneratorOnly || mj <= 0.0)
+    return;
+  SyncRexBatteryPack(car, state);
+  const double rem = std::max(0.0, state.batteryChargeMJ - mj);
+  state.batteryChargeMJ = rem;
+  state.hybridDeployRemainingMJ = rem;
+}
+
 void NormalizeWeights(double weights[4]) {
   double sum = weights[0] + weights[1] + weights[2] + weights[3];
   if (sum <= 1e-9) {
@@ -193,6 +218,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     state.hybridDeployRemainingMJ = car.hybridStintDeployBudgetMJ;
   if (state.batteryChargeMJ < 0.0)
     state.batteryChargeMJ = car.hybridStintDeployBudgetMJ;
+  SyncRexBatteryPack(car, state);
 
   const size_t prevSectorIdx = state.currentTrackNodeIndex;
   const double finalDrive =
@@ -328,7 +354,17 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
   if (mods.mistakePenalty > 0.0)
     targetSpeed = std::max(p.minSpeed, targetSpeed - mods.mistakePenalty);
 
-  const bool outOfFuel = state.fuelRemaining <= 0.0;
+  const bool outOfFuel = !HasDrivableEnergy(
+      car, state.fuelRemaining, state.batteryChargeMJ,
+      state.hybridDeployRemainingMJ);
+  const bool electricFallback = ElectricFallbackActive(
+      car, state.fuelRemaining, state.batteryChargeMJ,
+      state.hybridDeployRemainingMJ);
+
+  if (electricFallback) {
+    const double cap = ElectricFallbackSpeedCapMs(car);
+    targetSpeed = std::min(targetSpeed, cap);
+  }
 
   const double drivenWheelRadius = DrivenWheelRadius(car);
   const int maxGear = std::max(1, std::min(car.gearCount, 8));
@@ -382,6 +418,8 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       state.hybridDeployRemainingMJ = std::min(
           car.hybridStintDeployBudgetMJ,
           state.hybridDeployRemainingMJ + regenMJ);
+      if (car.isGeneratorOnly)
+        state.batteryChargeMJ = state.hybridDeployRemainingMJ;
     }
   } else {
     state.brakeHeat = std::max(0.0, state.brakeHeat - deltaTime * 0.35);
@@ -449,50 +487,103 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     if (car.isElectricDrive) {
       double electricalKw = car.electricalDeployKW;
       if (car.isFuelCell) {
+        const double fallbackKw = ElectricFallbackPowerKW(car);
         const double demandKw =
-            (car.peakHorsepower / 1.34) * torqueCurveMultiplier *
-            state.throttleBlend;
-        const double stackOutKw =
-            std::min(car.electricalDeployKW * state.throttleBlend *
-                         torqueCurveMultiplier,
-                     demandKw);
-        electricalKw = stackOutKw;
-        generatorFuelKw = stackOutKw / std::max(0.25, car.drivetrainEfficiency);
-        if (state.hybridDeployRemainingMJ > 0.0 && demandKw > stackOutKw) {
-          const double burstKw =
-              std::min(demandKw - stackOutKw, car.hybridDeployPowerKW);
-          electricalKw += burstKw;
-          const double burstMJ = (burstKw * 1000.0 * deltaTime) / 1.0e6;
-          state.hybridDeployRemainingMJ =
-              std::max(0.0, state.hybridDeployRemainingMJ - burstMJ);
+            electricFallback
+                ? fallbackKw * torqueCurveMultiplier * state.throttleBlend
+                : (car.peakHorsepower / 1.34) * torqueCurveMultiplier *
+                      state.throttleBlend;
+        if (electricFallback) {
+          electricalKw = demandKw;
+          if (state.hybridDeployRemainingMJ > 0.0 && deltaTime > 0.0) {
+            const double maxKwThisTick =
+                (state.hybridDeployRemainingMJ * 1.0e6) / (1000.0 * deltaTime);
+            electricalKw = std::min(electricalKw, maxKwThisTick);
+            const double usedMJ = (electricalKw * 1000.0 * deltaTime) / 1.0e6;
+            state.hybridDeployRemainingMJ =
+                std::max(0.0, state.hybridDeployRemainingMJ - usedMJ);
+          } else {
+            electricalKw = 0.0;
+          }
+        } else {
+          const double stackOutKw =
+              std::min(car.electricalDeployKW * state.throttleBlend *
+                           torqueCurveMultiplier,
+                       demandKw);
+          electricalKw = stackOutKw;
+          generatorFuelKw =
+              stackOutKw / std::max(0.25, car.drivetrainEfficiency);
+          if (state.hybridDeployRemainingMJ > 0.0 && demandKw > stackOutKw) {
+            const double burstKw =
+                std::min(demandKw - stackOutKw, car.hybridDeployPowerKW);
+            electricalKw += burstKw;
+            const double burstMJ = (burstKw * 1000.0 * deltaTime) / 1.0e6;
+            state.hybridDeployRemainingMJ =
+                std::max(0.0, state.hybridDeployRemainingMJ - burstMJ);
+          }
         }
       } else if (car.isGeneratorOnly) {
+        const double fallbackKw = ElectricFallbackPowerKW(car);
         const double demandKw =
-            (car.peakHorsepower / 1.34) *
-            torqueCurveMultiplier * state.throttleBlend;
-        const double genKw =
-            std::min(car.generatorPowerKW * car.drivetrainEfficiency, demandKw);
-        generatorFuelKw = genKw;
-        electricalKw = genKw;
-        if (state.batteryChargeMJ > 0.0 && demandKw > genKw) {
-          const double burstKw =
-              std::min(demandKw - genKw, car.hybridDeployPowerKW);
-          electricalKw += burstKw;
-          const double burstMJ = (burstKw * 1000.0 * deltaTime) / 1.0e6;
-          state.batteryChargeMJ =
-              std::max(0.0, state.batteryChargeMJ - burstMJ);
+            electricFallback
+                ? fallbackKw * torqueCurveMultiplier * state.throttleBlend
+                : (car.peakHorsepower / 1.34) * torqueCurveMultiplier *
+                      state.throttleBlend;
+        if (electricFallback) {
+          electricalKw = demandKw;
+          const double packMj = RexBatteryMJ(car, state);
+          if (packMj > 0.0 && deltaTime > 0.0) {
+            const double maxKwThisTick =
+                (packMj * 1.0e6) / (1000.0 * deltaTime);
+            electricalKw = std::min(electricalKw, maxKwThisTick);
+            const double usedMJ = (electricalKw * 1000.0 * deltaTime) / 1.0e6;
+            ConsumeRexBatteryMJ(car, state, usedMJ);
+          } else {
+            electricalKw = 0.0;
+          }
+        } else {
+          const double genKw = std::min(
+              car.generatorPowerKW * car.drivetrainEfficiency, demandKw);
+          generatorFuelKw = genKw;
+          electricalKw = genKw;
+          if (RexBatteryMJ(car, state) > 0.0 && demandKw > genKw) {
+            const double burstKw =
+                std::min(demandKw - genKw, car.hybridDeployPowerKW);
+            electricalKw += burstKw;
+            const double burstMJ = (burstKw * 1000.0 * deltaTime) / 1.0e6;
+            ConsumeRexBatteryMJ(car, state, burstMJ);
+          }
         }
       } else {
-        electricalKw *= torqueCurveMultiplier * state.throttleBlend;
-        if (state.batteryChargeMJ > 0.0) {
-          const double usedMJ = (electricalKw * 1000.0 * deltaTime) / 1.0e6;
-          state.batteryChargeMJ =
-              std::max(0.0, state.batteryChargeMJ - usedMJ);
+        double demandKw =
+            car.electricalDeployKW * torqueCurveMultiplier * state.throttleBlend;
+        double deliverKw = demandKw;
+        if (IsBatteryPrimaryEv(car)) {
+          if (state.batteryChargeMJ <= 0.0) {
+            deliverKw = 0.0;
+          } else if (deltaTime > 0.0) {
+            const double maxKwThisTick =
+                (state.batteryChargeMJ * 1.0e6) / (1000.0 * deltaTime);
+            deliverKw = std::min(demandKw, maxKwThisTick);
+            const double usedMJ = (deliverKw * 1000.0 * deltaTime) / 1.0e6;
+            state.batteryChargeMJ =
+                std::max(0.0, state.batteryChargeMJ - usedMJ);
+            state.fuelRemaining = state.batteryChargeMJ;
+            state.hybridDeployRemainingMJ = state.batteryChargeMJ;
+          }
+        } else {
+          deliverKw = demandKw;
+          if (state.batteryChargeMJ > 0.0) {
+            const double usedMJ = (deliverKw * 1000.0 * deltaTime) / 1.0e6;
+            state.batteryChargeMJ =
+                std::max(0.0, state.batteryChargeMJ - usedMJ);
+          }
         }
+        electricalKw = deliverKw;
       }
       engineForce =
           (electricalKw * 1000.0) / std::max(state.currentSpeed, p.minSpeed);
-    } else {
+    } else if (!electricFallback) {
       const double activeEngineTorque = car.peakTorque * torqueCurveMultiplier;
       const double wheelTorque =
           activeEngineTorque * gearRatio * finalDrive;
@@ -529,15 +620,21 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
         engineForce = 0.0;
     }
 
-    if (onStraight && car.hybridDeployPowerKW > 0.0 &&
-        state.hybridDeployRemainingMJ > 0.0 &&
-        state.currentSpeed >= p.hybridMinDeploySpeedMs &&
-        state.throttleBlend >= 0.55 && mods.hybridDeployScale > 0.0) {
-      const double deployWatts = car.hybridDeployPowerKW * 1000.0 *
-                                 mods.hybridDeployScale * state.throttleBlend;
+    const bool hybridDeployAllowed =
+        !IsBatteryPrimaryEv(car) && car.hybridDeployPowerKW > 0.0 &&
+        state.hybridDeployRemainingMJ > 0.0 && mods.hybridDeployScale > 0.0 &&
+        (electricFallback ||
+         (onStraight && state.currentSpeed >= p.hybridMinDeploySpeedMs &&
+          state.throttleBlend >= 0.55));
+    if (hybridDeployAllowed) {
+      const double deployScale =
+          electricFallback ? 1.0 : mods.hybridDeployScale * state.throttleBlend;
+      const double deployWatts =
+          car.hybridDeployPowerKW * 1000.0 * deployScale;
       const double deployForce =
           deployWatts / std::max(state.currentSpeed, p.minSpeed);
-      const double maxDeployForce = tireGripForce * 0.25;
+      const double maxDeployForce =
+          tireGripForce * (electricFallback ? 0.45 : 0.25);
       const double appliedDeploy = std::min(deployForce, maxDeployForce);
       engineForce += appliedDeploy * revLimiterFactor;
       const double energyUsedMJ =
@@ -554,12 +651,12 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
   }
 
   if (!outOfFuel) {
-    if (car.isFuelCell) {
+    if (car.isFuelCell && state.fuelRemaining > 0.0) {
       state.fuelRemaining -=
           (generatorFuelKw * 0.000046 * car.powertrainFuelBurnMult *
            mods.fuelMultiplier) *
           deltaTime;
-    } else if (car.isGeneratorOnly) {
+    } else if (car.isGeneratorOnly && state.fuelRemaining > 0.0) {
       state.fuelRemaining -=
           (generatorFuelKw * 0.00032 * car.powertrainFuelBurnMult *
            mods.fuelMultiplier) *
@@ -613,9 +710,15 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     state.currentSpeed = p.minSpeed;
   }
 
-  if (mods.speedCapMs > 0.0 && state.currentSpeed > mods.speedCapMs) {
+  double speedCapMs = mods.speedCapMs;
+  if (electricFallback) {
+    const double fallbackCap = ElectricFallbackSpeedCapMs(car);
+    speedCapMs = speedCapMs > 0.0 ? std::min(speedCapMs, fallbackCap)
+                                  : fallbackCap;
+  }
+  if (speedCapMs > 0.0 && state.currentSpeed > speedCapMs) {
     const double blend = std::min(1.0, deltaTime * 4.0);
-    state.currentSpeed += (mods.speedCapMs - state.currentSpeed) * blend;
+    state.currentSpeed += (speedCapMs - state.currentSpeed) * blend;
   }
 
   if (isBraking && state.currentSpeed > p.tireWearSpeedThreshold) {

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizeEvent = normalizeEvent;
+exports.coerceSimEvent = coerceSimEvent;
 exports.normalizeTrackGeometry = normalizeTrackGeometry;
 const EVENT_TYPE_MAP = {
     sector_cross: "SectorCross",
@@ -42,11 +43,30 @@ function normalizeEvent(event) {
     return {
         type: EVENT_TYPE_MAP[event.type] ?? "SectorCross",
         entryId: event.entryId,
+        otherEntryId: event.otherEntryId,
         lap: event.lap,
         sectorIndex: event.sectorIndex,
         timestamp: event.timestamp,
         message: event.message,
     };
+}
+/** Coerce native snake_case or already-normalized sim events to protocol types. */
+function coerceSimEvent(event) {
+    if (typeof event.type !== "string")
+        return event;
+    const mapped = EVENT_TYPE_MAP[event.type];
+    if (mapped) {
+        return {
+            type: mapped,
+            entryId: event.entryId,
+            otherEntryId: event.otherEntryId,
+            lap: event.lap,
+            sectorIndex: event.sectorIndex,
+            timestamp: event.timestamp,
+            message: event.message,
+        };
+    }
+    return event;
 }
 function normalizeTrackGeometry(geometry) {
     const polyline = geometry.points;

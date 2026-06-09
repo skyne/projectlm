@@ -692,6 +692,14 @@ bool IsCarRaceable(const PartDamageState &state, const CarConfig &car,
   return limp != LimpMode::Immobilized;
 }
 
+double ComputeGarageRebuildDurationSec(double assessedRepairSec,
+                                       bool damageRebuild) {
+  if (!damageRebuild)
+    return std::max(60.0, assessedRepairSec);
+  return std::max(kGarageRebuildMinSec,
+                  assessedRepairSec + kGarageRebuildOverheadSec);
+}
+
 CarRepairAssessment
 ComputeCarRepairAssessment(const PartDamageState &state, const CarConfig &car,
                            const TyreDeflationStateArr &tyres,

@@ -1,4 +1,4 @@
-import type { CarSnapshot, WeekendSessionType } from "../ws/protocol";
+import type { CarSnapshot, SessionKind, WeekendSessionType } from "../ws/protocol";
 import {
   isTimingSession,
   sessionShortLabel,
@@ -6,14 +6,23 @@ import {
   sessionTimingTitle,
 } from "../utils/weekendSessions";
 import { formatCarNumber } from "../entryNumbers";
-import { orderLeaderboardBoard } from "../utils/leaderboardBoard";
+import {
+  effectiveLeaderboardGapScope,
+  orderLeaderboardBoard,
+  type GapScope,
+} from "../utils/leaderboardBoard";
 import { formatGapCompact, formatLapTime } from "../utils/formatTime";
 import { formatTyreTemp, formatTyreWear, tyreTempBand } from "../utils/formatTyre";
 import { tyreCompoundIconHtml } from "../utils/tyreCompound";
+import { formatFuelAmount, usesBatteryFuelDisplay } from "../utils/fuelDisplay";
 import { resolveRetireReason } from "../utils/retireReason";
+import {
+  hasCarDamage,
+  resolveTimingStatusTags,
+  renderTimingStatusTagsHtml,
+} from "../utils/carStatus";
 
 type GapMode = "leader" | "ahead";
-type GapScope = "overall" | "class";
 
 interface CompactLbRow {
   root: HTMLDivElement;
@@ -42,6 +51,7 @@ export class CompactLeaderboard {
   private lapLength = 13000;
   private timingMode = false;
   private sessionType?: WeekendSessionType;
+  private sessionKind?: SessionKind;
   private snapshots: CarSnapshot[] = [];
   private rowByEntryId = new Map<string, CompactLbRow>();
   private lastBoardOrder: string[] = [];
@@ -142,6 +152,16 @@ export class CompactLeaderboard {
     this.render();
   }
 
+  setSessionKind(sessionKind?: SessionKind): void {
+    this.sessionKind = sessionKind;
+    if (sessionKind === "private_test") {
+      this.gapScope = "overall";
+      this.syncGapScopeButtons();
+    }
+    this.syncScopeToggleVisibility();
+    this.render();
+  }
+
   private applySessionHeader(): void {
     const title = this.root.querySelector(".compact-lb-title");
     if (title) {
@@ -171,10 +191,28 @@ export class CompactLeaderboard {
   private orderedBoard(): CarSnapshot[] {
     return orderLeaderboardBoard(this.snapshots, {
       timingMode: this.timingMode,
-      gapScope: this.gapScope,
+      gapScope: effectiveLeaderboardGapScope(this.gapScope, this.sessionKind),
       playerEntryId: this.selectedEntryId || this.playerEntryId,
       managedEntryIds: [...this.managedEntryIds],
     });
+  }
+
+  private syncGapScopeButtons(): void {
+    const group = this.root.querySelector<HTMLElement>(
+      '.compact-lb-btn-group[data-group="gap-scope"]',
+    );
+    if (!group) return;
+    group.querySelectorAll(".compact-lb-btn").forEach((btn) => {
+      const el = btn as HTMLButtonElement;
+      el.classList.toggle("active", el.dataset.value === this.gapScope);
+    });
+  }
+
+  private syncScopeToggleVisibility(): void {
+    const scopeRow = this.root.querySelector<HTMLElement>(
+      '.compact-lb-toggle-row:has([data-group="gap-scope"])',
+    );
+    scopeRow?.classList.toggle("hidden", this.sessionKind === "private_test");
   }
 
   private gapForCar(car: CarSnapshot, board: CarSnapshot[]): string {
@@ -288,6 +326,14 @@ export class CompactLeaderboard {
     row.root.classList.toggle("is-retired", snap.retired);
     row.root.classList.toggle("in-garage", snap.inGarage === true);
     row.root.classList.toggle("in-pit", !snap.inGarage && snap.inPit);
+    row.root.classList.toggle(
+      "is-stranded",
+      snap.trackStatus === "stranded" || snap.trackStatus === "recovering",
+    );
+    row.root.classList.toggle(
+      "is-damaged",
+      this.managedEntryIds.has(snap.entryId) && hasCarDamage(snap),
+    );
 
     const pos = this.timingMode
       ? index + 1
@@ -322,24 +368,18 @@ export class CompactLeaderboard {
       row.status.textContent = "OUT";
       row.status.title = resolveRetireReason(snap);
       row.status.hidden = false;
-    } else if (snap.inGarage) {
-      row.status.className = "compact-lb-status";
-      row.status.textContent = "GAR";
-      row.status.title = "";
-      row.status.hidden = false;
-    } else if (snap.inPit) {
-      row.status.className = "compact-lb-status";
-      row.status.textContent = "PIT";
-      row.status.title = "";
-      row.status.hidden = false;
     } else {
-      const penaltyTag = formatPenaltyBadge(snap);
-      if (penaltyTag) {
-        row.status.className = `compact-lb-status ${penaltyTag.className}`;
-        row.status.textContent = penaltyTag.text;
-        row.status.title = penaltyTag.title;
+      const tags = resolveTimingStatusTags(snap, {
+        showDamage: this.managedEntryIds.has(snap.entryId),
+      });
+      const statusHtml = renderTimingStatusTagsHtml(tags, "compact-lb-status");
+      if (statusHtml) {
+        row.status.className = "compact-lb-status-wrap";
+        row.status.innerHTML = statusHtml;
         row.status.hidden = false;
       } else {
+        row.status.className = "compact-lb-status-wrap";
+        row.status.innerHTML = "";
         row.status.hidden = true;
       }
     }
@@ -349,9 +389,12 @@ export class CompactLeaderboard {
 
     const extras: string[] = [];
     if (this.showFuel) {
-      extras.push(`<span class="compact-lb-meta" title="Fuel">${snap.fuel.toFixed(0)}L</span>`);
+      const fuelTitle = usesBatteryFuelDisplay(snap) ? "Battery" : "Fuel";
+      extras.push(
+        `<span class="compact-lb-meta" title="${fuelTitle}">${formatFuelAmount(snap)}</span>`,
+      );
     }
-    if (this.showEnergy) {
+    if (this.showEnergy && !usesBatteryFuelDisplay(snap)) {
       const energy =
         snap.hybridDeployMJ != null &&
         snap.hybridDeployMJ >= 0 &&
@@ -380,25 +423,4 @@ export class CompactLeaderboard {
 function formatBestLap(seconds: number | undefined): string {
   if (seconds == null || seconds <= 0) return "—";
   return formatLapTime(seconds);
-}
-
-function formatPenaltyBadge(
-  snap: CarSnapshot,
-): { text: string; title: string; className: string } | null {
-  if (snap.blackFlag || snap.pendingPenalty === "black") {
-    return { text: "BLK", title: "Black flag", className: "status-black-flag" };
-  }
-  if (snap.meatballFlag) {
-    return { text: "MEAT", title: "Meatball — return to pits", className: "status-meatball" };
-  }
-  const penalty = snap.pendingPenalty ?? "none";
-  if (penalty === "drive_through") {
-    const laps = snap.lapsToComply != null ? ` (${snap.lapsToComply})` : "";
-    return { text: `DT${laps}`, title: "Drive-through penalty", className: "status-penalty" };
-  }
-  if (penalty === "stop_go") {
-    const laps = snap.lapsToComply != null ? ` (${snap.lapsToComply})` : "";
-    return { text: `S&G${laps}`, title: "Stop-and-go penalty", className: "status-penalty" };
-  }
-  return null;
 }

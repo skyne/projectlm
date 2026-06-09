@@ -297,6 +297,8 @@ Napi::Object EventToObject(Napi::Env env, const SimEvent &event) {
   Napi::Object obj = Napi::Object::New(env);
   obj.Set("type", EventTypeName(event.type));
   obj.Set("entryId", event.entryId);
+  if (!event.otherEntryId.empty())
+    obj.Set("otherEntryId", event.otherEntryId);
   obj.Set("lap", event.lap);
   obj.Set("sectorIndex", event.sectorIndex);
   obj.Set("timestamp", event.timestamp);
@@ -515,6 +517,39 @@ Napi::Value GetRaceControl(const Napi::CallbackInfo &info) {
   return RaceControlToObject(env, g_bridge.getRaceControl());
 }
 
+Napi::Value DebugRaceControl(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 1 || !info[0].IsObject())
+    return Napi::String::New(env, "payload object required");
+
+  Napi::Object obj = info[0].As<Napi::Object>();
+  DebugRaceControlRequest req;
+  if (obj.Has("action"))
+    req.action = obj.Get("action").As<Napi::String>().Utf8Value();
+  if (obj.Has("phase"))
+    req.phase = obj.Get("phase").As<Napi::String>().Utf8Value();
+  if (obj.Has("sectorIndex"))
+    req.sectorIndex = obj.Get("sectorIndex").As<Napi::Number>().Int32Value();
+  if (obj.Has("level"))
+    req.level = obj.Get("level").As<Napi::Number>().Int32Value();
+  if (obj.Has("entryId"))
+    req.entryId = obj.Get("entryId").As<Napi::String>().Utf8Value();
+  if (obj.Has("reason"))
+    req.reason = obj.Get("reason").As<Napi::String>().Utf8Value();
+  if (obj.Has("kind"))
+    req.kind = obj.Get("kind").As<Napi::String>().Utf8Value();
+  if (obj.Has("gripMultiplier"))
+    req.gripMultiplier =
+        obj.Get("gripMultiplier").As<Napi::Number>().DoubleValue();
+  if (obj.Has("active"))
+    req.active = obj.Get("active").As<Napi::Boolean>().Value();
+
+  std::string error;
+  if (g_bridge.debugRaceControl(req, &error))
+    return env.Null();
+  return Napi::String::New(env, error.empty() ? "debug race control failed" : error);
+}
+
 Napi::Value GetTeamConfig(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
   return TeamConfigToObject(env);
@@ -534,6 +569,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("submitCommand", Napi::Function::New(env, SubmitCommand));
   exports.Set("getRaceTime", Napi::Function::New(env, GetRaceTime));
   exports.Set("getRaceControl", Napi::Function::New(env, GetRaceControl));
+  exports.Set("debugRaceControl", Napi::Function::New(env, DebugRaceControl));
   exports.Set("getTeamConfig", Napi::Function::New(env, GetTeamConfig));
   return exports;
 }

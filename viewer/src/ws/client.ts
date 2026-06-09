@@ -152,7 +152,9 @@ export class ViewerClient {
     };
 
     this.ws.onerror = () => {
-      this.handlers.onError?.("WebSocket error");
+      this.handlers.onError?.(
+        "WebSocket error — is the ProjectLM server running? Try ./dev-viewer.sh from the repo root.",
+      );
     };
 
     this.ws.onmessage = (ev) => {
@@ -285,6 +287,10 @@ export class ViewerClient {
     this.send(clientMessage("start_private_test", prep));
   }
 
+  continuePrivateTest(): void {
+    this.send(clientMessage("continue_private_test", {}));
+  }
+
   reloadDefinitions(): void {
     this.send(clientMessage("reload_definitions", {}));
   }
@@ -295,6 +301,10 @@ export class ViewerClient {
 
   updateCarBriefing(payload: import("./protocol").UpdateCarBriefingPayload): void {
     this.send(clientMessage("update_car_briefing", payload));
+  }
+
+  debugRaceControl(payload: import("./protocol").DebugRaceControlPayload): void {
+    this.send(clientMessage("debug_race_control", payload));
   }
 
   hireStaff(role: string, name: string, skill: number): void {

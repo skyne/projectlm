@@ -22,7 +22,25 @@ import {
   SESSION_SETUP_FIELDS,
   type SessionSetupFieldDef,
 } from "../utils/weekendSetup";
-import { PRIVATE_TEST_DEFAULT_HOURS } from "./privateTestConstants";
+import {
+  agreementPartnerTeams,
+  allowedJointTestTrackIdsForGroup,
+  defaultPrivateTestDurationHours,
+  formatJointTestPlanSummary,
+  jointTestDefaultsForAgreement,
+  jointTestSessionPlan,
+  jointTestingPartnerGroupKey,
+  nextJointTestSessionIndex,
+  pendingJointTestingBundles,
+  pendingJointTestingPartnerGroups,
+  pickJointAgreementForGroupAndTrack,
+  privateTestBonusHint,
+} from "../utils/privateTest";
+import {
+  PRIVATE_TEST_DEFAULT_HOURS,
+  PRIVATE_TEST_MAX_HOURS,
+  PRIVATE_TEST_MIN_HOURS,
+} from "./privateTestConstants";
 
 export interface PrivateTestSetupHandlers {
   onConfirm: (payload: StartPrivateTestPayload) => void;
@@ -43,6 +61,7 @@ export class PrivateTestSetup {
   private carBriefings = new Map<string, CarSessionBriefing>();
   private briefingPicker: BriefingRolePicker;
   private setupChips: SetupSuggestionChips;
+  private selectedPartnerGroupKey: string | null = null;
 
   constructor(container: HTMLElement, handlers: PrivateTestSetupHandlers) {
     this.handlers = handlers;
@@ -54,11 +73,16 @@ export class PrivateTestSetup {
           <div>
             <span class="mm-badge mm-badge-wec">Private Test</span>
             <h2>Schedule a test session</h2>
-            <p class="private-test-subtitle">Solo free practice — earn driver and crew XP, try setups, no championship impact.</p>
+            <p class="private-test-subtitle private-test-mode-copy">Solo free practice — earn driver and crew XP, try setups, no championship impact.</p>
           </div>
           <button type="button" class="secondary-btn private-test-close" aria-label="Cancel">✕</button>
         </header>
         <div class="private-test-body">
+          <section class="private-test-section private-test-joint-section hidden">
+            <h3>Joint testing agreement</h3>
+            <p class="private-test-hint private-test-joint-hint"></p>
+            <div class="private-test-joint-partners"></div>
+          </section>
           <section class="private-test-section">
             <h3>Track</h3>
             <div class="private-test-track-grid"></div>
@@ -74,6 +98,7 @@ export class PrivateTestSetup {
           </section>
           <section class="private-test-section">
             <h3>Duration</h3>
+            <p class="private-test-hint private-test-duration-hint"></p>
             <label class="private-test-duration">
               <input type="range" min="1" max="72" step="1" class="private-test-duration-slider" />
               <span class="private-test-duration-label"></span>
@@ -90,7 +115,7 @@ export class PrivateTestSetup {
           <button type="button" class="secondary-btn private-test-cancel">Cancel</button>
           <button type="button" class="primary-btn private-test-start">
             <span class="btn-icon" aria-hidden="true">🏎</span>
-            Start Private Test
+            <span class="private-test-start-label">Start Private Test</span>
           </button>
         </footer>
       </div>
@@ -126,17 +151,34 @@ export class PrivateTestSetup {
       ".private-test-duration-slider",
     ) as HTMLInputElement;
     slider.addEventListener("input", () => {
+      if (slider.disabled) return;
       this.durationHours = Number(slider.value);
-      this.updateDurationLabel();
+      this.renderDuration();
     });
   }
 
-  open(meta: MetaStatePayload, catalog: GameCatalogPayload | null): void {
+  open(
+    meta: MetaStatePayload,
+    catalog: GameCatalogPayload | null,
+    options: { agreementId?: string } = {},
+  ): void {
     this.meta = meta;
     this.catalog = catalog;
-    this.trackId = meta.calendar.find((e) => e.round === meta.currentRound)?.trackId
-      ?? ALL_TRACK_IDS[0]
-      ?? "spa";
+
+    const groups = pendingJointTestingPartnerGroups(meta);
+    const agreementFromOption = options.agreementId
+      ? pendingJointTestingBundles(meta).find((agr) => agr.id === options.agreementId)
+      : undefined;
+    if (agreementFromOption) {
+      this.selectedPartnerGroupKey = jointTestingPartnerGroupKey(
+        agreementPartnerTeams(agreementFromOption),
+      );
+      this.applyAgreementDefaults();
+    } else {
+      this.selectedPartnerGroupKey = null;
+      this.resetSoloDefaults();
+    }
+
     this.selectedCarIds = new Set((meta.fleet ?? []).map((c) => c.id));
     this.driverAssignments.clear();
     for (const car of meta.fleet ?? []) {
@@ -144,7 +186,7 @@ export class PrivateTestSetup {
         .filter((id) => meta.driverRoster?.some((d) => d.id === id));
       this.driverAssignments.set(car.id, new Set(ids.length ? ids : []));
     }
-    this.durationHours = PRIVATE_TEST_DEFAULT_HOURS;
+
     this.activeCarId = meta.playerCarId ?? meta.activeCarId ?? meta.fleet?.[0]?.id ?? "";
     this.initPresets();
     this.carBriefings = initCarBriefings(meta, this.trackId, "practice");
@@ -160,6 +202,64 @@ export class PrivateTestSetup {
     );
     this.render();
     this.root.classList.remove("hidden");
+  }
+
+  private selectedPartnerGroup() {
+    if (!this.meta || !this.selectedPartnerGroupKey) return null;
+    return (
+      pendingJointTestingPartnerGroups(this.meta).find(
+        (group) => group.key === this.selectedPartnerGroupKey,
+      ) ?? null
+    );
+  }
+
+  private selectedAgreement() {
+    const group = this.selectedPartnerGroup();
+    if (!group) return null;
+    return pickJointAgreementForGroupAndTrack(group, this.trackId);
+  }
+
+  private selectedPartners(): string[] {
+    const agreement = this.selectedAgreement();
+    return agreement ? agreementPartnerTeams(agreement) : [];
+  }
+
+  private resetSoloDefaults(): void {
+    if (!this.meta) return;
+    this.trackId =
+      this.meta.calendar.find((e) => e.round === this.meta!.currentRound)?.trackId ??
+      ALL_TRACK_IDS[0] ??
+      "spa";
+    this.durationHours = PRIVATE_TEST_DEFAULT_HOURS;
+  }
+
+  private applyAgreementDefaults(): void {
+    const group = this.selectedPartnerGroup();
+    if (!group) return;
+
+    const allowedTracks = allowedJointTestTrackIdsForGroup(group);
+    if (allowedTracks.length === 1) {
+      this.trackId = allowedTracks[0]!;
+    } else if (allowedTracks.length > 1 && !allowedTracks.includes(this.trackId)) {
+      this.trackId = allowedTracks[0]!;
+    }
+
+    const agreement = this.selectedAgreement() ?? group.agreements[0] ?? null;
+    if (!agreement) return;
+    const defaults = jointTestDefaultsForAgreement(
+      agreement,
+      this.meta?.privateTestProgress,
+    );
+    if (
+      defaults.trackId &&
+      ALL_TRACK_IDS.includes(defaults.trackId) &&
+      allowedTracks.includes(defaults.trackId)
+    ) {
+      this.trackId = defaults.trackId;
+    }
+    this.durationHours =
+      defaults.durationHours ??
+      defaultPrivateTestDurationHours(this.meta!, agreement.id);
   }
 
   hide(): void {
@@ -216,6 +316,9 @@ export class PrivateTestSetup {
     const briefings = this.briefingPicker
       .getBriefings()
       .filter((b) => carIds.includes(b.carId));
+    const agreement = this.selectedAgreement();
+    const jointPartnerTeams = this.selectedPartners();
+    if (this.selectedPartnerGroupKey && !agreement) return;
 
     this.handlers.onConfirm({
       trackId: this.trackId,
@@ -224,43 +327,196 @@ export class PrivateTestSetup {
       durationHours: this.durationHours,
       carSetups: carSetups.length ? carSetups : undefined,
       carBriefings: briefings.length ? briefings : undefined,
+      jointAgreementId: agreement?.id,
+      jointPartnerTeams: jointPartnerTeams.length ? jointPartnerTeams : undefined,
     });
   }
 
-  private updateDurationLabel(): void {
+  private renderDuration(): void {
     const label = this.root.querySelector(".private-test-duration-label");
-    if (label) label.textContent = `${this.durationHours} h`;
+    const hint = this.root.querySelector(".private-test-duration-hint")!;
     const slider = this.root.querySelector(
       ".private-test-duration-slider",
     ) as HTMLInputElement;
-    if (slider) slider.value = String(this.durationHours);
+    const agreement = this.selectedAgreement();
+
+    if (agreement) {
+      const progress = this.meta?.privateTestProgress;
+      const defaults = jointTestDefaultsForAgreement(agreement, progress);
+      const plan = defaults.plan;
+      const sessionIndex = nextJointTestSessionIndex(plan, progress) ?? 0;
+      const slot = plan.sessions[sessionIndex];
+      const contracted = slot?.durationHours ?? defaults.durationHours
+        ?? PRIVATE_TEST_DEFAULT_HOURS;
+      this.durationHours = contracted;
+      slider.min = String(contracted);
+      slider.max = String(contracted);
+      slider.value = String(contracted);
+      slider.disabled = true;
+      if (label) label.textContent = `${contracted} h`;
+      if (plan.mode === "continuous") {
+        hint.textContent = `Locked to ${formatJointTestPlanSummary(plan)}.`;
+      } else {
+        const dayNum = sessionIndex + 1;
+        hint.textContent =
+          plan.sessions.length > 1
+            ? `Session ${dayNum} of ${plan.sessions.length} — ${contracted} h (locked).`
+            : `Locked to ${formatJointTestPlanSummary(plan)}.`;
+      }
+      hint.classList.remove("hidden");
+      return;
+    }
+
+    slider.disabled = false;
+    slider.min = String(PRIVATE_TEST_MIN_HOURS);
+    slider.max = String(PRIVATE_TEST_MAX_HOURS);
+    slider.value = String(
+      Math.min(
+        PRIVATE_TEST_MAX_HOURS,
+        Math.max(PRIVATE_TEST_MIN_HOURS, this.durationHours),
+      ),
+    );
+    this.durationHours = Number(slider.value);
+    if (label) label.textContent = `${this.durationHours} h`;
+    hint.textContent = "";
+    hint.classList.add("hidden");
   }
 
   private render(): void {
+    this.renderJointPartners();
     this.renderTracks();
     this.renderCars();
     this.renderDrivers();
-    this.updateDurationLabel();
+    this.renderDuration();
     this.renderSetup();
+    this.updateModeCopy();
+  }
+
+  private updateModeCopy(): void {
+    const copy = this.root.querySelector(".private-test-mode-copy");
+    const startBtn = this.root.querySelector(".private-test-start");
+    const partners = this.selectedPartners();
+    if (copy) {
+      copy.textContent =
+        partners.length > 0
+          ? `Joint test with ${partners.join(" + ")} together — all contracted partners join this session.`
+          : "Solo free practice — earn driver and crew XP, try setups, no championship impact.";
+    }
+    const startLabel = this.root.querySelector(".private-test-start-label");
+    if (startLabel) {
+      startLabel.textContent =
+        partners.length > 0 ? "Start Joint Test" : "Start Private Test";
+    }
+  }
+
+  private renderJointPartners(): void {
+    const section = this.root.querySelector(".private-test-joint-section")!;
+    const host = this.root.querySelector(".private-test-joint-partners")!;
+    const hint = this.root.querySelector(".private-test-joint-hint")!;
+    const groups = this.meta ? pendingJointTestingPartnerGroups(this.meta) : [];
+
+    if (!groups.length) {
+      section.classList.add("hidden");
+      host.replaceChildren();
+      return;
+    }
+
+    section.classList.remove("hidden");
+    const bonus = this.meta ? privateTestBonusHint(this.meta, this.selectedPartners()) : null;
+    hint.textContent = this.selectedPartnerGroupKey
+      ? bonus
+        ? `${bonus}. Track and duration follow the selected contract.`
+        : "Track and duration follow the selected joint-testing contract."
+      : bonus
+        ? `${bonus}. Choose a partner group for a joint test, or stay on solo private test.`
+        : "Choose a partner group for a joint test, or stay on solo private test.";
+
+    host.replaceChildren();
+
+    const soloLabel = document.createElement("label");
+    soloLabel.className = "private-test-joint-partner-option private-test-joint-solo-option";
+    const soloChecked = !this.selectedPartnerGroupKey;
+    soloLabel.innerHTML = `
+      <input type="radio" name="joint-agreement" ${soloChecked ? "checked" : ""} />
+      <span class="private-test-joint-partner-name">Solo private test</span>
+      <span class="private-test-joint-partner-meta">No rival teams — any track and duration</span>
+    `;
+    soloLabel.querySelector("input")!.addEventListener("change", () => {
+      this.selectedPartnerGroupKey = null;
+      this.resetSoloDefaults();
+      this.initPresets();
+      this.render();
+    });
+    host.appendChild(soloLabel);
+
+    for (const group of groups) {
+      const template = group.agreements[0]!;
+      const label = document.createElement("label");
+      label.className = "private-test-joint-partner-option";
+      const checked = this.selectedPartnerGroupKey === group.key;
+      const trackIds = allowedJointTestTrackIdsForGroup(group);
+      const trackLabel =
+        trackIds.length === 1
+          ? trackDisplayName(trackIds[0]!)
+          : trackIds.length > 1
+            ? trackIds.map((id) => trackDisplayName(id)).join(" / ")
+            : "TBD";
+      const plan = jointTestSessionPlan(template);
+      const pendingBadge =
+        group.agreements.length > 1
+          ? `<span class="private-test-joint-pending-badge">${group.agreements.length} pending contracts</span>`
+          : "";
+      label.innerHTML = `
+        <input type="radio" name="joint-agreement" ${checked ? "checked" : ""} />
+        <span class="private-test-joint-partner-name">
+          <span>${escapeHtml(group.partners.join(" + "))}</span>
+          ${pendingBadge}
+        </span>
+        <span class="private-test-joint-partner-meta">${escapeHtml(`${formatJointTestPlanSummary(plan)} · ${trackLabel}`)}</span>
+      `;
+      const input = label.querySelector("input")!;
+      input.addEventListener("change", () => {
+        this.selectedPartnerGroupKey = group.key;
+        this.applyAgreementDefaults();
+        this.initPresets();
+        this.render();
+      });
+      host.appendChild(label);
+    }
   }
 
   private renderTracks(): void {
     const grid = this.root.querySelector(".private-test-track-grid")!;
     grid.replaceChildren();
+    const group = this.selectedPartnerGroup();
+    const allowedTracks = group
+      ? new Set(allowedJointTestTrackIdsForGroup(group))
+      : null;
+
     for (const trackId of ALL_TRACK_IDS) {
+      const enabled = !allowedTracks || allowedTracks.has(trackId);
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = `private-test-track-btn${trackId === this.trackId ? " active" : ""}`;
+      btn.disabled = !enabled;
+      btn.className = `private-test-track-btn${trackId === this.trackId ? " active" : ""}${enabled ? "" : " is-disabled"}`;
+      btn.title = enabled
+        ? trackDisplayName(trackId)
+        : "Not covered by the selected joint-testing contract";
       btn.innerHTML = `
         <span class="private-test-track-icon">${trackIconSvg(trackId)}</span>
         <span class="private-test-track-name">${escapeHtml(trackDisplayName(trackId))}</span>
       `;
-      btn.addEventListener("click", () => {
-        this.trackId = trackId;
-        this.initPresets();
-        this.renderTracks();
-        this.renderSetup();
-      });
+      if (enabled) {
+        btn.addEventListener("click", () => {
+          this.trackId = trackId;
+          this.applyAgreementDefaults();
+          this.initPresets();
+          this.renderTracks();
+          this.renderDuration();
+          this.renderSetup();
+          this.updateModeCopy();
+        });
+      }
       grid.appendChild(btn);
     }
   }

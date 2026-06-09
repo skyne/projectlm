@@ -202,6 +202,56 @@ TEST_CASE("Pit rejoin speed accelerates past first-gear ceiling",
   REQUIRE(state.currentSpeed > pitExitSpeed + 8.0);
 }
 
+TEST_CASE("BEV deploy scales from power target", "[unit][bev]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  CarConfig car;
+  PhysicsConfig physics;
+  TrackDefinition track;
+  LoadGoldenCar(catalog, assembly, car, physics, track);
+
+  car.engine.fuelType = "Electric";
+  car.engine.drivetrain = "FullEV";
+  car.engine.powerTargetHp = 680.0;
+  car.engine.peakTorqueNm = 2856.0;
+  car.fuelSystemId = "BatteryPackSprint";
+  CompileCarArchitecture(car, catalog, assembly);
+
+  REQUIRE(car.isBatteryPrimaryEv);
+  REQUIRE(car.electricalDeployKW > 500.0);
+  REQUIRE(car.electricalDeployKW < 520.0);
+}
+
+TEST_CASE("BEV battery depletes and stops delivering power", "[unit][sim][bev]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  CarConfig car;
+  PhysicsConfig physics;
+  TrackDefinition track;
+  LoadGoldenCar(catalog, assembly, car, physics, track);
+
+  car.engine.fuelType = "Electric";
+  car.engine.drivetrain = "FullEV";
+  car.fuelSystemId = "BatteryPackStandard";
+  CompileCarArchitecture(car, catalog, assembly);
+  REQUIRE(car.isBatteryPrimaryEv);
+  REQUIRE(car.hybridStintDeployBudgetMJ > 0.0);
+
+  SimulationState state;
+  state.currentSpeed = 72.0;
+  state.throttleBlend = 1.0;
+  state.batteryChargeMJ = car.hybridStintDeployBudgetMJ;
+  state.fuelRemaining = state.batteryChargeMJ;
+  state.hybridDeployRemainingMJ = state.batteryChargeMJ;
+
+  const double startMj = state.batteryChargeMJ;
+  for (int i = 0; i < 8000; ++i)
+    TickSimulation(car, track, state, 0.1, physics);
+
+  REQUIRE(state.batteryChargeMJ < startMj * 0.5);
+  REQUIRE(state.fuelRemaining == Catch::Approx(state.batteryChargeMJ));
+}
+
 TEST_CASE("Out of fuel car coasts to stop", "[unit][sim]") {
   PartCatalog catalog;
   AssemblyConfig assembly;
@@ -213,11 +263,103 @@ TEST_CASE("Out of fuel car coasts to stop", "[unit][sim]") {
   SimulationState state;
   state.currentSpeed = 40.0;
   state.fuelRemaining = 0.0;
+  state.hybridDeployRemainingMJ = 0.0;
+  state.batteryChargeMJ = 0.0;
 
   for (int i = 0; i < 500; ++i)
     TickSimulation(car, track, state, 0.1, physics);
 
   REQUIRE(state.currentSpeed < 1.0);
+}
+
+TEST_CASE("REX EV drives on battery when REX fuel is empty", "[unit][sim]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  CarConfig car;
+  PhysicsConfig physics;
+  TrackDefinition track;
+  REQUIRE(LoadPartCatalog(ConfigPath("part_catalog.txt"), catalog));
+  REQUIRE(LoadPhysicsConfig(ConfigPath("physics_config.txt"), physics));
+  REQUIRE(LoadAssemblyConfig(ConfigPath("physics_config.txt"), assembly));
+  REQUIRE(LoadTrack(TrackPath("lemans_la_sarthe.json"), track));
+
+  car.engine.fuelType = "Electric";
+  car.engine.drivetrain = "RangeExtender";
+  car.fuelSystemId = "BatteryPackStandard";
+  car.transmissionId = "SingleSpeedEDrive";
+  CompileCarArchitecture(car, catalog, assembly);
+  REQUIRE(car.isGeneratorOnly);
+  REQUIRE_FALSE(car.isBatteryPrimaryEv);
+
+  SimulationState state;
+  state.currentSpeed = 8.0;
+  state.throttleBlend = 1.0;
+  state.fuelRemaining = 0.0;
+  state.batteryChargeMJ = car.hybridStintDeployBudgetMJ;
+  state.hybridDeployRemainingMJ = car.hybridStintDeployBudgetMJ;
+
+  for (int i = 0; i < 200; ++i)
+    TickSimulation(car, track, state, 0.1, physics);
+
+  REQUIRE(state.currentSpeed > 12.0);
+  REQUIRE(state.batteryChargeMJ < car.hybridStintDeployBudgetMJ);
+}
+
+TEST_CASE("REX EV uses hybrid pack MJ when batteryChargeMJ was drained separately",
+          "[unit][sim]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  CarConfig car;
+  PhysicsConfig physics;
+  TrackDefinition track;
+  REQUIRE(LoadPartCatalog(ConfigPath("part_catalog.txt"), catalog));
+  REQUIRE(LoadPhysicsConfig(ConfigPath("physics_config.txt"), physics));
+  REQUIRE(LoadAssemblyConfig(ConfigPath("physics_config.txt"), assembly));
+  REQUIRE(LoadTrack(TrackPath("lemans_la_sarthe.json"), track));
+
+  car.engine.fuelType = "Electric";
+  car.engine.drivetrain = "RangeExtender";
+  car.fuelSystemId = "BatteryPackStandard";
+  car.transmissionId = "SingleSpeedEDrive";
+  CompileCarArchitecture(car, catalog, assembly);
+
+  SimulationState state;
+  state.currentSpeed = 8.0;
+  state.throttleBlend = 1.0;
+  state.fuelRemaining = 0.0;
+  state.batteryChargeMJ = 0.0;
+  state.hybridDeployRemainingMJ = car.hybridStintDeployBudgetMJ;
+
+  for (int i = 0; i < 200; ++i)
+    TickSimulation(car, track, state, 0.1, physics);
+
+  REQUIRE(state.currentSpeed > 12.0);
+  REQUIRE(state.hybridDeployRemainingMJ < car.hybridStintDeployBudgetMJ);
+  REQUIRE(state.batteryChargeMJ == Catch::Approx(state.hybridDeployRemainingMJ));
+}
+
+TEST_CASE("Hybrid drives on electric deploy when ICE fuel is empty",
+          "[unit][sim]") {
+  PartCatalog catalog;
+  AssemblyConfig assembly;
+  CarConfig car;
+  PhysicsConfig physics;
+  TrackDefinition track;
+  LoadGoldenCar(catalog, assembly, car, physics, track);
+  REQUIRE(car.hybridDeployPowerKW > 0.0);
+
+  SimulationState state;
+  state.currentSpeed = 8.0;
+  state.throttleBlend = 1.0;
+  state.fuelRemaining = 0.0;
+  state.hybridDeployRemainingMJ = car.hybridStintDeployBudgetMJ;
+  state.batteryChargeMJ = car.hybridStintDeployBudgetMJ;
+
+  for (int i = 0; i < 200; ++i)
+    TickSimulation(car, track, state, 0.1, physics);
+
+  REQUIRE(state.currentSpeed > 10.0);
+  REQUIRE(state.hybridDeployRemainingMJ < car.hybridStintDeployBudgetMJ);
 }
 
 TEST_CASE("Engine wear scales linearly with stress not squared",

@@ -6,6 +6,7 @@ import type {
   FleetEntryMode,
   GameCatalogPayload,
   MetaStatePayload,
+  NegotiationSessionPayload,
   TeamLiveryPayload,
   StaffMarketListingPayload,
   StaffMarketSource,
@@ -19,6 +20,12 @@ import {
   trackDisplayName,
   trackIconSvg,
 } from "../utils/trackIcons";
+import {
+  agreementPartnerTeams,
+  formatJointTestPlanSummary,
+  jointTestSessionPlan,
+  pendingJointTestingBundles,
+} from "../utils/privateTest";
 import {
   affiliationHintForClass,
   canRemoveFleetCar,
@@ -53,7 +60,11 @@ export interface TeamHQHandlers {
   onSignSponsor?: (offerId: string) => void;
   onNegotiateSponsor?: (offerId: string) => void;
   onDropSponsor?: (offerId: string) => void;
-  onStartInterTeamDeal?: (subtype: "joint_testing" | "tech_share", teamName: string) => void;
+  onOrganizeTesting?: () => void;
+  onDealTechSharing?: () => void;
+  onScheduleJointTest?: (agreementId: string) => void;
+  onResumeNegotiation?: (session: NegotiationSessionPayload) => void;
+  onWithdrawNegotiation?: (negotiationId: string) => void;
   onStartRegulatoryPetition?: (proposalId: string) => void;
   onOpenGarage?: () => void;
   onConfigureCar?: (carId: string) => void;
@@ -134,6 +145,8 @@ export class TeamHQ {
   private sponsorsEl!: HTMLElement;
   private sponsorOffersEl!: HTMLElement;
   private interTeamDealsEl!: HTMLElement;
+  private partnershipStatusEl!: HTMLElement;
+  private openNegotiationsEl!: HTMLElement;
   private activeAgreementsEl!: HTMLElement;
   private regulatoryProposalsEl!: HTMLElement;
   private regulatoryVotesEl!: HTMLElement;
@@ -204,8 +217,12 @@ export class TeamHQ {
           <h4 class="hq-subsection-title">Available offers</h4>
           <div id="sponsor-offers" class="sponsor-offers-grid"></div>
           <h4 class="hq-subsection-title">Partnerships &amp; agreements</h4>
-          <p class="wizard-hint">Propose joint testing or technology sharing with rival teams. Deals resolve after the next race weekend.</p>
+          <p class="wizard-hint">Propose joint testing or technology sharing with rival teams. Rivals respond immediately when you submit an offer.</p>
+          <p class="hq-partnership-status wizard-hint hidden"></p>
           <div id="inter-team-deals" class="deals-grid"></div>
+          <h4 class="hq-subsection-title">Open negotiations</h4>
+          <ul id="open-negotiations" class="open-negotiations-list"></ul>
+          <h4 class="hq-subsection-title">Active agreements</h4>
           <ul id="active-agreements" class="agreements-list"></ul>
           <h4 class="hq-subsection-title">Regulatory petitions (ACR)</h4>
           <p class="wizard-hint">File exceptions or initiate rule-change votes. Sim BoP hooks are stubbed — outcomes are recorded in career state.</p>
@@ -275,6 +292,8 @@ export class TeamHQ {
     this.sponsorsEl = this.root.querySelector("#team-sponsors")!;
     this.sponsorOffersEl = this.root.querySelector("#sponsor-offers")!;
     this.interTeamDealsEl = this.root.querySelector("#inter-team-deals")!;
+    this.partnershipStatusEl = this.root.querySelector(".hq-partnership-status")!;
+    this.openNegotiationsEl = this.root.querySelector("#open-negotiations")!;
     this.activeAgreementsEl = this.root.querySelector("#active-agreements")!;
     this.regulatoryProposalsEl = this.root.querySelector("#regulatory-proposals")!;
     this.regulatoryVotesEl = this.root.querySelector("#regulatory-votes")!;
@@ -376,6 +395,18 @@ export class TeamHQ {
 
   setLiveryStatus(message: string, isError = false): void {
     this.liveryEditor.setStatus(message, isError);
+  }
+
+  setPartnershipStatus(message: string, isError = false): void {
+    if (!message.trim()) {
+      this.partnershipStatusEl.textContent = "";
+      this.partnershipStatusEl.classList.add("hidden");
+      this.partnershipStatusEl.classList.remove("hq-status-error");
+      return;
+    }
+    this.partnershipStatusEl.textContent = message;
+    this.partnershipStatusEl.classList.remove("hidden");
+    this.partnershipStatusEl.classList.toggle("hq-status-error", isError);
   }
 
   setCatalog(catalog: GameCatalogPayload): void {
@@ -926,28 +957,87 @@ export class TeamHQ {
     }
   }
 
-  private renderPartnerships(meta: MetaStatePayload): void {
-    const rivals =
-      meta.aiRivalSeason?.teams
-        ?.filter((t) => !t.isPlayerTeam)
-        .map((t) => t.teamName)
-        .slice(0, 8) ?? [];
+  private renderOpenNegotiations(meta: MetaStatePayload): void {
+    this.openNegotiationsEl.replaceChildren();
+    const commercialKinds = new Set([
+      "inter_team_agreement",
+      "regulatory_petition",
+      "sponsor_partnership",
+    ]);
+    const activeStatuses = new Set(["open", "countered", "pending_response"]);
+    const sessions = (meta.negotiations ?? []).filter(
+      (session) =>
+        commercialKinds.has(session.kind) && activeStatuses.has(session.status),
+    );
 
-    this.interTeamDealsEl.replaceChildren();
-    for (const team of rivals) {
-      for (const subtype of ["joint_testing", "tech_share"] as const) {
-        const label =
-          subtype === "joint_testing" ? "Joint testing" : "Tech share";
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "secondary-btn deal-card";
-        btn.innerHTML = `<strong>${escapeHtml(label)}</strong><span>${escapeHtml(team)}</span>`;
-        btn.addEventListener("click", () => {
-          this.handlers.onStartInterTeamDeal?.(subtype, team);
-        });
-        this.interTeamDealsEl.appendChild(btn);
-      }
+    if (!sessions.length) {
+      const li = document.createElement("li");
+      li.className = "wizard-hint";
+      li.textContent = "No open partnership or sponsor negotiations.";
+      this.openNegotiationsEl.appendChild(li);
+      return;
     }
+
+    for (const session of sessions) {
+      const li = document.createElement("li");
+      li.className = "open-negotiation-card";
+
+      const partners = negotiationPartnerLabel(session);
+      const status = negotiationStatusLabel(session);
+
+      li.innerHTML = `
+        <div class="open-negotiation-main">
+          <strong class="open-negotiation-kind">${escapeHtml(negotiationKindLabel(session))}</strong>
+          <span class="open-negotiation-partners">${escapeHtml(partners)}</span>
+          <span class="open-negotiation-status">${escapeHtml(status)}</span>
+        </div>
+        <div class="open-negotiation-actions">
+          <button type="button" class="primary-btn open-negotiation-resume">Resume</button>
+          <button type="button" class="secondary-btn open-negotiation-withdraw">Walk away</button>
+        </div>
+      `;
+
+      li.querySelector(".open-negotiation-resume")!.addEventListener("click", () => {
+        this.handlers.onResumeNegotiation?.(session);
+      });
+      li.querySelector(".open-negotiation-withdraw")!.addEventListener("click", () => {
+        this.handlers.onWithdrawNegotiation?.(session.id);
+      });
+      this.openNegotiationsEl.appendChild(li);
+    }
+  }
+
+  private renderPartnerships(meta: MetaStatePayload): void {
+    this.interTeamDealsEl.replaceChildren();
+    const actions = document.createElement("div");
+    actions.className = "partnership-actions";
+
+    const testingBtn = document.createElement("button");
+    testingBtn.type = "button";
+    testingBtn.className = "primary-btn partnership-action-btn";
+    testingBtn.innerHTML = `
+      <strong>Organize Testing</strong>
+      <span>Private session or joint testing with rival teams</span>
+    `;
+    testingBtn.addEventListener("click", () => {
+      this.handlers.onOrganizeTesting?.();
+    });
+
+    const techBtn = document.createElement("button");
+    techBtn.type = "button";
+    techBtn.className = "secondary-btn partnership-action-btn";
+    techBtn.innerHTML = `
+      <strong>Deal Technology Sharing</strong>
+      <span>Negotiate shared R&amp;D with one partner team</span>
+    `;
+    techBtn.addEventListener("click", () => {
+      this.handlers.onDealTechSharing?.();
+    });
+
+    actions.append(testingBtn, techBtn);
+    this.interTeamDealsEl.appendChild(actions);
+
+    this.renderOpenNegotiations(meta);
 
     this.activeAgreementsEl.replaceChildren();
     const agreements = meta.activeAgreements ?? [];
@@ -957,10 +1047,53 @@ export class TeamHQ {
       li.textContent = "No active partnership agreements.";
       this.activeAgreementsEl.appendChild(li);
     } else {
-      for (const agr of agreements) {
+      const jointBundles = pendingJointTestingBundles(meta);
+      const otherAgreements = agreements.filter((agr) => agr.kind !== "joint_testing");
+
+      for (const agr of jointBundles) {
+        const partners = agreementPartnerTeams(agr);
         const li = document.createElement("li");
-        const stub = agr.stubPending ? ` · ${agr.stubNote ?? "stub"}` : "";
-        li.textContent = `${agr.kind}${agr.partnerTeam ? ` with ${agr.partnerTeam}` : ""} (until round ${agr.expiresAtRound})${stub}`;
+        li.className = "active-agreement-card";
+        const track = agr.terms.sharedTrackId
+          ? ` · ${trackDisplayName(agr.terms.sharedTrackId)}`
+          : "";
+        const schedule = agr.terms.testDays
+          ? ` · ${formatJointTestPlanSummary(jointTestSessionPlan(agr))}`
+          : "";
+        li.innerHTML = `
+          <div class="active-agreement-main">
+            <strong>Joint testing — ${escapeHtml(partners.join(" + "))}</strong>
+            <span class="active-agreement-meta">Until round ${agr.expiresAtRound}${escapeHtml(`${schedule}${track}`)}</span>
+          </div>
+        `;
+        const actions = document.createElement("div");
+        actions.className = "active-agreement-actions";
+        const scheduleBtn = document.createElement("button");
+        scheduleBtn.type = "button";
+        scheduleBtn.className = "primary-btn";
+        scheduleBtn.textContent = "Schedule test";
+        scheduleBtn.addEventListener("click", () => {
+          this.handlers.onScheduleJointTest?.(agr.id);
+        });
+        actions.appendChild(scheduleBtn);
+        li.appendChild(actions);
+        this.activeAgreementsEl.appendChild(li);
+      }
+
+      for (const agr of otherAgreements) {
+        if (agr.kind === "joint_testing" && agr.fulfilledAtRound) continue;
+        const li = document.createElement("li");
+        li.className = "active-agreement-card";
+        const label =
+          agr.kind === "tech_share"
+            ? `Technology sharing with ${agr.partnerTeam ?? "rival"}`
+            : agr.kind;
+        li.innerHTML = `
+          <div class="active-agreement-main">
+            <strong>${escapeHtml(label)}</strong>
+            <span class="active-agreement-meta">Until round ${agr.expiresAtRound}</span>
+          </div>
+        `;
         this.activeAgreementsEl.appendChild(li);
       }
     }
@@ -1502,6 +1635,54 @@ function isStaffSlotFilled(
 
 function staffSeveranceCost(member: StaffMemberPayload): number {
   return Math.round((member.salaryPerRace ?? 0) * 2);
+}
+
+function negotiationPartnerLabel(session: NegotiationSessionPayload): string {
+  if (session.kind === "sponsor_partnership") {
+    const sponsor = session.parties.find((p) => p.role === "counterparty");
+    return sponsor?.displayName ?? "Sponsor";
+  }
+  if (session.kind === "regulatory_petition") {
+    return "ACR regulatory petition";
+  }
+  const teams =
+    session.anchorTerms.partnerTeams ??
+    (session.anchorTerms.partnerTeam ? [session.anchorTerms.partnerTeam] : []);
+  if (teams.length) return teams.join(", ");
+  return (
+    session.parties
+      .filter((p) => p.role === "counterparty")
+      .map((p) => p.displayName)
+      .join(", ") || "Rival team"
+  );
+}
+
+function negotiationKindLabel(session: NegotiationSessionPayload): string {
+  if (session.kind === "sponsor_partnership") return "Sponsor partnership";
+  if (session.kind === "regulatory_petition") return "Regulatory petition";
+  if (session.anchorTerms.agreementSubtype === "tech_share") {
+    return "Technology sharing";
+  }
+  return "Joint testing";
+}
+
+function negotiationStatusLabel(session: NegotiationSessionPayload): string {
+  switch (session.status) {
+    case "pending_response":
+      return "Awaiting rival response…";
+    case "countered":
+      return session.kind === "inter_team_agreement"
+        ? "Rival counter-offer — adjust your terms or accept"
+        : "Counter-offer received";
+    case "accepted":
+      return "Deal agreed";
+    case "rejected":
+      return "Proposal declined";
+    case "open":
+      return "Ready for your offer";
+    default:
+      return session.status;
+  }
 }
 
 function staffRoleLabel(role: StaffRole): string {

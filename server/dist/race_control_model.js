@@ -37,6 +37,8 @@ function defaultMockRaceControlState() {
         scLapsRemaining: 0,
         activeIncidentEntryId: "",
         whiteFlagActive: false,
+        redFlagActive: false,
+        redFlagSecondsRemaining: 0,
         surfaceHazards: [],
     };
 }

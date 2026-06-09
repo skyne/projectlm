@@ -1,6 +1,6 @@
 # ProjectLM WebSocket Server
 
-Hosts the simulation tick loop and broadcasts state to viewers over WebSocket (port **8765**).
+Hosts the simulation tick loop and broadcasts state to viewers over WebSocket (port **9785** by default).
 
 Uses `@projectlm/native` (`bindings/node`) when built; falls back to a TypeScript mock session for development.
 
@@ -24,7 +24,7 @@ Environment variables:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `PORT` | `8765` | WebSocket listen port |
+| `PORT` / `PROJECTLM_WS_PORT` | `9785` | WebSocket listen port |
 | `PROJECTLM_ROOT` | repo root | Path to configs/tracks |
 
 Default race config: `configs/race_config.txt`. Set `entries=configs/entries.txt` in that file for multicar mode.

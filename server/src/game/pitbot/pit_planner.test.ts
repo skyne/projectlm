@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  hasSevereCarIssue,
   mustServePenalty,
+  needsEmergencyPit,
+  PENALTY_SERVE_FUEL_BUFFER_LAPS,
+  shouldServeDeferrablePenaltyNow,
   planPitStop,
+  planRedFlagEmergencyPit,
   scaledFuelThresholds,
   shouldDeferPitForRaceControl,
   type PlannerSnap,
@@ -302,6 +307,14 @@ describe("pit_planner race control helpers", () => {
       }),
       true,
     );
+    assert.equal(
+      shouldDeferPitForRaceControl({
+        flagPhase: "red_flag",
+        fcyActive: false,
+        scActive: false,
+      }),
+      true,
+    );
   });
 
   it("shouldDeferPitForRaceControl returns false when race control payload missing", () => {
@@ -339,6 +352,107 @@ describe("pit_planner race control helpers", () => {
       ),
       true,
     );
+  });
+
+  it("hasSevereCarIssue detects flats, limp, and body damage", () => {
+    assert.equal(hasSevereCarIssue(snap({ tyreDeflation: { FL: "flat" } })), true);
+    assert.equal(hasSevereCarIssue(snap({ limpMode: "barely_driveable" })), true);
+    assert.equal(hasSevereCarIssue(snap({ limpMode: "reduced_power" })), true);
+    assert.equal(
+      hasSevereCarIssue(snap({ partHealth: { body_fl: 50 }, engineHealth: 95 })),
+      true,
+    );
+    assert.equal(hasSevereCarIssue(snap({ engineHealth: 70 })), true);
+    assert.equal(hasSevereCarIssue(snap({ engineHealth: 95 })), false);
+  });
+
+  it("shouldServeDeferrablePenaltyNow defers when fuel or damage needs service first", () => {
+    const lowFuel = snap({
+      pendingPenalty: "stop_go",
+      lapsToComply: 3,
+      fuel: 3,
+      fuelTankCapacity: 100,
+      lap: 10,
+    });
+    const sincePit = 5;
+    const fuelAtLastPit = 13;
+    assert.equal(
+      shouldServeDeferrablePenaltyNow(lowFuel, sincePit, fuelAtLastPit),
+      false,
+    );
+    assert.equal(
+      shouldServeDeferrablePenaltyNow(
+        snap({
+          ...lowFuel,
+          fuel: PENALTY_SERVE_FUEL_BUFFER_LAPS * 2,
+        }),
+        sincePit,
+        fuelAtLastPit,
+      ),
+      true,
+    );
+    assert.equal(
+      shouldServeDeferrablePenaltyNow(
+        snap({ ...lowFuel, pendingPenalty: "black" }),
+        sincePit,
+        fuelAtLastPit,
+      ),
+      true,
+    );
+    assert.equal(
+      shouldServeDeferrablePenaltyNow(
+        snap({
+          pendingPenalty: "drive_through",
+          lapsToComply: 3,
+          fuel: 50,
+          fuelTankCapacity: 100,
+          tyreDeflation: { RR: "flat" },
+        }),
+        sincePit,
+        fuelAtLastPit,
+      ),
+      false,
+    );
+  });
+});
+
+describe("planRedFlagEmergencyPit", () => {
+  it("needsEmergencyPit includes deflated tyres", () => {
+    assert.equal(needsEmergencyPit(snap({ tyreDeflation: { FL: "flat" } })), true);
+    assert.equal(needsEmergencyPit(snap({ tyreDeflation: {} })), false);
+  });
+
+  it("allows only deflated wheel and blocks strategic fuel", () => {
+    const plan = planRedFlagEmergencyPit(
+      snap({
+        fuel: 80,
+        fuelTankCapacity: 100,
+        tyreDeflation: { FL: "flat" },
+      }),
+      { wet: 0 },
+    );
+    assert.ok(plan);
+    assert.ok(plan!.parts.some((p) => p.includes("tires=FL")));
+    assert.ok(!plan!.parts.some((p) => p.startsWith("fuel=") && !p.includes("fuel=0")));
+    assert.ok(!plan!.services.driver);
+  });
+
+  it("caps low-fuel top-up and excludes driver swap", () => {
+    const plan = planRedFlagEmergencyPit(
+      snap({ fuel: 10, fuelTankCapacity: 100 }),
+      { wet: 0 },
+    );
+    assert.ok(plan);
+    assert.match(plan!.parts.join("|"), /fuel=15/);
+    assert.ok(!plan!.parts.some((p) => p.includes("driver_change")));
+  });
+
+  it("returns null for routine wear without emergency trigger", () => {
+    const plan = planRedFlagEmergencyPit(
+      snap({ fuel: 60, fuelTankCapacity: 100, tireWear: 0.95 }),
+      { wet: 0 },
+    );
+    assert.equal(plan, null);
   });
 });
 

@@ -34,6 +34,10 @@ export const PIT_REPAIR_PART_SEC: Record<string, number> = {
   bodywork: 32,
 };
 export const PIT_DRIVER_CHANGE_SEC = 15;
+/** Mirrors kGarageRebuildMinSec in src/core/part_damage.hpp */
+export const GARAGE_REBUILD_MIN_SEC = 900;
+/** Mirrors kGarageRebuildOverheadSec in src/core/part_damage.hpp */
+export const GARAGE_REBUILD_OVERHEAD_SEC = 300;
 export { PIT_SETUP_SEC, type PitSetupDelta };
 
 let trackLapLengthM = 7000;
@@ -136,6 +140,20 @@ export interface PitStopOptions {
   driverChange: boolean;
   driverIndex?: number;
   setup?: PitSetupDelta;
+  garageRebuild?: boolean;
+}
+
+export function estimateGarageRebuildSeconds(assessedRepairSec = 0): number {
+  return Math.max(
+    GARAGE_REBUILD_MIN_SEC,
+    assessedRepairSec + GARAGE_REBUILD_OVERHEAD_SEC,
+  );
+}
+
+export function formatGarageRebuildDuration(sec: number): string {
+  if (sec >= 3600) return `${(sec / 3600).toFixed(1)} h`;
+  if (sec >= 60) return `${Math.round(sec / 60)} min`;
+  return `${Math.round(sec)} s`;
 }
 
 export function buildPitCommand(options: PitStopOptions): string {
@@ -154,6 +172,7 @@ export function buildPitCommand(options: PitStopOptions): string {
       parts.push(`driver_index=${options.driverIndex}`);
     }
   }
+  if (options.garageRebuild) parts.push("rebuild=true");
   if (options.setup) appendSetupParts(parts, options.setup);
   return parts.join("|");
 }

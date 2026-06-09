@@ -365,6 +365,10 @@ class MetaStateManager {
             this.state.negotiations = expired;
             changed = true;
         }
+        if (this.hasPendingAsyncNegotiations()) {
+            this.resolvePendingAsyncNegotiations(this.state.currentRound);
+            changed = true;
+        }
         if (this.ensureDriverMarketChanged())
             changed = true;
         if (this.ensureStaffMarketChanged())
@@ -375,6 +379,12 @@ class MetaStateManager {
             changed = true;
         if (this.ensureSeasonFinalized())
             changed = true;
+        const consolidated = (0, private_test_1.consolidateJointTestingAgreements)(this.state.activeAgreements ?? []);
+        if (JSON.stringify(consolidated) !==
+            JSON.stringify(this.state.activeAgreements ?? [])) {
+            this.state.activeAgreements = consolidated;
+            changed = true;
+        }
         if (changed)
             this.store.save(this.state);
         return structuredClone(this.state);
@@ -530,7 +540,18 @@ class MetaStateManager {
         if (resolved.signedIds.length > 0) {
             console.log(`[ai_rivals] ${resolved.note}`);
         }
+        this.resolvePendingAsyncNegotiations(completingRound);
+    }
+    hasPendingAsyncNegotiations() {
+        return (this.state.negotiations ?? []).some((n) => n.status === "pending_response" &&
+            (n.kind === "inter_team_agreement" ||
+                n.kind === "regulatory_petition"));
+    }
+    /** Until off-week day progression exists, also called right after async deal submission. */
+    resolvePendingAsyncNegotiations(completingRound) {
+        this.ensureAiRivalSeason();
         this.ensureRegulatoryState();
+        const season = this.state.aiRivalSeason;
         const asyncSeed = (0, negotiation_deals_1.negotiationAsyncSeed)(this.state.teamName, completingRound);
         const asyncResult = (0, negotiation_deals_1.resolveAsyncNegotiations)(this.state.negotiations ?? [], season, this.state.regulatoryState, {
             playerTeamName: this.state.teamName,
@@ -541,12 +562,16 @@ class MetaStateManager {
         this.state.negotiations = asyncResult.sessions;
         this.state.regulatoryState = asyncResult.regulatory;
         if (asyncResult.newAgreements.length > 0) {
-            this.state.activeAgreements = [
-                ...(this.state.activeAgreements ?? []),
-                ...asyncResult.newAgreements,
-            ];
-            for (const note of (0, agreement_hooks_1.notifyNewAgreementStubs)(asyncResult.newAgreements)) {
-                console.log(note);
+            const existingIds = new Set((this.state.activeAgreements ?? []).map((agr) => agr.id));
+            const freshAgreements = asyncResult.newAgreements.filter((agr) => !existingIds.has(agr.id));
+            if (freshAgreements.length > 0) {
+                this.state.activeAgreements = [
+                    ...(this.state.activeAgreements ?? []),
+                    ...freshAgreements,
+                ];
+                for (const note of (0, agreement_hooks_1.notifyNewAgreementStubs)(freshAgreements)) {
+                    console.log(note);
+                }
             }
         }
         for (const headline of asyncResult.headlines) {
@@ -787,12 +812,90 @@ class MetaStateManager {
         this.persist();
         return null;
     }
+    preparePrivateTestStart(payload) {
+        if (!payload.jointAgreementId) {
+            this.state.privateTestProgress = undefined;
+            return { payload };
+        }
+        const agreement = (0, private_test_1.pendingJointTestingBundles)(this.state).find((agr) => agr.id === payload.jointAgreementId);
+        if (!agreement) {
+            return { error: "Joint-testing agreement is no longer pending" };
+        }
+        const plan = (0, private_test_1.jointTestSessionPlan)(agreement);
+        const sessionIndex = (0, private_test_1.nextJointTestSessionIndex)(plan, this.state.privateTestProgress);
+        if (sessionIndex == null) {
+            return { error: "Joint-testing campaign already complete" };
+        }
+        const slot = plan.sessions[sessionIndex];
+        if (!slot) {
+            return { error: "Joint-testing session plan is invalid" };
+        }
+        const effectivePayload = {
+            ...payload,
+            durationHours: slot.durationHours,
+            jointPartnerTeams: payload.jointPartnerTeams ?? agreement.partnerTeams,
+        };
+        if (!this.state.privateTestProgress) {
+            this.state.privateTestProgress = (0, private_test_1.buildPrivateTestProgress)(effectivePayload, plan);
+        }
+        return { payload: effectivePayload };
+    }
+    continuePrivateTestCampaign() {
+        const progress = this.state.privateTestProgress;
+        if (!progress)
+            return null;
+        const agreement = (0, private_test_1.pendingJointTestingBundles)(this.state).find((agr) => agr.id === progress.jointAgreementId);
+        if (!agreement) {
+            this.state.privateTestProgress = undefined;
+            return { error: "Joint-testing agreement is no longer pending" };
+        }
+        const plan = (0, private_test_1.jointTestSessionPlan)(agreement);
+        const payload = (0, private_test_1.privateTestPayloadFromProgress)(progress, plan);
+        if (!payload) {
+            return { error: "Joint-testing campaign already complete" };
+        }
+        return { payload };
+    }
     applyPrivateTestCompletion(payload, snapshots, entryToFleetCarId) {
         this.persistSessionCarConditions(snapshots, entryToFleetCarId, "practice");
         const { driverIds, staffIds } = (0, private_test_1.collectPrivateTestParticipants)(this.state, payload.carIds, payload.driverAssignments);
-        const progression = (0, progression_1.applyPrivateTestProgression)(this.state.driverRoster ?? [], (this.state.staff ?? []), driverIds, staffIds, payload.durationHours, { xpMultiplier: (0, agreement_hooks_1.privateTestXpMultiplier)(this.state) });
+        const progression = (0, progression_1.applyPrivateTestProgression)(this.state.driverRoster ?? [], (this.state.staff ?? []), driverIds, staffIds, payload.durationHours, {
+            xpMultiplier: (0, agreement_hooks_1.privateTestXpMultiplier)(this.state, this.state.currentRound, payload.jointPartnerTeams),
+        });
         this.state.driverRoster = progression.drivers;
         this.state.staff = progression.staff;
+        if (payload.jointAgreementId) {
+            const agreement = (0, private_test_1.pendingJointTestingBundles)(this.state).find((agr) => agr.id === payload.jointAgreementId);
+            const plan = agreement ? (0, private_test_1.jointTestSessionPlan)(agreement) : null;
+            let progress = this.state.privateTestProgress;
+            if (!progress || progress.jointAgreementId !== payload.jointAgreementId) {
+                progress = plan
+                    ? (0, private_test_1.buildPrivateTestProgress)(payload, plan)
+                    : undefined;
+            }
+            if (progress && plan) {
+                const sessionIndex = (0, private_test_1.nextJointTestSessionIndex)(plan, progress);
+                if (sessionIndex != null && !progress.completedSessionIndices.includes(sessionIndex)) {
+                    progress = {
+                        ...progress,
+                        completedSessionIndices: [
+                            ...progress.completedSessionIndices,
+                            sessionIndex,
+                        ],
+                    };
+                }
+                if ((0, private_test_1.jointTestCampaignComplete)(plan, progress)) {
+                    this.state.activeAgreements = (0, private_test_1.fulfillJointTestingAgreement)(this.state.activeAgreements ?? [], payload.jointAgreementId, this.state.currentRound);
+                    this.state.privateTestProgress = undefined;
+                }
+                else {
+                    this.state.privateTestProgress = progress;
+                }
+            }
+            else {
+                this.state.activeAgreements = (0, private_test_1.fulfillJointTestingAgreement)(this.state.activeAgreements ?? [], payload.jointAgreementId, this.state.currentRound);
+            }
+        }
         return { meta: this.persist(), summary: progression.summary };
     }
     completeWeekendSession(sessionType, qualiResults) {
@@ -1287,16 +1390,7 @@ class MetaStateManager {
         return this.state.sponsors ?? [];
     }
     parseInterTeamSubject(subjectRef) {
-        const sep = subjectRef.indexOf(":");
-        if (sep <= 0)
-            return null;
-        const subtype = subjectRef.slice(0, sep);
-        if (subtype !== "joint_testing" && subtype !== "tech_share")
-            return null;
-        const partnerTeam = subjectRef.slice(sep + 1).trim();
-        if (!partnerTeam)
-            return null;
-        return { subtype, partnerTeam };
+        return (0, negotiation_deals_1.parseInterTeamSubjectRef)(subjectRef);
     }
     rivalTeamNames() {
         this.ensureAiRivalSeason();
@@ -1413,15 +1507,17 @@ class MetaStateManager {
             const parsed = this.parseInterTeamSubject(subjectRef);
             if (!parsed) {
                 return {
-                    error: "subjectRef must be joint_testing:Team or tech_share:Team",
+                    error: "subjectRef must be joint_testing:Team or joint_testing:TeamA|TeamB or tech_share:Team",
                 };
             }
             this.ensureAiRivalSeason();
-            created = (0, negotiation_deals_1.createInterTeamNegotiation)(parsed.subtype, parsed.partnerTeam, {
+            const seasonTeams = this.state.aiRivalSeason?.teams ?? [];
+            created = (0, negotiation_deals_1.createInterTeamNegotiation)(parsed.subtype, parsed.partnerTeams, {
                 playerTeamName: this.state.teamName,
                 currentRound: this.state.currentRound,
                 existing: this.state.negotiations,
                 rivalTeams: this.rivalTeamNames(),
+                rivalTeamByName: (name) => seasonTeams.find((t) => t.teamName.trim().toLowerCase() === name.trim().toLowerCase()),
             });
         }
         else if (kind === "regulatory_petition") {
@@ -1480,6 +1576,7 @@ class MetaStateManager {
             }
             const evaluated = (0, negotiation_deals_1.submitInterTeamOffer)(session, payload, this.state.currentRound);
             this.replaceNegotiation(evaluated.session);
+            this.resolvePendingAsyncNegotiations(this.state.currentRound);
             return this.persist();
         }
         if (session.kind === "regulatory_petition") {
@@ -1494,6 +1591,7 @@ class MetaStateManager {
                 this.state.budget -= fee;
             const evaluated = (0, negotiation_deals_1.submitRegulatoryPetition)(session, payload, this.state.currentRound);
             this.replaceNegotiation(evaluated.session);
+            this.resolvePendingAsyncNegotiations(this.state.currentRound);
             return this.persist();
         }
         const listing = this.driverListingForNegotiation(session.subjectRef);
@@ -1531,7 +1629,7 @@ class MetaStateManager {
         }
         if ((0, negotiations_2.isNegotiationKindAsync)(session.kind)) {
             return {
-                error: "Submit a revised offer — async deals resolve after the race weekend",
+                error: "Submit a revised offer — inter-team and regulatory deals resolve when you submit",
             };
         }
         const listing = this.driverListingForNegotiation(session.subjectRef);

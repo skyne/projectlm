@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { resolveBriefingTactics } from "../briefing_tactics";
 import {
+  garageReleaseTimeSec,
+  GARAGE_RELEASE_GAP_PRACTICE_SEC,
+  GARAGE_RELEASE_GAP_QUALIFYING_SEC,
   gridSetupCommands,
   initCarState,
+  releaseFromGarage,
   sortedTeamClasses,
   teamResultsByClass,
   tickPitBot,
@@ -46,6 +50,9 @@ function snap(
     lapsToComply: overrides.lapsToComply,
     meatballFlag: overrides.meatballFlag,
     limpMode: overrides.limpMode,
+    fuelTankCapacity: overrides.fuelTankCapacity,
+    tyreDeflation: overrides.tyreDeflation,
+    partHealth: overrides.partHealth,
   };
 }
 
@@ -74,7 +81,109 @@ describe("sortedTeamClasses", () => {
   });
 });
 
+describe("releaseFromGarage", () => {
+  it("staggers practice releases by grid order", () => {
+    const entryIds = ["entry-1", "entry-2", "entry-3"];
+    const snapshots = entryIds.map((entryId) =>
+      snap({
+        entryId,
+        classId: "Hypercar",
+        teamName: "Cursor Racing",
+        inGarage: true,
+        lap: 0,
+        speed: 0,
+      }),
+    );
+    const carState = initCarState(entryIds);
+    const submitted: string[] = [];
+
+    const submit = (id: string, cmd: string) => {
+      submitted.push(`${id}:${cmd}`);
+      return true;
+    };
+
+    releaseFromGarage(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 0 }, submit);
+    assert.deepEqual(submitted, ["entry-1:release"]);
+
+    releaseFromGarage(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 2 }, submit);
+    assert.deepEqual(submitted, ["entry-1:release"]);
+
+    releaseFromGarage(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 3 }, submit);
+    assert.deepEqual(submitted, ["entry-1:release", "entry-2:release"]);
+
+    releaseFromGarage(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 6 }, submit);
+    assert.deepEqual(submitted, [
+      "entry-1:release",
+      "entry-2:release",
+      "entry-3:release",
+    ]);
+  });
+
+  it("releases at most one car per call even when race time jumped ahead", () => {
+    const entryIds = ["entry-1", "entry-2", "entry-3"];
+    const snapshots = entryIds.map((entryId) =>
+      snap({
+        entryId,
+        classId: "Hypercar",
+        teamName: "Cursor Racing",
+        inGarage: true,
+        lap: 0,
+        speed: 0,
+      }),
+    );
+    const carState = initCarState(entryIds);
+    const submitted: string[] = [];
+    const submit = (id: string, cmd: string) => {
+      submitted.push(id);
+      return true;
+    };
+
+    releaseFromGarage(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 120 }, submit);
+    assert.deepEqual(submitted, ["entry-1"]);
+
+    releaseFromGarage(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 120 }, submit);
+    assert.deepEqual(submitted, ["entry-1", "entry-2"]);
+
+    releaseFromGarage(snapshots, entryIds, carState, { phase: "practice", raceTimeSec: 120 }, submit);
+    assert.deepEqual(submitted, ["entry-1", "entry-2", "entry-3"]);
+  });
+
+  it("uses shorter gaps in qualifying", () => {
+    assert.equal(garageReleaseTimeSec("practice", 1), GARAGE_RELEASE_GAP_PRACTICE_SEC);
+    assert.equal(garageReleaseTimeSec("qualifying", 1), GARAGE_RELEASE_GAP_QUALIFYING_SEC);
+    assert.ok(GARAGE_RELEASE_GAP_QUALIFYING_SEC < GARAGE_RELEASE_GAP_PRACTICE_SEC);
+  });
+});
+
 describe("tickPitBot race control", () => {
+  it("submits stop-and-go when penalty is pending in the pit lane", () => {
+    const entryId = "ai-pit";
+    const snapshots = [
+      snap({
+        entryId,
+        classId: "LMP2",
+        teamName: "Rival",
+        inPit: true,
+        pendingPenalty: "stop_go",
+        lapsToComply: 2,
+      }),
+    ];
+    const carState = initCarState([entryId], 0, { minLap: 3 });
+    const submitted: string[] = [];
+    const actions = tickPitBot(
+      snapshots,
+      [entryId],
+      carState,
+      { phase: "race", wet: 0 },
+      (_id, cmd) => {
+        submitted.push(cmd);
+        return true;
+      },
+    );
+    assert.equal(submitted[0], "pit|stop_go");
+    assert.equal(actions[0]?.label, "Serve stop-and-go");
+  });
+
   it("submits drive-through when penalty is pending", () => {
     const entryId = "ai-1";
     const snapshots = [
@@ -100,6 +209,150 @@ describe("tickPitBot race control", () => {
     );
     assert.equal(submitted[0], "pit|drive_through");
     assert.equal(actions[0]?.command, "pit|drive_through");
+    assert.equal(actions[0]?.label, "Serve drive-through");
+  });
+
+  it("defers penalty serve when fuel cannot cover in-penalty-out-service", () => {
+    const entryId = "ai-fuel-pen";
+    const snapshots = [
+      snap({
+        entryId,
+        classId: "LMP2",
+        teamName: "Rival",
+        lap: 10,
+        fuel: 3,
+        fuelTankCapacity: 100,
+        pendingPenalty: "stop_go",
+        lapsToComply: 3,
+      }),
+    ];
+    const carState = initCarState([entryId], 0, { minLap: 3 });
+    const st = carState.get(entryId)!;
+    st.lastPitLap = 5;
+    st.fuelAtLastPit = 13;
+
+    const submitted: string[] = [];
+    const actions = tickPitBot(
+      snapshots,
+      [entryId],
+      carState,
+      { phase: "race", wet: 0 },
+      (_id, cmd) => {
+        submitted.push(cmd);
+        return true;
+      },
+    );
+    assert.ok(!submitted.some((c) => c === "pit|stop_go"));
+    assert.ok(submitted.some((c) => c.includes("fuel")));
+    assert.match(actions[0]?.label ?? "", /before stop-and-go/i);
+  });
+
+  it("defers penalty serve when car has a flat tyre", () => {
+    const entryId = "ai-flat-pen";
+    const snapshots = [
+      snap({
+        entryId,
+        classId: "LMP2",
+        teamName: "Rival",
+        lap: 10,
+        fuel: 50,
+        fuelTankCapacity: 100,
+        inPit: true,
+        pendingPenalty: "drive_through",
+        lapsToComply: 3,
+        tyreDeflation: { FL: "flat" },
+      }),
+    ];
+    const carState = initCarState([entryId], 0, { minLap: 3 });
+    const submitted: string[] = [];
+    const actions = tickPitBot(
+      snapshots,
+      [entryId],
+      carState,
+      { phase: "race", wet: 0 },
+      (_id, cmd) => {
+        submitted.push(cmd);
+        return true;
+      },
+    );
+    assert.ok(!submitted.some((c) => c === "pit|drive_through"));
+    assert.ok(submitted.some((c) => c.includes("tires")));
+    assert.match(actions[0]?.label ?? "", /before drive-through/i);
+  });
+
+  it("serves penalty when fuel covers in-penalty-out-service buffer", () => {
+    const entryId = "ai-fuel-ok";
+    const snapshots = [
+      snap({
+        entryId,
+        classId: "LMP2",
+        teamName: "Rival",
+        lap: 10,
+        fuel: 50,
+        fuelTankCapacity: 100,
+        inPit: true,
+        pendingPenalty: "drive_through",
+        lapsToComply: 3,
+      }),
+    ];
+    const carState = initCarState([entryId], 0, { minLap: 3 });
+    const submitted: string[] = [];
+    tickPitBot(
+      snapshots,
+      [entryId],
+      carState,
+      { phase: "race", wet: 0 },
+      (_id, cmd) => {
+        submitted.push(cmd);
+        return true;
+      },
+    );
+    assert.equal(submitted[0], "pit|drive_through");
+  });
+
+  it("defers routine pit under red flag but submits emergency tyre work in pits", () => {
+    const entryId = "ai-rf";
+    const base = snap({
+      entryId,
+      classId: "LMP2",
+      teamName: "Rival",
+      tireWear: 0.95,
+      fuel: 60,
+      fuelTankCapacity: 100,
+    });
+    const carState = initCarState([entryId], 0, { minLap: 3 });
+    const routine: string[] = [];
+    tickPitBot(
+      [base],
+      [entryId],
+      carState,
+      { phase: "race", wet: 0, flagPhase: "red_flag" },
+      (_id, cmd) => {
+        routine.push(cmd);
+        return true;
+      },
+    );
+    assert.ok(!routine.some((c) => c.includes("driver_change")));
+
+    const emergency: string[] = [];
+    tickPitBot(
+      [
+        {
+          ...base,
+          inPit: true,
+          tyreDeflation: { FL: "flat" },
+        },
+      ],
+      [entryId],
+      carState,
+      { phase: "race", wet: 0, flagPhase: "red_flag" },
+      (_id, cmd) => {
+        emergency.push(cmd);
+        return true;
+      },
+    );
+    assert.ok(emergency.some((c) => c.includes("tires=FL")));
+    assert.ok(!emergency.some((c) => c.includes("tires=all")));
   });
 
   it("defers routine pit under FCY but not limp emergency", () => {
@@ -175,7 +428,8 @@ describe("tickPitBot race control", () => {
           pendingPenalty: "drive_through",
           lapsToComply: 2,
           tireWear: 0.99,
-          fuel: 3,
+          fuel: 50,
+          fuelTankCapacity: 100,
         }),
       ],
       [entryId],

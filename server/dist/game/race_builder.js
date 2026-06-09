@@ -229,12 +229,44 @@ function buildPrivateTestSession(repoRoot, meta, options) {
     const round = meta.calendar.find((e) => e.round === meta.currentRound);
     const regulation = (0, regulations_1.regulationForRound)(round?.round ?? meta.currentRound);
     const playerCarId = meta.playerCarId ?? meta.activeCarId ?? selectedFleet[0]?.id;
-    const entries = (0, grid_generator_1.generatePlayerOnlyGrid)({
-        playerTeamName: meta.teamName,
-        playerFleet: selectedFleet,
-        playerCarId,
-    });
-    const managedEntryIds = entries.map((e) => e.entryId);
+    const jointPartners = payload.jointPartnerTeams ?? [];
+    const entries = jointPartners.length > 0
+        ? (0, grid_generator_1.generateJointPrivateTestGrid)({
+            repoRoot,
+            playerTeamName: meta.teamName,
+            playerFleet: selectedFleet,
+            playerCarId,
+            partnerTeams: jointPartners,
+        })
+        : (0, grid_generator_1.generatePlayerOnlyGrid)({
+            playerTeamName: meta.teamName,
+            playerFleet: selectedFleet,
+            playerCarId,
+        });
+    if (jointPartners.length > 0) {
+        const foundPartners = new Set(entries.filter((e) => !e.isPlayer).map((e) => e.teamName.trim().toLowerCase()));
+        for (const partner of jointPartners) {
+            if (!foundPartners.has(partner.trim().toLowerCase())) {
+                return null;
+            }
+        }
+        for (const entry of entries) {
+            if (entry.isPlayer)
+                continue;
+            const rel = `configs/runtime/private_test/grid_${entry.grid}_${path.basename(entry.carConfigPath)}`;
+            const src = path.join(repoRoot, entry.carConfigPath);
+            const dest = path.join(repoRoot, rel);
+            if (!fs.existsSync(src))
+                continue;
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.copyFileSync(src, dest);
+            entry.carConfigPath = rel;
+        }
+        (0, track_ai_setup_1.materializeAiGridConfigs)(repoRoot, entries, trackId, (teamName) => (0, ai_rival_season_1.rivalModifiersForTeam)(teamName, meta.aiRivalSeason));
+    }
+    const managedEntryIds = entries
+        .filter((e) => e.isPlayer)
+        .map((e) => e.entryId);
     const playerFleetEntry = entries.find((e) => e.fleetCarId === playerCarId);
     const resolvedPlayerEntryId = playerFleetEntry?.entryId ??
         managedEntryIds[0] ??
@@ -307,7 +339,9 @@ function buildPrivateTestSession(repoRoot, meta, options) {
         entriesPath,
         staffConfigPath,
         driverConfigPath,
-        trackName: `Private Test — ${(0, track_catalog_1.trackDisplayName)(trackId)}`,
+        trackName: jointPartners.length > 0
+            ? `Joint Test — ${(0, track_catalog_1.trackDisplayName)(trackId)} (${jointPartners.join(", ")})`
+            : `Private Test — ${(0, track_catalog_1.trackDisplayName)(trackId)}`,
         trackConfigPath,
         targetLaps: 0,
         targetDurationSeconds: durationSec,

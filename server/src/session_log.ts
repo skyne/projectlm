@@ -21,7 +21,16 @@ export interface SessionLogFile {
   results?: RaceCompletePayload["results"];
 }
 
-const INCIDENT_TYPES = new Set(["Collision", "Retirement", "Blocked"]);
+const INCIDENT_TYPES = new Set([
+  "Collision",
+  "Retirement",
+  "Blocked",
+  "RacingIncident",
+  "Stranded",
+  "PenaltyIssued",
+  "PenaltyWarning",
+  "Disqualified",
+]);
 
 function logDir(repoRoot: string): string {
   return path.join(repoRoot, "server", "data", "session_logs");

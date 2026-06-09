@@ -1,4 +1,12 @@
 import type { CarSnapshot } from "../ws/protocol";
+import {
+  buildCarConditionTelemetryHtml,
+  damageSummaryText,
+  formatLimpModeLabel,
+  formatTrackStatusLabel,
+  isStrandedOrRecovering,
+  trackStatusClass,
+} from "./carStatus";
 import { escapeHtml } from "./mmUi";
 import {
   buildTyreTelemetryPanelHtml,
@@ -12,6 +20,7 @@ import {
   formatCoolantTemp,
 } from "./formatCoolant";
 import type { FuelStats } from "./fuelTracker";
+import { formatFuelAmount, fuelColumnLabel, usesBatteryFuelDisplay } from "./fuelDisplay";
 import {
   buildHybridChargeBarHtml,
   formatHybridCharge,
@@ -112,25 +121,18 @@ function buildMistakeTelemetryHtml(snap: CarSnapshot): string {
   return parts.join("");
 }
 
-function damageSummary(snap: CarSnapshot): string {
-  const parts = Object.entries(snap.partHealth ?? {})
-    .filter(([, h]) => h < 90)
-    .sort((a, b) => a[1] - b[1])
-    .slice(0, 3)
-    .map(([p, h]) => `${p} ${h.toFixed(0)}%`);
-  const flats = Object.entries(snap.tyreDeflation ?? {})
-    .filter(([, v]) => v === "flat" || v === "soft")
-    .map(([w, v]) => `${w} ${v}`);
-  const limp = snap.limpMode && snap.limpMode !== "none" ? snap.limpMode : "";
-  return [...parts, ...flats, limp].filter(Boolean).join(" · ");
-}
-
 function pitStatusLabel(snap: CarSnapshot): string {
   if (snap.inPit) return `In pit · ${(snap.pitRemainingSec ?? 0).toFixed(0)}s`;
   if (snap.pitQueued) return "Pit queued";
+  if (isStrandedOrRecovering(snap)) return formatTrackStatusLabel(snap.trackStatus);
+  const limp = formatLimpModeLabel(snap.limpMode);
+  if (limp) return `Limp · ${limp}`;
+  if (snap.onFire) return "On fire";
   if (snap.overtaking) return "Overtaking";
   if (snap.blocked) return "In traffic";
-  if (snap.fuel <= 0) return "Out of fuel";
+  if (snap.fuel <= 0) {
+    return usesBatteryFuelDisplay(snap) ? "Battery depleted" : "Out of fuel";
+  }
   return "On track";
 }
 
@@ -159,7 +161,7 @@ export function buildRaceControlsSummaryHtml(
     <div class="race-controls-summary">
       ${driverRow}
       <div class="race-controls-stats">
-        <span>Fuel <strong>${snap.fuel.toFixed(1)} L</strong></span>
+        <span>${fuelColumnLabel(snap)} <strong>${formatFuelAmount(snap)}</strong></span>
         <span>Wing <strong>${(snap.wingAngle ?? 0).toFixed(2)}</strong></span>
         <span>Bias <strong>${(snap.brakeBias ?? 0.5).toFixed(2)}</strong></span>
         ${statusSpan}
@@ -187,7 +189,9 @@ export function buildTelemetryCardHtml(
   const mistakeRisk = snap.driverMistakeRisk ?? 0;
   const driverMode = snap.driverMode ?? "normal";
   const hybridStrategy = (snap.hybridStrategy ?? "balanced") as HybridStrategy;
+  const batteryFuel = usesBatteryFuelDisplay(snap);
   const hasHybrid =
+    !batteryFuel &&
     snap.hybridDeployMJ != null &&
     snap.hybridDeployMJ >= 0 &&
     (snap.hybridBudgetMJ ?? hybridBudgetMJ ?? 0) > 0;
@@ -231,10 +235,10 @@ export function buildTelemetryCardHtml(
         ${statCell("Speed", formatSpeedKmh(snap.speed))}
         ${statCell("RPM", Math.round(snap.rpm).toLocaleString())}
         ${statCell("Lap", lapLabel)}
-        ${statCell("Status", escapeHtml(pitLabel))}
+        ${statCell("Status", `<span class="${trackStatusClass(snap.trackStatus)}">${escapeHtml(pitLabel)}</span>`)}
         ${hasHybrid ? statCell("Hybrid", formatHybrid(snap, hybridBudgetMJ)) : ""}
         ${hasHybrid ? statCell("HV mode", hybridStrategyLabel(hybridStrategy)) : ""}
-        ${statCell("Fuel", `${snap.fuel.toFixed(1)} L`)}
+        ${statCell(fuelColumnLabel(snap), formatFuelAmount(snap))}
         ${statCell("Last lap", fuelStats && fuelStats.lastLapLiters > 0 ? `${fuelStats.lastLapLiters.toFixed(1)} L` : "—")}
         ${statCell("Avg / lap", fuelStats && fuelStats.avgLitersPerLap > 0 ? `${fuelStats.avgLitersPerLap.toFixed(1)} L` : "—")}
         ${statCell("This lap", fuelStats ? `${fuelStats.currentLapPartialUse.toFixed(1)} L` : "—")}
@@ -244,8 +248,11 @@ export function buildTelemetryCardHtml(
       </div>`
       : "";
 
+    const conditionBlock = buildCarConditionTelemetryHtml(snap);
+
     return `
       ${buildMistakeTelemetryHtml(snap)}
+      ${conditionBlock}
       <div class="telemetry-row driver-row-main telemetry-row-compact">
         <span>Driver</span>
         <strong>${escapeHtml(snap.driverName ?? "—")}${tier ? ` <span class="driver-tier tier-${tier.toLowerCase()}">${escapeHtml(tier)}</span>` : ""}</strong>
@@ -284,8 +291,12 @@ export function buildTelemetryCardHtml(
     `
     : "";
 
+  const conditionBlock = buildCarConditionTelemetryHtml(snap);
+  const damageLine = damageSummaryText(snap);
+
   return `
     ${buildMistakeTelemetryHtml(snap)}
+    ${conditionBlock}
     <div class="telemetry-row driver-row-main">
       <span>Driver</span>
       <strong>${escapeHtml(snap.driverName ?? "—")}${tier ? ` <span class="driver-tier tier-${tier.toLowerCase()}">${escapeHtml(tier)}</span>` : ""}</strong>
@@ -301,7 +312,7 @@ export function buildTelemetryCardHtml(
     <div class="telemetry-row"><span>Mistake risk</span><strong class="${mistakeRisk > 130 ? "risk-high" : ""}">${mistakeRisk.toFixed(0)}%</strong></div>
     <div class="telemetry-row"><span>Driver mode</span><strong class="driver-mode-${driverMode}">${driverMode.toUpperCase()}${modeWearHint ? ` <span class="telemetry-hint">(${modeWearHint})</span>` : ""}</strong></div>
     ${extendedRows}
-    <div class="telemetry-row"><span>Fuel</span><strong>${snap.fuel.toFixed(1)} L</strong></div>
+    <div class="telemetry-row"><span>${fuelColumnLabel(snap)}</span><strong>${formatFuelAmount(snap)}</strong></div>
     <div class="telemetry-row coolant-row">
       <span>Coolant</span>
       <div class="coolant-temp-wrap">
@@ -311,8 +322,8 @@ export function buildTelemetryCardHtml(
     </div>
     <div class="telemetry-row"><span>Engine temp</span><strong class="${coolantBand === "hot" || coolantBand === "overheat" ? "coolant-alert" : ""}">${escapeHtml(coolantLabel)} <span class="telemetry-hint">(limit ${COOLANT_OVERHEAT_C}°C)</span></strong></div>
     <div class="telemetry-row"><span>Engine health</span><strong class="${engineHealth < 90 ? "health-warn" : engineHealth < 75 ? "health-critical" : ""}">${engineHealth.toFixed(0)}%</strong></div>
-    ${damageSummary(snap) ? `<div class="telemetry-row telemetry-warn"><span>Damage</span><strong>${escapeHtml(damageSummary(snap))}</strong></div>` : ""}
+    ${damageLine && !conditionBlock ? `<div class="telemetry-row telemetry-warn"><span>Damage</span><strong>${escapeHtml(damageLine)}</strong></div>` : ""}
     ${tyrePanel}
-    <div class="telemetry-row"><span>Status</span><strong class="pit-state">${escapeHtml(pitLabel)}</strong></div>
+    <div class="telemetry-row"><span>Status</span><strong class="pit-state ${trackStatusClass(snap.trackStatus)}">${escapeHtml(pitLabel)}</strong></div>
   `;
 }

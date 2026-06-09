@@ -34,6 +34,8 @@ struct PitStopPlan {
   /** Legacy: equal delta applied to both axles. */
   double rideHeightDelta = 0.0;
   SuspensionSetupDelta suspension;
+  /** After pit services, tow to garage for full damage rebuild (restores to 100%). */
+  bool garageRebuild = false;
 };
 
 struct SimCommand {

@@ -4,7 +4,7 @@ export const HP_CONVERSION = 7127;
 export const ENGINE_WEIGHT_COEFF = 30;
 export const ENGINE_WEIGHT_CYL_FACTOR = 5;
 
-export type FuelType = "Gasoline" | "Diesel" | "Hydrogen";
+export type FuelType = "Gasoline" | "Diesel" | "Hydrogen" | "Electric";
 export type EnergyConverterId = "Combustion" | "FuelCell";
 export type AspirationId =
   | "NA"
@@ -99,7 +99,7 @@ export interface PowertrainUiState {
   bufferSize: number;
 }
 
-export const FUEL_TYPES: FuelType[] = ["Gasoline", "Diesel", "Hydrogen"];
+export const FUEL_TYPES: FuelType[] = ["Gasoline", "Diesel", "Hydrogen", "Electric"];
 
 export const LAYOUTS: LayoutDef[] = [
   { id: "I4", label: "Inline-4", cylinders: 4, dispMinL: 1.6, dispMaxL: 2.4, massMult: 0.82, revMult: 1.05, torqueMult: 0.92, throttleMult: 1.04, cgBonus: 1.0, stressMult: 0.88, thermalMult: 1.05 },
@@ -118,6 +118,7 @@ const FUEL_MOD: Record<FuelType, TraitModifiers & { fuelMassMult: number }> = {
   Gasoline: { massMult: 1, torqueMult: 1, revMult: 1, fuelBurnMult: 1, throttleMult: 1, thermalMult: 1, stressMult: 1, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 1, fuelMassMult: 1 },
   Diesel: { massMult: 1.22, torqueMult: 1.18, revMult: 0.82, fuelBurnMult: 0.78, throttleMult: 0.88, thermalMult: 1.2, stressMult: 1.05, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 1, fuelMassMult: 1.22 },
   Hydrogen: { massMult: 0.88, torqueMult: 0.94, revMult: 1.06, fuelBurnMult: 1.35, throttleMult: 1.02, thermalMult: 0.85, stressMult: 1.02, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 0.94, fuelMassMult: 0.88 },
+  Electric: { massMult: 0.92, torqueMult: 1, revMult: 1, fuelBurnMult: 0.88, throttleMult: 1.1, thermalMult: 0.75, stressMult: 0.88, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 0.03, serviceabilityMult: 0.82, fuelMassMult: 0.92 },
 };
 
 const ASPIRATION_MOD: Record<AspirationId, TraitModifiers & { specificTorqueMult: number }> = {
@@ -173,7 +174,7 @@ export const LAYOUT_BY_CLASS: Record<string, LayoutId[]> = {
 };
 
 export const FUEL_BY_CLASS: Record<string, FuelType[]> = {
-  Hypercar: ["Gasoline", "Diesel", "Hydrogen"],
+  Hypercar: ["Gasoline", "Diesel", "Hydrogen", "Electric"],
   LMGT3: ["Gasoline"],
   LMP2: ["Gasoline"],
 };
@@ -243,6 +244,10 @@ export function isChoiceLegal(
   return map[kind].includes(value as never);
 }
 
+export function isElectricFuelBuild(engine: EngineBuildPayload): boolean {
+  return engine.fuel_type === "Electric";
+}
+
 export function isComboLegal(
   classId: string,
   layout: LayoutId,
@@ -256,13 +261,23 @@ export function isComboLegal(
     if (drivetrain !== "FullEV") return "Fuel cell requires e-drive (FullEV)";
     return null;
   }
+  if (fuel === "Electric") {
+    if (classId !== "Hypercar") return "Electric is Hypercar only";
+    if (drivetrain !== "FullEV" && drivetrain !== "RangeExtender") {
+      return "Electric requires battery e-drive or REX";
+    }
+    if (!isChoiceLegal(classId, "layout", layout) && drivetrain === "RangeExtender") {
+      return "Layout not legal in this class";
+    }
+    return null;
+  }
   if (!isChoiceLegal(classId, "layout", layout)) return "Layout not legal in this class";
   if (!isChoiceLegal(classId, "fuel", fuel)) return "Fuel not legal in this class";
   if (!isChoiceLegal(classId, "aspiration", aspiration)) return "Aspiration not legal in this class";
   if (!isChoiceLegal(classId, "drivetrain", drivetrain)) return "Drivetrain not legal in this class";
   if (layout === "Rotary" && aspiration === "Quad") return "Rotary cannot run quad turbos";
   if (aspiration === "EBoost" && drivetrain === "Mechanical") return "E-Boost needs a battery (hybrid or REX drivetrain)";
-  if (drivetrain === "FullEV" && fuel === "Diesel") return "Diesel full-EV is not supported";
+  if (drivetrain === "FullEV") return "Full EV is configured via Electric fuel";
   if (fuel === "Hydrogen" && drivetrain === "RangeExtender") {
     return "Hydrogen range-extender is not supported; use fuel cell instead";
   }
@@ -303,13 +318,20 @@ export function decodePowertrainUi(engine: EngineBuildPayload, classId: string):
   const layout = (engine.engine_layout as LayoutId) || "V6";
   const energyConverter: EnergyConverterId =
     engine.energy_converter === "FuelCell" ? "FuelCell" : "Combustion";
-  const stackKw = engine.generator_kw ?? 420;
   const bufferSize =
     energyConverter === "FuelCell" && engine.buffer_size != null
       ? engine.buffer_size
       : 0.5;
+  let fuel = (engine.fuel_type as FuelType) || "Gasoline";
+  if (
+    fuel !== "Hydrogen" &&
+    fuel !== "Electric" &&
+    engine.drivetrain === "FullEV"
+  ) {
+    fuel = "Electric";
+  }
   return {
-    fuel: (engine.fuel_type as FuelType) || "Gasoline",
+    fuel,
     energyConverter,
     layout: LAYOUTS.some((l) => l.id === layout) ? layout : "V6",
     aspiration: (engine.aspiration as AspirationId) || (classId === "LMP2" ? "NA" : "TwinParallel"),
@@ -355,6 +377,55 @@ export function encodePowertrainBuild(
       generator_size: ui.generatorSize,
       buffer_size: ui.bufferSize,
       generator_kw: stackKw,
+    };
+  }
+
+  if (ui.fuel === "Electric") {
+    const lay = layoutDef(ui.layout);
+    const revBand = CLASS_REV_BAND[classId] ?? CLASS_REV_BAND.Hypercar;
+
+    if (ui.drivetrain === "RangeExtender") {
+      let displacementL = lerp(lay.dispMinL, lay.dispMaxL, ui.blockSize);
+      if (ui.layout === "Rotary") displacementL = lerp(0.8, 1.3, ui.blockSize);
+      const maxRpm = Math.round(lerp(4000, 5500, ui.revCharacter));
+      const generatorKw = lerp(180, 400, ui.generatorSize);
+      const geom = boreStrokeFromDisplacement(displacementL, lay.cylinders);
+      return {
+        engine_layout: ui.layout,
+        fuel_type: "Electric",
+        cylinders: lay.cylinders,
+        bore: geom.bore,
+        stroke: geom.stroke,
+        max_rpm: maxRpm,
+        peak_torque_nm: Math.round(generatorKw * 3.2),
+        peak_torque_rpm: Math.round(maxRpm * 0.72),
+        base_vibration: lay.stressMult * 0.92,
+        aspiration: "NA",
+        drivetrain: "RangeExtender",
+        power_target: targetHp,
+        rev_character: ui.revCharacter,
+        block_size: ui.blockSize,
+        generator_size: ui.generatorSize,
+        generator_kw: Math.round(generatorKw),
+      };
+    }
+
+    return {
+      engine_layout: "V6",
+      fuel_type: "Electric",
+      cylinders: 6,
+      bore: 0,
+      stroke: 0,
+      max_rpm: 12000,
+      peak_torque_nm: Math.round(ui.powerTargetHp * 4.2),
+      peak_torque_rpm: 10200,
+      base_vibration: 0.2,
+      aspiration: "NA",
+      drivetrain: "FullEV",
+      power_target: targetHp,
+      rev_character: ui.revCharacter,
+      block_size: ui.blockSize,
+      generator_size: ui.generatorSize,
     };
   }
 
@@ -515,11 +586,20 @@ export function resolvePowertrainTraits(
   let generatorKw = engine.generator_kw ?? drv.generatorKw;
 
   let fuelBurnMult = fuel.fuelBurnMult * asp.fuelBurnMult;
-  if (ui.drivetrain === "RangeExtender") {
+  if (ui.fuel === "Electric" && ui.drivetrain === "RangeExtender") {
+    const elecKw = generatorKw * drv.efficiency;
+    peakHp = elecKw * 1.34;
+    deployKw = Math.round(lerp(80, 200, ui.generatorSize));
+    fuelBurnMult = lerp(0.78, 1.12, ui.generatorSize);
+  } else if (ui.drivetrain === "RangeExtender") {
     const elecKw = generatorKw * drv.efficiency;
     peakHp = elecKw * 1.34;
     deployKw = Math.round(lerp(80, 200, ui.generatorSize));
     fuelBurnMult *= lerp(0.82, 1.28, ui.generatorSize);
+  } else if (ui.drivetrain === "FullEV" && ui.fuel === "Electric") {
+    peakHp = ui.powerTargetHp;
+    deployKw = Math.round(Math.min(520, Math.max(260, ui.powerTargetHp / 1.34)));
+    fuelBurnMult = fuel.fuelBurnMult;
   } else if (ui.drivetrain === "FullEV") {
     peakHp = ui.powerTargetHp;
     deployKw = ui.powerTargetHp * 0.75;
@@ -527,7 +607,12 @@ export function resolvePowertrainTraits(
     peakHp += deployKw * 0.35;
   }
 
-  const fuelSystemHint = ui.fuel === "Hydrogen" ? "HydrogenTank" : null;
+  const fuelSystemHint =
+    ui.fuel === "Hydrogen"
+      ? "HydrogenTank"
+      : ui.fuel === "Electric"
+        ? "BatteryPackStandard"
+        : null;
 
   return {
     layout: ui.layout,
@@ -569,6 +654,16 @@ export function resolvePowertrainTraits(
 
 export function traitChips(traits: PowertrainTraits): Array<{ label: string; tone: "pro" | "con" | "neutral" }> {
   const chips: Array<{ label: string; tone: "pro" | "con" | "neutral" }> = [];
+  if (traits.fuel === "Electric" && traits.drivetrain === "FullEV") {
+    chips.push({ label: "Battery EV", tone: "neutral" });
+    chips.push({ label: "No ICE wear", tone: "pro" });
+    if (traits.deployKw > 0) chips.push({ label: `${Math.round(traits.deployKw)} kW deploy`, tone: "pro" });
+    if (traits.fuelBurnMult < 0.92) chips.push({ label: "Efficient pack", tone: "pro" });
+    if (traits.throttleMult >= 1.08) chips.push({ label: "Instant torque", tone: "pro" });
+    if (traits.drivetrainExtraMassKg > 120) chips.push({ label: "Heavy pack", tone: "con" });
+    if (traits.serviceabilityMult < 0.86) chips.push({ label: "Slow pit work", tone: "con" });
+    return chips;
+  }
   if (traits.isFuelCell) {
     chips.push({ label: "H₂ fuel cell", tone: "neutral" });
     chips.push({ label: `${Math.round(traits.generatorKw)} kW stack`, tone: "neutral" });
@@ -599,7 +694,11 @@ export function traitChips(traits: PowertrainTraits): Array<{ label: string; ton
   if (traits.stressMult > 1.08) chips.push({ label: "High wear", tone: "con" });
   if (traits.thermalMult > 1.1) chips.push({ label: "Runs hot", tone: "con" });
   if (traits.isGeneratorOnly && traits.generatorKw > 0) {
-    chips.push({ label: `${Math.round(traits.generatorKw)} kW generator`, tone: "neutral" });
+    const genLabel =
+      traits.fuel === "Electric"
+        ? `${Math.round(traits.generatorKw)} kW charge`
+        : `${Math.round(traits.generatorKw)} kW generator`;
+    chips.push({ label: genLabel, tone: "neutral" });
     if (traits.generatorKw < 240) chips.push({ label: "Light ICE unit", tone: "pro" });
     else if (traits.generatorKw > 340) chips.push({ label: "Sustained pace", tone: "pro" });
     if (traits.generatorKw > 340) chips.push({ label: "Heavy ICE unit", tone: "con" });

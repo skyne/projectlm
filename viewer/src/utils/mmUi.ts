@@ -33,6 +33,7 @@ export const NAV_ICONS: Record<string, string> = {
   map: "🗺",
   timing: "⏱",
   telemetry: "📊",
+  racelog: "📋",
   garage: "⚙",
   team: "🏢",
   drivers: "🏎",

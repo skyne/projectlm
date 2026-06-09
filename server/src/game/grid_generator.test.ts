@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { describe, it } from "node:test";
-import { generatePlayerOnlyGrid } from "./grid_generator";
+import { generateJointPrivateTestGrid, generatePlayerOnlyGrid } from "./grid_generator";
 import type { CarBuildPayload, FleetCarPayload } from "../ws_protocol";
+
+const repoRoot = path.resolve(process.cwd(), "..");
 
 const minimalBuild = {
   carName: "Test",
@@ -53,5 +56,30 @@ describe("generatePlayerOnlyGrid", () => {
       entries.map((e) => e.fleetCarId),
       ["car-a", "car-b"],
     );
+  });
+
+  it("adds partner team entries from the Le Mans entry list", () => {
+    const fleet: FleetCarPayload[] = [
+      {
+        id: "car-a",
+        carNumber: "7",
+        classId: "Hypercar",
+        carConfigPath: "configs/a.txt",
+        affiliation: "privateer",
+        acquisition: "privateer",
+        build: { ...minimalBuild, carName: "A" },
+      },
+    ];
+
+    const entries = generateJointPrivateTestGrid({
+      repoRoot,
+      playerTeamName: "My Team",
+      playerFleet: fleet,
+      partnerTeams: ["Peugeot TotalEnergies"],
+    });
+
+    assert.ok(entries.length > 1);
+    assert.equal(entries[0]?.isPlayer, true);
+    assert.ok(entries.some((e) => e.teamName === "Peugeot TotalEnergies" && !e.isPlayer));
   });
 });

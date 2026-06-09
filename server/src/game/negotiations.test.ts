@@ -4,11 +4,12 @@ import type { DriverMarketListingPayload } from "../ws_protocol";
 import {
   acceptCounterOffer,
   anchorTermsFromDriverListing,
+  buildDriverNegotiationContext,
   computeDriverPayroll,
   computeMinBuyout,
   createDriverNegotiation,
+  driverOpeningOfferForNegotiation,
   evaluateDriverOffer,
-  buildDriverNegotiationContext,
   expireNegotiations,
   listingIdsWithOpenNegotiations,
   synthesizeEmploymentContracts,
@@ -63,9 +64,27 @@ describe("negotiations", () => {
     assert.ok(!("error" in session));
     if ("error" in session) return;
     assert.equal(session.kind, "driver_employment");
-    assert.equal(session.status, "open");
+    assert.equal(session.status, "countered");
     assert.equal(session.anchorTerms.signingFee, 120_000);
     assert.equal(session.anchorTerms.salaryPerRace, 7_200);
+    assert.ok(session.lastCounterOffer);
+    assert.ok(session.history.length > 0);
+    assert.ok((session.lastCounterOffer?.signingFee ?? 0) >= 120_000);
+  });
+
+  it("produces deterministic driver opening offers", () => {
+    const listing = prospectListing();
+    const ctx = buildDriverNegotiationContext(listing, {
+      playerTeamName: "Sky Racing",
+      currentRound: 2,
+      seasonYear: 2026,
+      prestigeScore: 0.3,
+    });
+    const anchor = anchorTermsFromDriverListing(listing);
+    const first = driverOpeningOfferForNegotiation(anchor, listing, ctx);
+    const second = driverOpeningOfferForNegotiation(anchor, listing, ctx);
+    assert.deepEqual(first.terms, second.terms);
+    assert.equal(first.note, second.note);
   });
 
   it("uses driver_buyout kind for active WEC listings", () => {
