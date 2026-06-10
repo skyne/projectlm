@@ -18,6 +18,10 @@ export interface SurfaceHazardSummary {
   sectorIndex: number;
   kind: HazardKind | string;
   gripMultiplier: number;
+  centerDistance?: number;
+  centerLateralM?: number;
+  spanMeters?: number;
+  lateralSpanM?: number;
 }
 
 export interface MockRaceControlState {

@@ -2,34 +2,186 @@
   "name": "Sample Circuit",
   "closed": true,
   "lap_length": 13626.0,
+  "track_width_m": 12.0,
+  "width_profile": [
+    {
+      "name": "grid straight",
+      "start_t": 0.0,
+      "end_t": 0.12,
+      "width_m": 15.0
+    }
+  ],
+  "pit_lane": {
+    "width_m": 12.0,
+    "offset_m": 12.0,
+    "merge_lateral_offset": 0.58,
+    "merge_blend_m": 80.0
+  },
+  "width_metadata": {
+    "confidence": "estimated",
+    "last_reviewed": "2026-06-10",
+    "sources": [
+      "fia_appendix_o_2025"
+    ]
+  },
   "control_points": [
-    {"x": 0.0, "y": 0.0, "z": 0.0},
-    {"x": 0.0, "y": 0.0, "z": 2800.0},
-    {"x": 400.0, "y": 0.0, "z": 4200.0},
-    {"x": 1400.0, "y": 0.0, "z": 5000.0},
-    {"x": 3000.0, "y": 0.0, "z": 5200.0},
-    {"x": 4600.0, "y": 0.0, "z": 4800.0},
-    {"x": 5600.0, "y": 0.0, "z": 3600.0},
-    {"x": 5800.0, "y": 0.0, "z": 2000.0},
-    {"x": 5600.0, "y": 0.0, "z": 600.0},
-    {"x": 4200.0, "y": 0.0, "z": -600.0},
-    {"x": 2400.0, "y": 0.0, "z": -1200.0},
-    {"x": 800.0, "y": 0.0, "z": -800.0},
-    {"x": 200.0, "y": 0.0, "z": -200.0}
+    {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
+    },
+    {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 2800.0
+    },
+    {
+      "x": 400.0,
+      "y": 0.0,
+      "z": 4200.0
+    },
+    {
+      "x": 1400.0,
+      "y": 0.0,
+      "z": 5000.0
+    },
+    {
+      "x": 3000.0,
+      "y": 0.0,
+      "z": 5200.0
+    },
+    {
+      "x": 4600.0,
+      "y": 0.0,
+      "z": 4800.0
+    },
+    {
+      "x": 5600.0,
+      "y": 0.0,
+      "z": 3600.0
+    },
+    {
+      "x": 5800.0,
+      "y": 0.0,
+      "z": 2000.0
+    },
+    {
+      "x": 5600.0,
+      "y": 0.0,
+      "z": 600.0
+    },
+    {
+      "x": 4200.0,
+      "y": 0.0,
+      "z": -600.0
+    },
+    {
+      "x": 2400.0,
+      "y": 0.0,
+      "z": -1200.0
+    },
+    {
+      "x": 800.0,
+      "y": 0.0,
+      "z": -800.0
+    },
+    {
+      "x": 200.0,
+      "y": 0.0,
+      "z": -200.0
+    }
   ],
   "sectors": [
-    {"name": "Main Straight", "start_t": 0.0, "end_t": 0.0954, "max_speed_ms": 85.0, "straight": true},
-    {"name": "T1", "start_t": 0.0954, "end_t": 0.1101, "max_speed_ms": 16.7, "straight": false},
-    {"name": "Esses 1", "start_t": 0.1101, "end_t": 0.1468, "max_speed_ms": 38.9, "straight": false},
-    {"name": "Esses 2", "start_t": 0.1468, "end_t": 0.1615, "max_speed_ms": 47.2, "straight": false},
-    {"name": "Back Straight", "start_t": 0.1615, "end_t": 0.5724, "max_speed_ms": 94.4, "straight": true},
-    {"name": "Stadium 1", "start_t": 0.5724, "end_t": 0.5908, "max_speed_ms": 15.3, "straight": false},
-    {"name": "Stadium 2", "start_t": 0.5908, "end_t": 0.6165, "max_speed_ms": 22.2, "straight": false},
-    {"name": "Stadium 3", "start_t": 0.6165, "end_t": 0.6312, "max_speed_ms": 12.5, "straight": false},
-    {"name": "Arena 1", "start_t": 0.6312, "end_t": 0.6789, "max_speed_ms": 41.7, "straight": false},
-    {"name": "Arena 2", "start_t": 0.6789, "end_t": 0.7230, "max_speed_ms": 47.2, "straight": false},
-    {"name": "Arena 3", "start_t": 0.7230, "end_t": 0.7706, "max_speed_ms": 55.6, "straight": false},
-    {"name": "Arena 4", "start_t": 0.7706, "end_t": 0.7999, "max_speed_ms": 16.7, "straight": false},
-    {"name": "Pit Straight", "start_t": 0.7999, "end_t": 1.0, "max_speed_ms": 77.8, "straight": true}
+    {
+      "name": "Main Straight",
+      "start_t": 0.0,
+      "end_t": 0.0954,
+      "max_speed_ms": 85.0,
+      "straight": true
+    },
+    {
+      "name": "T1",
+      "start_t": 0.0954,
+      "end_t": 0.1101,
+      "max_speed_ms": 16.7,
+      "straight": false
+    },
+    {
+      "name": "Esses 1",
+      "start_t": 0.1101,
+      "end_t": 0.1468,
+      "max_speed_ms": 38.9,
+      "straight": false
+    },
+    {
+      "name": "Esses 2",
+      "start_t": 0.1468,
+      "end_t": 0.1615,
+      "max_speed_ms": 47.2,
+      "straight": false
+    },
+    {
+      "name": "Back Straight",
+      "start_t": 0.1615,
+      "end_t": 0.5724,
+      "max_speed_ms": 94.4,
+      "straight": true
+    },
+    {
+      "name": "Stadium 1",
+      "start_t": 0.5724,
+      "end_t": 0.5908,
+      "max_speed_ms": 15.3,
+      "straight": false
+    },
+    {
+      "name": "Stadium 2",
+      "start_t": 0.5908,
+      "end_t": 0.6165,
+      "max_speed_ms": 22.2,
+      "straight": false
+    },
+    {
+      "name": "Stadium 3",
+      "start_t": 0.6165,
+      "end_t": 0.6312,
+      "max_speed_ms": 12.5,
+      "straight": false
+    },
+    {
+      "name": "Arena 1",
+      "start_t": 0.6312,
+      "end_t": 0.6789,
+      "max_speed_ms": 41.7,
+      "straight": false
+    },
+    {
+      "name": "Arena 2",
+      "start_t": 0.6789,
+      "end_t": 0.723,
+      "max_speed_ms": 47.2,
+      "straight": false
+    },
+    {
+      "name": "Arena 3",
+      "start_t": 0.723,
+      "end_t": 0.7706,
+      "max_speed_ms": 55.6,
+      "straight": false
+    },
+    {
+      "name": "Arena 4",
+      "start_t": 0.7706,
+      "end_t": 0.7999,
+      "max_speed_ms": 16.7,
+      "straight": false
+    },
+    {
+      "name": "Pit Straight",
+      "start_t": 0.7999,
+      "end_t": 1.0,
+      "max_speed_ms": 77.8,
+      "straight": true
+    }
   ]
 }

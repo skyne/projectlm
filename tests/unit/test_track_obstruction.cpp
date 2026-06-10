@@ -169,7 +169,8 @@ TEST_CASE("Garage rejoin after tow clears sector flags and allows FCY end",
 TEST_CASE("Surface hazard reduces local grip", "[unit][hazard]") {
   RaceSession session = MakeMinimalSession();
   SpawnSurfaceHazard(session, 120.0, HazardKind::Oil, "entry-1", 0.65, 25.0);
-  const double grip = LocalGripMultiplierAt(session, 120.0, session.track.lapLength());
+  const double grip = LocalGripMultiplierAt(session, 120.0, 0.0,
+                                            session.track.lapLength());
   REQUIRE(grip < 0.9);
   REQUIRE(grip >= 0.55);
 }
@@ -178,8 +179,31 @@ TEST_CASE("Overlapping hazards use lowest grip multiplier", "[unit][hazard]") {
   RaceSession session = MakeMinimalSession();
   SpawnSurfaceHazard(session, 100.0, HazardKind::Oil, "entry-1", 0.8, 30.0);
   SpawnSurfaceHazard(session, 105.0, HazardKind::Coolant, "entry-2", 0.55, 30.0);
-  const double grip = LocalGripMultiplierAt(session, 102.0, session.track.lapLength());
+  const double grip = LocalGripMultiplierAt(session, 102.0, 0.0,
+                                            session.track.lapLength());
   REQUIRE(grip == Catch::Approx(0.55).margin(0.01));
+}
+
+TEST_CASE("Lateral hazard only affects cars in its lane", "[unit][hazard]") {
+  RaceSession session = MakeMinimalSession();
+  SpawnSurfaceHazard(session, 120.0, HazardKind::Oil, "entry-1", 0.65, 25.0,
+                     4.0, 2.0);
+  const double lap = session.track.lapLength();
+  REQUIRE(LocalGripMultiplierAt(session, 120.0, 0.0, lap) ==
+          Catch::Approx(1.0).margin(0.01));
+  REQUIRE(LocalGripMultiplierAt(session, 120.0, 4.0, lap) ==
+          Catch::Approx(0.65).margin(0.01));
+}
+
+TEST_CASE("Full-width hazard when lateral span is zero", "[unit][hazard]") {
+  RaceSession session = MakeMinimalSession();
+  SpawnSurfaceHazard(session, 80.0, HazardKind::Debris, "entry-1", 0.7, 20.0,
+                     3.0, 0.0);
+  const double lap = session.track.lapLength();
+  REQUIRE(LocalGripMultiplierAt(session, 80.0, 0.0, lap) ==
+          Catch::Approx(0.7).margin(0.01));
+  REQUIRE(LocalGripMultiplierAt(session, 80.0, -5.0, lap) ==
+          Catch::Approx(0.7).margin(0.01));
 }
 
 TEST_CASE("Expired hazards are removed", "[unit][hazard]") {

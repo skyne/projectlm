@@ -52,6 +52,7 @@ bool SimBridge::initFromRaceConfig(const std::string &raceConfigPath) {
 
   if (!LoadTrack(config.trackConfigPath, session.track))
     return false;
+  InitSessionCorridor(session);
   trackConfigPath_ = config.trackConfigPath;
 
   if (!config.entriesPath.empty()) {
@@ -100,6 +101,8 @@ bool SimBridge::initSession(const RaceSession &session) {
     return false;
 
   session_ = session;
+  if (session_.corridor.length() <= 0.0)
+    InitSessionCorridor(session_);
   InitSessionRaceControl(session_);
   pendingEvents_.clear();
   pendingCommands_.clear();
@@ -276,7 +279,9 @@ std::vector<CarSnapshot> SimBridge::getSnapshots() const {
     const Car &car = *board[rank];
     const double remaining = RemainingSessionSec(session_, car);
     CarSnapshot snap =
-        car.snapshot(session_.track, static_cast<int>(rank + 1), remaining);
+        car.snapshot(session_.track, static_cast<int>(rank + 1), remaining,
+                     &session_.corridor, &session_.physics,
+                     session_.trackWidthM);
     if (timingMode) {
       const std::string &classId = car.raceClass().id;
       const Car *classLead = classLeader[classId];
@@ -387,8 +392,10 @@ RaceControlState SimBridge::getRaceControl() const {
           : 0.0;
   state.surfaceHazards.reserve(rc.hazards.size());
   for (const TrackSurfaceHazard &hz : rc.hazards) {
-    state.surfaceHazards.push_back(
-        {hz.sectorIndex, HazardKindName(hz.kind), hz.gripMultiplier});
+    state.surfaceHazards.push_back({hz.sectorIndex, HazardKindName(hz.kind),
+                                    hz.gripMultiplier, hz.centerDistance,
+                                    hz.centerLateralM, hz.spanMeters,
+                                    hz.lateralSpanM});
   }
   state.trackWetness = session_.weather.trackWetness;
   state.ambientTempC = session_.weather.ambientTempC;

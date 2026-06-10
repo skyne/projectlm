@@ -83,6 +83,14 @@ interface TrackJson {
   name: string;
   closed?: boolean;
   lap_length?: number;
+  track_width_m?: number;
+  width_profile?: Array<{ start_t: number; end_t: number; width_m: number }>;
+  pit_lane?: {
+    width_m?: number;
+    offset_m?: number;
+    merge_lateral_offset?: number;
+    merge_blend_m?: number;
+  };
   interpolation?: string;
   control_points: Vec3[];
   display_polyline?: Vec3[];
@@ -1411,6 +1419,36 @@ export class MockSimSession {
       closed: true,
       polyline,
       mapLabels: this.trackJson.map_labels,
+      ...(this.trackJson.track_width_m != null
+        ? { defaultWidthM: this.trackJson.track_width_m }
+        : {}),
+      ...(this.trackJson.width_profile?.length
+        ? {
+            widthProfile: this.trackJson.width_profile.map((seg) => ({
+              startT: seg.start_t,
+              endT: seg.end_t,
+              widthM: seg.width_m,
+            })),
+          }
+        : {}),
+      ...(this.trackJson.pit_lane
+        ? {
+            pitLane: {
+              ...(this.trackJson.pit_lane.width_m != null
+                ? { widthM: this.trackJson.pit_lane.width_m }
+                : {}),
+              ...(this.trackJson.pit_lane.offset_m != null
+                ? { offsetM: this.trackJson.pit_lane.offset_m }
+                : {}),
+              ...(this.trackJson.pit_lane.merge_lateral_offset != null
+                ? { mergeLateralOffset: this.trackJson.pit_lane.merge_lateral_offset }
+                : {}),
+              ...(this.trackJson.pit_lane.merge_blend_m != null
+                ? { mergeBlendM: this.trackJson.pit_lane.merge_blend_m }
+                : {}),
+            },
+          }
+        : {}),
       sectors: this.trackJson.sectors.map((s) => {
         const midT = (s.start_t + s.end_t) * 0.5;
         const pt = this.samples[Math.round(midT * (this.samples.length - 1))];

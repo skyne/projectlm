@@ -1,6 +1,7 @@
 #include "traffic.hpp"
 #include "car_entity.hpp"
 #include "driver.hpp"
+#include "track_corridor.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -67,6 +68,43 @@ int ClassRank(const std::string &classId) {
     return 1;
   return 2;
 }
+
+constexpr double kPitMergeNormalizedOffset = 0.58;
+
+double MergeRejoinLateralNM(double mergeDistance,
+                            const TrafficLateralContext &lateral) {
+  if (lateral.corridor != nullptr && lateral.corridor->length() > 0.0)
+    return lateral.corridor->lateralOffsetM(mergeDistance,
+                                            kPitMergeNormalizedOffset);
+  return kPitMergeNormalizedOffset * lateral.trackWidthM * 0.5;
+}
+
+bool LaterallyConflicting(double nA, double nB, double widthA, double widthB) {
+  return std::abs(nA - nB) < (widthA + widthB) * 0.5 + 0.5;
+}
+
+bool UsesMetreLateral(const Car &car, const TrafficLateralContext &lateral) {
+  if (lateral.corridor != nullptr && lateral.corridor->length() > 0.0)
+    return true;
+  return lateral.useFrenetDynamics || car.state().lateralOffsetM != 0.0;
+}
+
+double LateralSepMetres(const Car &self, const Car &other,
+                        const TrafficLateralContext &lateral) {
+  const double sSelf = self.state().currentDistance;
+  const double sOther = other.state().currentDistance;
+  if (UsesMetreLateral(self, lateral) || UsesMetreLateral(other, lateral)) {
+    const double nSelf =
+        self.lateralNM(lateral.trackWidthM, lateral.useFrenetDynamics,
+                       lateral.corridor, sSelf);
+    const double nOther =
+        other.lateralNM(lateral.trackWidthM, lateral.useFrenetDynamics,
+                        lateral.corridor, sOther);
+    return std::abs(nSelf - nOther);
+  }
+  return std::abs(self.lateralOffset() - other.lateralOffset()) *
+         lateral.trackWidthM * 0.5;
+}
 } // namespace
 
 CarBodyDimensions DimensionsForClass(const std::string &classId) {
@@ -86,7 +124,7 @@ double WrapDistanceGap(double aheadDistance, double behindDistance,
 
 bool PitMergeGapSafe(const Car &rejoining, const std::vector<Car> &cars,
                      double lapLength, double mergeDistance,
-                     double rejoinSpeedMs) {
+                     double rejoinSpeedMs, const TrafficLateralContext &lateral) {
   if (lapLength <= 0.0)
     return true;
 
@@ -96,6 +134,10 @@ bool PitMergeGapSafe(const Car &rejoining, const std::vector<Car> &cars,
   const double rejoinRaceDist =
       mergeDistance +
       static_cast<double>(rejoining.state().currentLap) * lapLength;
+  const bool checkLateral =
+      lateral.useFrenetDynamics || lateral.corridor != nullptr;
+  const double rejoinN =
+      checkLateral ? MergeRejoinLateralNM(mergeDistance, lateral) : 0.0;
 
   for (const Car &other : cars) {
     if (other.entryId() == rejoining.entryId())
@@ -107,15 +149,26 @@ bool PitMergeGapSafe(const Car &rejoining, const std::vector<Car> &cars,
 
     const double gap = WrapRaceGap(RaceDistance(other, lapLength), rejoinRaceDist,
                                    lapLength);
-    if (gap > 0.0 && gap < minAheadGap)
+    const CarBodyDimensions otherDim = other.bodyDimensions();
+    const double otherN =
+        checkLateral
+            ? other.lateralNM(lateral.trackWidthM, lateral.useFrenetDynamics,
+                              lateral.corridor, other.state().currentDistance)
+            : 0.0;
+    const bool lateralConflict =
+        !checkLateral ||
+        LaterallyConflicting(rejoinN, otherN, dim.widthM, otherDim.widthM);
+
+    if (gap > 0.0 && gap < minAheadGap && lateralConflict)
       return false;
 
     if (gap < 0.0) {
       const double behind = -gap;
       const double closing = other.state().currentSpeed - rejoinSpeedMs;
-      if (behind < minBehindGap)
+      if (behind < minBehindGap && lateralConflict)
         return false;
-      if (closing > 4.0 && behind < minBehindGap + closing * 2.5)
+      if (lateralConflict && closing > 4.0 &&
+          behind < minBehindGap + closing * 2.5)
         return false;
     }
   }
@@ -123,12 +176,13 @@ bool PitMergeGapSafe(const Car &rejoining, const std::vector<Car> &cars,
 }
 
 void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
-                    double trackWidthM, double raceTime,
+                    double raceTime,
                     std::unordered_map<std::string, double> &eventCooldowns,
                     std::vector<TrafficModifiers> &modifiersOut,
                     std::vector<TrafficEvent> &eventsOut,
                     const SessionRaceControl &raceControl,
-                    const std::vector<Car *> &leaderboard) {
+                    const std::vector<Car *> &leaderboard,
+                    const TrafficLateralContext &lateral) {
   modifiersOut.assign(cars.size(), TrafficModifiers{});
   eventsOut.clear();
 
@@ -191,8 +245,13 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
       const double relativeSpeed =
           self.state().currentSpeed - other.state().currentSpeed;
 
-      // Rejoining cars yield — faster on-track traffic must not rear-end them.
-      if (other.isRejoiningYield() && gap > 0.0 && relativeSpeed > 4.0) {
+      const double lateralSep = LateralSepMetres(self, other, lateral);
+      const double widthOverlap =
+          (selfDim.widthM + otherDim.widthM) * 0.42;
+
+      // Rejoining cars yield — only when closing traffic shares the corridor.
+      if (other.isRejoiningYield() && gap > 0.0 && relativeSpeed > 4.0 &&
+          lateralSep < widthOverlap) {
         TrafficModifiers &otherMod = modifiersOut[j];
         otherMod.blueFlag = true;
         otherMod.speedCapMs = std::max(
@@ -201,12 +260,6 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
         if (gap < combinedLength * 1.25)
           continue;
       }
-      const double lateralSep =
-          std::abs(self.lateralOffset() - other.lateralOffset()) *
-          trackWidthM * 0.5;
-      const double widthOverlap =
-          (selfDim.widthM + otherDim.widthM) * 0.42;
-
       if (gap < combinedLength * 0.85 &&
           lateralSep < widthOverlap) {
         if (relativeSpeed > 8.5) {
@@ -266,9 +319,16 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
           self.state().currentSpeed > other.state().currentSpeed + 1.5) {
         const double trafficRoom =
             self.driver().active().trafficManagement / 100.0;
+        const double selfN =
+            self.lateralNM(lateral.trackWidthM, lateral.useFrenetDynamics,
+                           lateral.corridor, self.state().currentDistance);
+        const double laneHalfWidth =
+            lateral.corridor != nullptr && lateral.corridor->length() > 0.0
+                ? lateral.corridor->maxLateralN(self.state().currentDistance)
+                : lateral.trackWidthM * 0.5;
         const bool hasRoom =
             lateralSep > selfDim.widthM * (0.58 - trafficRoom * 0.08) ||
-            std::abs(self.lateralOffset()) > 0.12;
+            std::abs(selfN) > laneHalfWidth * 0.24;
 
         if (hasRoom || overtakeSkill > 1.02) {
           selfMod.overtaking = true;

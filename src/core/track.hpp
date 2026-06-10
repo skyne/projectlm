@@ -18,6 +18,25 @@ struct TrackSector {
   double endT = 0.0;
   double maxSafeSpeed = 0.0;
   bool isStraightaway = false;
+  /** Optional sector width override (metres); <= 0 means use track default. */
+  double widthM = 0.0;
+};
+
+struct TrackWidthSegment {
+  std::string name;
+  double startT = 0.0;
+  double endT = 1.0;
+  double widthM = 12.0;
+};
+
+struct PitLaneGeometry {
+  double offsetM = 10.0;
+};
+
+struct TrackCorridorData {
+  double defaultWidthM = 12.0;
+  std::vector<TrackWidthSegment> widthProfile;
+  PitLaneGeometry pitLane;
 };
 
 struct TrackPose {
@@ -77,6 +96,7 @@ struct TrackDefinition {
   std::string name;
   TrackSpline spline;
   PitLaneDefinition pitLane;
+  TrackCorridorData corridor;
   std::vector<TrackSector> sectors;
   std::vector<Vec3> displayPolyline;
 

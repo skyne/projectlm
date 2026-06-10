@@ -22,6 +22,7 @@ inline RaceSession MakeMinimalRaceSession(double targetDurationSeconds = 3600.0)
        1.0, 80.0, true});
   session.physics.minSpeed = 1.0;
   session.targetDurationSeconds = targetDurationSeconds;
+  InitSessionCorridor(session);
   InitSessionRaceControl(session);
   return session;
 }
@@ -39,6 +40,7 @@ inline RaceSession MakeLongRaceSession(double targetDurationSeconds = 3600.0) {
        1.0, 80.0, true});
   session.physics.minSpeed = 1.0;
   session.targetDurationSeconds = targetDurationSeconds;
+  InitSessionCorridor(session);
   InitSessionRaceControl(session);
   return session;
 }

@@ -117,6 +117,7 @@ static int RunMultiCar(const RaceConfig &raceConfig, PartCatalog &catalog,
     std::cerr << "Error: Multi-car race assets missing!" << std::endl;
     return 1;
   }
+  InitSessionCorridor(session);
 
   std::cout << "=== MULTICLASS ENDURANCE SESSION ===" << std::endl;
   std::cout << "Entries: " << session.cars.size() << " | Laps: "

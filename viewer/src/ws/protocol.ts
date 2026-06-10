@@ -62,6 +62,9 @@ export interface CarSnapshot {
   position: Vec3;
   tangent: Vec3;
   lateralOffset?: number;
+  lateralOffsetM?: number;
+  headingError?: number;
+  poseIncludesLateral?: boolean;
   carLengthM?: number;
   carWidthM?: number;
   driverName?: string;
@@ -191,6 +194,19 @@ export interface TrackMapLabel {
   anchor?: "start" | "middle" | "end";
 }
 
+export interface TrackWidthSegment {
+  startT: number;
+  endT: number;
+  widthM: number;
+}
+
+export interface TrackPitLaneGeometry {
+  widthM?: number;
+  offsetM?: number;
+  mergeLateralOffset?: number;
+  mergeBlendM?: number;
+}
+
 export interface TrackGeometryPayload {
   name: string;
   lapLength: number;
@@ -198,6 +214,9 @@ export interface TrackGeometryPayload {
   polyline: Array<{ x: number; z: number }>;
   sectors: TrackSectorGeometry[];
   mapLabels?: TrackMapLabel[];
+  defaultWidthM?: number;
+  widthProfile?: TrackWidthSegment[];
+  pitLane?: TrackPitLaneGeometry;
 }
 
 export interface WeatherContextPayload {
@@ -1106,6 +1125,10 @@ export interface SurfaceHazardSummaryPayload {
   sectorIndex: number;
   kind: string;
   gripMultiplier: number;
+  centerDistance?: number;
+  centerLateralM?: number;
+  spanMeters?: number;
+  lateralSpanM?: number;
 }
 
 export interface RaceControlPayload {

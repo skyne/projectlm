@@ -29,6 +29,12 @@ static std::string MakeEntryId(int gridPosition) {
   return "entry-" + std::to_string(gridPosition);
 }
 
+void InitSessionCorridor(RaceSession &session) {
+  session.corridor.build(session.track);
+  if (session.track.corridor.defaultWidthM > 0.0)
+    session.trackWidthM = session.track.corridor.defaultWidthM;
+}
+
 SessionMode ParseSessionMode(const std::string &value) {
   const std::string lower = Trim(value);
   if (lower == "practice")
@@ -113,6 +119,9 @@ double ComputeTrackWetness(double raceTimeSeconds,
 }
 
 void TickRace(RaceSession &session, double deltaTime) {
+  if (session.corridor.length() <= 0.0 && session.track.lapLength() > 0.0)
+    InitSessionCorridor(session);
+
   const WeatherPhase prevPhase = session.weather.phase;
   const double prevForecast = session.weather.forecastRainInSeconds;
 
@@ -155,12 +164,20 @@ void TickRace(RaceSession &session, double deltaTime) {
   UpdateTrackObstructions(session, deltaTime);
   UpdateTrackHazards(session, deltaTime);
 
+  if (session.corridor.length() <= 0.0)
+    InitSessionCorridor(session);
+
+  TrafficLateralContext trafficLateral;
+  trafficLateral.trackWidthM = session.trackWidthM;
+  trafficLateral.useFrenetDynamics = session.physics.useFrenetDynamics;
+  if (session.corridor.length() > 0.0)
+    trafficLateral.corridor = &session.corridor;
+
   std::vector<TrafficModifiers> trafficMods;
   std::vector<TrafficEvent> trafficEvents;
-  ResolveTraffic(session.cars, session.track.lapLength(), session.trackWidthM,
-                 session.elapsedRaceTime, session.trafficEventCooldowns,
-                 trafficMods, trafficEvents, session.raceControl,
-                 GetLeaderboard(session));
+  ResolveTraffic(session.cars, session.track.lapLength(), session.elapsedRaceTime,
+                 session.trafficEventCooldowns, trafficMods, trafficEvents,
+                 session.raceControl, GetLeaderboard(session), trafficLateral);
 
   UpdateRaceControl(session, trafficEvents);
   TickSafetyCar(session, deltaTime);
@@ -173,9 +190,12 @@ void TickRace(RaceSession &session, double deltaTime) {
 
   const double lapLength = session.track.lapLength();
   for (size_t i = 0; i < session.cars.size() && i < trafficMods.size(); ++i) {
-    trafficMods[i].localGripScale =
-        LocalGripMultiplierAt(session, session.cars[i].state().currentDistance,
-                              lapLength);
+    const Car &car = session.cars[i];
+    const double lateralNM =
+        car.lateralNM(session.trackWidthM, session.physics.useFrenetDynamics,
+                      &session.corridor);
+    trafficMods[i].localGripScale = LocalGripMultiplierAt(
+        session, car.state().currentDistance, lateralNM, lapLength);
   }
 
   for (const TrafficEvent &ev : trafficEvents) {
@@ -239,7 +259,7 @@ void TickRace(RaceSession &session, double deltaTime) {
           session.raceControl.flagPhase == FlagPhase::Green;
       if (car.processPitLaneTick(session.track, deltaTime, session.staff,
                                  remaining, redFlagActive, &session.cars,
-                                 requireMergeGap)) {
+                                 requireMergeGap, &trafficLateral)) {
         if (car.isRetired()) {
           EmitRaceEvent(SimEventType::Retirement, car, car.state().currentLap,
                         static_cast<int>(car.state().currentTrackNodeIndex),
@@ -265,8 +285,9 @@ void TickRace(RaceSession &session, double deltaTime) {
 
     const double remaining = RemainingSessionSec(session, car);
     const CarTickResult result = car.tick(
-        session.track, session.physics, deltaTime, session.elapsedRaceTime,
-        nullptr, traffic, session.weather, night, remaining, redFlagActive);
+        session.track, session.corridor, session.physics, deltaTime,
+        session.elapsedRaceTime, nullptr, traffic, session.weather, night,
+        remaining, redFlagActive);
 
     if (result.lapCompleted && car.pit().pendingEnter) {
       if (car.processPitEntry(0.0, true, redFlagActive)) {

@@ -151,6 +151,9 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
   obj.Set("position", Vec3ToObject(env, snapshot.position));
   obj.Set("tangent", Vec3ToObject(env, snapshot.tangent));
   obj.Set("lateralOffset", snapshot.lateralOffset);
+  obj.Set("lateralOffsetM", snapshot.lateralOffsetM);
+  obj.Set("headingError", snapshot.headingError);
+  obj.Set("poseIncludesLateral", snapshot.poseIncludesLateral);
   obj.Set("carLengthM", snapshot.carLengthM);
   obj.Set("carWidthM", snapshot.carWidthM);
   obj.Set("driverName", snapshot.driverName);
@@ -475,6 +478,10 @@ Napi::Object RaceControlToObject(Napi::Env env, const RaceControlState &rc) {
     hz.Set("sectorIndex", rc.surfaceHazards[i].sectorIndex);
     hz.Set("kind", rc.surfaceHazards[i].kind);
     hz.Set("gripMultiplier", rc.surfaceHazards[i].gripMultiplier);
+    hz.Set("centerDistance", rc.surfaceHazards[i].centerDistance);
+    hz.Set("centerLateralM", rc.surfaceHazards[i].centerLateralM);
+    hz.Set("spanMeters", rc.surfaceHazards[i].spanMeters);
+    hz.Set("lateralSpanM", rc.surfaceHazards[i].lateralSpanM);
     hazards.Set(static_cast<uint32_t>(i), hz);
   }
   obj.Set("surfaceHazards", hazards);

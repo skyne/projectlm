@@ -35,9 +35,33 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.loadTrackGeometryFromPath = loadTrackGeometryFromPath;
 exports.loadTrackGeometryById = loadTrackGeometryById;
+exports.enrichTrackGeometryFromJson = enrichTrackGeometryFromJson;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const track_catalog_1 = require("./track_catalog");
+function parsePitLane(pit) {
+    if (!pit)
+        return undefined;
+    const out = {};
+    if (pit.width_m != null)
+        out.widthM = pit.width_m;
+    if (pit.offset_m != null)
+        out.offsetM = pit.offset_m;
+    if (pit.merge_lateral_offset != null)
+        out.mergeLateralOffset = pit.merge_lateral_offset;
+    if (pit.merge_blend_m != null)
+        out.mergeBlendM = pit.merge_blend_m;
+    return Object.keys(out).length > 0 ? out : undefined;
+}
+function parseWidthProfile(profile) {
+    if (!profile?.length)
+        return undefined;
+    return profile.map((seg) => ({
+        startT: seg.start_t,
+        endT: seg.end_t,
+        widthM: seg.width_m,
+    }));
+}
 function buildGeometry(track, fallbackName) {
     const polyline = track.display_polyline?.map((p) => ({ x: p.x, z: p.z })) ??
         track.control_points?.map((p) => ({ x: p.x, z: p.z })) ??
@@ -55,6 +79,9 @@ function buildGeometry(track, fallbackName) {
             labelZ: label.z,
         };
     });
+    const defaultWidthM = track.track_width_m;
+    const widthProfile = parseWidthProfile(track.width_profile);
+    const pitLane = parsePitLane(track.pit_lane);
     return {
         name: track.name || fallbackName,
         lapLength,
@@ -62,6 +89,9 @@ function buildGeometry(track, fallbackName) {
         polyline,
         sectors,
         mapLabels: track.map_labels,
+        ...(defaultWidthM != null ? { defaultWidthM } : {}),
+        ...(widthProfile ? { widthProfile } : {}),
+        ...(pitLane ? { pitLane } : {}),
     };
 }
 function loadTrackGeometryFromPath(repoRoot, trackConfigPath, fallbackName = "Circuit") {
@@ -79,4 +109,17 @@ function loadTrackGeometryFromPath(repoRoot, trackConfigPath, fallbackName = "Ci
 function loadTrackGeometryById(repoRoot, trackId) {
     const rel = (0, track_catalog_1.trackJsonPath)(trackId);
     return loadTrackGeometryFromPath(repoRoot, rel, (0, track_catalog_1.trackDisplayName)(trackId));
+}
+/** Merge corridor metadata from track JSON onto a native geometry payload. */
+function enrichTrackGeometryFromJson(base, repoRoot, trackConfigPath) {
+    const fromJson = loadTrackGeometryFromPath(repoRoot, trackConfigPath, base.name);
+    if (!fromJson)
+        return base;
+    return {
+        ...base,
+        defaultWidthM: fromJson.defaultWidthM ?? base.defaultWidthM,
+        widthProfile: fromJson.widthProfile ?? base.widthProfile,
+        pitLane: fromJson.pitLane ?? base.pitLane,
+        mapLabels: base.mapLabels?.length ? base.mapLabels : fromJson.mapLabels,
+    };
 }
