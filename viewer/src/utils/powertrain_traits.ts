@@ -116,8 +116,8 @@ export const LAYOUTS: LayoutDef[] = [
 
 const FUEL_MOD: Record<FuelType, TraitModifiers & { fuelMassMult: number }> = {
   Gasoline: { massMult: 1, torqueMult: 1, revMult: 1, fuelBurnMult: 1, throttleMult: 1, thermalMult: 1, stressMult: 1, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 1, fuelMassMult: 1 },
-  Diesel: { massMult: 1.22, torqueMult: 1.18, revMult: 0.82, fuelBurnMult: 0.78, throttleMult: 0.88, thermalMult: 1.2, stressMult: 1.05, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 1, fuelMassMult: 1.22 },
-  Hydrogen: { massMult: 0.88, torqueMult: 0.94, revMult: 1.06, fuelBurnMult: 1.35, throttleMult: 1.02, thermalMult: 0.85, stressMult: 1.02, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 0.94, fuelMassMult: 0.88 },
+  Diesel: { massMult: 1.14, torqueMult: 1.18, revMult: 0.90, fuelBurnMult: 0.78, throttleMult: 0.94, thermalMult: 1.2, stressMult: 1.05, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 1, fuelMassMult: 1.14 },
+  Hydrogen: { massMult: 0.88, torqueMult: 0.94, revMult: 1.06, fuelBurnMult: 1.05, throttleMult: 1.02, thermalMult: 0.85, stressMult: 1.02, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 1, serviceabilityMult: 0.94, fuelMassMult: 0.88 },
   Electric: { massMult: 0.92, torqueMult: 1, revMult: 1, fuelBurnMult: 0.88, throttleMult: 1.1, thermalMult: 0.75, stressMult: 0.88, torquePeakRatio: 1, torqueFalloff: 1, throttleLagTau: 0.03, serviceabilityMult: 0.82, fuelMassMult: 0.92 },
 };
 
@@ -151,7 +151,7 @@ const DRIVETRAIN_MOD: Record<
   Mechanical: { extraMassKg: 0, deployKw: 0, regenRate: 0, stintBudgetMj: 0, throttleMult: 1, serviceabilityMult: 1, stressMult: 1, isGeneratorOnly: false, isElectricDrive: false, generatorKw: 0, efficiency: 1, hybridHint: "None", transmissionHint: null },
   ParallelHybrid: { extraMassKg: 36, deployKw: 50, regenRate: 0.35, stintBudgetMj: 8, throttleMult: 1.04, serviceabilityMult: 0.94, stressMult: 0.96, isGeneratorOnly: false, isElectricDrive: false, generatorKw: 0, efficiency: 1, hybridHint: "LMDh50kW", transmissionHint: null },
   FrontAxleHybrid: { extraMassKg: 32, deployKw: 200, regenRate: 0.5, stintBudgetMj: 4.5, throttleMult: 1.06, serviceabilityMult: 0.92, stressMult: 0.94, isGeneratorOnly: false, isElectricDrive: false, generatorKw: 0, efficiency: 1, hybridHint: "HypercarHV", transmissionHint: null },
-  RangeExtender: { extraMassKg: 125, deployKw: 0, regenRate: 0.4, stintBudgetMj: 2.5, throttleMult: 1.12, serviceabilityMult: 0.82, stressMult: 0.88, isGeneratorOnly: true, isElectricDrive: true, generatorKw: 280, efficiency: 0.88, hybridHint: "None", transmissionHint: "SingleSpeedEDrive" },
+  RangeExtender: { extraMassKg: 125, deployKw: 0, regenRate: 0.4, stintBudgetMj: 2.5, throttleMult: 1.04, serviceabilityMult: 0.82, stressMult: 0.88, isGeneratorOnly: true, isElectricDrive: true, generatorKw: 280, efficiency: 0.88, hybridHint: "None", transmissionHint: "SingleSpeedEDrive" },
   FullEV: { extraMassKg: 130, deployKw: 350, regenRate: 0.55, stintBudgetMj: 6, throttleMult: 1.15, serviceabilityMult: 0.78, stressMult: 0.85, isGeneratorOnly: false, isElectricDrive: true, generatorKw: 0, efficiency: 0.92, hybridHint: "None", transmissionHint: "SingleSpeedEDrive" },
 };
 
@@ -210,7 +210,7 @@ export function fuelCellBufferTraits(buffer: number, stackKw = 420) {
     serviceabilityMult: 0.9 - t * 0.08,
     regenRate: 0.45 - t * 0.08,
     stintBudgetMj,
-    drivetrainExtraMassKg: 162 + stackKw * 0.062 + bufferMassKg,
+    drivetrainExtraMassKg: 174 + stackKw * 0.062 + bufferMassKg,
     burstSecondsAtFull: burstKw > 0 ? stintBudgetMj / (burstKw / 1000) : 0,
   };
 }
@@ -536,7 +536,7 @@ export function resolvePowertrainTraits(
       torqueMult: 0.94,
       revMult: 1.06,
       fuelBurnMult: buf.fuelBurnMult,
-      throttleMult: 1.06,
+      throttleMult: 1.02,
       thermalMult: 0.7,
       stressMult: 0.2,
       torquePeakRatio: 0.85,

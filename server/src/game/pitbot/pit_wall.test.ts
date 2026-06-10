@@ -356,13 +356,14 @@ describe("tickPitBot race control", () => {
   });
 
   it("defers routine pit under FCY but not limp emergency", () => {
+    // Fuel comfortable (window closed) — near-empty fuel is no longer deferred.
     const entryId = "ai-2";
     const base = snap({
       entryId,
       classId: "LMP2",
       teamName: "Rival",
       tireWear: 0.95,
-      fuel: 5,
+      fuel: 60,
     });
     const carState = initCarState([entryId], 0, { minLap: 3 });
     const routine: string[] = [];
@@ -459,7 +460,7 @@ describe("tickPitBot race control", () => {
           classId: "Hypercar",
           teamName: "Rival",
           tireWear: 0.99,
-          fuel: 4,
+          fuel: 60,
         }),
       ],
       [entryId],

@@ -104,6 +104,7 @@ describe("planPitStop class fuel thresholds", () => {
   });
 
   it("blocks routine lap-1 pit when fuel is not critical", () => {
+    // fuelAtLastPit 55 → measured burn 5 L/lap, so 50 L is ~10 laps of fuel.
     const plan = planPitStop(
       snap({
         entryId: "e3",
@@ -113,7 +114,7 @@ describe("planPitStop class fuel thresholds", () => {
         fuelTankCapacity: 100,
       }),
       { ...baseCtx, sincePit: 1 },
-      100,
+      55,
     );
     assert.equal(plan, null);
   });
@@ -247,7 +248,7 @@ describe("pit_planner stint guide", () => {
     const s = snap({
       classId: "Hypercar",
       lap: 5,
-      fuel: 31,
+      fuel: 34,
       fuelTankCapacity: 100,
     });
     const withoutPlan = planPitStop(s, baseCtx, 100);

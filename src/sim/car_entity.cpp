@@ -597,9 +597,13 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
   mods.skillFactor = driver_.paceFactor(weather.trackWetness, isNight,
                                         weather.visibilityKm,
                                         weather.windSpeedMs);
-  if (config_.hybridDeployPowerKW > 0.0) {
+  if (config_.hybridDeployPowerKW > 0.0 || IsBatteryPrimaryEv(config_)) {
     HybridStrategyModifiers(driver_.hybridStrategy, mods.hybridDeployScale,
                             mods.hybridRegenScale);
+    // Battery-primary EVs have no separate deploy system (drive power IS the
+    // battery), but braking regen must still credit the pack.
+    if (IsBatteryPrimaryEv(config_))
+      mods.hybridDeployScale = 0.0;
   } else {
     mods.hybridDeployScale = 0.0;
     mods.hybridRegenScale = 0.0;

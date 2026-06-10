@@ -121,6 +121,8 @@ export interface PitPlannerContext {
   /** LLM/heuristic stint plan from AiStintGuide. */
   stintPlan?: AiStintPlan;
   briefingTactics?: BriefingTactics;
+  /** Laps since the current tyre set was fitted (for true wear rate). */
+  lapsOnTyres?: number;
 }
 
 export interface PitServiceFlags {
@@ -279,15 +281,9 @@ export function needsEmergencyPit(s: PlannerSnap): boolean {
   const tank =
     s.fuelTankCapacity != null && s.fuelTankCapacity > 0 ? s.fuelTankCapacity : 0;
   if (tank > 0 && s.fuel >= 0 && s.fuel / tank <= EMERGENCY_FUEL_FRACTION) return true;
-  const hybridBudget = s.hybridBudgetMJ ?? 0;
-  const hybridRemain = s.hybridDeployMJ ?? 0;
-  if (
-    hybridBudget > 0 &&
-    hybridRemain >= 0 &&
-    hybridRemain / hybridBudget <= EMERGENCY_FUEL_FRACTION
-  ) {
-    return true;
-  }
+  // Low hybrid deploy budget is NOT an emergency: brake regen recovers it on
+  // track and any serviced stop resets it (see ApplyPitServices). Treating it
+  // as one caused infinite pit loops when deploy outran regen.
   return false;
 }
 
@@ -408,11 +404,13 @@ function tyresWorn(s: PlannerSnap): boolean {
   return wear >= profileFor(s.classId).tireWear;
 }
 
-function lapsUntilTyreWorn(s: PlannerSnap): number {
+function lapsUntilTyreWorn(s: PlannerSnap, lapsOnTyres?: number): number {
   const wear = s.tireWear ?? 0;
   const threshold = profileFor(s.classId).tireWear;
   if (wear >= threshold) return 0;
-  const lap = Math.max(1, s.lap);
+  // Wear resets to 0 at a tyre change, so wear / lapsOnTyres is the true set
+  // rate; dividing by total race laps wildly overestimates life mid-race.
+  const lap = Math.max(1, lapsOnTyres && lapsOnTyres > 0 ? lapsOnTyres : s.lap);
   const rate = wear / lap;
   if (rate <= 0) return 99;
   return Math.ceil((threshold - wear) / rate);
@@ -483,6 +481,35 @@ function serviceLabel(services: PitServiceFlags): string {
   return bits.join("+") || "stop";
 }
 
+/**
+ * Fuel pit window expressed in laps of reserve, so it scales with track
+ * length: a 13.6 km Le Mans lap burns ~5× more per lap than a short circuit,
+ * and a fixed tank fraction leaves too little margin there. Class fractions
+ * remain as floors for short tracks / unknown burn.
+ */
+const FUEL_RESERVE_LAPS_LOW = 2.25;
+const FUEL_RESERVE_LAPS_CRITICAL = 1.25;
+
+export function burnScaledFuelBase(
+  s: PlannerSnap,
+  sincePit: number,
+  fuelAtLastPit: number,
+): { low: number; critical: number } {
+  const profile = profileFor(s.classId);
+  const tank = tankCapacity(s);
+  if (tank <= 0) return { low: profile.fuelLow, critical: profile.fuelCritical };
+  const burn = burnPerLap(s, sincePit, fuelAtLastPit);
+  const low = Math.min(
+    0.75,
+    Math.max(profile.fuelLow, (burn * FUEL_RESERVE_LAPS_LOW) / tank),
+  );
+  const critical = Math.min(
+    low * 0.8,
+    Math.max(profile.fuelCritical, (burn * FUEL_RESERVE_LAPS_CRITICAL) / tank),
+  );
+  return { low, critical };
+}
+
 /** Scale fuel pit windows — higher aggression pits earlier. */
 export function scaledFuelThresholds(
   pitAggression = 1,
@@ -513,11 +540,16 @@ export function planPitStop(
   }
 
   const profile = profileFor(s.classId);
+  const burnBase = burnScaledFuelBase(s, ctx.sincePit, fuelAtLastPit);
+  // Stint plans may stretch the window but never below the burn-scaled
+  // critical reserve (fixed fractions break on long laps like La Sarthe).
   const fuelBase = {
-    low: ctx.stintPlan?.fuelStopFraction ?? profile.fuelLow,
+    low: ctx.stintPlan?.fuelStopFraction
+      ? Math.max(ctx.stintPlan.fuelStopFraction, burnBase.critical)
+      : burnBase.low,
     critical: ctx.stintPlan?.fuelStopFraction
-      ? Math.min(profile.fuelCritical, ctx.stintPlan.fuelStopFraction * 0.55)
-      : profile.fuelCritical,
+      ? Math.min(burnBase.critical, ctx.stintPlan.fuelStopFraction * 0.55)
+      : burnBase.critical,
   };
   const aggression =
     (ctx.pitAggression ?? 1) * (ctx.briefingTactics?.pitAggression ?? 1);
@@ -554,7 +586,16 @@ export function planPitStop(
     ctx.sincePit,
     fuelAtLastPit,
   );
-  const lapsTyres = lapsUntilTyreWorn(s);
+  const lapsTyres = lapsUntilTyreWorn(s, ctx.lapsOnTyres);
+  // Laps a full tank covers down to the low threshold — the next stint length.
+  const stintBurn = burnPerLap(s, ctx.sincePit, fuelAtLastPit);
+  const nextStintLaps =
+    stintBurn > 0
+      ? Math.max(3, ((1 - fuelLow) * tankCapacity(s)) / stintBurn)
+      : 99;
+  // Endurance rule: change tyres at a fuel stop when they cannot cover the
+  // next full stint — a lone tyre stop mid-stint wastes half a fuel load.
+  const tyresWontLastStint = lapsTyres < nextStintLaps;
 
   const fuelNow = fuelPct < fuelLow;
   const fuelSoon = lapsFuelLow <= BUNDLE_LOOKAHEAD_LAPS;
@@ -622,10 +663,11 @@ export function planPitStop(
 
   const lapSec = lapTimeSec(s);
 
+  const refuelling = fuelNow || fuelSoon || fuelPct < fuelLow + 0.03;
   const bundleServices: PitServiceFlags = {
     setup: !ctx.setupDone && ctx.phase === "race",
-    fuel: fuelNow || fuelSoon || fuelPct < fuelLow + 0.03,
-    tyres: tyresNow || tyresSoon,
+    fuel: refuelling,
+    tyres: tyresNow || tyresSoon || (refuelling && tyresWontLastStint),
     driver: driverNow || driverSoon,
     engine,
     body: limp,
@@ -637,7 +679,7 @@ export function planPitStop(
     !bundleServices.driver &&
     !bundleServices.engine &&
     driver.lapsUntil > BUNDLE_LOOKAHEAD_LAPS + 2 &&
-    lapsTyres > BUNDLE_LOOKAHEAD_LAPS + 2
+    !tyresWontLastStint
   ) {
     bundleServices.tyres = false;
     bundleServices.fuel = true;

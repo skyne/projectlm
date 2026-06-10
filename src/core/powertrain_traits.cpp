@@ -48,9 +48,9 @@ struct FuelTraits {
 
 FuelTraits FuelFor(const std::string &fuel) {
   if (fuel == "Diesel")
-    return {1.22, 1.18, 0.82, 0.78, 0.88, 1.2, 1.05};
+    return {1.14, 1.18, 0.90, 0.78, 0.94, 1.2, 1.05};
   if (fuel == "Hydrogen")
-    return {0.88, 0.94, 1.06, 1.35, 1.02, 0.85, 1.02};
+    return {0.88, 0.94, 1.06, 1.05, 1.02, 0.85, 1.02};
   return {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
 }
 
@@ -104,7 +104,7 @@ DrivetrainTraits DrivetrainFor(const std::string &drv) {
   if (drv == "FrontAxleHybrid")
     return {32, 200, 0.5, 4.5, 1.06, 0.92, 0.94, 1.0, false, false, 0};
   if (drv == "RangeExtender")
-    return {125, 0, 0.4, 2.5, 1.12, 0.82, 0.88, 0.88, true, true, 280};
+    return {125, 0, 0.4, 2.5, 1.04, 0.82, 0.88, 0.88, true, true, 280};
   if (drv == "FullEV")
     return {130, 350, 0.55, 6, 1.15, 0.78, 0.85, 0.92, false, true, 0};
   return {0, 0, 0, 0, 1.0, 1.0, 1.0, 1.0, false, false, 0};
@@ -162,11 +162,11 @@ PowertrainTraits ResolvePowertrainTraits(const EngineConfig &engine) {
     t.deployKw = burstKw;
     t.regenRate = 0.45 - buffer * 0.08;
     t.stintBudgetMj = 3.0 + buffer * 5.5;
-    t.drivetrainExtraMassKg = 162.0 + stackKw * 0.062 + bufferMassKg;
+    t.drivetrainExtraMassKg = 174.0 + stackKw * 0.062 + bufferMassKg;
     t.stressMult = 0.2;
     t.thermalMult = 0.70;
     t.fuelBurnMult = 0.86 + buffer * 0.16;
-    t.throttleMult = 1.06;
+    t.throttleMult = 1.02;
     t.serviceabilityMult = 0.90 - buffer * 0.08;
     t.throttleLagTau = 0.04;
     t.drivetrainEfficiency = 0.55;

@@ -18,6 +18,7 @@ import {
   type TyreTread,
 } from "../../tyre_grip";
 import {
+  burnScaledFuelBase,
   isRedFlagPhase,
   shouldServeDeferrablePenaltyNow,
   mustServePenalty,
@@ -45,6 +46,8 @@ export interface CarPitState {
   released: boolean;
   tyreTread: TyreTread;
   fuelAtLastPit: number;
+  /** Lap when the current tyre set was fitted. */
+  tyreFitLap?: number;
 }
 
 export interface PitBotContext {
@@ -248,7 +251,10 @@ function applyPitSuccess(
   st.lastPitLap = s.lap;
   st.fuelAtLastPit = plan?.services.fuel ? tankCapacityFor(s) : s.fuel;
   if (plan?.services.setup) st.setupDone = true;
-  if (plan?.services.tyres) st.tyreTread = desiredTyreTread(wet);
+  if (plan?.services.tyres) {
+    st.tyreTread = desiredTyreTread(wet);
+    st.tyreFitLap = s.lap;
+  }
 }
 
 function trySubmit(
@@ -500,8 +506,15 @@ export function tickPitBot(
     }
 
     const emergency = needsEmergencyPit(s);
+    // Never defer once the fuel window is open: SC/FCY laps still burn fuel
+    // and waiting for the emergency threshold strands cars on long laps.
+    const tank = tankCapacityFor(s);
+    const fuelWindowOpen =
+      tank > 0 &&
+      s.fuel / tank <= burnScaledFuelBase(s, sincePit, st.fuelAtLastPit).low;
     if (
       !emergency &&
+      !fuelWindowOpen &&
       shouldDeferPitForRaceControl({
         flagPhase: ctx.flagPhase ?? "green",
         fcyActive: ctx.fcyActive ?? false,
@@ -531,6 +544,7 @@ export function tickPitBot(
         pitAggression: ctx.rivalPitAggression?.(s.teamName) ?? 1,
         stintPlan,
         briefingTactics: tactics,
+        lapsOnTyres: s.lap - (st.tyreFitLap ?? 0),
       },
       st.fuelAtLastPit,
     );
