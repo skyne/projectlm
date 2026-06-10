@@ -1,8 +1,8 @@
 # Powertrain balance plan (June 2026)
 
 > Branch: `balance/fuel-ai-and-powertrains` (worktree `.worktrees/balance-fixes`)  
-> Status: **implemented on branch; main sim WIP synced; post-sync re-benchmark done**  
-> Last dry sweep: Frenet corridor dynamics (main checkout, June 2026) — Spa quali ~8 s faster vs prior branch sim.
+> Status: **pit AI + pace hygiene done; archetype balance + anti-gaming not started**  
+> Last dry sweep: post pit-AI short-tank fix (June 2026). See [Roadmap](#roadmap-june-2026) below.
 
 ---
 
@@ -264,3 +264,90 @@ TRIM=quick node tools/benchmark/run_powertrain_sweep.mjs
 ```
 
 Done 2026-06-10 — see post-merge table above. Raw JSON: `tmp/benchmark/powertrain_sweep/powertrains_*.json`.
+
+---
+
+## Roadmap (June 2026)
+
+Consolidated status after pit-AI short-tank fix (`575e035`). Use this section as the working checklist.
+
+### Done (usable baseline)
+
+**Pit / fuel AI**
+- Track-length-independent fuel windows, SC/FCY deferral, hybrid refill at pits, stint-aware tyre bundling
+- Short-tank fixes (REX/BEV): reserve scaling when `tank/burn < 5`, skip burn scaling lap 1 after stop, `fuelSoon` only when `lapsFuelLow > 0`
+- Race pace defaults: push + deploy when engine health > 80%
+
+**Simulation / pace hygiene**
+- `fuel_burn_coeff` rescale → LM gas stints ~12–13 laps
+- Rolling grid start (`kRollingStartSpeedMs=12`), tyre wear tuning (`tire_wear_effect` 0.40)
+- Quali tow = fuel + tyres only (`restoreOpenSessionFuelOnly`), hybrid preserved
+- Main Frenet sim WIP synced; Spa quali ~pole band (~1:59–2:01 Gas-ICE-HV)
+
+**Tooling**
+- `run_powertrain_sweep.mjs`, `diag_race.mjs`, `diag_pace_delta.mjs`, `diag_lap_gap.mjs`
+- Sweep excludes pit in/out laps from `race_lap_sec`
+
+**Relative balance (rough)**
+- Gas-ICE-HV LM stint length realistic; zero retirements across families in sweeps
+- Diesel slowest; H2-FC / Rotary still strong on lap count
+- REX LM recovered post pit-AI: ~78 laps / ~4:14 race pace / ~2-lap fuel stints (was 52 / 6:12 / 1-lap)
+
+### Still open
+
+#### A — Absolute pace (Gas-ICE-HV anchor)
+
+| Gap | Status |
+|-----|--------|
+| Spa quali | ~on target (2:01) |
+| LM quali | ~on target (3:32) |
+| Spa race sustain | ~OK (+13–18 s vs quali) |
+| LM race sustain | Mid-stint ~4:02 (+30 s) in older diags — **re-run `diag_pace_delta` on current sim** |
+| Global quali trim | `drag_modifier` alone failed — need `tire_friction` / Frenet / track JSON |
+
+#### B — Archetype balance (numbers not applied)
+
+| Family | Issue | Planned lever |
+|--------|-------|----------------|
+| **H2-FC** | OP lap count / stints | H2 refuel rate in pit (`pitFuelRateMult` ~2×), not pace nerf |
+| **REX** | ~2-lap LM fuel stints (WEC ~16) | `rex_fuel_l`, generator burn coeff, archetype efficiency caps |
+| **BEV** | Weak endurance (~61 LM laps) | Pack MJ, battery-swap pit, deploy/regen balance |
+| **Diesel** | Slowest | Trait mass/throttle buff |
+| **Gas-ICE** | Dominated by HV | Reliability + faster non-hybrid pit services |
+
+#### C — Anti-gaming (gate before final balance numbers)
+
+1. Extend `ApplyClassBoP` to kW fields (`electricalDeployKW`, `generatorPowerKW`, `hybridDeployPowerKW`)
+2. Archetype clamp table (e.g. REX generator 220–320 kW, not 400)
+3. Archetype balance table in `powertrain_traits.cpp`
+4. Server `validateEngineBuild` against compiled bands
+
+Without (C), garage sliders can undo balance work.
+
+#### D — Housekeeping
+
+- Merge branch to `main` (not done)
+- Re-baseline full sweep after pace/archetype changes
+- C++ obstruction tests — pre-existing failures unrelated to balance
+- BEV LM sweep `race_lap_sec` still inflated by pit laps; flying pace ~4:00 in diag
+- Fuel load mass not modeled dynamically
+
+### Execution order
+
+1. **Anti-gaming foundation** (C) — so tuning sticks
+2. **REX/BEV energy balance** (B) — generator burn, `rex_fuel_l` / pack MJ for realistic stint length
+3. **LM race sustain pass** (A) — re-run diagnostics, then Frenet/tyre levers if mid-stint still ~+30 s
+4. **Archetype table** (B) — H2-FC refuel, Diesel buff, Gas-ICE identity
+5. **Full re-sweep + merge to main**
+
+### Latest sweep reference (post pit-AI fix, `TRIM=quick`, 6h dry)
+
+| Family | Spa quali | Spa race pace | LM quali | LM race pace | LM laps |
+|--------|-----------|---------------|----------|--------------|---------|
+| Gas-ICE-HV | 2:01.0 | 2:22.1 | 3:32.1 | 4:14.2 | 85 |
+| H2-FC | 1:59.2 | 2:21.2 | 3:25.7 | 4:24.4 | 81 |
+| REX | 1:56.6 | 2:55.0 | 3:23.2 | 4:13.9 | 78 |
+| BEV | 2:03.5 | 2:58.7 | 3:40.9 | 5:40.1 | 61 |
+| Diesel | 2:08.0 | 2:31.0 | 3:52.8 | 4:31.7 | 80 |
+
+Race-pace column is stint-average (pit laps partially excluded); use `diag_pace_delta.mjs` for clean flying-lap comparison.
