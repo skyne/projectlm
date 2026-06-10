@@ -177,7 +177,8 @@ void TickRace(RaceSession &session, double deltaTime) {
   std::vector<TrafficEvent> trafficEvents;
   ResolveTraffic(session.cars, session.track.lapLength(), session.elapsedRaceTime,
                  session.trafficEventCooldowns, trafficMods, trafficEvents,
-                 session.raceControl, GetLeaderboard(session), trafficLateral);
+                 session.raceControl, GetLeaderboard(session), trafficLateral,
+                 &session.overtakeBattles);
 
   UpdateRaceControl(session, trafficEvents);
   TickSafetyCar(session, deltaTime);

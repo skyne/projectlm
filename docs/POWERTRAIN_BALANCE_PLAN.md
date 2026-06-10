@@ -1,8 +1,8 @@
 # Powertrain balance plan (June 2026)
 
 > Branch: `balance/fuel-ai-and-powertrains` (worktree `.worktrees/balance-fixes`)  
-> Status: **implemented on branch, pending merge with main + re-benchmark**  
-> Last dry sweep: before main merge — re-run after `cab21bd` (Frenet 2D dynamics).
+> Status: **implemented on branch; main merged (`cab21bd`); post-merge re-benchmark done**  
+> Last dry sweep: post-merge with Frenet 2D dynamics + overtake battle WIP synced from main checkout.
 
 ---
 
@@ -36,6 +36,24 @@
 | Gas-ICE | 2:00.6 | 152 | 3:34.7 | 82 | 12.7 tyre |
 | Diesel | 2:04.5 | 145 | 3:49.3 | 80 | 20.3 tyre |
 | BEV | 2:01.7 | 115 | 3:40.5 | 59 | 2.4 fuel |
+
+### Post-merge sweep (`cab21bd` + Frenet dynamics, `TRIM=quick`, 6h)
+
+Frenet corridor dynamics slowed all lap times ~8–10 s (Spa) / ~15–20 s (LM) vs pre-merge. Relative ranking shifted: H2-FC now leads LM (90 laps); REX/H2-FC no longer dominate Spa by 10+ laps.
+
+| Family | Spa quali | Spa laps | Spa stint | LM quali | LM laps | LM stint |
+|--------|-----------|----------|-----------|----------|---------|----------|
+| H2-FC | 2:05.9 | 153 | 36.7 fuel | 3:31.2 | 90 | 31.5 fuel |
+| H2-ICE | 2:05.9 | 151 | 30.0 fuel | 3:39.1 | 85 | 19.3 tyre |
+| Rotary-H2 | 2:08.6 | 152 | 67.0 fuel | 3:38.8 | 87 | 35.0 tyre |
+| Rotary-Gas | 2:09.5 | 151 | 64.0 tyre | 3:41.0 | 86 | 32.0 fuel |
+| REX | 2:04.5 | 152 | 28.2 fuel | 3:31.1 | 87 | 15.8 fuel |
+| Gas-ICE-HV | 2:07.1 | 149 | 26.4 tyre | 3:32.4 | 83 | 12.8 tyre |
+| Gas-ICE | 2:06.8 | 147 | 26.4 fuel | 3:36.8 | 82 | 12.7 tyre |
+| Diesel | 2:12.8 | 141 | 34.8 fuel | 3:52.1 | 80 | 20.7 tyre |
+| BEV | 2:09.9 | 106 | 4.7 fuel | 3:43.9 | 61 | 2.3 fuel |
+
+**Takeaways vs pre-merge:** LM fuel stints still realistic (12–13 laps Gas-ICE, ~16 REX, ~32 H2-FC). H2-FC/REX still OP on LM laps but gap narrowed. BEV improved slightly (59→61 LM laps) but remains structurally weak. Diesel still slowest. Zero retirements all families.
 
 Real-world check (2025): LM Hypercar **12–13 lap fuel stints** (~45 min), tyres **double/triple** (sometimes quad); Spa **~25 laps** per stint, 150 laps / 6h.
 
@@ -95,4 +113,4 @@ make test   # expect 1 pre-existing engine-wear failure
 TRIM=quick node tools/benchmark/run_powertrain_sweep.mjs
 ```
 
-Compare to table above; note Frenet/dynamics changes may shift lap times and stint lengths.
+Done 2026-06-10 — see post-merge table above. Raw JSON: `tmp/benchmark/powertrain_sweep/powertrains_*.json`.

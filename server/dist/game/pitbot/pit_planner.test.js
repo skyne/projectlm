@@ -80,13 +80,14 @@ const baseCtx = {
         strict_1.default.ok(plan?.services.fuel);
     });
     (0, node_test_1.it)("blocks routine lap-1 pit when fuel is not critical", () => {
+        // fuelAtLastPit 55 → measured burn 5 L/lap, so 50 L is ~10 laps of fuel.
         const plan = (0, pit_planner_1.planPitStop)(snap({
             entryId: "e3",
             classId: "LMP2",
             lap: 1,
             fuel: 50,
             fuelTankCapacity: 100,
-        }), { ...baseCtx, sincePit: 1 }, 100);
+        }), { ...baseCtx, sincePit: 1 }, 55);
         strict_1.default.equal(plan, null);
     });
     (0, node_test_1.it)("uses earlier LMGT3 low-fuel threshold (~36%)", () => {
@@ -183,7 +184,7 @@ const baseCtx = {
         const s = snap({
             classId: "Hypercar",
             lap: 5,
-            fuel: 31,
+            fuel: 34,
             fuelTankCapacity: 100,
         });
         const withoutPlan = (0, pit_planner_1.planPitStop)(s, baseCtx, 100);

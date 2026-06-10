@@ -38,6 +38,8 @@ const char *TrackStatusName(TrackStatus status) {
     return "stranded";
   case TrackStatus::Recovering:
     return "recovering";
+  case TrackStatus::ReturningToGarage:
+    return "returning_to_garage";
   case TrackStatus::Cleared:
     return "cleared";
   case TrackStatus::Racing:
@@ -86,4 +88,20 @@ const char *HazardKindName(HazardKind kind) {
   default:
     return "debris";
   }
+}
+
+double HazardNaturalClearSec(HazardKind kind) {
+  switch (kind) {
+  case HazardKind::Debris:
+    return 240.0;
+  case HazardKind::Fuel:
+    return 360.0;
+  case HazardKind::Oil:
+    return 600.0;
+  case HazardKind::Fire:
+    return 120.0;
+  case HazardKind::Coolant:
+    return 720.0;
+  }
+  return 240.0;
 }

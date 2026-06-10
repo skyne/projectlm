@@ -208,7 +208,8 @@ void SyncGearForSpeed(const CarConfig &car, SimulationState &state) {
 void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                     SimulationState &state, double deltaTime,
                     const PhysicsConfig &p, TelemetryLog *telemetry,
-                    const SimulationModifiers &mods) {
+                    const SimulationModifiers &mods,
+                    bool integrateAlongTrack) {
   if (track.sectors.empty())
     return;
 
@@ -421,8 +422,6 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       if (car.isGeneratorOnly) {
         state.batteryChargeMJ = state.hybridDeployRemainingMJ;
       } else if (IsBatteryPrimaryEv(car)) {
-        // Without this, the discharge path overwrites hybridDeployRemainingMJ
-        // from batteryChargeMJ next tick and braking regen is silently lost.
         state.batteryChargeMJ = state.hybridDeployRemainingMJ;
         state.fuelRemaining = state.batteryChargeMJ;
       }
@@ -485,9 +484,6 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     if (car.isElectricDrive)
       torqueCurveMultiplier = 1.0;
 
-    // When an external speed cap is binding (SC train, FCY, slow zone,
-    // traffic), the driver lifts instead of holding full throttle against the
-    // cap — otherwise pace-car laps would burn fuel like racing laps.
     const bool speedCapBinding =
         mods.speedCapMs > 0.0 && state.currentSpeed >= mods.speedCapMs * 0.98;
     const double throttleTarget = speedCapBinding ? 0.20 : 1.0;
@@ -664,17 +660,12 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
   }
 
   if (!outOfFuel) {
-    // Generator coefficients follow the global fuel rescale (fuel_burn_coeff
-    // 0.0135 -> 0.0045): all liquid-fuel paths were cut 3x together so
-    // relative powertrain balance is preserved while stints reach realistic
-    // endurance lengths.
     if (car.isFuelCell && state.fuelRemaining > 0.0) {
       state.fuelRemaining -=
           (generatorFuelKw * 0.0000153 * car.powertrainFuelBurnMult *
            mods.fuelMultiplier) *
           deltaTime;
     } else if (car.isGeneratorOnly && state.fuelRemaining > 0.0) {
-      // ~0.13 L/kWh effective — series-hybrid generator at optimal load.
       state.fuelRemaining -=
           (generatorFuelKw * 0.0000367 * car.powertrainFuelBurnMult *
            mods.fuelMultiplier) *
@@ -719,7 +710,8 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                    p.thermalOverheat + 8.0);
   }
 
-  double acceleration = forceApplied / car.calculatedTotalMass;
+  double acceleration =
+      forceApplied / std::max(1.0, car.calculatedTotalMass);
   state.currentSpeed += acceleration * deltaTime;
 
   if (outOfFuel) {
@@ -814,7 +806,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                              p.tireWearSpeedThreshold * 0.5);
   SyncDerivedEngineHealth(state, car);
 
-  if (!p.useFrenetDynamics)
+  if (integrateAlongTrack)
     state.currentDistance += state.currentSpeed * deltaTime;
   state.elapsedRaceTime += deltaTime;
   state.currentLapTime += deltaTime;

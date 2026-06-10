@@ -168,18 +168,23 @@ struct PhysicsConfig {
   /** Scales regenMJ = regenRate * brake * dt * hybridRegenBaseScale. */
   double hybridRegenBaseScale = 0.38;
   double punctureWearThreshold = 0.88;
-  bool useFrenetDynamics = false;
+  bool useFrenetDynamics = true;
   double pathLateralGain = 8000.0;
   double pathLateralDamping = 1200.0;
   double kerbGripScale = 0.75;
   double offTrackGripScale = 0.35;
+  /** Pulls heading error back toward the path tangent (rad/s per rad). */
+  double headingRestoreGain = 6.0;
+  /** Hard safety cap on heading error magnitude (rad). */
+  double maxHeadingErrorRad = 1.35;
 };
 
 void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                     SimulationState &state, double deltaTime,
                     const PhysicsConfig &physics,
                     TelemetryLog *telemetry = nullptr,
-                    const SimulationModifiers &mods = SimulationModifiers{});
+                    const SimulationModifiers &mods = SimulationModifiers{},
+                    bool integrateAlongTrack = true);
 
 /** Align gear with rejoin speed after pit exit (avoids 1st-gear ceiling trap). */
 void SyncGearForSpeed(const CarConfig &car, SimulationState &state);

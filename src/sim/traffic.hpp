@@ -20,6 +20,36 @@ struct CarBodyDimensions {
   double widthM = 2.0;
 };
 
+enum class TrafficPathIntent {
+  None,
+  RacingLine,
+  AttackInside,
+  AttackOutside,
+  YieldInside,
+  YieldOutside,
+  DefendInside,
+  DefendOutside,
+};
+
+inline int TrafficPathIntentPriority(TrafficPathIntent intent) {
+  switch (intent) {
+  case TrafficPathIntent::YieldInside:
+  case TrafficPathIntent::YieldOutside:
+    return 4;
+  case TrafficPathIntent::AttackInside:
+  case TrafficPathIntent::AttackOutside:
+    return 3;
+  case TrafficPathIntent::DefendInside:
+  case TrafficPathIntent::DefendOutside:
+    return 2;
+  case TrafficPathIntent::RacingLine:
+    return 1;
+  case TrafficPathIntent::None:
+  default:
+    return 0;
+  }
+}
+
 struct TrafficModifiers {
   double speedCapMs = 0.0;
   double draftThrottleBoost = 0.0;
@@ -29,6 +59,11 @@ struct TrafficModifiers {
   bool collision = false;
   bool underAttack = false;
   bool blueFlag = false;
+  bool yielding = false;
+  bool defending = false;
+  bool alongside = false;
+  TrafficPathIntent pathIntent = TrafficPathIntent::None;
+  double pathUrgency = 0.0;
   double localGripScale = 1.0;
   double scRestartThrottleBoost = 0.0;
   double pressureLevel = 0.0;
@@ -36,7 +71,7 @@ struct TrafficModifiers {
 };
 
 struct TrafficEvent {
-  enum class Type { Overtake, Collision, Blocked };
+  enum class Type { Overtake, Collision, Blocked, Weaving };
   Type type = Type::Blocked;
   std::string entryId;
   std::string otherEntryId;
@@ -62,6 +97,8 @@ bool PitMergeGapSafe(const Car &rejoining, const std::vector<Car> &cars,
                      double rejoinSpeedMs,
                      const TrafficLateralContext &lateral = {});
 
+struct OvertakeBattle;
+
 void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
                     double raceTime,
                     std::unordered_map<std::string, double> &eventCooldowns,
@@ -69,7 +106,8 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
                     std::vector<TrafficEvent> &eventsOut,
                     const SessionRaceControl &raceControl = SessionRaceControl{},
                     const std::vector<Car *> &leaderboard = {},
-                    const TrafficLateralContext &lateral = {});
+                    const TrafficLateralContext &lateral = {},
+                    std::vector<OvertakeBattle> *battles = nullptr);
 
 double WrapDistanceGap(double aheadDistance, double behindDistance,
                        double lapLength);

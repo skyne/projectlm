@@ -25,8 +25,11 @@ constexpr double kStoppedSpeedThresholdMs = 0.5;
 constexpr double kStoppedStrandSeconds = 3.0;
 constexpr double kMarshalResponseBaseSec = 15.0;
 constexpr double kMarshalResponseRainSec = 30.0;
-constexpr double kTowBaseSec = 90.0;
-constexpr double kTowStructuralExtraSec = 30.0;
+/** On-track pickup: tow truck loads the car and clears the racing line. */
+constexpr double kOnTrackTowMinSec = 300.0;
+constexpr double kOnTrackTowMaxSec = 480.0;
+/** Off-track leg: recovery vehicle returns to garage (no track interaction). */
+constexpr double kGarageReturnSec = 90.0;
 constexpr double kFireExtinguishBaseSec = 2.0;
 constexpr double kFireExtinguishRainSec = 3.0;
 constexpr double kFireExtinguishUnderScSec = 1.5;
@@ -35,7 +38,8 @@ constexpr double kSlowZoneMinHoldSec = 30.0;
 constexpr int kScMinLaps = 2;
 /** Minimum SC laps after red flag before "SC in this lap" — SC must lead on track. */
 constexpr int kScPostRedFlagMinLaps = 1;
-constexpr double kHazardNaturalClearSec = 1200.0;
+constexpr double kCollisionFluidImpact = 4.0;
+constexpr double kCollisionFuelImpact = 5.0;
 constexpr double kRedFlagWeatherPeriodSec = 120.0;
 constexpr double kRedFlagObstructionPeriodSec = 60.0;
 constexpr double kRedFlagExtendWeatherSec = 90.0;
@@ -174,15 +178,15 @@ double MarshalResponseDelay(const WeatherState &weather) {
   return heavy ? kMarshalResponseRainSec : kMarshalResponseBaseSec;
 }
 
-double TowDuration(const Car &car, bool underSc) {
+double OnTrackTowDuration(const Car &car, bool underSc) {
   const double structural =
       ComputeStructuralSeverity(car.state().partDamage, car.state().tyreDeflation);
-  double duration = kTowBaseSec;
-  if (structural >= 55.0)
-    duration += kTowStructuralExtraSec;
+  const double span = kOnTrackTowMaxSec - kOnTrackTowMinSec;
+  double duration =
+      kOnTrackTowMinSec + (structural / 100.0) * span;
   if (underSc)
-    duration *= 0.6;
-  return duration;
+    duration *= 0.75;
+  return std::clamp(duration, kOnTrackTowMinSec, kOnTrackTowMaxSec);
 }
 
 double FireExtinguishDuration(const Car &car, bool underSc,
@@ -204,7 +208,8 @@ void BeginRecoveryTow(Car &car, RaceSession &session, bool underSc) {
   rc.trackStatus = TrackStatus::Recovering;
   rc.recoveryStartTime = session.elapsedRaceTime;
   rc.recoveryEndTime =
-      session.elapsedRaceTime + TowDuration(car, underSc);
+      session.elapsedRaceTime + OnTrackTowDuration(car, underSc);
+  rc.garageHandoverTime = -1.0;
   rc.recoveryProgress = 0.0;
   EmitControlEvent(SimEventType::RecoveryDispatched, session.elapsedRaceTime,
                    car.teamName() + " — recovery vehicle dispatched",
@@ -759,12 +764,38 @@ bool ObstructionRecoveryIsForceRetire(const Car &car,
   return IsEnergyDepletionReason(car.rcState().obstructionReason);
 }
 
-void ClearObstructionCar(Car &car, RaceSession &session) {
+void RemoveCarLinkedHazards(RaceSession &session, const std::string &entryId) {
+  const size_t before = session.raceControl.hazards.size();
+  session.raceControl.hazards.erase(
+      std::remove_if(session.raceControl.hazards.begin(),
+                     session.raceControl.hazards.end(),
+                     [&](const TrackSurfaceHazard &hz) {
+                       return hz.sourceEntryId == entryId;
+                     }),
+      session.raceControl.hazards.end());
+  if (session.raceControl.hazards.size() != before)
+    RefreshIncidentSectorFlags(session);
+}
+
+void CompleteOnTrackTow(Car &car, RaceSession &session) {
   CarRaceControlState &rc = car.rcState();
-  rc.trackStatus = TrackStatus::Cleared;
   car.state().currentSpeed = 0.0;
+  rc.trackStatus = TrackStatus::ReturningToGarage;
+  rc.garageHandoverTime = session.elapsedRaceTime + kGarageReturnSec;
+  rc.recoveryProgress = 1.0;
+  RemoveCarLinkedHazards(session, car.entryId());
   EmitControlEvent(SimEventType::TrackClear, session.elapsedRaceTime,
                    car.teamName() + " cleared from track", car.entryId());
+  RefreshActiveIncidentEntry(session);
+}
+
+void CompleteGarageHandover(Car &car, RaceSession &session) {
+  CarRaceControlState &rc = car.rcState();
+  rc.trackStatus = TrackStatus::Cleared;
+  rc.garageHandoverTime = -1.0;
+  rc.recoveryEndTime = -1.0;
+  rc.recoveryProgress = 0.0;
+  car.state().currentSpeed = 0.0;
 
   if (ObstructionRecoveryIsForceRetire(car, session)) {
     if (!car.isRetired()) {
@@ -778,14 +809,14 @@ void ClearObstructionCar(Car &car, RaceSession &session) {
              IsEnergyDepletionReason(rc.obstructionReason)) {
     car.beginOpenSessionEnergyRecovery(session.track, session.elapsedRaceTime);
     EmitControlEvent(SimEventType::RecoveryDispatched, session.elapsedRaceTime,
-                     car.teamName() + " towed to garage for refuel",
+                     car.teamName() + " handed to team in garage for refuel",
                      car.entryId());
   } else {
     const double remaining = RemainingSessionSec(session, car);
     if (car.deliverTowedToGarage(session.track, session.elapsedRaceTime,
                                  remaining)) {
       EmitControlEvent(SimEventType::RecoveryDispatched, session.elapsedRaceTime,
-                       car.teamName() + " towed to garage for rebuild",
+                       car.teamName() + " handed to team in garage for rebuild",
                        car.entryId());
     } else if (!car.isRetired()) {
       static const PartCatalog kCatalog{};
@@ -807,15 +838,6 @@ void ClearObstructionCar(Car &car, RaceSession &session) {
     }
   }
 
-  session.raceControl.hazards.erase(
-      std::remove_if(session.raceControl.hazards.begin(),
-                     session.raceControl.hazards.end(),
-                     [&](const TrackSurfaceHazard &hz) {
-                       return hz.sourceEntryId == car.entryId();
-                     }),
-      session.raceControl.hazards.end());
-
-  RefreshIncidentSectorFlags(session);
   RefreshActiveIncidentEntry(session);
 }
 
@@ -867,6 +889,38 @@ double DefaultHazardLateralSpan(HazardKind kind) {
     return 5.0;
   }
   return 3.0;
+}
+
+void SpawnCollisionHazards(RaceSession &session, const TrafficEvent &ev,
+                           const Car &carA, const Car &carB) {
+  const double distance = carA.state().currentDistance;
+  const double lateral =
+      carA.lateralNM(session.trackWidthM, session.physics.useFrenetDynamics,
+                     &session.corridor);
+  const std::string eventId =
+      CollisionPairKey(carA.entryId(), carB.entryId()) + "-" +
+      std::to_string(static_cast<int>(session.elapsedRaceTime * 10.0));
+
+  SpawnSurfaceHazard(session, distance, HazardKind::Debris,
+                     "collision:" + eventId + ":debris", 0.62, 35.0, lateral,
+                     DefaultHazardLateralSpan(HazardKind::Debris));
+
+  if (ev.impact < kCollisionFluidImpact)
+    return;
+
+  SpawnSurfaceHazard(session, distance, HazardKind::Oil,
+                     "collision:" + eventId + ":oil", 0.66, 28.0,
+                     lateral + 1.2, DefaultHazardLateralSpan(HazardKind::Oil));
+  SpawnSurfaceHazard(session, distance, HazardKind::Coolant,
+                     "collision:" + eventId + ":coolant", 0.58, 30.0,
+                     lateral - 1.2,
+                     DefaultHazardLateralSpan(HazardKind::Coolant));
+
+  if (ev.impact >= kCollisionFuelImpact) {
+    SpawnSurfaceHazard(session, distance, HazardKind::Fuel,
+                       "collision:" + eventId + ":fuel", 0.72, 18.0, lateral,
+                       DefaultHazardLateralSpan(HazardKind::Fuel));
+  }
 }
 
 } // namespace
@@ -950,7 +1004,7 @@ void SpawnSurfaceHazard(RaceSession &session, double distance,
   hz.gripMultiplier = gripMultiplier;
   hz.kind = kind;
   hz.createdAt = session.elapsedRaceTime;
-  hz.clearAt = session.elapsedRaceTime + kHazardNaturalClearSec;
+  hz.clearAt = session.elapsedRaceTime + HazardNaturalClearSec(kind);
   hz.sourceEntryId = sourceEntryId;
   session.raceControl.hazards.push_back(std::move(hz));
   EnsureSectorFlags(session);
@@ -967,7 +1021,6 @@ void SpawnSurfaceHazard(RaceSession &session, double distance,
 }
 
 void UpdateTrackHazards(RaceSession &session, double deltaTime) {
-  (void)deltaTime;
   const bool sweeping =
       session.raceControl.flagPhase == FlagPhase::FCY ||
       session.raceControl.flagPhase == FlagPhase::SC ||
@@ -1320,7 +1373,15 @@ void UpdateTrackObstructions(RaceSession &session, double deltaTime) {
             (session.elapsedRaceTime - towStart) / span, 0.0, 1.0);
       }
       if (session.elapsedRaceTime >= rc.recoveryEndTime)
-        ClearObstructionCar(car, session);
+        CompleteOnTrackTow(car, session);
+      continue;
+    }
+
+    if (rc.trackStatus == TrackStatus::ReturningToGarage) {
+      car.state().currentSpeed = 0.0;
+      if (rc.garageHandoverTime >= 0.0 &&
+          session.elapsedRaceTime >= rc.garageHandoverTime)
+        CompleteGarageHandover(car, session);
       continue;
     }
 
@@ -1387,6 +1448,26 @@ void UpdateTrackObstructions(RaceSession &session, double deltaTime) {
   }
 }
 
+void ProcessWeavingPenalties(RaceSession &session,
+                             const std::vector<TrafficEvent> &trafficEvents) {
+  for (const TrafficEvent &ev : trafficEvents) {
+    if (ev.type != TrafficEvent::Type::Weaving)
+      continue;
+    Car *car = FindCarByEntryId(session, ev.entryId);
+    if (car == nullptr)
+      continue;
+    CarRaceControlState &rc = car->rcState();
+    if (rc.collisionWarnings > 0) {
+      IssuePenalty(*car, PendingPenalty::DriveThrough,
+                   "Weaving under braking — " + ev.message, 3,
+                   session.elapsedRaceTime);
+    } else {
+      IssueCollisionWarning(*car, "Warning — weaving under braking", 
+                            session.elapsedRaceTime);
+    }
+  }
+}
+
 void ProcessCollisionPenalties(RaceSession &session,
                                const std::vector<TrafficEvent> &trafficEvents) {
   std::unordered_map<std::string, std::vector<const TrafficEvent *>> byPair;
@@ -1414,13 +1495,7 @@ void ProcessCollisionPenalties(RaceSession &session,
 
     const TrafficEvent &ev = *primary;
     EmitCollisionLog(session, *carA, *carB, ev.impact);
-
-    const double debrisN =
-        carA->lateralNM(session.trackWidthM, session.physics.useFrenetDynamics,
-                        &session.corridor);
-    SpawnSurfaceHazard(session, carA->state().currentDistance,
-                       HazardKind::Debris, carA->entryId(), 0.62, 35.0,
-                       debrisN, DefaultHazardLateralSpan(HazardKind::Debris));
+    SpawnCollisionHazards(session, ev, *carA, *carB);
 
     const bool dualFault = events.size() >= 2;
     if (dualFault) {
@@ -1485,6 +1560,7 @@ void ProcessCollisionPenalties(RaceSession &session,
 void UpdateRaceControl(RaceSession &session,
                        const std::vector<TrafficEvent> &trafficEvents) {
   EnsureSectorFlags(session);
+  ProcessWeavingPenalties(session, trafficEvents);
   ProcessCollisionPenalties(session, trafficEvents);
 
   const int obstructions = CountTrackObstructions(session);
@@ -1633,7 +1709,12 @@ void UpdatePenalties(RaceSession &session, double deltaTime,
     if (i < trafficMods.size())
       rc.blueFlagActive = trafficMods[i].blueFlag;
 
-    if (!noOvertaking && trafficMods[i].blueFlag && trafficMods[i].blocked)
+    const bool yieldingNow =
+        trafficMods[i].yielding ||
+        TrafficPathIntentPriority(trafficMods[i].pathIntent) >=
+            TrafficPathIntentPriority(TrafficPathIntent::YieldInside);
+    if (!noOvertaking && trafficMods[i].blueFlag && trafficMods[i].blocked &&
+        !yieldingNow)
       rc.blueBlockTimer += 0.1;
     else if (rc.blueBlockTimer > 0.0)
       rc.blueBlockTimer = std::max(0.0, rc.blueBlockTimer - 0.2);
@@ -2117,8 +2198,12 @@ bool ApplyDebugRaceControl(RaceSession &session,
   if (req.action == "clear_track") {
     for (Car &car : session.cars) {
       const TrackStatus st = car.rcState().trackStatus;
-      if (st == TrackStatus::Stranded || st == TrackStatus::Recovering)
-        ClearObstructionCar(car, session);
+      if (st == TrackStatus::Stranded || st == TrackStatus::Recovering) {
+        CompleteOnTrackTow(car, session);
+        CompleteGarageHandover(car, session);
+      } else if (st == TrackStatus::ReturningToGarage) {
+        CompleteGarageHandover(car, session);
+      }
     }
     rc.hazards.clear();
     std::fill(rc.sectorFlags.begin(), rc.sectorFlags.end(),

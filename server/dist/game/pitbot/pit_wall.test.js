@@ -278,13 +278,14 @@ function snap(overrides) {
         strict_1.default.ok(!emergency.some((c) => c.includes("tires=all")));
     });
     (0, node_test_1.it)("defers routine pit under FCY but not limp emergency", () => {
+        // Fuel comfortable (window closed) — near-empty fuel is no longer deferred.
         const entryId = "ai-2";
         const base = snap({
             entryId,
             classId: "LMP2",
             teamName: "Rival",
             tireWear: 0.95,
-            fuel: 5,
+            fuel: 60,
         });
         const carState = (0, pit_wall_1.initCarState)([entryId], 0, { minLap: 3 });
         const routine = [];
@@ -352,7 +353,7 @@ function snap(overrides) {
                 classId: "Hypercar",
                 teamName: "Rival",
                 tireWear: 0.99,
-                fuel: 4,
+                fuel: 60,
             }),
         ], [entryId], (0, pit_wall_1.initCarState)([entryId], 0, { minLap: 3 }), { phase: "race", wet: 0, flagPhase: "slow_zone" }, (_id, cmd) => {
             submitted.push(cmd);

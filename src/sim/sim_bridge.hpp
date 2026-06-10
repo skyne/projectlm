@@ -109,7 +109,7 @@ struct SimEvent {
 class SimBridge {
 public:
   bool initFromRaceConfig(const std::string &raceConfigPath);
-  bool initSession(const RaceSession &session);
+  bool initSession(RaceSession &&session);
   bool reloadDefinitions();
   bool restartRace();
 

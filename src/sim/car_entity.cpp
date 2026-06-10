@@ -144,6 +144,7 @@ bool Car::releaseFromGarage(const TrackDefinition &track) {
   rc_.fireExtinguishEndTime = -1.0;
   rc_.recoveryStartTime = -1.0;
   rc_.recoveryEndTime = -1.0;
+  rc_.garageHandoverTime = -1.0;
   rc_.recoveryProgress = 0.0;
   rc_.stoppedTimer = 0.0;
   if (pit_.inPit && track.pitLane.valid()) {
@@ -625,8 +626,6 @@ CarTickResult Car::tick(const TrackDefinition &track,
   if (config_.hybridDeployPowerKW > 0.0 || IsBatteryPrimaryEv(config_)) {
     HybridStrategyModifiers(driver_.hybridStrategy, mods.hybridDeployScale,
                             mods.hybridRegenScale);
-    // Battery-primary EVs have no separate deploy system (drive power IS the
-    // battery), but braking regen must still credit the pack.
     if (IsBatteryPrimaryEv(config_))
       mods.hybridDeployScale = 0.0;
   } else {
@@ -648,8 +647,8 @@ CarTickResult Car::tick(const TrackDefinition &track,
     applyTrafficVisuals(*traffic, deltaTime, corridor, physics.useFrenetDynamics);
     if (traffic->speedCapMs > 0.0)
       mods.speedCapMs = traffic->speedCapMs;
-    if (traffic->blueFlag)
-      mods.throttleMultiplier *= 1.02;
+    if (traffic->blueFlag && traffic->yielding)
+      mods.throttleMultiplier *= 0.98;
     if (traffic->localGripScale > 0.0 && traffic->localGripScale < 1.0)
       mods.localGripScale = traffic->localGripScale;
     if (traffic->scRestartThrottleBoost > 0.0)
@@ -858,8 +857,25 @@ CarTickResult Car::tick(const TrackDefinition &track,
                             state_.currentDistance)
               .targetNM;
     }
+    const double headingAlign = std::cos(state_.headingError);
+    if (headingAlign < 0.95) {
+      mods.throttleMultiplier *= std::max(0.15, headingAlign);
+    }
+  }
 
+  TickSimulation(config_, track, state_, deltaTime, physics, &telemetry_, mods,
+                 !physics.useFrenetDynamics);
+
+  if (physics.useFrenetDynamics) {
     const double s = state_.currentDistance;
+    if (isRejoiningYield() || (state_.currentLap == 0 && s < 1.0)) {
+      const double expectedN = corridor.lateralOffsetM(s, lateralOffset_);
+      if (std::abs(state_.lateralOffsetM - expectedN) > 0.05) {
+        state_.lateralOffsetM = expectedN;
+        state_.lateralVelocity = 0.0;
+      }
+    }
+
     PathDynamicsInput pd;
     pd.targetNM = pathTargetNM_;
     pd.trackWidthM = corridor.widthAt(s);
@@ -872,12 +888,16 @@ CarTickResult Car::tick(const TrackDefinition &track,
     pd.lateralVelocity = state_.lateralVelocity;
     pd.FxDesired = 0.0;
     pd.maxLateralN = physics.pathLateralGain * 1.5;
+    pd.headingRestoreGain = physics.headingRestoreGain;
 
     const PathDynamicsOutput out = stepPathDynamics(pd, deltaTime);
     state_.lateralOffsetM += out.dn * deltaTime;
     state_.headingError += out.dBeta * deltaTime;
     state_.lateralVelocity = out.dn;
     state_.currentDistance += out.ds * deltaTime;
+    state_.headingError = std::clamp(
+        state_.headingError, -physics.maxHeadingErrorRad,
+        physics.maxHeadingErrorRad);
 
     const double maxN = corridor.maxLateralN(s);
     const double carHalfWidth = body_.widthM * 0.5;
@@ -892,8 +912,6 @@ CarTickResult Car::tick(const TrackDefinition &track,
       lateralOffset_ =
           std::clamp(state_.lateralOffsetM / maxN, -1.0, 1.0);
   }
-
-  TickSimulation(config_, track, state_, deltaTime, physics, &telemetry_, mods);
 
   if (!HasDrivableEnergy(config_, state_.fuelRemaining, state_.batteryChargeMJ,
                          state_.hybridDeployRemainingMJ)) {

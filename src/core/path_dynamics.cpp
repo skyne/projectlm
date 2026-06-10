@@ -61,6 +61,7 @@ PathDynamicsOutput stepPathDynamics(const PathDynamicsInput &input, double dt) {
   out.ds = input.v * std::cos(input.beta);
   out.dn = input.v * std::sin(input.beta);
   out.dv = fx / input.mass;
-  out.dBeta = fy / (input.mass * vFloor) - input.effectiveKappa * input.v;
+  out.dBeta = fy / (input.mass * vFloor) - input.effectiveKappa * input.v -
+              input.headingRestoreGain * input.beta;
   return out;
 }

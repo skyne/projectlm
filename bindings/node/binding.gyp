@@ -26,6 +26,7 @@
         "../../src/sim/commands.cpp",
         "../../src/sim/pit_stop.cpp",
         "../../src/sim/traffic.cpp",
+        "../../src/sim/overtake_battle.cpp",
         "../../src/config/config_loader.cpp",
         "../../src/config/part_catalog.cpp",
         "../../src/config/race_config.cpp",

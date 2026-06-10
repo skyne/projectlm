@@ -310,6 +310,21 @@ bool LoadPhysicsConfig(const std::string &filename, PhysicsConfig &p) {
       p.fuelOverrunFraction = std::stod(val);
     else if (key == "thermal_overrun_fraction")
       p.thermalOverrunFraction = std::stod(val);
+    else if (key == "use_frenet_dynamics")
+      p.useFrenetDynamics =
+          val == "1" || val == "true" || val == "yes" || val == "on";
+    else if (key == "path_lateral_gain")
+      p.pathLateralGain = std::stod(val);
+    else if (key == "path_lateral_damping")
+      p.pathLateralDamping = std::stod(val);
+    else if (key == "kerb_grip_scale")
+      p.kerbGripScale = std::stod(val);
+    else if (key == "off_track_grip_scale")
+      p.offTrackGripScale = std::stod(val);
+    else if (key == "heading_restore_gain")
+      p.headingRestoreGain = std::stod(val);
+    else if (key == "max_heading_error_rad")
+      p.maxHeadingErrorRad = std::stod(val);
   }
   return true;
 }

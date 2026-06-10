@@ -163,8 +163,10 @@ function applyPitSuccess(s, st, wet, plan) {
     st.fuelAtLastPit = plan?.services.fuel ? (0, pit_planner_1.tankCapacityFor)(s) : s.fuel;
     if (plan?.services.setup)
         st.setupDone = true;
-    if (plan?.services.tyres)
+    if (plan?.services.tyres) {
         st.tyreTread = (0, tyre_grip_1.desiredTyreTread)(wet);
+        st.tyreFitLap = s.lap;
+    }
 }
 function trySubmit(submitCommand, entryId, command) {
     return submitCommand(entryId, command);
@@ -351,7 +353,13 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
             continue;
         }
         const emergency = (0, pit_planner_1.needsEmergencyPit)(s);
+        // Never defer once the fuel window is open: SC/FCY laps still burn fuel
+        // and waiting for the emergency threshold strands cars on long laps.
+        const tank = (0, pit_planner_1.tankCapacityFor)(s);
+        const fuelWindowOpen = tank > 0 &&
+            s.fuel / tank <= (0, pit_planner_1.burnScaledFuelBase)(s, sincePit, st.fuelAtLastPit).low;
         if (!emergency &&
+            !fuelWindowOpen &&
             (0, pit_planner_1.shouldDeferPitForRaceControl)({
                 flagPhase: ctx.flagPhase ?? "green",
                 fcyActive: ctx.fcyActive ?? false,
@@ -374,6 +382,7 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
             pitAggression: ctx.rivalPitAggression?.(s.teamName) ?? 1,
             stintPlan,
             briefingTactics: tactics,
+            lapsOnTyres: s.lap - (st.tyreFitLap ?? 0),
         }, st.fuelAtLastPit);
         if (plan?.pitNow) {
             const cmd = `pit|${plan.parts.join("|")}`;

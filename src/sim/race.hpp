@@ -5,6 +5,7 @@
 #include "pit_stop.hpp"
 #include "race_control_common.hpp"
 #include "track.hpp"
+#include "overtake_battle.hpp"
 #include "track_corridor.hpp"
 #include "weather.hpp"
 #include <random>
@@ -36,6 +37,7 @@ struct RaceSession {
   std::string weatherProfileId = "changeable";
   std::mt19937 rng{20260306};
   std::unordered_map<std::string, double> trafficEventCooldowns;
+  std::vector<OvertakeBattle> overtakeBattles;
   SessionRaceControl raceControl;
 };
 

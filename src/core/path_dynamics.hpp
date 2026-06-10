@@ -13,6 +13,8 @@ struct PathDynamicsInput {
   double lateralVelocity = 0.0;
   double FxDesired = 0.0;
   double maxLateralN = 12000.0;
+  /** Driver/path alignment — pulls beta toward 0 (rad/s per rad). */
+  double headingRestoreGain = 6.0;
 };
 
 struct PathDynamicsOutput {

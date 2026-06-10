@@ -8,7 +8,13 @@ enum class FlagPhase { Green, SlowZone, FCY, SC, SCInLap, RedFlag };
 
 enum class SectorFlagLevel : int { Green = 0, Yellow = 1, DoubleYellow = 2 };
 
-enum class TrackStatus { Racing, Stranded, Recovering, Cleared };
+enum class TrackStatus {
+  Racing,
+  Stranded,
+  Recovering,
+  ReturningToGarage,
+  Cleared
+};
 
 enum class PendingPenalty { None, DriveThrough, StopGo, Black };
 
@@ -81,6 +87,8 @@ struct CarRaceControlState {
   double fireStartedAt = -1.0;
   double recoveryStartTime = -1.0;
   double recoveryEndTime = -1.0;
+  /** Sim time when tow truck delivers the car to the team in garage. */
+  double garageHandoverTime = -1.0;
   int obstructionSectorIndex = 0;
   double stoppedTimer = 0.0;
   std::string obstructionReason;
@@ -106,5 +114,8 @@ const char *TrackStatusName(TrackStatus status);
 const char *PendingPenaltyName(PendingPenalty penalty);
 const char *HazardKindName(HazardKind kind);
 HazardKind ParseHazardKind(const std::string &name);
+
+/** Natural surface-hazard lifetime before marshals sweep (race seconds). */
+double HazardNaturalClearSec(HazardKind kind);
 
 #endif
