@@ -390,14 +390,27 @@ function serviceLabel(services) {
  */
 const FUEL_RESERVE_LAPS_LOW = 2.25;
 const FUEL_RESERVE_LAPS_CRITICAL = 1.25;
+function reserveLapsForTank(lapsInTank, fullReserve, minReserve, headroomLaps) {
+    if (lapsInTank >= fullReserve + headroomLaps + 1)
+        return fullReserve;
+    return Math.max(minReserve, lapsInTank - headroomLaps);
+}
 function burnScaledFuelBase(s, sincePit, fuelAtLastPit) {
     const profile = profileFor(s.classId);
     const tank = tankCapacity(s);
     if (tank <= 0)
         return { low: profile.fuelLow, critical: profile.fuelCritical };
+    // Lap 1 after a stop mixes pit-out delta with race burn — defer scaling.
+    if (sincePit < 2)
+        return { low: profile.fuelLow, critical: profile.fuelCritical };
     const burn = burnPerLap(s, sincePit, fuelAtLastPit);
-    const low = Math.min(0.75, Math.max(profile.fuelLow, (burn * FUEL_RESERVE_LAPS_LOW) / tank));
-    const critical = Math.min(low * 0.8, Math.max(profile.fuelCritical, (burn * FUEL_RESERVE_LAPS_CRITICAL) / tank));
+    if (burn <= 0)
+        return { low: profile.fuelLow, critical: profile.fuelCritical };
+    const lapsInTank = tank / burn;
+    const reserveLaps = reserveLapsForTank(lapsInTank, FUEL_RESERVE_LAPS_LOW, 1.0, 1.25);
+    const critReserveLaps = reserveLapsForTank(lapsInTank, FUEL_RESERVE_LAPS_CRITICAL, 0.5, 0.75);
+    const low = Math.min(0.75, Math.max(profile.fuelLow, (burn * reserveLaps) / tank));
+    const critical = Math.min(low * 0.8, Math.max(profile.fuelCritical, (burn * critReserveLaps) / tank));
     return { low, critical };
 }
 /** Scale fuel pit windows — higher aggression pits earlier. */
@@ -461,7 +474,8 @@ function planPitStop(s, ctx, fuelAtLastPit) {
     // next full stint — a lone tyre stop mid-stint wastes half a fuel load.
     const tyresWontLastStint = lapsTyres < nextStintLaps;
     const fuelNow = fuelPct < fuelLow;
-    const fuelSoon = lapsFuelLow <= BUNDLE_LOOKAHEAD_LAPS;
+    // lapsFuelLow=0 while still above fuelLow means <1 lap margin — wait for fuelNow.
+    const fuelSoon = lapsFuelLow > 0 && lapsFuelLow <= BUNDLE_LOOKAHEAD_LAPS;
     const tyresNow = weatherTyres || worn;
     const tyresSoon = weatherTyres || lapsTyres <= BUNDLE_LOOKAHEAD_LAPS;
     const driverNow = driver.needed;

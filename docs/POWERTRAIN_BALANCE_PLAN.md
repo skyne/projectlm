@@ -75,6 +75,19 @@ Synced uncommitted Frenet/path-dynamics WIP from main checkout. **Spa quali sani
 
 **Takeaways:** Spa quali now near WEC pole band (~1:59.5). LM quali unchanged (~3:32 Gas-ICE-HV). **REX/BEV LM race pace broken** (6+ min avg lap, ~1-lap stints) — pit AI / fuel-window regression to investigate. H2-FC 1 Spa retirement. Gas-ICE-HV LM stint length still realistic.
 
+### Pit-AI fix for short-range tanks (June 2026)
+
+**Root cause:** `burnScaledFuelBase` + `fuelSoon` treated REX (~85 L rex fuel, ~30 L/lap LM burn) like a 110 L gas tank — `fuelLow` capped at 75% and `fuelSoon` fired at 0 laps lookahead. Lap-1 burn after pit-out inflated measured burn → false `fuelCrit` → every-lap stops.
+
+**Fixes in `pit_planner.ts`:**
+- Scale reserve laps down when `tank/burn < 5` laps.
+- Skip burn scaling on lap 1 after a stop (pit-out skew).
+- `fuelSoon` only when `lapsFuelLow > 0`.
+
+**Post-fix sweep (`TRIM=quick`):** REX LM 78 laps / 4:14 race pace / ~2.0L stints (was 52 / 6:12 / 1.0L). BEV LM 61 laps (was 54); race-pace metric still inflated by pit laps — flying pace ~4:00 in diag.
+
+**Still open:** BEV LM sweep `race_lap_sec` high; REX ~2-lap fuel stints vs ~16-lap WEC target — generator burn / `rex_fuel_l` balance pass.
+
 Real-world check (2025): LM Hypercar **12–13 lap fuel stints** (~45 min), tyres **double/triple** (sometimes quad); Spa **~25 laps** per stint, 150 laps / 6h.
 
 ---

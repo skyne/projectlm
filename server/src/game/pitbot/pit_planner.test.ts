@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  burnScaledFuelBase,
   hasSevereCarIssue,
   mustServePenalty,
   needsEmergencyPit,
@@ -454,6 +455,39 @@ describe("planRedFlagEmergencyPit", () => {
       { wet: 0 },
     );
     assert.equal(plan, null);
+  });
+});
+
+describe("burnScaledFuelBase", () => {
+  it("keeps class floor on long-range tanks (Hypercar LM burn)", () => {
+    const s = snap({ fuel: 40, fuelTankCapacity: 110 });
+    const { low, critical } = burnScaledFuelBase(s, 3, 76);
+    assert.ok(low <= 0.35);
+    assert.ok(critical <= 0.2);
+  });
+
+  it("does not force 1-lap stints on short-range REX tanks", () => {
+    const s = snap({ fuel: 55, fuelTankCapacity: 85 });
+    const { low, critical } = burnScaledFuelBase(s, 1, 85);
+    assert.ok(low < 0.65, `low=${low}`);
+    assert.ok(critical < 0.45, `critical=${critical}`);
+    assert.ok(55 / 85 > low, "one lap of burn should stay above low threshold");
+    assert.ok(55 / 85 > critical, "one lap of burn should stay above critical");
+  });
+
+  it("still pits REX after two laps of burn", () => {
+    const s = snap({ fuel: 24, fuelTankCapacity: 85 });
+    const { low, critical } = burnScaledFuelBase(s, 2, 85);
+    assert.ok(24 / 85 < low);
+    assert.ok(24 / 85 < critical);
+  });
+
+  it("uses class floor on lap 1 after a stop (pit-out skew)", () => {
+    const s = snap({ fuel: 34, fuelTankCapacity: 85 });
+    const { low, critical } = burnScaledFuelBase(s, 1, 85);
+    assert.equal(low, 0.3);
+    assert.equal(critical, 0.14);
+    assert.ok(34 / 85 > low);
   });
 });
 

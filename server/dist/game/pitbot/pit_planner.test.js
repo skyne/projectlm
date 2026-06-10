@@ -299,6 +299,35 @@ const baseCtx = {
         strict_1.default.equal(plan, null);
     });
 });
+(0, node_test_1.describe)("burnScaledFuelBase", () => {
+    (0, node_test_1.it)("keeps class floor on long-range tanks (Hypercar LM burn)", () => {
+        const s = snap({ fuel: 40, fuelTankCapacity: 110 });
+        const { low, critical } = (0, pit_planner_1.burnScaledFuelBase)(s, 3, 76);
+        strict_1.default.ok(low <= 0.35);
+        strict_1.default.ok(critical <= 0.2);
+    });
+    (0, node_test_1.it)("does not force 1-lap stints on short-range REX tanks", () => {
+        const s = snap({ fuel: 55, fuelTankCapacity: 85 });
+        const { low, critical } = (0, pit_planner_1.burnScaledFuelBase)(s, 1, 85);
+        strict_1.default.ok(low < 0.65, `low=${low}`);
+        strict_1.default.ok(critical < 0.45, `critical=${critical}`);
+        strict_1.default.ok(55 / 85 > low, "one lap of burn should stay above low threshold");
+        strict_1.default.ok(55 / 85 > critical, "one lap of burn should stay above critical");
+    });
+    (0, node_test_1.it)("still pits REX after two laps of burn", () => {
+        const s = snap({ fuel: 24, fuelTankCapacity: 85 });
+        const { low, critical } = (0, pit_planner_1.burnScaledFuelBase)(s, 2, 85);
+        strict_1.default.ok(24 / 85 < low);
+        strict_1.default.ok(24 / 85 < critical);
+    });
+    (0, node_test_1.it)("uses class floor on lap 1 after a stop (pit-out skew)", () => {
+        const s = snap({ fuel: 34, fuelTankCapacity: 85 });
+        const { low, critical } = (0, pit_planner_1.burnScaledFuelBase)(s, 1, 85);
+        strict_1.default.equal(low, 0.3);
+        strict_1.default.equal(critical, 0.14);
+        strict_1.default.ok(34 / 85 > low);
+    });
+});
 (0, node_test_1.describe)("planPitStop when session repair is not viable", () => {
     (0, node_test_1.it)("does not plan limp repair when session time is insufficient", () => {
         const s = snap({
