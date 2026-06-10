@@ -5,7 +5,11 @@ import {
   categorizeEvent,
   computeRaceLogStats,
   findPenaltyTrace,
+  formatCarNumber,
+  formatSidebarLogHtml,
   isRaceLogEvent,
+  matchesSidebarLogFilter,
+  matchesSidebarRetainFilter,
   normalizeSimEventType,
   parsePenaltyMessage,
 } from "./raceLog";
@@ -54,6 +58,80 @@ describe("raceLog", () => {
       retirements: 0,
     });
     assert.equal(categorizeEvent(events[0]!), "penalty");
+  });
+
+  it("formats compact sidebar lines with car numbers only", () => {
+    const maps = {
+      teamNameByEntry: new Map([["e1", "Acme Racing"], ["e2", "Beta Motors"]]),
+      carNumberByEntry: new Map([
+        ["e1", "7"],
+        ["e2", "42"],
+      ]),
+    };
+    assert.equal(formatCarNumber("e1", maps), "#7");
+    const html = formatSidebarLogHtml(
+      { type: "SafetyCarDeploy", timestamp: 90, message: "Safety car deployed" },
+      maps,
+    );
+    assert.match(html, /SC/);
+    assert.doesNotMatch(html, /Acme/);
+    const pen = formatSidebarLogHtml(
+      {
+        type: "PenaltyIssued",
+        timestamp: 100,
+        entryId: "e1",
+        message: "#7 Acme Racing: Caused collision (Drive-through)",
+      },
+      maps,
+    );
+    assert.match(pen, /#7/);
+    assert.match(pen, /PEN/);
+    assert.doesNotMatch(pen, /Acme/);
+  });
+
+  it("retain filter keeps sidebar-eligible events but not timing noise", () => {
+    const managed = new Set(["e1"]);
+    assert.equal(
+      matchesSidebarRetainFilter({ type: "FcyDeploy", timestamp: 1, message: "" }, managed),
+      true,
+    );
+    assert.equal(
+      matchesSidebarRetainFilter({ type: "PitEnter", timestamp: 2, message: "", entryId: "e1" }, managed),
+      true,
+    );
+    assert.equal(
+      matchesSidebarRetainFilter({ type: "PitEnter", timestamp: 2, message: "", entryId: "e9" }, managed),
+      false,
+    );
+    assert.equal(
+      matchesSidebarRetainFilter({ type: "LapComplete", timestamp: 3, message: "" }, managed),
+      false,
+    );
+  });
+
+  it("sidebar filter shows track events and managed car incidents by default", () => {
+    const managed = new Set(["e1"]);
+    const filters = { track: true, myTeam: true, allIncidents: false, traffic: false };
+    assert.equal(
+      matchesSidebarLogFilter({ type: "FcyDeploy", timestamp: 1, message: "" }, filters, managed),
+      true,
+    );
+    assert.equal(
+      matchesSidebarLogFilter(
+        { type: "Collision", timestamp: 2, message: "", entryId: "e1", otherEntryId: "e2" },
+        filters,
+        managed,
+      ),
+      true,
+    );
+    assert.equal(
+      matchesSidebarLogFilter(
+        { type: "Collision", timestamp: 2, message: "", entryId: "e9", otherEntryId: "e2" },
+        filters,
+        managed,
+      ),
+      false,
+    );
   });
 
   it("traces penalty context for the same car", () => {

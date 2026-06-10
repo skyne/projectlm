@@ -5,6 +5,7 @@ import type {
   WeatherContextPayload,
   WeekendSessionType,
 } from "../ws/protocol";
+import { formatCarNumber } from "../entryNumbers";
 import { sessionMapMetaPrefix } from "../utils/weekendSessions";
 import { trackDisplayName, trackIconSvg } from "../utils/trackIcons";
 import { trackSurfaceBackgroundUrl } from "../utils/trackBackgroundAssets";
@@ -12,6 +13,8 @@ import { formatTrackWetnessConditions } from "../utils/trackWetnessDisplay";
 import { applyTrackTimePhase } from "../utils/trackWeatherVisual";
 import { formatSectorFlagBanner } from "../utils/sectorFlags";
 import { resolveTrackTheme, type TrackTheme } from "../utils/trackThemes";
+import { formatLapTime } from "../utils/formatTime";
+import { escapeHtml } from "../utils/mmUi";
 import type { SvgTrack } from "./SvgTrack";
 
 export interface TrackMapLayerFlags {
@@ -20,28 +23,40 @@ export interface TrackMapLayerFlags {
   pit: boolean;
 }
 
+function abbrevDriver(name: string | undefined): string {
+  if (!name) return "—";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 12).toUpperCase();
+  return `${parts[0][0]}. ${parts[parts.length - 1].toUpperCase()}`;
+}
+
 export class TrackMapPanel {
   readonly trackContainer: HTMLElement;
   private mapPanel: HTMLElement;
   private titleEl: HTMLElement;
   private metaEl: HTMLElement;
-  private weatherEl: HTMLElement;
-  private sectorLegendEl: HTMLElement;
   private flagStatusEl: HTMLElement;
-  private classLegendEl: HTMLElement;
-  private carCountEl: HTMLElement;
   private trackRef: SvgTrack | null = null;
   private theme: TrackTheme = resolveTrackTheme();
-  private layers: TrackMapLayerFlags = { sectors: true, labels: true, pit: true };
+  private layers: TrackMapLayerFlags = { sectors: true, labels: true, pit: false };
   private geometry: TrackGeometryPayload | null = null;
   private weather: WeatherContextPayload | undefined;
   private trackId: string | undefined;
   private sessionType?: WeekendSessionType;
   private lastSectorFlagsKey = "";
+  private leaderCardEl!: HTMLElement;
+  private telFastestEl!: HTMLElement;
+  private telTrackTempEl!: HTMLElement;
+  private telAirTempEl!: HTMLElement;
+  private telWindEl!: HTMLElement;
+  private onResetView: (() => void) | null = null;
+  private onLeaveFollow: (() => void) | null = null;
+  private followChipEl!: HTMLElement;
+  private followLabelEl!: HTMLElement;
 
   constructor(mapPanel: HTMLElement) {
     this.mapPanel = mapPanel;
-    mapPanel.classList.add("track-map-panel");
+    mapPanel.classList.add("track-map-panel", "track-map-wec");
 
     const bar = mapPanel.querySelector(".track-panel-bar");
     mapPanel.innerHTML = "";
@@ -50,40 +65,72 @@ export class TrackMapPanel {
     const shell = document.createElement("div");
     shell.className = "track-map-shell";
     shell.innerHTML = `
-      <header class="track-map-hud">
-        <div class="track-map-hud-brand">
-          <span class="track-map-icon" aria-hidden="true"></span>
-          <div class="track-map-titles">
-            <h2 class="track-map-title">Track Map</h2>
+      <div class="track-map-stage track-map-stage--wec">
+        <div class="track-map-atmosphere" aria-hidden="true"></div>
+        <div class="track-map-vignette" aria-hidden="true"></div>
+        <div id="track-container" class="track-map-canvas-host"></div>
+
+        <div class="track-follow-chip hidden" id="track-follow-chip" aria-live="polite">
+          <span class="track-follow-dot" aria-hidden="true"></span>
+          <span class="track-follow-text">Following <strong class="track-follow-label">—</strong></span>
+          <button
+            type="button"
+            class="track-follow-exit"
+            data-action="leave-follow"
+            title="Exit follow mode"
+            aria-label="Exit follow mode"
+          >
+            ×
+          </button>
+        </div>
+
+        <header class="track-wec-header">
+          <div class="track-wec-header-brand">
+            <span class="track-wec-series">FIA WEC</span>
+            <span class="track-map-icon" aria-hidden="true"></span>
+          </div>
+          <div class="track-wec-header-center">
+            <h2 class="track-map-title">Circuit</h2>
             <p class="track-map-meta"></p>
           </div>
-        </div>
-        <div class="track-map-hud-stats">
-          <div class="track-map-stat">
-            <span class="track-map-stat-label">Conditions</span>
-            <span class="track-map-weather">—</span>
-          </div>
-          <div class="track-map-stat">
-            <span class="track-map-stat-label">On track</span>
-            <span class="track-map-car-count">0</span>
-          </div>
-        </div>
-      </header>
-      <div class="track-map-stage">
-        <div class="track-map-atmosphere" aria-hidden="true"></div>
-        <div id="track-container" class="track-map-canvas-host"></div>
-        <div class="track-map-overlays">
-          <div class="track-sector-legend"></div>
           <div class="track-flag-status hidden" role="status" aria-live="polite"></div>
-          <div class="track-class-legend"></div>
-          <div class="track-map-toolbar">
+        </header>
+
+        <div class="track-wec-leader-card" id="track-leader-card" aria-live="polite">
+          <span class="track-wec-leader-pos">—</span>
+          <div class="track-wec-leader-info">
+            <strong class="track-wec-leader-team">—</strong>
+            <span class="track-wec-leader-driver">—</span>
+          </div>
+          <span class="track-wec-leader-badge">LEADER</span>
+        </div>
+
+        <footer class="track-wec-telemetry">
+          <div class="track-wec-tel-cell">
+            <span class="track-wec-tel-label">Fastest Lap</span>
+            <strong class="track-wec-tel-value track-wec-tel-fastest" id="tel-fastest">—</strong>
+          </div>
+          <div class="track-wec-tel-cell">
+            <span class="track-wec-tel-label">Track Temp</span>
+            <strong class="track-wec-tel-value" id="tel-track-temp">—</strong>
+          </div>
+          <div class="track-wec-tel-cell">
+            <span class="track-wec-tel-label">Air Temp</span>
+            <strong class="track-wec-tel-value" id="tel-air-temp">—</strong>
+          </div>
+          <div class="track-wec-tel-cell">
+            <span class="track-wec-tel-label">Wind</span>
+            <strong class="track-wec-tel-value" id="tel-wind">—</strong>
+          </div>
+          <div class="track-wec-tel-spacer"></div>
+          <div class="track-map-toolbar track-wec-toolbar">
             <button type="button" class="track-map-btn" data-action="reset" title="Reset zoom">⌖</button>
             <button type="button" class="track-map-btn active" data-layer="sectors" title="Sector colours">S</button>
-            <button type="button" class="track-map-btn active" data-layer="labels" title="Corner labels">L</button>
-            <button type="button" class="track-map-btn active" data-layer="pit" title="Pit lane">P</button>
+            <button type="button" class="track-map-btn active" data-layer="labels" title="Timing sectors">S1–3</button>
+            <button type="button" class="track-map-btn" data-layer="pit" title="Pit lane">P</button>
           </div>
-          <p class="track-map-hint">Scroll to zoom · drag when zoomed · double-click reset</p>
-        </div>
+          <span class="track-wec-live-pill">LIVE</span>
+        </footer>
       </div>
     `;
     mapPanel.appendChild(shell);
@@ -91,16 +138,22 @@ export class TrackMapPanel {
     this.trackContainer = shell.querySelector("#track-container")!;
     this.titleEl = shell.querySelector(".track-map-title")!;
     this.metaEl = shell.querySelector(".track-map-meta")!;
-    this.weatherEl = shell.querySelector(".track-map-weather")!;
-    this.sectorLegendEl = shell.querySelector(".track-sector-legend")!;
     this.flagStatusEl = shell.querySelector(".track-flag-status")!;
-    this.classLegendEl = shell.querySelector(".track-class-legend")!;
-    this.carCountEl = shell.querySelector(".track-map-car-count")!;
-
-    this.renderClassLegend();
+    this.leaderCardEl = shell.querySelector("#track-leader-card")!;
+    this.telFastestEl = shell.querySelector("#tel-fastest")!;
+    this.telTrackTempEl = shell.querySelector("#tel-track-temp")!;
+    this.telAirTempEl = shell.querySelector("#tel-air-temp")!;
+    this.telWindEl = shell.querySelector("#tel-wind")!;
+    this.followChipEl = shell.querySelector("#track-follow-chip")!;
+    this.followLabelEl = shell.querySelector(".track-follow-label")!;
 
     shell.querySelector('[data-action="reset"]')!.addEventListener("click", () => {
       this.trackRef?.resetView();
+      this.onResetView?.();
+    });
+
+    shell.querySelector('[data-action="leave-follow"]')!.addEventListener("click", () => {
+      this.onLeaveFollow?.();
     });
 
     for (const btn of shell.querySelectorAll<HTMLButtonElement>("[data-layer]")) {
@@ -111,6 +164,21 @@ export class TrackMapPanel {
         this.trackRef?.setLayerVisibility(this.layers);
       });
     }
+  }
+
+  setOnResetView(handler: (() => void) | null): void {
+    this.onResetView = handler;
+  }
+
+  setOnLeaveFollow(handler: (() => void) | null): void {
+    this.onLeaveFollow = handler;
+  }
+
+  /** Show or hide the map follow chip (`label` e.g. "#8"). */
+  setMapFollow(label: string | null): void {
+    const active = Boolean(label);
+    this.followChipEl.classList.toggle("hidden", !active);
+    if (label) this.followLabelEl.textContent = label;
   }
 
   bindTrack(track: SvgTrack): void {
@@ -149,46 +217,69 @@ export class TrackMapPanel {
     this.trackRef?.setGeometry(geometry);
     this.trackRef?.setLayerVisibility(this.layers);
     this.renderHeader();
-    this.renderSectorLegend(geometry);
+    this.lastSectorFlagsKey = "";
   }
 
   updateLiveStats(snapshots: CarSnapshot[], raceControl?: RaceControlPayload): void {
-    const active = snapshots.filter((s) => !s.retired).length;
-    this.carCountEl.textContent = String(active);
+    this.renderLeader(snapshots);
+    this.renderTelemetryStrip(snapshots, raceControl);
+    this.updateSectorFlags(raceControl?.sectorFlags ?? []);
+  }
 
-    if (raceControl) {
-      const rain = Math.round((raceControl.rainIntensity ?? 0) * 100);
-      const parts = [this.weather?.label ?? this.theme.label];
-      if (rain > 0) parts.push(`Rain ${rain}%`);
-      const wetLabel = formatTrackWetnessConditions(raceControl.trackWetness);
-      if (wetLabel) parts.push(wetLabel);
-      parts.push(
-        `Air ${Math.round(raceControl.ambientTempC)}°C · Track ${Math.round(raceControl.trackTempC ?? raceControl.ambientTempC)}°C`,
-      );
-      if ((raceControl.windSpeedMs ?? 0) > 0.5) {
-        parts.push(`Wind ${Math.round(raceControl.windSpeedMs)} m/s`);
+  private renderLeader(snapshots: CarSnapshot[]): void {
+    const active = snapshots.filter((s) => !s.retired);
+    const leader = [...active].sort((a, b) => a.racePosition - b.racePosition)[0];
+    if (!leader) {
+      this.leaderCardEl.classList.add("hidden");
+      return;
+    }
+    this.leaderCardEl.classList.remove("hidden");
+    const posEl = this.leaderCardEl.querySelector(".track-wec-leader-pos")!;
+    const teamEl = this.leaderCardEl.querySelector(".track-wec-leader-team")!;
+    const driverEl = this.leaderCardEl.querySelector(".track-wec-leader-driver")!;
+    posEl.textContent = String(leader.racePosition);
+    teamEl.textContent = `#${formatCarNumber(leader)} ${leader.teamName}`;
+    driverEl.textContent = abbrevDriver(leader.driverName);
+    this.leaderCardEl.dataset.classId = leader.classId ?? "";
+  }
+
+  private renderTelemetryStrip(
+    snapshots: CarSnapshot[],
+    raceControl?: RaceControlPayload,
+  ): void {
+    let fastest: CarSnapshot | null = null;
+    let fastestTime = Infinity;
+    for (const snap of snapshots) {
+      const t = snap.bestLapTime ?? 0;
+      if (t > 0 && t < fastestTime) {
+        fastestTime = t;
+        fastest = snap;
       }
-      if ((raceControl.visibilityKm ?? 10) < 8) {
-        parts.push(`Vis ${raceControl.visibilityKm!.toFixed(1)} km`);
-      }
-      this.weatherEl.textContent = parts.join(" · ");
     }
 
-    this.updateSectorFlags(raceControl?.sectorFlags ?? []);
+    if (fastest && fastestTime < Infinity) {
+      this.telFastestEl.innerHTML = `#${escapeHtml(formatCarNumber(fastest))} · ${formatLapTime(fastestTime)}`;
+    } else {
+      this.telFastestEl.textContent = "—";
+    }
+
+    if (raceControl) {
+      const trackT = raceControl.trackTempC ?? raceControl.ambientTempC;
+      this.telTrackTempEl.textContent = `${trackT.toFixed(1)}°C`;
+      this.telAirTempEl.textContent = `${raceControl.ambientTempC.toFixed(1)}°C`;
+      const windKmh = (raceControl.windSpeedMs ?? 0) * 3.6;
+      this.telWindEl.textContent = windKmh > 0.3 ? `${windKmh.toFixed(1)} km/h` : "Calm";
+    } else {
+      this.telTrackTempEl.textContent = "—";
+      this.telAirTempEl.textContent = "—";
+      this.telWindEl.textContent = "—";
+    }
   }
 
   private updateSectorFlags(flags: number[]): void {
     const key = flags.join(",");
     if (key === this.lastSectorFlagsKey) return;
     this.lastSectorFlagsKey = key;
-
-    const chips = this.sectorLegendEl.querySelectorAll<HTMLElement>(".track-sector-chip");
-    chips.forEach((chip, idx) => {
-      const level = flags[idx] ?? 0;
-      chip.classList.remove("track-sector-chip--yellow", "track-sector-chip--double-yellow");
-      if (level >= 2) chip.classList.add("track-sector-chip--double-yellow");
-      else if (level >= 1) chip.classList.add("track-sector-chip--yellow");
-    });
 
     const sectorNames = this.geometry?.sectors.map((sector) => sector.name);
     const banner = formatSectorFlagBanner(flags, sectorNames);
@@ -209,8 +300,6 @@ export class TrackMapPanel {
     stage.style.setProperty("--track-surface", this.theme.surface);
     stage.style.setProperty("--track-surface-deep", this.theme.surfaceDeep);
     stage.style.setProperty("--track-bloom", this.theme.stageBloom);
-    stage.style.setProperty("--track-outfield", this.theme.outfield);
-    stage.style.setProperty("--track-infield", this.theme.infield);
     stage.style.setProperty(
       "--track-bg-image",
       `url("${trackSurfaceBackgroundUrl(this.trackId, this.theme)}")`,
@@ -221,7 +310,7 @@ export class TrackMapPanel {
   private renderHeader(): void {
     const geo = this.geometry;
     const name = geo?.name ?? (this.trackId ? trackDisplayName(this.trackId) : "Circuit");
-    this.titleEl.textContent = name;
+    this.titleEl.textContent = name.toUpperCase();
 
     const iconHost = this.mapPanel.querySelector(".track-map-icon");
     if (iconHost && this.trackId) {
@@ -229,42 +318,7 @@ export class TrackMapPanel {
     }
 
     const lapKm = geo ? (geo.lapLength / 1000).toFixed(3) : "—";
-    const sectorCount = geo?.sectors.length ?? 0;
     const sessionPrefix = sessionMapMetaPrefix(this.sessionType);
-    this.metaEl.textContent = `${sessionPrefix} · ${lapKm} km · ${sectorCount} sector${sectorCount === 1 ? "" : "s"} · ${this.theme.label}`;
-
-    if (!this.weather) {
-      this.weatherEl.textContent = this.theme.label;
-    }
-  }
-
-  private renderSectorLegend(geometry: TrackGeometryPayload): void {
-    this.sectorLegendEl.replaceChildren();
-    geometry.sectors.forEach((sector, idx) => {
-      const chip = document.createElement("span");
-      chip.className = "track-sector-chip";
-      const color = this.theme.sectorColors[idx % this.theme.sectorColors.length];
-      chip.style.setProperty("--sector-color", color);
-      chip.dataset.sectorIndex = String(idx);
-      chip.textContent = sector.name;
-      this.sectorLegendEl.appendChild(chip);
-    });
-    this.lastSectorFlagsKey = "";
-    this.updateSectorFlags([]);
-  }
-
-  private renderClassLegend(): void {
-    const classes = [
-      { id: "Hypercar", color: "#e10600", label: "Hypercar" },
-      { id: "LMGT3", color: "#00a651", label: "LMGT3" },
-      { id: "LMP2", color: "#005aff", label: "LMP2" },
-    ];
-    this.classLegendEl.replaceChildren();
-    for (const cls of classes) {
-      const item = document.createElement("span");
-      item.className = "track-class-chip";
-      item.innerHTML = `<span class="track-class-dot" style="background:${cls.color}"></span>${cls.label}`;
-      this.classLegendEl.appendChild(item);
-    }
+    this.metaEl.textContent = `${sessionPrefix} · ${lapKm} km`;
   }
 }

@@ -38,6 +38,7 @@ export class RaceDirectorDevPanel {
   private raceControl: RaceControlPayload | undefined;
   private sendDebug: DebugRaceControlSender;
   private sendPenalty: PenaltyCommandSender;
+  private onReloadDefinitions: (() => void) | null = null;
 
   constructor(
     container: HTMLElement,
@@ -115,6 +116,12 @@ export class RaceDirectorDevPanel {
               <button type="button" data-penalty="meatball">Meatball</button>
             </div>
           </section>
+          <section class="race-director-dev-section race-director-dev-sim-section hidden">
+            <h3>Simulator</h3>
+            <div class="race-director-dev-btn-row">
+              <button type="button" class="race-director-dev-reload">Reload definitions</button>
+            </div>
+          </section>
         </div>
         <p class="race-director-dev-hint">Host only · Ctrl+Shift+R · enable with <code>?dev</code> or <code>localStorage.projectlm-dev-tools=1</code></p>
       </div>
@@ -164,6 +171,11 @@ export class RaceDirectorDevPanel {
       opt.textContent = kind;
       this.hazardKindSelect.appendChild(opt);
     }
+
+    this.root.querySelector(".race-director-dev-reload")?.addEventListener("click", () => {
+      this.onReloadDefinitions?.();
+      this.hide();
+    });
 
     this.root.querySelector(".race-director-dev-close")!.addEventListener("click", () =>
       this.hide(),
@@ -226,6 +238,11 @@ export class RaceDirectorDevPanel {
         ? ""
         : "Host role required — reconnect as host to trigger race director actions.",
     );
+  }
+
+  setReloadHandler(handler: () => void): void {
+    this.onReloadDefinitions = handler;
+    this.root.querySelector(".race-director-dev-sim-section")?.classList.remove("hidden");
   }
 
   setSectorCount(count: number): void {

@@ -17,6 +17,9 @@
   --wec-gold: #d4a843;
   --wec-gold-bright: #e8c468;
   --wec-gold-dim: #8a6d2a;
+  --accent-violet: #8b5cf6;
+  --accent-cyan: #22d3ee;
+  --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #22d3ee 100%);
   --wec-red: #e10600;
   --wec-blue: #005aff;
   --wec-green: #00a651;
@@ -716,7 +719,7 @@ body.mock-sim-active #app {
 .timetable-panel:not(.hidden) {
   display: flex;
   flex-direction: column;
-  padding: 0.75rem;
+  padding: 0;
   min-height: 0;
 }
 
@@ -724,7 +727,7 @@ body.mock-sim-active #app {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 0.5rem;
+  padding: 0;
 }
 
 .race-log-panel-host:not(.hidden) {
@@ -1148,7 +1151,12 @@ body.mock-sim-active #app {
 .track-panel {
   display: flex;
   flex-direction: column;
-  padding: 0.5rem;
+  padding: 0;
+  background: #030408;
+}
+
+body.race-live .track-panel {
+  padding: 0;
 }
 
 #track-container {
@@ -1226,9 +1234,8 @@ body.mock-sim-active #app {
 }
 
 .sidebar-wec {
-  background:
-    linear-gradient(180deg, #141c28 0%, #0c1018 100%);
-  border-left: 1px solid rgba(212, 168, 67, 0.2);
+  padding: 0;
+  gap: 0;
 }
 
 .sidebar-brand {
@@ -6627,8 +6634,8 @@ body.mock-sim-active #app {
 /* ── Compact leaderboard (left rail) ── */
 
 .compact-lb-column {
-  flex: 0 0 320px;
-  min-width: 320px;
+  flex: 0 0 300px;
+  min-width: 300px;
   min-height: 0;
   display: flex;
   flex-direction: column;

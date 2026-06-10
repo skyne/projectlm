@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@500;700&family=Rajdhani:wght@500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,500;0,600;0,700;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@500;700&family=Rajdhani:wght@500;600;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/src/style.css" />
@@ -31,13 +31,13 @@
         <div id="header-nav"></div>
         <div id="header-time-controls" class="header-time-controls-slot"></div>
         <div class="header-status-wrap">
-          <div id="audio-controls-container"></div>
-          <div id="session-roster-container" class="header-roster-slot"></div>
-          <span class="header-endurance-tag">24H · 6H · 12H</span>
+          <div id="header-race-remaining-container" class="header-race-remaining-slot"></div>
           <span id="session-type-badge" class="session-type-badge hidden">Race</span>
           <span id="race-lap-counter" class="race-lap-counter hidden">Lap —</span>
+          <div id="session-roster-container" class="header-roster-slot"></div>
           <span id="status" class="status">Connecting…</span>
-          <button type="button" id="change-identity-btn" class="change-identity-btn hidden" title="Change display name or role">Identity</button>
+          <span class="header-endurance-tag">24H · 6H · 12H</span>
+          <div id="global-settings-container" class="header-settings-slot"></div>
         </div>
         <div class="header-racing-stripe" aria-hidden="true"></div>
       </header>
@@ -61,16 +61,15 @@
         </div>
         <aside class="sidebar sidebar-wec hidden">
           <div class="sidebar-brand">
+            <span class="sidebar-brand-kicker">Pit Wall</span>
             <span class="sidebar-brand-label">Race Control</span>
           </div>
-          <div id="car-preview-container"></div>
           <div id="race-controls-container"></div>
           <div id="weather-radar-container"></div>
           <div id="weather-forecast-container"></div>
           <div id="pitwall-container"></div>
           <div id="engineer-container"></div>
           <div id="event-log-container"></div>
-          <div id="playback-container"></div>
         </aside>
       </main>
     </div>
