@@ -192,13 +192,6 @@ function needsEmergencyPit(s) {
     const tank = s.fuelTankCapacity != null && s.fuelTankCapacity > 0 ? s.fuelTankCapacity : 0;
     if (tank > 0 && s.fuel >= 0 && s.fuel / tank <= exports.EMERGENCY_FUEL_FRACTION)
         return true;
-    const hybridBudget = s.hybridBudgetMJ ?? 0;
-    const hybridRemain = s.hybridDeployMJ ?? 0;
-    if (hybridBudget > 0 &&
-        hybridRemain >= 0 &&
-        hybridRemain / hybridBudget <= exports.EMERGENCY_FUEL_FRACTION) {
-        return true;
-    }
     return false;
 }
 function emergencyFuelLiters(s) {

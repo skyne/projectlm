@@ -66,6 +66,20 @@ describe("evaluateCarHint", () => {
     assert.equal(evaluateCarHint(snap({ inPit: true, fuel: 5 }), 0), null);
   });
 
+  it("does not emergency-call for depleted hybrid on parallel hypercars", () => {
+    const hint = evaluateCarHint(
+      snap({
+        classId: "Hypercar",
+        fuel: 80,
+        fuelTankCapacity: 110,
+        hybridDeployMJ: 0,
+        hybridBudgetMJ: 4.5,
+      }),
+      0,
+    );
+    assert.equal(hint, null);
+  });
+
   it("skips cars with a pit stop already queued", () => {
     assert.equal(evaluateCarHint(snap({ pitQueued: true, tireWear: 0.8 }), 0), null);
     assert.equal(

@@ -422,6 +422,21 @@ describe("planRedFlagEmergencyPit", () => {
     assert.equal(needsEmergencyPit(snap({ tyreDeflation: {} })), false);
   });
 
+  it("needsEmergencyPit ignores depleted hybrid on parallel hypercars", () => {
+    assert.equal(
+      needsEmergencyPit(
+        snap({
+          classId: "Hypercar",
+          fuel: 80,
+          fuelTankCapacity: 110,
+          hybridDeployMJ: 0,
+          hybridBudgetMJ: 4.5,
+        }),
+      ),
+      false,
+    );
+  });
+
   it("allows only deflated wheel and blocks strategic fuel", () => {
     const plan = planRedFlagEmergencyPit(
       snap({

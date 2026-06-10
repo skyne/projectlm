@@ -276,6 +276,15 @@ const baseCtx = {
         strict_1.default.equal((0, pit_planner_1.needsEmergencyPit)(snap({ tyreDeflation: { FL: "flat" } })), true);
         strict_1.default.equal((0, pit_planner_1.needsEmergencyPit)(snap({ tyreDeflation: {} })), false);
     });
+    (0, node_test_1.it)("needsEmergencyPit ignores depleted hybrid on parallel hypercars", () => {
+        strict_1.default.equal((0, pit_planner_1.needsEmergencyPit)(snap({
+            classId: "Hypercar",
+            fuel: 80,
+            fuelTankCapacity: 110,
+            hybridDeployMJ: 0,
+            hybridBudgetMJ: 4.5,
+        })), false);
+    });
     (0, node_test_1.it)("allows only deflated wheel and blocks strategic fuel", () => {
         const plan = (0, pit_planner_1.planRedFlagEmergencyPit)(snap({
             fuel: 80,

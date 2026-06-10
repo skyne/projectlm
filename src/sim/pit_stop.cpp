@@ -251,8 +251,11 @@ bool CarNeedsEmergencyPit(const CarConfig &car, const SimulationState &state,
   if (tank > 0.0 && state.fuelRemaining >= 0.0 &&
       state.fuelRemaining / tank <= kEmergencyFuelFraction)
     return true;
+  // Parallel hybrids regen on track; only generator-only cars refill the burst
+  // pack in the box (see ApplyPitServices).
   const double hybridBudget = car.hybridStintDeployBudgetMJ;
-  if (hybridBudget > 0.0 && state.hybridDeployRemainingMJ >= 0.0 &&
+  if (car.isGeneratorOnly && hybridBudget > 0.0 &&
+      state.hybridDeployRemainingMJ >= 0.0 &&
       state.hybridDeployRemainingMJ / hybridBudget <= kEmergencyFuelFraction)
     return true;
   return false;

@@ -55,6 +55,16 @@ function snap(overrides = {}) {
     (0, node_test_1.it)("skips cars in the pit", () => {
         strict_1.default.equal((0, engineer_hints_1.evaluateCarHint)(snap({ inPit: true, fuel: 5 }), 0), null);
     });
+    (0, node_test_1.it)("does not emergency-call for depleted hybrid on parallel hypercars", () => {
+        const hint = (0, engineer_hints_1.evaluateCarHint)(snap({
+            classId: "Hypercar",
+            fuel: 80,
+            fuelTankCapacity: 110,
+            hybridDeployMJ: 0,
+            hybridBudgetMJ: 4.5,
+        }), 0);
+        strict_1.default.equal(hint, null);
+    });
     (0, node_test_1.it)("skips cars with a pit stop already queued", () => {
         strict_1.default.equal((0, engineer_hints_1.evaluateCarHint)(snap({ pitQueued: true, tireWear: 0.8 }), 0), null);
         strict_1.default.equal((0, engineer_hints_1.evaluateCarHint)(snap({ pitQueued: true, fuel: 15, fuelTankCapacity: 100 }), 0), null);
