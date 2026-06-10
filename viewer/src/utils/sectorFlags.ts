@@ -68,3 +68,38 @@ export function sectorFlagTitle(level: number, displayName: string): string {
   if (level >= 1) return `${displayName} — Yellow Flag`;
   return displayName;
 }
+
+const HAZARD_REASON_LABELS: Record<string, string> = {
+  oil: "Oil on track",
+  coolant: "Coolant spill",
+  debris: "Debris on track",
+  fuel: "Fuel spill",
+  fire: "Fire on track",
+};
+
+export interface SectorFlagTooltipInput {
+  sectorIndex: number;
+  level: number;
+  displayName: string;
+  hazards?: { sectorIndex: number; kind: string }[];
+  activeIncidentEntryId?: string;
+}
+
+/** Hover text for a sector flag marker — includes why the flag is shown when known. */
+export function sectorFlagTooltip(input: SectorFlagTooltipInput): string {
+  const { sectorIndex, level, displayName, hazards, activeIncidentEntryId } = input;
+  const reasons: string[] = [];
+
+  for (const hz of hazards ?? []) {
+    if (hz.sectorIndex !== sectorIndex) continue;
+    const label = HAZARD_REASON_LABELS[hz.kind] ?? `${hz.kind} on track`;
+    if (!reasons.includes(label)) reasons.push(label);
+  }
+  if (level >= 2 && activeIncidentEntryId) {
+    reasons.push("Stranded vehicle");
+  }
+
+  const base = sectorFlagTitle(level, displayName);
+  if (!reasons.length) return base;
+  return `${base} — ${reasons.join(" · ")}`;
+}

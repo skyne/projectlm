@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.applyMockDebugRaceControl = applyMockDebugRaceControl;
+const race_control_model_1 = require("./race_control_model");
 function syncFlagBits(rc) {
     rc.fcyActive = rc.flagPhase === "fcy";
     rc.scActive = rc.flagPhase === "sc" || rc.flagPhase === "sc_in_lap";
@@ -123,6 +124,9 @@ function applyMockDebugRaceControl(payload, ctx) {
                 sectorIndex: idx,
                 kind,
                 gripMultiplier: payload.gripMultiplier ?? 0.7,
+                createdAt: ctx.raceTime,
+                clearAt: ctx.raceTime + (0, race_control_model_1.hazardNaturalClearSec)(kind),
+                sourceEntryId: "debug",
             });
             rc.sectorFlags[idx] = Math.max(rc.sectorFlags[idx] ?? 0, 1);
             ctx.pushEvent({

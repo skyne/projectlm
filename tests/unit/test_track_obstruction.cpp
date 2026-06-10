@@ -34,8 +34,14 @@ TEST_CASE("Fire is extinguished before tow recovery begins", "[unit][obstruction
 
   session.elapsedRaceTime = c.rcState().recoveryEndTime + 0.1;
   UpdateTrackObstructions(session, 0.1);
+  REQUIRE(c.rcState().trackStatus == TrackStatus::ReturningToGarage);
+  REQUIRE_FALSE(c.inGarageRebuild());
+
+  session.elapsedRaceTime = c.rcState().garageHandoverTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
   REQUIRE_FALSE(c.isRetired());
   REQUIRE(c.inGarageRebuild());
+  REQUIRE(c.rcState().trackStatus == TrackStatus::Cleared);
 }
 
 TEST_CASE("Engine failure on track strands instead of instant retire",
@@ -76,6 +82,10 @@ TEST_CASE("Stranded car transitions through recovery to garage rebuild",
 
   session.elapsedRaceTime = c.rcState().recoveryEndTime + 0.1;
   UpdateTrackObstructions(session, 0.1);
+  REQUIRE(c.rcState().trackStatus == TrackStatus::ReturningToGarage);
+
+  session.elapsedRaceTime = c.rcState().garageHandoverTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
   REQUIRE_FALSE(c.isRetired());
   REQUIRE(c.inGarageRebuild());
   REQUIRE(c.rcState().trackStatus == TrackStatus::Cleared);
@@ -94,6 +104,9 @@ TEST_CASE("Out of fuel tow retires the car in race session", "[unit][obstruction
   session.elapsedRaceTime = c.rcState().marshalDispatchTime + 0.1;
   UpdateTrackObstructions(session, 0.1);
   session.elapsedRaceTime = c.rcState().recoveryEndTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
+  REQUIRE(c.rcState().trackStatus == TrackStatus::ReturningToGarage);
+  session.elapsedRaceTime = c.rcState().garageHandoverTime + 0.1;
   UpdateTrackObstructions(session, 0.1);
   REQUIRE(c.isRetired());
 }
@@ -116,6 +129,9 @@ TEST_CASE("Practice out of fuel tow refuels in garage instead of retiring",
   session.elapsedRaceTime = c.rcState().marshalDispatchTime + 0.1;
   UpdateTrackObstructions(session, 0.1);
   session.elapsedRaceTime = c.rcState().recoveryEndTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
+  REQUIRE(c.rcState().trackStatus == TrackStatus::ReturningToGarage);
+  session.elapsedRaceTime = c.rcState().garageHandoverTime + 0.1;
   UpdateTrackObstructions(session, 0.1);
   REQUIRE_FALSE(c.isRetired());
   REQUIRE(c.inGarageRebuild());
@@ -264,6 +280,28 @@ TEST_CASE("Cars in garage hold are not stranded on engine failure", "[unit][obst
 
   REQUIRE(c.rcState().trackStatus == TrackStatus::Racing);
   REQUIRE_FALSE(c.isOnTrackObstruction());
+}
+
+TEST_CASE("Stalled car is obstruction and self-restarts without tow",
+          "[unit][obstruction]") {
+  RaceSession session = MakeMinimalSession();
+  AddTestCar(session, "spin", "Spin Team");
+  Car &car = FindCar(session, "spin");
+  car.rcState().trackStatus = TrackStatus::Stalled;
+  car.rcState().stallRestartAt = 5.0;
+  car.state().currentSpeed = 0.0;
+
+  REQUIRE(car.isOnTrackObstruction());
+  REQUIRE(CountTrackObstructions(session) == 1);
+
+  UpdateTrackObstructions(session, 0.1);
+  REQUIRE(car.rcState().trackStatus == TrackStatus::Stalled);
+
+  session.elapsedRaceTime = 6.0;
+  UpdateTrackObstructions(session, 0.1);
+  REQUIRE(car.rcState().trackStatus == TrackStatus::Racing);
+  REQUIRE(car.state().currentSpeed > 0.0);
+  REQUIRE_FALSE(car.isOnTrackObstruction());
 }
 
 TEST_CASE("CountTrackObstructions ignores cleared and racing cars", "[unit][obstruction]") {

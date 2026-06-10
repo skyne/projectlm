@@ -14947,5 +14947,78 @@
     "wikimedia_file": "Lusail International Circuit 2023.svg",
     "attribution": "Wikimedia Commons \u2014 Lusail International Circuit 2023.svg",
     "mode": "polyline-linear"
+  },
+  "surface_defaults": {
+    "verge_width_m": 2.0,
+    "runoff_width_m": 11.0,
+    "kerb_width_m": 0.5
+  },
+  "surface_profile": [
+    {
+      "name": "T1 runoff",
+      "start_t": 0.08,
+      "end_t": 0.14,
+      "side": "outboard",
+      "surface": "runoff_concrete",
+      "width_m": 11,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "T6 gravel strip",
+      "start_t": 0.28,
+      "end_t": 0.34,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 6,
+      "grip_multiplier": 0.48
+    },
+    {
+      "name": "T6-T7 complex kerb",
+      "start_t": 0.34,
+      "end_t": 0.44,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "T10 right gravel",
+      "start_t": 0.48,
+      "end_t": 0.54,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 6,
+      "grip_multiplier": 0.48
+    },
+    {
+      "name": "T14 extended gravel",
+      "start_t": 0.74,
+      "end_t": 0.84,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 10,
+      "width_start_m": 5,
+      "width_end_m": 12,
+      "envelope": "flare_exit",
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "T16 gravel strip",
+      "start_t": 0.9,
+      "end_t": 0.96,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 6,
+      "grip_multiplier": 0.48
+    }
+  ],
+  "surface_metadata": {
+    "confidence": "estimated",
+    "last_reviewed": "2026-06-10",
+    "sources": [
+      "qatar_gp_2025_gravel_track_limits",
+      "fia_appendix_o_2025"
+    ],
+    "notes": "2025 Qatar GP: new gravel strips at T6, T10 (right), T16; extended T14 gravel. Wide asphalt runoff elsewhere on FIA Grade 1 layout."
   }
 }

@@ -131,6 +131,11 @@ export class SessionLogWriter {
   getActiveId(): string | null {
     return this.activeId;
   }
+
+  /** In-memory events for the live session (replay on viewer reconnect). */
+  getActiveEvents(): SimEvent[] {
+    return [...this.events];
+  }
 }
 
 export function listSessionLogs(repoRoot: string): SessionLogIndexEntry[] {

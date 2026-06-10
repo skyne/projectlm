@@ -8,7 +8,6 @@ import type {
 import { formatCarNumber } from "../entryNumbers";
 import { sessionMapMetaPrefix } from "../utils/weekendSessions";
 import { trackDisplayName, trackIconSvg } from "../utils/trackIcons";
-import { trackSurfaceBackgroundUrl } from "../utils/trackBackgroundAssets";
 import { formatTrackWetnessConditions } from "../utils/trackWetnessDisplay";
 import { applyTrackTimePhase } from "../utils/trackWeatherVisual";
 import { formatSectorFlagBanner } from "../utils/sectorFlags";
@@ -38,7 +37,7 @@ export class TrackMapPanel {
   private flagStatusEl: HTMLElement;
   private trackRef: SvgTrack | null = null;
   private theme: TrackTheme = resolveTrackTheme();
-  private layers: TrackMapLayerFlags = { sectors: true, labels: true, pit: false };
+  private layers: TrackMapLayerFlags = { sectors: true, labels: true, pit: true };
   private geometry: TrackGeometryPayload | null = null;
   private weather: WeatherContextPayload | undefined;
   private trackId: string | undefined;
@@ -126,8 +125,8 @@ export class TrackMapPanel {
           <div class="track-map-toolbar track-wec-toolbar">
             <button type="button" class="track-map-btn" data-action="reset" title="Reset zoom">⌖</button>
             <button type="button" class="track-map-btn active" data-layer="sectors" title="Sector colours">S</button>
-            <button type="button" class="track-map-btn active" data-layer="labels" title="Timing sectors">S1–3</button>
-            <button type="button" class="track-map-btn" data-layer="pit" title="Pit lane">P</button>
+            <button type="button" class="track-map-btn active" data-layer="labels" title="Sector labels">Lbl</button>
+            <button type="button" class="track-map-btn active" data-layer="pit" title="Pit lane">P</button>
           </div>
           <span class="track-wec-live-pill">LIVE</span>
         </footer>
@@ -300,10 +299,6 @@ export class TrackMapPanel {
     stage.style.setProperty("--track-surface", this.theme.surface);
     stage.style.setProperty("--track-surface-deep", this.theme.surfaceDeep);
     stage.style.setProperty("--track-bloom", this.theme.stageBloom);
-    stage.style.setProperty(
-      "--track-bg-image",
-      `url("${trackSurfaceBackgroundUrl(this.trackId, this.theme)}")`,
-    );
     applyTrackTimePhase(stage, this.weather);
   }
 

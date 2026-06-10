@@ -42,6 +42,7 @@ const private_test_1 = require("./game/private_test");
 const track_loader_1 = require("./game/track_loader");
 const catalog_1 = require("./game/catalog");
 const config_parser_1 = require("./config_parser");
+const engineer_hints_1 = require("./game/engineer_hints");
 const pitbot_manager_1 = require("./game/pitbot/pitbot_manager");
 const session_briefings_1 = require("./game/session_briefings");
 const race_classification_1 = require("./game/race_classification");
@@ -90,6 +91,7 @@ class SimHost {
         this.activeRoundNumber = 0;
         this.fleetEntryMap = new Map();
         this.pitBot = new pitbot_manager_1.PitBotManager();
+        this.engineerHints = new engineer_hints_1.EngineerHintManager();
         this.stintGuide = new ai_stint_guide_1.AiStintGuide();
         this.sessionBriefings = new session_briefings_1.SessionBriefingStore();
         this.lastRaceComplete = null;
@@ -124,6 +126,7 @@ class SimHost {
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
         this.pitBot.reset();
+        this.engineerHints.reset();
         this.stintGuide.reset();
         return true;
     }
@@ -352,6 +355,7 @@ class SimHost {
         this.activeRoundNumber = built.roundNumber;
         this.meta.clearLastCompletedRound();
         this.pitBot.reset();
+        this.engineerHints.reset();
         this.stintGuide.reset();
         this.sessionBriefings.reset();
         this.lastRaceComplete = null;
@@ -475,6 +479,7 @@ class SimHost {
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
         this.pitBot.reset();
+        this.engineerHints.reset();
         this.stintGuide.reset();
         this.paused = true;
         if (this.timeScale === 0)
@@ -562,6 +567,7 @@ class SimHost {
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
         this.pitBot.reset();
+        this.engineerHints.reset();
         this.stintGuide.reset();
         this.paused = true;
         if (this.timeScale === 0)
@@ -583,6 +589,9 @@ class SimHost {
     }
     getSnapshots() {
         return this.enrichSnapshots(this.session.getSnapshots());
+    }
+    getActiveSessionEvents() {
+        return this.sessionLog.getActiveEvents();
     }
     getRaceControl() {
         return this.session.getRaceControl?.();
@@ -610,10 +619,11 @@ class SimHost {
         if (this.timeScale === 0)
             this.timeScale = 1;
     }
-    start(onTick, onEvents, onRaceComplete) {
+    start(onTick, onEvents, onRaceComplete, onEngineerHint) {
         this.onTick = onTick;
         this.onEvents = onEvents;
         this.onRaceComplete = onRaceComplete;
+        this.onEngineerHint = onEngineerHint;
         const intervalMs = Math.max(16, this.simTimestep * 1000);
         this.tickTimer = setInterval(() => this.step(), intervalMs);
     }
@@ -638,6 +648,7 @@ class SimHost {
         this.sessionKind = "weekend";
         this.privateTestPayload = null;
         this.pitBot.reset();
+        this.engineerHints.reset();
         this.stintGuide.reset();
         this.sessionBriefings.reset();
         this.lastRaceComplete = null;
@@ -661,6 +672,7 @@ class SimHost {
             return false;
         this.raceTime = 0;
         this.pitBot.reset();
+        this.engineerHints.reset();
         this.stintGuide.reset();
         this.paused = false;
         if (this.timeScale === 0)
@@ -683,6 +695,7 @@ class SimHost {
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
         this.pitBot.reset();
+        this.engineerHints.reset();
         this.stintGuide.reset();
         this.paused = true;
         if (this.timeScale === 0)
@@ -701,7 +714,7 @@ class SimHost {
             const enriched = {
                 ...snap,
                 ...(carNumber ? { carNumber } : {}),
-                ...(entry?.entryMode ? { entryMode: entry.entryMode } : {}),
+                ...(entry?.entryMode === "experimental" ? { entryMode: "experimental" } : {}),
             };
             return enriched;
         });
@@ -719,6 +732,33 @@ class SimHost {
     restartTickLoop() {
         this.stop();
         this.ensureTickLoop();
+    }
+    dismissEngineerHint(hintId) {
+        const wasHintPaused = this.engineerHints.dismiss(hintId);
+        if (wasHintPaused) {
+            this.resume();
+        }
+        return wasHintPaused;
+    }
+    runEngineerHints(snapshots) {
+        if (!this.inRaceSession || this.session.isRaceComplete())
+            return;
+        const raceControl = this.getRaceControl();
+        const wet = raceControl?.trackWetness ?? 0;
+        const result = this.engineerHints.tick(snapshots, this.runtimeManagedEntryIds, wet, this.getRaceTime(), this.timeScale, this.paused);
+        if (result.autoPaused) {
+            this.pause();
+        }
+        else if (result.autoResumed) {
+            this.resume();
+        }
+        if (result.hint && this.onEngineerHint) {
+            this.onEngineerHint({
+                ...result.hint,
+                autoPaused: result.autoPaused,
+                timeScale: result.timeScale,
+            });
+        }
     }
     runPitBot() {
         if (!this.session.submitCommand)
@@ -769,9 +809,12 @@ class SimHost {
         return next;
     }
     step() {
-        if (this.paused || this.timeScale === 0)
-            return;
         if (this.session.isRaceComplete())
+            return;
+        if (this.inRaceSession) {
+            this.runEngineerHints(this.enrichSnapshots(this.session.getSnapshots()));
+        }
+        if (this.paused || this.timeScale === 0)
             return;
         // Always integrate physics at sim_timestep — large steps overheat engines and
         // spike vibration damage when time compression multiplies delta in one tick.

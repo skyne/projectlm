@@ -35,6 +35,8 @@ import {
   type StartRoundPayload,
   type GetTrackPreviewPayload,
   type DebugRaceControlPayload,
+  type DismissEngineerHintPayload,
+  type EngineerHintPayload,
   type SubmitCommandPayload,
   type TickPayload,
   type TrackGeometryPayload,
@@ -168,6 +170,11 @@ function main(): void {
       }
     }
     if (sessionActive) {
+      const catchUpEvents = host.getActiveSessionEvents();
+      if (catchUpEvents.length > 0) {
+        const eventsPayload: EventsPayload = { events: catchUpEvents, catchUp: true };
+        ws.send(JSON.stringify(serverMessage("events", eventsPayload)));
+      }
       const catchUp: TickPayload = {
         raceTime: host.getRaceTime(),
         snapshots: host.getSnapshots(),
@@ -781,6 +788,18 @@ function main(): void {
           });
           ws.send(JSON.stringify(serverMessage("engineer_advice", advice)));
         }
+      } else if (msg.type === "dismiss_engineer_hint") {
+        const payload = msg.payload as DismissEngineerHintPayload;
+        const hintId = String(payload.hintId ?? "").trim();
+        if (!hintId) {
+          ws.send(
+            JSON.stringify(
+              serverMessage("error", { message: "hintId required" }),
+            ),
+          );
+        } else {
+          host.dismissEngineerHint(hintId);
+        }
       } else if (msg.type === "get_track_preview") {
         const trackId = String(
           (msg.payload as GetTrackPreviewPayload).trackId ?? "",
@@ -1030,6 +1049,9 @@ function main(): void {
           ? "Private test"
           : `${weekendSessionType} session`;
       console.log(`[server] ${completeLabel} complete`);
+    },
+    (hint: EngineerHintPayload) => {
+      broadcast(clients, serverMessage("engineer_hint", hint));
     },
   );
 

@@ -13560,5 +13560,119 @@
   "label_source": {
     "file": "tracks/lemans_rev12_enlabels.svg",
     "method": "path2830 geometry anchors + enlabels outward side"
+  },
+  "surface_defaults": {
+    "verge_width_m": 2.0,
+    "runoff_width_m": 11.0,
+    "kerb_width_m": 0.5
+  },
+  "surface_profile": [
+    {
+      "name": "Dunlop chicane runoff",
+      "start_t": 0.055,
+      "end_t": 0.095,
+      "side": "outboard",
+      "surface": "runoff_concrete",
+      "width_m": 12,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Mulsanne chicane 1 kerb",
+      "start_t": 0.285,
+      "end_t": 0.305,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Mulsanne chicane 1 gravel",
+      "start_t": 0.285,
+      "end_t": 0.305,
+      "side": "outboard",
+      "surface": "gravel",
+      "inner_offset_m": 4,
+      "width_m": 8,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Mulsanne chicane 2 kerb",
+      "start_t": 0.405,
+      "end_t": 0.425,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Mulsanne straight verge asphalt",
+      "start_t": 0.505,
+      "end_t": 0.615,
+      "side": "both",
+      "surface": "runoff_asphalt",
+      "width_m": 3,
+      "grip_multiplier": 0.78
+    },
+    {
+      "name": "Indianapolis gravel",
+      "start_t": 0.545,
+      "end_t": 0.575,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 10,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Porsche curves concrete apron",
+      "start_t": 0.615,
+      "end_t": 0.68,
+      "side": "outboard",
+      "surface": "runoff_concrete",
+      "width_m": 8,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Porsche curves gravel",
+      "start_t": 0.62,
+      "end_t": 0.7,
+      "side": "outboard",
+      "surface": "gravel",
+      "inner_offset_m": 10,
+      "width_m": 14,
+      "width_start_m": 10,
+      "width_end_m": 22,
+      "envelope": "flare_exit",
+      "grip_multiplier": 0.42
+    },
+    {
+      "name": "Corvette gravel",
+      "start_t": 0.715,
+      "end_t": 0.755,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 10,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Ford chicane kerbs",
+      "start_t": 0.765,
+      "end_t": 0.835,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    }
+  ],
+  "surface_metadata": {
+    "confidence": "estimated",
+    "last_reviewed": "2026-06-10",
+    "sources": [
+      "fiawec_lemans_track_upgrades",
+      "autosport_porsche_curves_safety",
+      "24h_lemans_porsche_curves_phase2",
+      "autosport_lemans_safety_revamp_2015",
+      "fia_appendix_o_2025"
+    ],
+    "notes": "ACO rolling safety programme: asphalt verges Mulsanne\u2192Porsche; widened gravel + concrete apron at Porsche Curves/Corvette; chicane kerbs; Indianapolis runoff."
   }
 }

@@ -516,6 +516,23 @@ function formatCollisionDetail(event: SimEvent, maps: RaceLogEntryMaps): string 
   return carA ? `${carA} collision` : "Collision";
 }
 
+function formatOvertakeDetail(
+  event: SimEvent,
+  maps: RaceLogEntryMaps,
+  entryLabel: string,
+): string {
+  const msg = (event.message ?? "").replace(/\s+undefined/g, "").trim();
+  const defenderNum = formatCarNumber(event.otherEntryId, maps);
+  const driverMatch = msg.match(/^(.+?)\s+overtaking\s+(.+)$/i);
+  const driver = driverMatch?.[1]?.trim() ?? "";
+  const target = defenderNum || driverMatch?.[2]?.trim() || "";
+  if (entryLabel && driver && target) {
+    return `${entryLabel} — ${driver} overtaking ${target}`;
+  }
+  if (driver && target) return `${driver} overtaking ${target}`;
+  return msg;
+}
+
 export function formatRaceLogHtml(
   event: SimEvent,
   maps: RaceLogEntryMaps,
@@ -551,6 +568,15 @@ export function formatRaceLogHtml(
 
   if (type === "Collision" || type === "Blocked") {
     const detail = formatCollisionDetail(event, maps);
+    return `<span class="race-log-cat ${catClass}">${label}</span> ${escapeHtml(detail)}`;
+  }
+
+  if (type === "Overtake") {
+    const detail = formatOvertakeDetail(event, maps, entryLabel);
+    const driverMatch = detail.match(/^((?:#\S+\s+)?.+?) — (.+)$/);
+    if (driverMatch) {
+      return `<span class="race-log-cat ${catClass}">${label}</span> <strong>${escapeHtml(driverMatch[1]!)}</strong> — ${escapeHtml(driverMatch[2]!)}`;
+    }
     return `<span class="race-log-cat ${catClass}">${label}</span> ${escapeHtml(detail)}`;
   }
 

@@ -1,13 +1,27 @@
 "use strict";
 /** Shared race-control constants and types — mirrors race_control_common.hpp. */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PENDING_PENALTIES = exports.TRACK_STATUSES = exports.FLAG_PHASES = exports.MOCK_STRANDED_STOP_SEC = exports.MOCK_TOW_DURATION_SEC = exports.MOCK_MARSHAL_RESPONSE_SEC = void 0;
+exports.PENDING_PENALTIES = exports.TRACK_STATUSES = exports.FLAG_PHASES = exports.HAZARD_NATURAL_CLEAR_SEC = exports.MOCK_STRANDED_STOP_SEC = exports.MOCK_TOW_DURATION_SEC = exports.MOCK_GARAGE_RETURN_SEC = exports.MOCK_ON_TRACK_TOW_SEC = exports.MOCK_MARSHAL_RESPONSE_SEC = void 0;
+exports.hazardNaturalClearSec = hazardNaturalClearSec;
 exports.defaultMockRaceControlState = defaultMockRaceControlState;
 exports.countTrackObstructions = countTrackObstructions;
 /** Mock stranded lifecycle — simplified from C++ marshal + tow timers. */
 exports.MOCK_MARSHAL_RESPONSE_SEC = 15;
-exports.MOCK_TOW_DURATION_SEC = 90;
+exports.MOCK_ON_TRACK_TOW_SEC = 360;
+exports.MOCK_GARAGE_RETURN_SEC = 90;
+/** @deprecated use MOCK_ON_TRACK_TOW_SEC */
+exports.MOCK_TOW_DURATION_SEC = exports.MOCK_ON_TRACK_TOW_SEC;
 exports.MOCK_STRANDED_STOP_SEC = 3;
+exports.HAZARD_NATURAL_CLEAR_SEC = {
+    debris: 240,
+    fuel: 360,
+    oil: 600,
+    fire: 120,
+    coolant: 720,
+};
+function hazardNaturalClearSec(kind) {
+    return exports.HAZARD_NATURAL_CLEAR_SEC[kind] ?? 240;
+}
 exports.FLAG_PHASES = [
     "green",
     "slow_zone",
@@ -18,8 +32,10 @@ exports.FLAG_PHASES = [
 ];
 exports.TRACK_STATUSES = [
     "racing",
+    "stalled",
     "stranded",
     "recovering",
+    "returning_to_garage",
     "cleared",
 ];
 exports.PENDING_PENALTIES = [
@@ -45,7 +61,7 @@ function defaultMockRaceControlState() {
 function countTrackObstructions(trackStatuses) {
     let n = 0;
     for (const st of trackStatuses) {
-        if (st === "stranded" || st === "recovering")
+        if (st === "stalled" || st === "stranded" || st === "recovering")
             n++;
     }
     return n;

@@ -138,7 +138,9 @@ function mergePlayerFleet(base, options) {
                 carNumber: fleetCar.carNumber,
                 isPlayer: true,
                 fleetCarId: fleetCar.id,
-                entryMode: (0, experimental_entry_1.fleetEntryMode)(fleetCar),
+                ...((0, experimental_entry_1.fleetEntryMode)(fleetCar) === "experimental"
+                    ? { entryMode: "experimental" }
+                    : {}),
             };
         }
         const entryId = `entry-${entry.grid}`;
@@ -176,7 +178,9 @@ function mergePlayerFleet(base, options) {
                 carNumber: fleetCar.carNumber,
                 isPlayer: true,
                 fleetCarId: fleetCar.id,
-                entryMode: (0, experimental_entry_1.fleetEntryMode)(fleetCar),
+                ...((0, experimental_entry_1.fleetEntryMode)(fleetCar) === "experimental"
+                    ? { entryMode: "experimental" }
+                    : {}),
             });
             grid++;
         }
@@ -235,7 +239,9 @@ function generatePlayerOnlyGrid(options) {
             carNumber: fleetCar.carNumber,
             isPlayer: true,
             fleetCarId: fleetCar.id,
-            entryMode: (0, experimental_entry_1.fleetEntryMode)(fleetCar),
+            ...((0, experimental_entry_1.fleetEntryMode)(fleetCar) === "experimental"
+                ? { entryMode: "experimental" }
+                : {}),
         };
         grid++;
         return entry;

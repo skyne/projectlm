@@ -1,8 +1,63 @@
 #include "track.hpp"
 #include "track_corridor.hpp"
+#include "track_perimeter_surfaces.hpp"
 #include "../helpers/paths.hpp"
 #include <catch_amalgamated.hpp>
 #include <cmath>
+
+TEST_CASE("Paul Ricard surface profile loads and affects zone grip",
+          "[unit][corridor]") {
+  TrackDefinition track;
+  REQUIRE(LoadTrack(TrackPath("paul_ricard.json"), track));
+  REQUIRE(track.corridor.surfaceProfile.size() >= 3);
+  TrackCorridor corridor;
+  corridor.build(track);
+  const double s = track.lapLength() * 0.55;
+  const double halfAsphalt = corridor.asphaltHalfWidth(s);
+  const double grip =
+      corridor.zoneGripAt(s, halfAsphalt + 4.0);
+  REQUIRE(grip < 1.0);
+}
+
+TEST_CASE("Synthesized perimeter grass and barrier wrap the lap",
+          "[unit][corridor]") {
+  TrackDefinition track;
+  REQUIRE(LoadTrack(TrackPath("fuji.json"), track));
+  REQUIRE(track.corridor.surfaceProfile.size() >= 4);
+  TrackCorridor corridor;
+  corridor.build(track);
+  const double s = track.lapLength() * 0.12;
+  const double halfAsphalt = corridor.asphaltHalfWidth(s);
+  const LateralSurfaceZone grassZone =
+      corridor.lateralZoneAt(s, halfAsphalt + 5.0);
+  REQUIRE((grassZone == LateralSurfaceZone::OutboardRunoff ||
+           grassZone == LateralSurfaceZone::InboardRunoff));
+  const double extent = corridor.maxLateralExtentN(s, halfAsphalt + 5.0);
+  REQUIRE(extent >= halfAsphalt + kPerimeterGrassGapM);
+}
+
+TEST_CASE("TrackCorridor lateral zones partition asphalt runoff boundary",
+          "[unit][corridor]") {
+  TrackDefinition track;
+  REQUIRE(LoadTrack(TrackPath("sample_circuit.json"), track));
+  TrackCorridor corridor;
+  corridor.build(track);
+  const double s = track.lapLength() * 0.2;
+  const double halfAsphalt = corridor.asphaltHalfWidth(s);
+  REQUIRE(corridor.lateralZoneAt(s, 0.0) == LateralSurfaceZone::Asphalt);
+  REQUIRE(corridor.lateralZoneAt(s, halfAsphalt * 0.5) ==
+          LateralSurfaceZone::Asphalt);
+  REQUIRE(corridor.lateralZoneAt(s, halfAsphalt + 2.0) ==
+          LateralSurfaceZone::OutboardRunoff);
+  REQUIRE(corridor.lateralZoneAt(s, -(halfAsphalt + 2.0)) ==
+          LateralSurfaceZone::InboardRunoff);
+  REQUIRE(corridor.lateralZoneAt(s, halfAsphalt + 8.0) ==
+          LateralSurfaceZone::OutboardRunoff);
+  REQUIRE(corridor.lateralZoneAt(s, halfAsphalt + kPerimeterGrassGapM + 0.5) ==
+          LateralSurfaceZone::OutboardBoundary);
+  REQUIRE(corridor.lateralZoneAt(s, halfAsphalt + kPerimeterGrassGapM + 5.0) ==
+          LateralSurfaceZone::OutboardBoundary);
+}
 
 TEST_CASE("TrackCorridor samples width from profile", "[unit][corridor]") {
   TrackDefinition track;

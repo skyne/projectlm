@@ -5,6 +5,7 @@ import {
   hasLocalSectorFlags,
   resolveActiveSectorFlags,
   sectorFlagTitle,
+  sectorFlagTooltip,
 } from "./sectorFlags";
 
 describe("sectorFlags", () => {
@@ -33,5 +34,30 @@ describe("sectorFlags", () => {
   it("builds marker titles", () => {
     assert.equal(sectorFlagTitle(1, "Tertre Rouge"), "Tertre Rouge — Yellow Flag");
     assert.equal(sectorFlagTitle(2, "Mulsanne"), "Mulsanne — Double Yellow");
+  });
+
+  it("builds marker tooltips with incident reasons", () => {
+    assert.equal(
+      sectorFlagTooltip({
+        sectorIndex: 4,
+        level: 1,
+        displayName: "Sector 5",
+        hazards: [{ sectorIndex: 4, kind: "debris" }],
+      }),
+      "Sector 5 — Yellow Flag — Debris on track",
+    );
+    assert.equal(
+      sectorFlagTooltip({
+        sectorIndex: 2,
+        level: 2,
+        displayName: "Sector 3",
+        activeIncidentEntryId: "car-7",
+      }),
+      "Sector 3 — Double Yellow — Stranded vehicle",
+    );
+    assert.equal(
+      sectorFlagTooltip({ sectorIndex: 0, level: 1, displayName: "Sector 1" }),
+      "Sector 1 — Yellow Flag",
+    );
   });
 });

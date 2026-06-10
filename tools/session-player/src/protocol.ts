@@ -278,6 +278,7 @@ export interface TickPayload {
 
 export interface EventsPayload {
   events: SimEvent[];
+  catchUp?: boolean;
 }
 
 export interface RaceCompletePayload {
@@ -369,6 +370,25 @@ export interface GameCatalogPayload {
   driverPointPool: number;
 }
 
+export type EngineerHintCategory =
+  | "emergency"
+  | "fuel"
+  | "tyre_wear"
+  | "damage"
+  | "part_wear"
+  | "wrong_tyre";
+
+export interface EngineerHintPayload {
+  hintId: string;
+  entryId: string;
+  carNumber: string;
+  category: EngineerHintCategory;
+  text: string;
+  suggestedCommand?: string;
+  autoPaused: boolean;
+  timeScale: number;
+}
+
 export type ServerMessageType =
   | "session_init"
   | "track_geometry"
@@ -377,6 +397,7 @@ export type ServerMessageType =
   | "race_complete"
   | "meta_state"
   | "game_catalog"
+  | "engineer_hint"
   | "client_assignment"
   | "roster_update"
   | "error";
@@ -386,6 +407,7 @@ export type ClientMessageType =
   | "set_time_scale"
   | "pause"
   | "resume"
+  | "dismiss_engineer_hint"
   | "restart_race"
   | "reload_definitions"
   | "submit_command"

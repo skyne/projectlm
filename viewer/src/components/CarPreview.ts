@@ -70,8 +70,7 @@ export class CarPreview {
       logoDataUrl: this.livery.logoDataUrl,
       classId: classIdFromChassis(this.build.chassis_type),
       teamName: this.teamName,
-      visualBuild:
-        classIdFromChassis(this.build.chassis_type) === "Hypercar" ? undefined : this.build,
+      visualBuild: this.build,
     });
     this.canvasHost.innerHTML = "";
     canvas.className = "car-preview-img";

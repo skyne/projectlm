@@ -3,9 +3,12 @@ import * as path from "path";
 import type {
   TrackGeometryPayload,
   TrackPitLaneGeometry,
+  TrackSurfaceDefaults,
+  TrackSurfaceSegment,
   TrackWidthSegment,
 } from "../ws_protocol";
 import { trackDisplayName, trackJsonPath } from "./track_catalog";
+import { synthesizePerimeterSurfaces } from "./perimeter_surfaces";
 
 interface TrackJson {
   name: string;
@@ -33,6 +36,25 @@ interface TrackJson {
     anchor?: "start" | "middle" | "end";
   }>;
   sectors?: Array<{ name: string; start_t: number; end_t: number }>;
+  surface_defaults?: {
+    verge_width_m?: number;
+    runoff_width_m?: number;
+    kerb_width_m?: number;
+  };
+  surface_profile?: Array<{
+    name?: string;
+    start_t: number;
+    end_t: number;
+    side: "inboard" | "outboard" | "both";
+    surface: string;
+    width_m: number;
+    width_start_m?: number;
+    width_end_m?: number;
+    inner_offset_m?: number;
+    envelope?: string;
+    variant?: string;
+    grip_multiplier?: number;
+  }>;
 }
 
 function parsePitLane(pit?: TrackJson["pit_lane"]): TrackPitLaneGeometry | undefined {
@@ -42,6 +64,37 @@ function parsePitLane(pit?: TrackJson["pit_lane"]): TrackPitLaneGeometry | undef
   if (pit.offset_m != null) out.offsetM = pit.offset_m;
   if (pit.merge_lateral_offset != null) out.mergeLateralOffset = pit.merge_lateral_offset;
   if (pit.merge_blend_m != null) out.mergeBlendM = pit.merge_blend_m;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function parseSurfaceProfile(
+  profile?: TrackJson["surface_profile"],
+): TrackSurfaceSegment[] | undefined {
+  if (!profile?.length) return undefined;
+  return profile.map((seg) => ({
+    startT: seg.start_t,
+    endT: seg.end_t,
+    side: seg.side,
+    surface: seg.surface,
+    widthM: seg.width_m,
+    ...(seg.width_start_m != null ? { widthStartM: seg.width_start_m } : {}),
+    ...(seg.width_end_m != null ? { widthEndM: seg.width_end_m } : {}),
+    ...(seg.inner_offset_m != null ? { innerOffsetM: seg.inner_offset_m } : {}),
+    ...(seg.envelope != null ? { envelope: seg.envelope } : {}),
+    ...(seg.variant != null ? { variant: seg.variant } : {}),
+    ...(seg.grip_multiplier != null ? { gripMultiplier: seg.grip_multiplier } : {}),
+    ...(seg.name != null ? { name: seg.name } : {}),
+  }));
+}
+
+function parseSurfaceDefaults(
+  defaults?: TrackJson["surface_defaults"],
+): TrackSurfaceDefaults | undefined {
+  if (!defaults) return undefined;
+  const out: TrackSurfaceDefaults = {};
+  if (defaults.verge_width_m != null) out.vergeWidthM = defaults.verge_width_m;
+  if (defaults.runoff_width_m != null) out.runoffWidthM = defaults.runoff_width_m;
+  if (defaults.kerb_width_m != null) out.kerbWidthM = defaults.kerb_width_m;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -81,6 +134,13 @@ function buildGeometry(track: TrackJson, fallbackName: string): TrackGeometryPay
 
   const defaultWidthM = track.track_width_m;
   const widthProfile = parseWidthProfile(track.width_profile);
+  const surfaceDefaults = parseSurfaceDefaults(track.surface_defaults);
+  const surfaceProfile = synthesizePerimeterSurfaces({
+    profile: parseSurfaceProfile(track.surface_profile) ?? [],
+    defaultWidthM: defaultWidthM ?? 12,
+    widthProfile,
+    surfaceDefaults,
+  });
   const pitLane = parsePitLane(track.pit_lane);
 
   return {
@@ -92,6 +152,8 @@ function buildGeometry(track: TrackJson, fallbackName: string): TrackGeometryPay
     mapLabels: track.map_labels,
     ...(defaultWidthM != null ? { defaultWidthM } : {}),
     ...(widthProfile ? { widthProfile } : {}),
+    ...(surfaceProfile.length > 0 ? { surfaceProfile } : {}),
+    ...(surfaceDefaults ? { surfaceDefaults } : {}),
     ...(pitLane ? { pitLane } : {}),
   };
 }
@@ -135,6 +197,8 @@ export function enrichTrackGeometryFromJson(
     ...base,
     defaultWidthM: fromJson.defaultWidthM ?? base.defaultWidthM,
     widthProfile: fromJson.widthProfile ?? base.widthProfile,
+    surfaceProfile: fromJson.surfaceProfile ?? base.surfaceProfile,
+    surfaceDefaults: fromJson.surfaceDefaults ?? base.surfaceDefaults,
     pitLane: fromJson.pitLane ?? base.pitLane,
     mapLabels: base.mapLabels?.length ? base.mapLabels : fromJson.mapLabels,
   };

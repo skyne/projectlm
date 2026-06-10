@@ -139,6 +139,12 @@ export interface CarSnapshot {
   lapsToComply?: number;
   meatballFlag?: boolean;
   blackFlag?: boolean;
+  collisionWarnings?: number;
+  penaltyStopSeconds?: number;
+  unstableOnTrack?: boolean;
+  riskyRejoinSec?: number;
+  lastContactSeverity?: number;
+  surfaceZone?: string;
 }
 
 export type SimEventType =

@@ -17,6 +17,7 @@ TEST_CASE("La Sarthe single lap completes", "[integration][golden]") {
   REQUIRE(LoadAssemblyConfig(ConfigPath("physics_config.txt"), assembly));
   REQUIRE(LoadCarConfig(ConfigPath("car_config.txt"), car));
   REQUIRE(LoadTrack(TrackPath("lemans_la_sarthe.json"), track));
+  physics.useFrenetDynamics = false;
   CompileCarArchitecture(car, catalog, assembly);
 
   SimulationState state;

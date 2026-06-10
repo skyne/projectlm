@@ -208,7 +208,8 @@ void SyncGearForSpeed(const CarConfig &car, SimulationState &state) {
 void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                     SimulationState &state, double deltaTime,
                     const PhysicsConfig &p, TelemetryLog *telemetry,
-                    const SimulationModifiers &mods) {
+                    const SimulationModifiers &mods,
+                    bool integrateAlongTrack) {
   if (track.sectors.empty())
     return;
 
@@ -701,7 +702,8 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                    p.thermalOverheat + 8.0);
   }
 
-  double acceleration = forceApplied / car.calculatedTotalMass;
+  double acceleration =
+      forceApplied / std::max(1.0, car.calculatedTotalMass);
   state.currentSpeed += acceleration * deltaTime;
 
   if (outOfFuel) {
@@ -796,7 +798,7 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                              p.tireWearSpeedThreshold * 0.5);
   SyncDerivedEngineHealth(state, car);
 
-  if (!p.useFrenetDynamics)
+  if (integrateAlongTrack)
     state.currentDistance += state.currentSpeed * deltaTime;
   state.elapsedRaceTime += deltaTime;
   state.currentLapTime += deltaTime;

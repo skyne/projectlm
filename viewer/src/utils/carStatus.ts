@@ -1,6 +1,6 @@
 import type { CarSnapshot } from "../ws/protocol";
 import { escapeHtml } from "./mmUi";
-import { repairPartLabel } from "./pitRepairParts";
+import { PIT_SUBSYSTEM_ORDER, repairPartLabel } from "./pitRepairParts";
 import { resolveRetireReason } from "./retireReason";
 import { classTagShortLabel } from "./classLabels";
 import {
@@ -9,9 +9,26 @@ import {
   wheelWearFromSnapshot,
   worstWheelWear,
 } from "./formatTyre";
+import { buildCarConditionDiagramHtml, type ConditionPart } from "./carConditionDiagram";
 
 export const DAMAGE_DISPLAY_THRESHOLD = 90;
 export const DAMAGE_BADGE_THRESHOLD = 85;
+/** Show any part below this in telemetry condition panel. */
+export const DAMAGE_TELEMETRY_THRESHOLD = 99.5;
+
+export function partHealthBand(health: number): string {
+  if (health < 35) return "health-critical";
+  if (health < 78) return "health-warn";
+  if (health < DAMAGE_TELEMETRY_THRESHOLD) return "status-caution";
+  return "health-ok";
+}
+
+export function structuralSeverityBand(severity: number): string {
+  if (severity > 35) return "health-critical";
+  if (severity > 15) return "health-warn";
+  if (severity > 1) return "status-caution";
+  return "health-ok";
+}
 
 const HIDDEN_FAULT_LABELS: Record<string, string> = {
   cooling_hose_leak: "Cooling hose leak",
@@ -91,7 +108,7 @@ export function hasCarDamage(snap: CarSnapshot): boolean {
   }
   if ((snap.partIrreparable?.length ?? 0) > 0) return true;
   if (snap.suspectedIssues) return true;
-  if ((snap.structuralSeverity ?? 0) > 0.1) return true;
+  if ((snap.structuralSeverity ?? 0) > 10) return true;
   return false;
 }
 
@@ -322,6 +339,69 @@ function hiddenFaultSummary(snap: CarSnapshot): string[] {
   return lines;
 }
 
+function collectConditionParts(snap: CarSnapshot): ConditionPart[] {
+  const garage = new Set(snap.partIrreparable ?? []);
+  const rows: DamageTelemetryPart[] = [
+    {
+      token: "engine",
+      label: "Engine",
+      health: snap.engineHealth ?? 100,
+      garageOnly: garage.has("engine"),
+    },
+  ];
+  for (const token of PIT_SUBSYSTEM_ORDER) {
+    rows.push({
+      token,
+      label: repairPartLabel(token),
+      health: snap.partHealth?.[token] ?? 100,
+      repairSec: snap.partRepairSec?.[token],
+      garageOnly: garage.has(token),
+    });
+  }
+  return rows;
+}
+
+function isConditionNominal(snap: CarSnapshot): boolean {
+  const severity = snap.structuralSeverity ?? 0;
+  if (severity > 1) return false;
+  return collectConditionParts(snap).every(
+    (p) => p.health >= DAMAGE_TELEMETRY_THRESHOLD && !p.garageOnly,
+  );
+}
+
+function buildDamageSummaryRows(snap: CarSnapshot): string {
+  const rows: string[] = [];
+  const severity = snap.structuralSeverity ?? 0;
+  const structBand = structuralSeverityBand(severity);
+  rows.push(
+    `<div class="telemetry-row"><span>Structural load</span><strong class="${structBand}" title="Composite score from corners, monocoque stress, and deflated tyres">${severity.toFixed(0)}%</strong></div>`,
+  );
+  if (isConditionNominal(snap)) {
+    rows.push(
+      `<div class="telemetry-row"><span>Overall</span><strong class="health-ok">All systems nominal</strong></div>`,
+    );
+  }
+  if (snap.physicallyRepairable === false) {
+    rows.push(
+      `<div class="telemetry-row telemetry-warn"><span>Repair status</span><strong class="health-critical">Beyond physical repair</strong></div>`,
+    );
+  } else if (snap.sessionRepairable === false) {
+    rows.push(
+      `<div class="telemetry-row telemetry-warn"><span>Repair status</span><strong class="health-warn">Insufficient session time</strong></div>`,
+    );
+  } else if ((snap.totalRepairSec ?? 0) > 0) {
+    rows.push(
+      `<div class="telemetry-row"><span>Est. full repair</span><strong>~${snap.totalRepairSec!.toFixed(0)}s</strong></div>`,
+    );
+  }
+  if (snap.collisionWarnings != null && snap.collisionWarnings > 0) {
+    rows.push(
+      `<div class="telemetry-row"><span>Steward warnings</span><strong class="health-warn">${snap.collisionWarnings}</strong></div>`,
+    );
+  }
+  return rows.join("");
+}
+
 function penaltySummary(snap: CarSnapshot): string[] {
   const lines: string[] = [];
   if (snap.blackFlag || snap.pendingPenalty === "black") lines.push("Black flag");
@@ -362,29 +442,18 @@ export function buildCarConditionTelemetryHtml(snap: CarSnapshot): string {
     );
   }
 
-  rows.push(
+  const summaryRows: string[] = [
     `<div class="telemetry-row"><span>Track status</span><strong class="${trackClass}">${escapeHtml(trackLabel)}</strong></div>`,
-  );
-
+    buildDamageSummaryRows(snap),
+  ];
   if (limpLabel) {
-    rows.push(
+    summaryRows.push(
       `<div class="telemetry-row telemetry-warn"><span>Limp mode</span><strong class="${limpModeClass(snap.limpMode)}">${escapeHtml(limpLabel)}${snap.limpReason ? ` <span class="telemetry-hint">(${escapeHtml(snap.limpReason)})</span>` : ""}</strong></div>`,
     );
   }
 
-  const severity = snap.structuralSeverity ?? 0;
-  if (severity > 0.01) {
-    rows.push(
-      `<div class="telemetry-row"><span>Structural</span><strong class="${severity > 0.35 ? "health-critical" : severity > 0.15 ? "health-warn" : ""}">${(severity * 100).toFixed(0)}%</strong></div>`,
-    );
-  }
-
-  const damagedParts = damagedPartSummaries(snap);
-  if (damagedParts.length) {
-    rows.push(
-      `<div class="telemetry-row telemetry-warn"><span>Part damage</span><strong>${escapeHtml(damagedParts.join(" · "))}</strong></div>`,
-    );
-  }
+  const conditionParts = collectConditionParts(snap);
+  const diagram = buildCarConditionDiagramHtml(snap, conditionParts);
 
   const flats = tyreDeflationSummaries(snap);
   if (flats.length) {
@@ -419,7 +488,12 @@ export function buildCarConditionTelemetryHtml(snap: CarSnapshot): string {
     );
   }
 
-  const body = rows.join("");
-  if (!alerts.length && !body) return "";
-  return `${alerts.join("")}${body}`;
+  const footer = rows.join("");
+  if (!alerts.length && !summaryRows.length && !diagram && !footer) return "";
+  return `${alerts.join("")}
+    <div class="telemetry-condition-layout">
+      <div class="telemetry-condition-summary">${summaryRows.join("")}</div>
+      ${diagram}
+      ${footer ? `<div class="telemetry-condition-footer">${footer}</div>` : ""}
+    </div>`;
 }

@@ -114,6 +114,28 @@ LimpMode EvaluateLimpMode(const PartDamageState &state, const CarConfig &car,
                           const TyreDeflationStateArr &tyres, double batteryMJ);
 
 CollisionSide CollisionSideFromLateral(double lateralOffset);
+/** Classify which face of `self` contacted `other` from gap and lateral geometry. */
+CollisionSide CollisionContactSide(double gap, double combinedLength, double selfN,
+                                   double otherN);
+CollisionSide MirrorCollisionSide(CollisionSide side);
+
+struct TyrePunctureRoll {
+  int wheelIdx = -1;
+  bool instantFlat = false;
+};
+
+std::vector<TyrePunctureRoll> EvaluateCollisionTyrePuncture(double impact,
+                                                            CollisionSide side,
+                                                            double overlapFactor,
+                                                            uint32_t seed);
+
+std::vector<TyrePunctureRoll> EvaluateDebrisTyrePuncture(double speedMs,
+                                                         double gripMultiplier,
+                                                         double debrisSeverity,
+                                                         double weatherGripScale,
+                                                         uint32_t seed);
+
+/** @deprecated Prefer EvaluateCollisionTyrePuncture. */
 std::vector<int> CollisionPunctureWheels(double impact, CollisionSide side);
 
 void TickTyreDeflationRisk(SimulationState &state, const CarConfig &car,

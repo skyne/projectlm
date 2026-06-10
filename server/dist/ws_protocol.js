@@ -53,6 +53,7 @@ function parseClientMessage(raw) {
             "set_weekend_tire_compound",
             "save_track_setup",
             "ask_engineer",
+            "dismiss_engineer_hint",
             "get_engineer_status",
             "ask_garage_engineer",
             "repair_car_condition",

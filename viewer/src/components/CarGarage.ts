@@ -792,7 +792,7 @@ export class CarGarage {
         logoDataUrl: this.teamLivery.logoDataUrl,
         classId,
         teamName: this.teamName,
-        visualBuild: classId === "Hypercar" ? undefined : visual,
+        visualBuild: visual,
         width: 672,
         height: 168,
       });

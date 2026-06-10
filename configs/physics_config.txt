@@ -35,6 +35,11 @@ brake_gain=0.05
 brake_trigger_margin=0.55
 brake_target_rpm_factor=0.3
 
+# === FRENET 2D PATH ===
+use_frenet_dynamics=1
+heading_restore_gain=6.0
+max_heading_error_rad=1.35
+
 # === CORNERING ===
 corner_g_force_divisor=1.5
 curvature_look_ahead_m=88.0

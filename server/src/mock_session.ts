@@ -24,8 +24,10 @@ import { parseCarNumber, parseEntries as parseEntriesFromConfig } from "./config
 import {
   countTrackObstructions,
   defaultMockRaceControlState,
+  hazardNaturalClearSec,
+  MOCK_GARAGE_RETURN_SEC,
   MOCK_MARSHAL_RESPONSE_SEC,
-  MOCK_TOW_DURATION_SEC,
+  MOCK_ON_TRACK_TOW_SEC,
   type MockRaceControlState,
 } from "./race_control_model";
 import { applyMockDebugRaceControl } from "./race_control_debug";
@@ -153,6 +155,7 @@ interface CarState {
   trackStatus: string;
   marshalDispatchTime: number;
   recoveryEndTime: number;
+  garageHandoverTime: number;
   strandedSinceTime: number;
   obstructionReason: string;
 }
@@ -353,6 +356,7 @@ function makeCarState(
     trackStatus: "racing",
     marshalDispatchTime: -1,
     recoveryEndTime: -1,
+    garageHandoverTime: -1,
     strandedSinceTime: -1,
     obstructionReason: "",
   };
@@ -741,8 +745,17 @@ export class MockSimSession {
     });
   }
 
-  private clearObstructionCar(car: CarState): void {
-    car.trackStatus = "cleared";
+  private removeCarLinkedHazards(entryId: string): void {
+    const rc = this.mockRaceControl;
+    rc.surfaceHazards = rc.surfaceHazards.filter(
+      (hz) => hz.sourceEntryId !== entryId,
+    );
+  }
+
+  private completeOnTrackTow(car: CarState): void {
+    car.trackStatus = "returning_to_garage";
+    car.garageHandoverTime = this.raceTime + MOCK_GARAGE_RETURN_SEC;
+    this.removeCarLinkedHazards(car.entryId);
     this.pendingEvents.push({
       type: "TrackClear",
       entryId: car.entryId,
@@ -750,8 +763,22 @@ export class MockSimSession {
       timestamp: this.raceTime,
       message: `${car.teamName} cleared from track`,
     });
+  }
+
+  private completeGarageHandover(car: CarState): void {
+    car.trackStatus = "cleared";
+    car.garageHandoverTime = -1;
+    car.recoveryEndTime = -1;
+    car.inGarage = true;
     car.retired = true;
     car.retireReason = car.obstructionReason || "Retired on track";
+    this.pendingEvents.push({
+      type: "RecoveryDispatched",
+      entryId: car.entryId,
+      lap: car.lap,
+      timestamp: this.raceTime,
+      message: `${car.teamName} handed to team in garage`,
+    });
     this.pendingEvents.push({
       type: "Retirement",
       entryId: car.entryId,
@@ -773,7 +800,8 @@ export class MockSimSession {
         this.raceTime >= car.marshalDispatchTime
       ) {
         car.trackStatus = "recovering";
-        car.recoveryEndTime = this.raceTime + MOCK_TOW_DURATION_SEC;
+        car.recoveryEndTime = this.raceTime + MOCK_ON_TRACK_TOW_SEC;
+        car.garageHandoverTime = -1;
         this.pendingEvents.push({
           type: "RecoveryDispatched",
           entryId: car.entryId,
@@ -787,7 +815,51 @@ export class MockSimSession {
         car.recoveryEndTime >= 0 &&
         this.raceTime >= car.recoveryEndTime
       ) {
-        this.clearObstructionCar(car);
+        this.completeOnTrackTow(car);
+      }
+      if (
+        car.trackStatus === "returning_to_garage" &&
+        car.garageHandoverTime >= 0 &&
+        this.raceTime >= car.garageHandoverTime
+      ) {
+        this.completeGarageHandover(car);
+      }
+    }
+  }
+
+  private tickMockHazards(deltaTime: number): void {
+    const rc = this.mockRaceControl;
+    const sweeping =
+      rc.flagPhase === "fcy" || rc.scActive || rc.redFlagActive;
+    if (sweeping) {
+      for (const hz of rc.surfaceHazards) {
+        if (hz.clearAt != null) hz.clearAt -= deltaTime * 2.0;
+      }
+    }
+    const before = rc.surfaceHazards.length;
+    rc.surfaceHazards = rc.surfaceHazards.filter(
+      (hz) => hz.clearAt == null || this.raceTime < hz.clearAt,
+    );
+    if (rc.surfaceHazards.length !== before) {
+      this.refreshMockSectorFlags();
+    }
+  }
+
+  private refreshMockSectorFlags(): void {
+    const rc = this.mockRaceControl;
+    const sectorCount = rc.sectorFlags.length;
+    if (sectorCount <= 0) return;
+    rc.sectorFlags.fill(0);
+    for (const car of this.cars) {
+      if (car.trackStatus !== "stranded" && car.trackStatus !== "recovering") {
+        continue;
+      }
+      const idx = car.sectorIndex;
+      if (idx >= 0 && idx < sectorCount) rc.sectorFlags[idx] = 2;
+    }
+    for (const hz of rc.surfaceHazards) {
+      if (hz.sectorIndex >= 0 && hz.sectorIndex < sectorCount) {
+        rc.sectorFlags[hz.sectorIndex] = Math.max(rc.sectorFlags[hz.sectorIndex], 1);
       }
     }
   }
@@ -1217,6 +1289,7 @@ export class MockSimSession {
       }
     }
     this.updateStrandedCars();
+    this.tickMockHazards(deltaTime);
     this.tickMockSafetyCar(deltaTime);
     if (this.checkRaceComplete()) {
       this.raceComplete = true;
@@ -1566,7 +1639,13 @@ export class MockSimSession {
       },
       clearObstructionCar: (entryId) => {
         const car = this.cars.find((c) => c.entryId === entryId);
-        if (car) this.clearObstructionCar(car);
+        if (!car) return;
+        if (car.trackStatus === "stranded" || car.trackStatus === "recovering") {
+          this.completeOnTrackTow(car);
+          this.completeGarageHandover(car);
+        } else if (car.trackStatus === "returning_to_garage") {
+          this.completeGarageHandover(car);
+        }
       },
       findCar: (entryId) => {
         const car = this.cars.find((c) => c.entryId === entryId);

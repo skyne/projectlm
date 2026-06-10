@@ -53,10 +53,12 @@ export async function runReconnectE2E(
     player1.send("resume", {});
     await player1.waitForTicks(2, 10000);
     const preRaceTime = player1.state.latestTick?.raceTime ?? 0;
+    const preEventCount = player1.state.events.length;
     const preClientId = player1.clientId();
     steps.push(
       step("pre_disconnect_race", player1.hasActiveRace(), {
         raceTime: preRaceTime,
+        eventCount: preEventCount,
         timeScale: player1.state.sessionInit?.timeScale,
         clientId: preClientId,
       }),
@@ -107,6 +109,14 @@ export async function runReconnectE2E(
     steps.push(
       step("reconnect_catch_up_tick", catchUpTick, {
         raceTime: player2.state.latestTick?.raceTime,
+      }),
+    );
+    const catchUpEvents =
+      preEventCount > 0 && player2.state.events.length >= preEventCount;
+    steps.push(
+      step("reconnect_catch_up_events", preEventCount === 0 || catchUpEvents, {
+        preEventCount,
+        reconnectEventCount: player2.state.events.length,
       }),
     );
     steps.push(

@@ -5,6 +5,7 @@ import {
   type CarSnapshot,
   type ClientAssignmentPayload,
   type ClientRole,
+  type EngineerHintPayload,
   type EventsPayload,
   type GameCatalogPayload,
   type MetaStatePayload,
@@ -41,12 +42,14 @@ export interface ConnectOptions {
 export type TickListener = (tick: TickPayload) => void;
 export type RaceCompleteListener = (payload: RaceCompletePayload) => void;
 export type EventsListener = (events: SimEvent[]) => void;
+export type EngineerHintListener = (hint: EngineerHintPayload) => void;
 
 export class SessionPlayer {
   private ws: WebSocket | null = null;
   private tickListeners: TickListener[] = [];
   private raceCompleteListeners: RaceCompleteListener[] = [];
   private eventListeners: EventsListener[] = [];
+  private engineerHintListeners: EngineerHintListener[] = [];
   readonly state: SessionState = {
     sessionInit: null,
     clientAssignment: null,
@@ -167,6 +170,15 @@ export class SessionPlayer {
     };
   }
 
+  onEngineerHint(listener: EngineerHintListener): () => void {
+    this.engineerHintListeners.push(listener);
+    return () => {
+      this.engineerHintListeners = this.engineerHintListeners.filter(
+        (l) => l !== listener,
+      );
+    };
+  }
+
   private emitTick(tick: TickPayload): void {
     for (const listener of this.tickListeners) {
       listener(tick);
@@ -182,6 +194,12 @@ export class SessionPlayer {
   private emitEvents(events: SimEvent[]): void {
     for (const listener of this.eventListeners) {
       listener(events);
+    }
+  }
+
+  private emitEngineerHint(hint: EngineerHintPayload): void {
+    for (const listener of this.engineerHintListeners) {
+      listener(hint);
     }
   }
 
@@ -486,8 +504,12 @@ export class SessionPlayer {
       }
       case "events": {
         const payload = msg.payload as EventsPayload;
-        if (payload.events.length > 0) {
+        if (payload.catchUp) {
+          this.state.events = [...payload.events];
+        } else if (payload.events.length > 0) {
           this.state.events.push(...payload.events);
+        }
+        if (payload.events.length > 0) {
           this.emitEvents(payload.events);
         }
         break;
@@ -496,6 +518,11 @@ export class SessionPlayer {
         const payload = msg.payload as RaceCompletePayload;
         this.state.raceComplete = payload;
         this.emitRaceComplete(payload);
+        break;
+      }
+      case "engineer_hint": {
+        const payload = msg.payload as EngineerHintPayload;
+        this.emitEngineerHint(payload);
         break;
       }
       case "error":

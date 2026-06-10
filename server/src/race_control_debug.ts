@@ -1,5 +1,9 @@
 import type { DebugRaceControlPayload, SimEvent } from "./ws_protocol";
-import type { FlagPhase, MockRaceControlState } from "./race_control_model";
+import {
+  hazardNaturalClearSec,
+  type FlagPhase,
+  type MockRaceControlState,
+} from "./race_control_model";
 
 export interface MockDebugRaceControlContext {
   raceTime: number;
@@ -140,6 +144,9 @@ export function applyMockDebugRaceControl(
         sectorIndex: idx,
         kind,
         gripMultiplier: payload.gripMultiplier ?? 0.7,
+        createdAt: ctx.raceTime,
+        clearAt: ctx.raceTime + hazardNaturalClearSec(kind),
+        sourceEntryId: "debug",
       });
       rc.sectorFlags[idx] = Math.max(rc.sectorFlags[idx] ?? 0, 1);
       ctx.pushEvent({

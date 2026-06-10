@@ -15109,5 +15109,73 @@
     "wikimedia_file": "Bahrain International Circuit--Grand Prix Layout with DRS.svg",
     "attribution": "Wikimedia Commons \u2014 Bahrain International Circuit--Grand Prix Layout with DRS.svg",
     "mode": "polyline-linear"
+  },
+  "surface_defaults": {
+    "verge_width_m": 2.0,
+    "runoff_width_m": 11.0,
+    "kerb_width_m": 0.5
+  },
+  "surface_profile": [
+    {
+      "name": "T1 exit runoff",
+      "start_t": 0.1,
+      "end_t": 0.18,
+      "side": "outboard",
+      "surface": "runoff_concrete",
+      "width_m": 12,
+      "width_start_m": 5,
+      "width_end_m": 16,
+      "envelope": "flare_exit",
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "T4 gravel trap",
+      "start_t": 0.38,
+      "end_t": 0.44,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 12,
+      "width_start_m": 8,
+      "width_end_m": 16,
+      "envelope": "flare_exit",
+      "grip_multiplier": 0.42
+    },
+    {
+      "name": "T10 gravel trap",
+      "start_t": 0.52,
+      "end_t": 0.58,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 11,
+      "grip_multiplier": 0.42
+    },
+    {
+      "name": "T11 chicane kerb",
+      "start_t": 0.64,
+      "end_t": 0.7,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "T11 outer barrier",
+      "start_t": 0.64,
+      "end_t": 0.7,
+      "side": "outboard",
+      "surface": "barrier_tecpro",
+      "inner_offset_m": 14,
+      "width_m": 1.2,
+      "grip_multiplier": 0.0
+    }
+  ],
+  "surface_metadata": {
+    "confidence": "estimated",
+    "last_reviewed": "2026-06-10",
+    "sources": [
+      "bahrain_international_circuit_fia_grade_1",
+      "fia_appendix_o_2025"
+    ],
+    "notes": "FIA Grade 1 desert circuit: wide asphalt/concrete runoff on straights; gravel at T4/T10 braking zones; T11 sausage kerbs on outer loop."
   }
 }

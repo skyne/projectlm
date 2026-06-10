@@ -15,6 +15,7 @@ CORE_SRCS = \
   src/core/weather.cpp \
   src/core/track.cpp \
   src/core/track_corridor.cpp \
+  src/core/track_perimeter_surfaces.cpp \
   src/core/track_sampler.cpp \
   src/core/path_dynamics.cpp \
   src/core/telemetry.cpp
@@ -29,7 +30,8 @@ SIM_SRCS = \
   src/sim/driver.cpp \
   src/sim/commands.cpp \
   src/sim/pit_stop.cpp \
-  src/sim/traffic.cpp
+  src/sim/traffic.cpp \
+  src/sim/overtake_battle.cpp
 
 CONFIG_SRCS = \
   src/config/config_loader.cpp \
@@ -62,6 +64,7 @@ TEST_SRCS = \
   tests/unit/test_race_control_collisions.cpp \
   tests/unit/test_traffic_pit_rejoin.cpp \
   tests/unit/test_traffic_2d.cpp \
+  tests/unit/test_overtake_battle.cpp \
   tests/unit/test_simulation_frenet.cpp \
   tests/unit/test_race_control_escalation.cpp \
   tests/integration/test_lap_golden.cpp \

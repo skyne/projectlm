@@ -58,6 +58,7 @@ TEST_CASE("stepPathDynamics recenters lateral offset on a straight",
   input.targetNM = 0.0;
   input.lateralVelocity = 0.0;
   input.FxDesired = 0.0;
+  input.headingRestoreGain = 6.0;
 
   double n = input.n;
   double beta = input.beta;

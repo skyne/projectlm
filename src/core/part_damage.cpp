@@ -303,20 +303,69 @@ void ApplyCollisionDamage(PartDamageState &state, const CarDamageProfiles &profi
 
   const int leftWheels[] = {0, 2};
   const int rightWheels[] = {1, 3};
+  const int frontWheels[] = {0, 1};
+  const int rearWheels[] = {2, 3};
   const int *sideWheels = side == CollisionSide::Left ? leftWheels : rightWheels;
   const int sideCount = 2;
 
   const double scale = impact >= 11.0 ? 1.0 : 0.55;
 
+  const auto hitAxle = [&](const int *wheels, DamagePart aeroPart, bool frontAxle) {
+    if (impact < 7.0) {
+      hit(BodyPartForWheel(wheels[0]), (3.0 + impact * 0.55) * scale);
+      return;
+    }
+    if (impact < 10.0) {
+      for (int i = 0; i < 2; ++i) {
+        hit(BodyPartForWheel(wheels[i]), (4.5 + impact * 0.65) * scale);
+        hit(SuspPartForWheel(wheels[i]), (2.5 + impact * 0.35) * scale);
+      }
+      hit(aeroPart, impact * 0.35 * scale);
+      return;
+    }
+    for (int i = 0; i < 2; ++i) {
+      hit(BodyPartForWheel(wheels[i]), (7.0 + impact * 0.85) * scale);
+      hit(SuspPartForWheel(wheels[i]), (5.5 + impact * 0.75) * scale);
+    }
+    hit(aeroPart, impact * 0.65 * scale);
+    if (frontAxle) {
+      hit(DamagePart::Engine, impact * 0.22 * scale);
+      if (hasHybrid)
+        hit(DamagePart::Hybrid, impact * 0.18 * scale);
+    }
+    if (impact >= kMonocoqueStressImpact)
+      ApplyMonocoqueImpactDamage(state, profiles, impact);
+  };
+
+  if (side == CollisionSide::Front) {
+    hitAxle(frontWheels, DamagePart::AeroFront, true);
+    return;
+  }
+  if (side == CollisionSide::Rear) {
+    hitAxle(rearWheels, DamagePart::AeroRear, false);
+    return;
+  }
+
   if (impact < 7.0) {
-    const int w = side == CollisionSide::Left ? 0 : (side == CollisionSide::Right ? 1 : 0);
+    if (side == CollisionSide::Unknown) {
+      hit(DamagePart::BodyFL, (2.5 + impact * 0.45) * scale);
+      return;
+    }
+    const int w = side == CollisionSide::Left ? 0 : 1;
     hit(BodyPartForWheel(w), (3.0 + impact * 0.55) * scale);
     return;
   }
 
   if (impact < 10.0) {
+    if (side == CollisionSide::Unknown) {
+      hit(DamagePart::BodyFL, (4.0 + impact * 0.55) * scale);
+      hit(SuspPartForWheel(0), (2.0 + impact * 0.3) * scale);
+      if (impact > 8.0)
+        hit(DamagePart::AeroFront, impact * 0.25 * scale);
+      return;
+    }
     for (int i = 0; i < sideCount; ++i) {
-      const int w = (side == CollisionSide::Unknown) ? i : sideWheels[i];
+      const int w = sideWheels[i];
       hit(BodyPartForWheel(w), (4.5 + impact * 0.65) * scale);
       hit(SuspPartForWheel(w), (2.5 + impact * 0.35) * scale);
     }
@@ -325,8 +374,17 @@ void ApplyCollisionDamage(PartDamageState &state, const CarDamageProfiles &profi
     return;
   }
 
+  if (side == CollisionSide::Unknown) {
+    hit(DamagePart::BodyFL, (6.0 + impact * 0.7) * scale);
+    hit(SuspPartForWheel(0), (4.5 + impact * 0.55) * scale);
+    hit(DamagePart::AeroFront, impact * 0.45 * scale);
+    if (impact >= kMonocoqueStressImpact)
+      ApplyMonocoqueImpactDamage(state, profiles, impact);
+    return;
+  }
+
   for (int i = 0; i < sideCount; ++i) {
-    const int w = (side == CollisionSide::Unknown) ? i : sideWheels[i];
+    const int w = sideWheels[i];
     hit(BodyPartForWheel(w), (7.0 + impact * 0.85) * scale);
     hit(SuspPartForWheel(w), (5.5 + impact * 0.75) * scale);
   }
@@ -379,19 +437,137 @@ void ApplyFireDamage(PartDamageState &state, const CarDamageProfiles &profiles,
 }
 
 
+namespace {
+
+uint32_t HashCollisionSeed(uint32_t seed, int salt) {
+  seed ^= static_cast<uint32_t>(salt + 0x9e3779b9);
+  seed *= 0x85ebca6bU;
+  seed ^= seed >> 13;
+  return seed;
+}
+
+bool RollCollisionChance(uint32_t seed, double probability) {
+  const double r =
+      static_cast<double>(HashCollisionSeed(seed, 0) % 10000) / 10000.0;
+  return r < std::clamp(probability, 0.0, 1.0);
+}
+
+} // namespace
+
+CollisionSide CollisionContactSide(double gap, double combinedLength, double selfN,
+                                 double otherN) {
+  constexpr double kAlongsideGap = 0.55;
+  constexpr double kLongitudinalEpsilon = 0.1;
+  const double absGap = std::abs(gap);
+
+  if (absGap < combinedLength * kAlongsideGap) {
+    constexpr double kLatEps = 0.15;
+    if (otherN < selfN - kLatEps)
+      return CollisionSide::Left;
+    if (otherN > selfN + kLatEps)
+      return CollisionSide::Right;
+    return CollisionSide::Unknown;
+  }
+
+  if (gap > combinedLength * kLongitudinalEpsilon)
+    return CollisionSide::Front;
+  if (gap < -combinedLength * kLongitudinalEpsilon)
+    return CollisionSide::Rear;
+  return CollisionSide::Unknown;
+}
+
+CollisionSide MirrorCollisionSide(CollisionSide side) {
+  switch (side) {
+  case CollisionSide::Left:
+    return CollisionSide::Right;
+  case CollisionSide::Right:
+    return CollisionSide::Left;
+  case CollisionSide::Front:
+    return CollisionSide::Rear;
+  case CollisionSide::Rear:
+    return CollisionSide::Front;
+  default:
+    return CollisionSide::Unknown;
+  }
+}
+
+std::vector<TyrePunctureRoll> EvaluateCollisionTyrePuncture(
+    double impact, CollisionSide side, double overlapFactor, uint32_t seed) {
+  std::vector<TyrePunctureRoll> rolls;
+  if (impact < 7.0 || overlapFactor <= 0.05)
+    return rolls;
+
+  const double overlap = std::clamp(overlapFactor, 0.0, 1.0);
+
+  if (side == CollisionSide::Left || side == CollisionSide::Right) {
+    const int w = side == CollisionSide::Left ? 0 : 1;
+    const double pSoft =
+        std::clamp((impact - 6.5) / 4.0, 0.0, 1.0) * overlap;
+    if (impact >= 9.5 && overlap > 0.55 &&
+        RollCollisionChance(seed, pSoft * 0.75))
+      rolls.push_back({w, true});
+    else if (RollCollisionChance(seed + 1, pSoft * 0.6))
+      rolls.push_back({w, false});
+    return rolls;
+  }
+
+  if (side == CollisionSide::Front) {
+    const double pSoft = std::clamp((impact - 10.5) / 3.0, 0.0, 1.0) * overlap;
+    if (impact >= 13.0 && RollCollisionChance(seed, pSoft * 0.5))
+      rolls.push_back({0, true});
+    else if (impact >= 11.0 && RollCollisionChance(seed + 1, pSoft * 0.45))
+      rolls.push_back({0, false});
+    return rolls;
+  }
+
+  if (side == CollisionSide::Rear) {
+    const double pSoft = std::clamp((impact - 11.5) / 3.0, 0.0, 1.0) * overlap;
+    if (impact >= 14.0 && RollCollisionChance(seed, pSoft * 0.45))
+      rolls.push_back({2, true});
+    else if (impact >= 12.0 && RollCollisionChance(seed + 1, pSoft * 0.4))
+      rolls.push_back({2, false});
+    return rolls;
+  }
+
+  if (side == CollisionSide::Unknown) {
+    const double pSoft =
+        std::clamp((impact - 6.5) / 4.0, 0.0, 1.0) * overlap * 0.5;
+    if (impact >= 9.5 && RollCollisionChance(seed, pSoft * 0.35))
+      rolls.push_back({0, true});
+    else if (RollCollisionChance(seed + 1, pSoft * 0.3))
+      rolls.push_back({0, false});
+  }
+  return rolls;
+}
+
+std::vector<TyrePunctureRoll> EvaluateDebrisTyrePuncture(
+    double speedMs, double gripMultiplier, double debrisSeverity,
+    double weatherGripScale, uint32_t seed) {
+  std::vector<TyrePunctureRoll> rolls;
+  if (speedMs < 12.0 || debrisSeverity <= 0.05 || gripMultiplier >= 0.99)
+    return rolls;
+  const double weatherFactor =
+      weatherGripScale > 0.0 && weatherGripScale < 1.0
+          ? std::min(1.2, 1.0 / weatherGripScale)
+          : 1.0;
+  const double pSoft =
+      std::clamp((speedMs - 10.0) / 35.0, 0.0, 1.0) *
+      std::clamp((0.7 - gripMultiplier) / 0.35, 0.0, 1.0) * debrisSeverity *
+      weatherFactor;
+  const int wheel = static_cast<int>(HashCollisionSeed(seed, 3) % 2);
+  if (RollCollisionChance(seed, pSoft * 0.55))
+    rolls.push_back({wheel, false});
+  if (speedMs > 28.0 && RollCollisionChance(seed + 2, pSoft * 0.25))
+    rolls.push_back({wheel, true});
+  return rolls;
+}
+
 std::vector<int> CollisionPunctureWheels(double impact, CollisionSide side) {
   std::vector<int> wheels;
-  if (impact <= 12.0)
-    return wheels;
-  const int leftWheels[] = {0, 2};
-  const int rightWheels[] = {1, 3};
-  if (side == CollisionSide::Left) {
-    wheels.push_back(leftWheels[0]);
-  } else if (side == CollisionSide::Right) {
-    wheels.push_back(rightWheels[0]);
-  } else {
-    wheels.push_back(0);
-    wheels.push_back(1);
+  for (const TyrePunctureRoll &roll :
+       EvaluateCollisionTyrePuncture(impact, side, 1.0, 424242U)) {
+    if (roll.instantFlat)
+      wheels.push_back(roll.wheelIdx);
   }
   return wheels;
 }

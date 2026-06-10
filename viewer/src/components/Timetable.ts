@@ -20,6 +20,7 @@ import {
   sessionSectorBests,
   timingCompareClass,
 } from "../utils/timingColors";
+import { experimentalEntryBadgeHtml, isExperimentalEntry } from "../utils/fleetUi";
 
 export type TimetableLapMode = "live" | number;
 export type TimetableViewMode = "sectors" | "stats";
@@ -281,7 +282,9 @@ export class Timetable {
             <td>${this.timingMode ? index + 1 : snap.racePosition}</td>
             <td class="car-num">${formatCarNumber(snap)}</td>
             <td class="team-cell" title="${escapeHtml(snap.teamName)}">${escapeHtml(snap.teamName)}</td>
-            <td><span class="class-badge class-${snap.classId}">${escapeHtml(snap.classId)}</span></td>
+            <td class="timing-class-cell">${
+              isExperimentalEntry(snap.entryMode) ? experimentalEntryBadgeHtml() : ""
+            }<span class="class-badge class-${snap.classId}">${escapeHtml(snap.classId)}</span></td>
             ${statusCell}
             ${dataCells}
             <td class="timing-cell ${lastClass}">${formatLapTime(lastLap)}</td>

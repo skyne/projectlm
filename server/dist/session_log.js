@@ -127,6 +127,10 @@ class SessionLogWriter {
     getActiveId() {
         return this.activeId;
     }
+    /** In-memory events for the live session (replay on viewer reconnect). */
+    getActiveEvents() {
+        return [...this.events];
+    }
 }
 exports.SessionLogWriter = SessionLogWriter;
 function listSessionLogs(repoRoot) {

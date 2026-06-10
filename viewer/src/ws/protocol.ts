@@ -130,6 +130,10 @@ export interface CarSnapshot {
   blackFlag?: boolean;
   collisionWarnings?: number;
   penaltyStopSeconds?: number;
+  unstableOnTrack?: boolean;
+  riskyRejoinSec?: number;
+  lastContactSeverity?: number;
+  surfaceZone?: string;
 }
 
 export type SimEventType =
@@ -177,6 +181,9 @@ export interface SimEvent {
   sectorIndex?: number;
   timestamp: number;
   message: string;
+  collisionImpact?: number;
+  collisionBaseImpact?: number;
+  collisionContactSide?: number;
 }
 
 export interface TrackSectorGeometry {
@@ -200,6 +207,27 @@ export interface TrackWidthSegment {
   widthM: number;
 }
 
+export interface TrackSurfaceSegment {
+  startT: number;
+  endT: number;
+  side: "inboard" | "outboard" | "both";
+  surface: string;
+  widthM: number;
+  widthStartM?: number;
+  widthEndM?: number;
+  innerOffsetM?: number;
+  envelope?: string;
+  variant?: string;
+  gripMultiplier?: number;
+  name?: string;
+}
+
+export interface TrackSurfaceDefaults {
+  vergeWidthM?: number;
+  runoffWidthM?: number;
+  kerbWidthM?: number;
+}
+
 export interface TrackPitLaneGeometry {
   widthM?: number;
   offsetM?: number;
@@ -216,6 +244,8 @@ export interface TrackGeometryPayload {
   mapLabels?: TrackMapLabel[];
   defaultWidthM?: number;
   widthProfile?: TrackWidthSegment[];
+  surfaceProfile?: TrackSurfaceSegment[];
+  surfaceDefaults?: TrackSurfaceDefaults;
   pitLane?: TrackPitLaneGeometry;
 }
 
@@ -1178,6 +1208,8 @@ export interface TickPayload {
 
 export interface EventsPayload {
   events: SimEvent[];
+  /** True when replaying the full live session log after connect (not a live tick). */
+  catchUp?: boolean;
 }
 
 export interface ProgressionStatBumpPayload {
@@ -1299,6 +1331,29 @@ export interface EngineerAdvicePayload {
   latencyMs?: number;
 }
 
+export type EngineerHintCategory =
+  | "emergency"
+  | "fuel"
+  | "tyre_wear"
+  | "damage"
+  | "part_wear"
+  | "wrong_tyre";
+
+export interface EngineerHintPayload {
+  hintId: string;
+  entryId: string;
+  carNumber: string;
+  category: EngineerHintCategory;
+  text: string;
+  suggestedCommand?: string;
+  autoPaused: boolean;
+  timeScale: number;
+}
+
+export interface DismissEngineerHintPayload {
+  hintId: string;
+}
+
 export interface EngineerStatusPayload {
   online: boolean;
   model: string;
@@ -1330,6 +1385,7 @@ export type ServerMessageType =
   | "meta_state"
   | "game_catalog"
   | "engineer_advice"
+  | "engineer_hint"
   | "engineer_status"
   | "garage_advice"
   | "client_assignment"
@@ -1375,6 +1431,7 @@ export type ClientMessageType =
   | "set_weekend_tire_compound"
   | "save_track_setup"
   | "ask_engineer"
+  | "dismiss_engineer_hint"
   | "get_engineer_status"
   | "ask_garage_engineer"
   | "repair_car_condition"

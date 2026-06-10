@@ -35,8 +35,98 @@ Vec3 VecScale(const Vec3 &v, double s) {
 
 } // namespace
 
+void TrackCorridor::setSurfaceProfile(
+    const std::vector<TrackSurfaceSegment> &segments,
+    const TrackSurfaceDefaults &defaults) {
+  surfaceProfile_ = segments;
+  surfaceDefaults_ = defaults;
+}
+
+namespace {
+
+LateralSurfaceZone ZoneFromSurfaceKind(TrackSurfaceKind kind) {
+  switch (kind) {
+  case TrackSurfaceKind::Gravel:
+  case TrackSurfaceKind::RunoffConcrete:
+  case TrackSurfaceKind::RunoffAsphalt:
+  case TrackSurfaceKind::Verge:
+    return LateralSurfaceZone::OutboardRunoff;
+  case TrackSurfaceKind::KerbPositive:
+  case TrackSurfaceKind::KerbNegative:
+  case TrackSurfaceKind::KerbSausage:
+    return LateralSurfaceZone::OutboardRunoff;
+  case TrackSurfaceKind::BarrierArmco:
+  case TrackSurfaceKind::BarrierTecpro:
+  case TrackSurfaceKind::BarrierWall:
+    return LateralSurfaceZone::OutboardBoundary;
+  default:
+    return LateralSurfaceZone::Asphalt;
+  }
+}
+
+bool SurfaceSideMatches(TrackSurfaceSide side, double n) {
+  if (side == TrackSurfaceSide::Both)
+    return true;
+  if (side == TrackSurfaceSide::Inboard)
+    return n < 0.0;
+  return n > 0.0;
+}
+
+bool IsKerbSurface(TrackSurfaceKind kind) {
+  return kind == TrackSurfaceKind::KerbPositive ||
+         kind == TrackSurfaceKind::KerbNegative ||
+         kind == TrackSurfaceKind::KerbSausage;
+}
+
+double SegmentInnerEdge(double halfAsphalt, const TrackSurfaceSegment &seg,
+                        const TrackSurfaceDefaults &defaults) {
+  const double verge =
+      IsKerbSurface(seg.surface) ? 0.0 : defaults.vergeWidthM;
+  return halfAsphalt + seg.innerOffsetM + verge;
+}
+
+double SegmentWidthAtT(const TrackSurfaceSegment &seg, double t) {
+  const double w0 = seg.widthStartM >= 0.0 ? seg.widthStartM : seg.widthM;
+  const double w1 = seg.widthEndM >= 0.0 ? seg.widthEndM : seg.widthM;
+  if (seg.endT <= seg.startT + 1e-9)
+    return seg.widthM;
+  const double u =
+      std::clamp((t - seg.startT) / (seg.endT - seg.startT), 0.0, 1.0);
+  if (seg.envelope == "flare_exit")
+    return w0 + (w1 - w0) * (u * u);
+  if (seg.envelope == "flare_entry") {
+    const double v = 1.0 - u;
+    return w0 + (w1 - w0) * (1.0 - v * v);
+  }
+  if (seg.envelope == "bell")
+    return w0 + (w1 - w0) * std::sin(u * M_PI);
+  return w0 + (w1 - w0) * u;
+}
+
+LateralSurfaceZone ZoneFromSurfaceKindSigned(TrackSurfaceKind kind, double n) {
+  LateralSurfaceZone zone = ZoneFromSurfaceKind(kind);
+  if (kind == TrackSurfaceKind::BarrierArmco ||
+      kind == TrackSurfaceKind::BarrierTecpro ||
+      kind == TrackSurfaceKind::BarrierWall)
+    return n < 0.0 ? LateralSurfaceZone::InboardBoundary
+                   : LateralSurfaceZone::OutboardBoundary;
+  if (kind == TrackSurfaceKind::Gravel ||
+      kind == TrackSurfaceKind::RunoffConcrete ||
+      kind == TrackSurfaceKind::RunoffAsphalt ||
+      kind == TrackSurfaceKind::Verge ||
+      kind == TrackSurfaceKind::KerbPositive ||
+      kind == TrackSurfaceKind::KerbNegative ||
+      kind == TrackSurfaceKind::KerbSausage)
+    return n < 0.0 ? LateralSurfaceZone::InboardRunoff
+                   : LateralSurfaceZone::OutboardRunoff;
+  return zone;
+}
+
+} // namespace
+
 void TrackCorridor::build(const TrackDefinition &track, double sampleStepM) {
   track_ = &track;
+  setSurfaceProfile(track.corridor.surfaceProfile, track.corridor.surfaceDefaults);
   distances_.clear();
   widths_.clear();
   racingLineN_.clear();
@@ -110,6 +200,119 @@ double TrackCorridor::effectiveCurvature(double s, double n) const {
 
 double TrackCorridor::lateralOffsetM(double s, double normalized) const {
   return std::clamp(normalized, -1.0, 1.0) * maxLateralN(s);
+}
+
+LateralSurfaceZone TrackCorridor::lateralZoneAt(double s, double n) const {
+  const double halfAsphalt = maxLateralN(s);
+  const double absN = std::abs(n);
+  if (absN <= halfAsphalt)
+    return LateralSurfaceZone::Asphalt;
+
+  double runoffWidth = surfaceDefaults_.runoffWidthM > 0.0
+                           ? surfaceDefaults_.runoffWidthM
+                           : kDefaultRunoffWidthM;
+  LateralSurfaceZone zone =
+      n < 0.0 ? LateralSurfaceZone::InboardRunoff
+              : LateralSurfaceZone::OutboardRunoff;
+
+  if (!surfaceProfile_.empty() && track_ != nullptr) {
+    const double lapLength = std::max(1.0, length());
+    const double t = WrapDistance(s, lapLength) / lapLength;
+    double profileExtent = halfAsphalt;
+    for (const TrackSurfaceSegment &seg : surfaceProfile_) {
+      if (t < seg.startT || t > seg.endT)
+        continue;
+      if (!SurfaceSideMatches(seg.side, n))
+        continue;
+      const double bandW = SegmentWidthAtT(seg, t);
+      const double inner = SegmentInnerEdge(halfAsphalt, seg, surfaceDefaults_);
+      const double outer = inner + bandW;
+      profileExtent = std::max(profileExtent, outer);
+      if (absN >= inner && absN <= outer)
+        return ZoneFromSurfaceKindSigned(seg.surface, n);
+    }
+    runoffWidth = std::max(runoffWidth, profileExtent - halfAsphalt);
+  }
+
+  if (absN <= halfAsphalt + runoffWidth)
+    return zone;
+  return n < 0.0 ? LateralSurfaceZone::InboardBoundary
+                 : LateralSurfaceZone::OutboardBoundary;
+}
+
+double TrackCorridor::zoneGripMultiplier(LateralSurfaceZone zone) const {
+  switch (zone) {
+  case LateralSurfaceZone::Asphalt:
+    return 1.0;
+  case LateralSurfaceZone::InboardRunoff:
+  case LateralSurfaceZone::OutboardRunoff:
+    return 0.80;
+  case LateralSurfaceZone::InboardBoundary:
+  case LateralSurfaceZone::OutboardBoundary:
+  default:
+    return 0.35;
+  }
+}
+
+double TrackCorridor::maxLateralExtentN(double s, double n) const {
+  const double halfAsphalt = maxLateralN(s);
+  double extent = halfAsphalt + (surfaceDefaults_.runoffWidthM > 0.0
+                                     ? surfaceDefaults_.runoffWidthM
+                                     : kDefaultRunoffWidthM);
+  if (!surfaceProfile_.empty() && track_ != nullptr) {
+    const double lapLength = std::max(1.0, length());
+    const double t = WrapDistance(s, lapLength) / lapLength;
+    for (const TrackSurfaceSegment &seg : surfaceProfile_) {
+      if (t < seg.startT || t > seg.endT)
+        continue;
+      if (!SurfaceSideMatches(seg.side, n))
+        continue;
+      const double bandW = SegmentWidthAtT(seg, t);
+      const double inner = SegmentInnerEdge(halfAsphalt, seg, surfaceDefaults_);
+      extent = std::max(extent, inner + bandW);
+    }
+  }
+  return extent;
+}
+
+double TrackCorridor::zoneGripAt(double s, double n) const {
+  const double halfAsphalt = maxLateralN(s);
+  const double absN = std::abs(n);
+  if (absN <= halfAsphalt)
+    return 1.0;
+  if (!surfaceProfile_.empty() && track_ != nullptr) {
+    const double lapLength = std::max(1.0, length());
+    const double t = WrapDistance(s, lapLength) / lapLength;
+    for (const TrackSurfaceSegment &seg : surfaceProfile_) {
+      if (t < seg.startT || t > seg.endT)
+        continue;
+      if (!SurfaceSideMatches(seg.side, n))
+        continue;
+      const double bandW = SegmentWidthAtT(seg, t);
+      const double inner = SegmentInnerEdge(halfAsphalt, seg, surfaceDefaults_);
+      const double outer = inner + bandW;
+      if (absN >= inner && absN <= outer && seg.gripMultiplier > 0.0)
+        return seg.gripMultiplier;
+    }
+  }
+  return zoneGripMultiplier(lateralZoneAt(s, n));
+}
+
+const char *LateralSurfaceZoneName(LateralSurfaceZone zone) {
+  switch (zone) {
+  case LateralSurfaceZone::Asphalt:
+    return "asphalt";
+  case LateralSurfaceZone::InboardRunoff:
+    return "inboard_runoff";
+  case LateralSurfaceZone::OutboardRunoff:
+    return "outboard_runoff";
+  case LateralSurfaceZone::InboardBoundary:
+    return "inboard_boundary";
+  case LateralSurfaceZone::OutboardBoundary:
+    return "outboard_boundary";
+  default:
+    return "unknown";
+  }
 }
 
 TrackPose TrackCorridor::poseAt(double s, double n) const {

@@ -88,5 +88,11 @@ scripts/generate_assets/.venv/
 scripts/generate_assets/output/
 scripts/generate_assets/__pycache__/
 
+# MM asset extraction scratch (tools/mm-extract)
+tools/mm-extract/.venv/
+tools/mm-extract/.cache/
+tmp/mm-assets/
+
 # macOS
 .DS_Store
+.worktrees/

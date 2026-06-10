@@ -5217,5 +5217,71 @@
     "wikimedia_file": "Circuit Fuji.svg",
     "attribution": "Wikimedia Commons \u2014 Circuit Fuji.svg",
     "mode": "polyline-linear"
+  },
+  "surface_defaults": {
+    "verge_width_m": 2.0,
+    "runoff_width_m": 11.0,
+    "kerb_width_m": 0.5
+  },
+  "surface_profile": [
+    {
+      "name": "T1 braking runoff",
+      "start_t": 0.08,
+      "end_t": 0.14,
+      "side": "outboard",
+      "surface": "runoff_asphalt",
+      "width_m": 14,
+      "width_start_m": 8,
+      "width_end_m": 18,
+      "envelope": "flare_entry",
+      "grip_multiplier": 0.78
+    },
+    {
+      "name": "100R concrete apron",
+      "start_t": 0.35,
+      "end_t": 0.42,
+      "side": "outboard",
+      "surface": "runoff_concrete",
+      "width_m": 8,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "100R gravel",
+      "start_t": 0.36,
+      "end_t": 0.41,
+      "side": "outboard",
+      "surface": "gravel",
+      "inner_offset_m": 10,
+      "width_m": 10,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Dunlop chicane kerb",
+      "start_t": 0.58,
+      "end_t": 0.64,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Final chicane kerb",
+      "start_t": 0.92,
+      "end_t": 0.97,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    }
+  ],
+  "surface_metadata": {
+    "confidence": "estimated",
+    "last_reviewed": "2026-06-10",
+    "sources": [
+      "fuji_speedway_tilke_2005_redesign",
+      "grokipedia_fuji_grade_1_safety",
+      "fia_appendix_o_2025"
+    ],
+    "notes": "2005 Tilke redesign: extensive asphalt runoff + gravel traps at key decel zones; 100R high-speed left with gravel beyond concrete apron; final chicane kerbs."
   }
 }

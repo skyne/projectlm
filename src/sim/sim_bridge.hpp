@@ -104,12 +104,15 @@ struct SimEvent {
   int sectorIndex = 0;
   double timestamp = 0.0;
   std::string message;
+  double collisionImpact = 0.0;
+  double collisionBaseImpact = 0.0;
+  int collisionContactSide = 0;
 };
 
 class SimBridge {
 public:
   bool initFromRaceConfig(const std::string &raceConfigPath);
-  bool initSession(const RaceSession &session);
+  bool initSession(RaceSession &&session);
   bool reloadDefinitions();
   bool restartRace();
 

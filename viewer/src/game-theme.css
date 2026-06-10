@@ -1304,6 +1304,9 @@ body.race-live .session-roster-mode {
 }
 
 .standings-wec-header {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1356,20 +1359,24 @@ body.race-live .session-roster-mode {
   height: 0.95rem;
 }
 
-.standings-wec-settings-menu {
+.compact-leaderboard.standings-wec > .standings-wec-settings-menu {
   position: absolute;
-  top: calc(100% + 0.35rem);
-  right: 0;
-  z-index: 20;
+  z-index: 100;
   width: min(15.5rem, 78vw);
   padding: 0.55rem 0.65rem;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(8, 10, 18, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #0c1018;
   box-shadow:
-    0 12px 36px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(12px);
+    0 14px 40px rgba(0, 0, 0, 0.75),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  pointer-events: auto;
+}
+
+.compact-leaderboard.standings-wec.is-settings-open .standings-wec-list,
+.compact-leaderboard.standings-wec.is-settings-open .standings-wec-scope,
+.compact-leaderboard.standings-wec.is-settings-open .standings-wec-cols {
+  pointer-events: none;
 }
 
 .standings-wec-settings-menu.hidden {
@@ -1724,8 +1731,13 @@ body.race-live .session-roster-mode {
 .standings-wec-tags {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.18rem;
   margin-top: 0.12rem;
+}
+
+.standings-wec-tags .entry-badge.entry-exp {
+  margin-left: 0;
 }
 
 .standings-wec-tag {
@@ -1993,6 +2005,19 @@ body.race-live .session-roster-mode {
 .timetable-table td {
   padding: 0.32rem 0.35rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.timetable-table .timing-class-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+}
+
+.timetable-table .timing-class-cell .entry-badge.entry-exp {
+  margin-left: 0;
+  font-size: 0.56rem;
+  padding: 0.06rem 0.28rem;
 }
 
 .timetable-table .timing-cell {
@@ -2952,19 +2977,26 @@ body.view-map.race-live .track-map-stage {
   background-position: center;
 }
 
+body.view-map.race-live .track-map-stage:has(.track-map-canvas-host--zoomable) {
+  background-image:
+    radial-gradient(ellipse 70% 55% at 50% 48%, rgba(34, 211, 238, 0.07) 0%, transparent 58%),
+    radial-gradient(ellipse 90% 70% at 50% 50%, rgba(139, 92, 246, 0.04) 0%, transparent 65%);
+}
+
 body.view-map.race-live .track-map-vignette {
   background:
     linear-gradient(180deg, rgba(1, 2, 8, 0.85) 0%, transparent 16%, transparent 78%, rgba(1, 2, 8, 0.92) 100%),
     radial-gradient(ellipse 85% 65% at 50% 50%, transparent 35%, rgba(0, 0, 0, 0.55) 100%);
+  opacity: 0.5;
 }
 
 .broadcast-track .pit-building,
-.broadcast-track .pit-wall {
-  opacity: 0.4;
+.broadcast-track .pit-wall-inner {
+  opacity: 0.55;
 }
 
-.broadcast-track .pit-tarmac {
-  opacity: 0.55;
+.broadcast-track .pit-wall-outer {
+  opacity: 0.72;
 }
 
 .broadcast-track .sector-label {
@@ -3634,7 +3666,7 @@ body.race-live .track-map-stage,
   width: 100%;
   height: 100%;
   min-height: 0;
-  contain: layout paint;
+  contain: layout;
 }
 
 .track-map-canvas-host .track-svg {
@@ -3657,7 +3689,8 @@ body.race-live .track-map-stage,
 
 .track-map-canvas-host .track-svg .pit-building,
 .track-map-canvas-host .track-svg .pit-tarmac,
-.track-map-canvas-host .track-svg .pit-wall {
+.track-map-canvas-host .track-svg .pit-wall-inner,
+.track-map-canvas-host .track-svg .pit-wall-outer {
   pointer-events: none;
 }
 
@@ -3667,6 +3700,31 @@ body.race-live .track-map-stage,
 
 .track-map-canvas-host .track-svg .pit-lane {
   pointer-events: none;
+}
+
+.track-map-canvas-host .track-svg .runoff-layer {
+  pointer-events: none;
+}
+
+.broadcast-track .runoff-layer .track-surface-rim,
+.broadcast-track .runoff-layer .track-surface-grit,
+.broadcast-track .runoff-layer .track-surface-merged-runoff,
+.broadcast-track .runoff-layer .track-barrier-edge--loop,
+.broadcast-track .surface-accent-layer .track-surface-kerb-stroke,
+.broadcast-track .surface-accent-layer .track-surface-rim {
+  pointer-events: none;
+}
+
+.broadcast-track .runoff-layer .track-surface-merged-runoff {
+  mix-blend-mode: normal;
+}
+
+.broadcast-track .surface-accent-layer .track-surface-kerb-stroke {
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.55));
+}
+
+.broadcast-track .surface-accent-layer .track-surface-variant-turf {
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.35));
 }
 
 .track-sector-legend {
@@ -3933,6 +3991,11 @@ body.race-live .track-map-stage,
 
 
 /* Experimental (EXP) non-championship entries */
+.entry-badge.entry-exp[hidden],
+.entry-badge.entry-exp.hidden {
+  display: none !important;
+}
+
 .entry-badge.entry-exp {
   display: inline-flex;
   align-items: center;

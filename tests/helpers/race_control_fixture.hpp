@@ -65,6 +65,7 @@ inline Car &FindCar(RaceSession &session, const std::string &entryId) {
 inline Car &AddTestCar(RaceSession &session, const std::string &entryId = "entry-1",
                        const std::string &teamName = "Team A") {
   CarConfig car;
+  car.calculatedTotalMass = 900.0;
   car.fuelTankCapacity = 100.0;
   RaceClass cls{"Hypercar", "Hypercar"};
   AddCar(session, car, cls, teamName, 1, "1", entryId);
@@ -134,7 +135,10 @@ inline TrafficEvent MakeCollisionEvent(const std::string &aggressorId,
                                        const std::string &otherId,
                                        double impact, double relativeSpeedMs,
                                        bool closingFromRear,
-                                       double lateralSepM = 1.2) {
+                                       double lateralSepM = 1.2,
+                                       bool defenderHadBlueFlag = false,
+                                       bool defenderWasYielding = false,
+                                       bool defenderOnYieldPath = false) {
   TrafficEvent ev;
   ev.type = TrafficEvent::Type::Collision;
   ev.entryId = aggressorId;
@@ -143,7 +147,39 @@ inline TrafficEvent MakeCollisionEvent(const std::string &aggressorId,
   ev.relativeSpeedMs = relativeSpeedMs;
   ev.lateralSepM = lateralSepM;
   ev.closingFromRear = closingFromRear;
+  ev.defenderHadBlueFlag = defenderHadBlueFlag;
+  ev.defenderWasYielding = defenderWasYielding;
+  ev.defenderOnYieldPath = defenderOnYieldPath;
   ev.message = "test collision";
+  return ev;
+}
+
+inline TrafficEvent MakeBlueFlagPassCollision(const std::string &chaserId,
+                                              const std::string &defenderId,
+                                              double impact,
+                                              double relativeSpeedMs,
+                                              bool closingFromRear,
+                                              const std::string &reporterId,
+                                              double lateralSepM = 1.2,
+                                              bool defenderWasYielding = false,
+                                              bool defenderWasBlocking = false,
+                                              bool chaserWasOvertaking = true) {
+  TrafficEvent ev;
+  ev.type = TrafficEvent::Type::Collision;
+  ev.entryId = reporterId;
+  ev.otherEntryId = reporterId == chaserId ? defenderId : chaserId;
+  ev.impact = impact;
+  ev.relativeSpeedMs = relativeSpeedMs;
+  ev.lateralSepM = lateralSepM;
+  ev.closingFromRear = closingFromRear;
+  ev.blueFlagPassActive = true;
+  ev.blueFlagChaserId = chaserId;
+  ev.blueFlagDefenderId = defenderId;
+  ev.chaserWasOvertaking = chaserWasOvertaking;
+  ev.defenderHadBlueFlag = true;
+  ev.defenderWasYielding = defenderWasYielding;
+  ev.defenderWasBlocking = defenderWasBlocking;
+  ev.message = "test blue-flag pass collision";
   return ev;
 }
 

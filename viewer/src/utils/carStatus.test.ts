@@ -2,8 +2,10 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { CarSnapshot } from "../ws/protocol";
 import {
+  buildCarConditionTelemetryHtml,
   damageSummaryText,
   hasCarDamage,
+  partHealthBand,
   resolveTimingStatusTags,
   renderTimingStatusTagsHtml,
 } from "./carStatus";
@@ -97,6 +99,45 @@ describe("carStatus", () => {
     );
     assert.match(html, /STR/);
     assert.match(html, /DMG/);
+  });
+
+  it("classifies part health bands for telemetry", () => {
+    assert.equal(partHealthBand(100), "health-ok");
+    assert.equal(partHealthBand(98), "status-caution");
+    assert.equal(partHealthBand(70), "health-warn");
+    assert.equal(partHealthBand(20), "health-critical");
+  });
+
+  it("renders full condition diagram when car is undamaged", () => {
+    const html = buildCarConditionTelemetryHtml(baseSnap());
+    assert.match(html, /Structural load/);
+    assert.match(html, /All systems nominal/);
+    assert.match(html, /condition-diagram-svg/);
+    assert.match(html, /condition-diagram-Hypercar/);
+    assert.match(html, /Powertrain/);
+    assert.match(html, /Safety cell/);
+    assert.match(html, />100%</);
+    assert.match(html, /condition-corner-health/);
+  });
+
+  it("renders class-specific silhouette and corner damage", () => {
+    const html = buildCarConditionTelemetryHtml(
+      baseSnap({
+        classId: "LMGT3",
+        structuralSeverity: 12,
+        partHealth: { body_fl: 97.8, brakes: 72 },
+        partRepairSec: { body_fl: 6, brakes: 22 },
+        engineHealth: 88,
+      }),
+    );
+    assert.match(html, /condition-diagram-LMGT3/);
+    assert.match(html, /Structural load/);
+    assert.match(html, /condition-corner-fl/);
+    assert.match(html, /B98 · S100/);
+    assert.match(html, /Brakes &amp; aero/);
+    assert.match(html, /Engine/);
+    assert.match(html, /88%/);
+    assert.match(html, /~22s/);
   });
 
   it("summarizes damage for telemetry rows", () => {

@@ -31,6 +31,7 @@ import { PitWall } from "./components/PitWall";
 import { SessionRoster } from "./components/SessionRoster";
 import { JoinSessionModal } from "./components/JoinSessionModal";
 import { ConfirmModal } from "./components/ConfirmModal";
+import { EngineerHintModal } from "./components/EngineerHintModal";
 import { DriverCenter } from "./components/DriverCenter";
 import { NegotiationPanel } from "./components/NegotiationPanel";
 import { WeatherRadar } from "./components/WeatherRadar";
@@ -190,6 +191,29 @@ function appendRaceLogEvents(events: SimEvent[]): void {
   if (headerNav.getActive() === "racelog") syncRaceLogPanel();
 }
 
+function restoreRaceLogEvents(events: SimEvent[]): void {
+  raceLogEvents = events.map(normalizeSimEvent);
+  headerNav.setRaceLogAvailable(raceLogEvents.length > 0 || lastSessionLogId != null);
+  if (headerNav.getActive() === "racelog") syncRaceLogPanel();
+}
+
+function seedRetirementTracking(events: SimEvent[], snapshots: CarSnapshot[]): void {
+  for (const event of events) {
+    if (event.type === "Retirement" && event.entryId) retiredSeen.add(event.entryId);
+  }
+  for (const snap of snapshots) {
+    if (snap.retired) retiredSeen.add(snap.entryId);
+  }
+}
+
+function isSessionRestore(payload: SessionInitPayload): boolean {
+  return (
+    payload.raceActive === true &&
+    payload.raceComplete !== true &&
+    (payload.raceTime ?? 0) > 0.5
+  );
+}
+
 function clearRaceLogStore(): void {
   raceLogEvents = [];
   lastSessionLogId = null;
@@ -219,6 +243,36 @@ const joinModal = new JoinSessionModal(
 );
 const confirmModal = new ConfirmModal(
   document.getElementById("confirm-modal-overlay")!,
+);
+
+const engineerHintModal = new EngineerHintModal(
+  document.getElementById("engineer-hint-overlay")!,
+  {
+    onBox: (hint) => {
+      client.dismissEngineerHint(hint.hintId);
+      const snap =
+        latestSnapshots.find((s) => s.entryId === hint.entryId) ??
+        raceControls.getPlayerSnapshot();
+      if (hint.suggestedCommand?.toLowerCase().startsWith("pit|")) {
+        pitModal.applySuggestedCommand(hint.suggestedCommand);
+      }
+      pitModal.open(snap);
+      raceControls.setStatus("Engineer radio — review pit plan and confirm");
+      if (hint.autoPaused) {
+        client.setTimeScale(hint.timeScale);
+        syncTimeScale(hint.timeScale);
+        syncPlaybackPaused(false);
+      }
+    },
+    onDismiss: (hint) => {
+      client.dismissEngineerHint(hint.hintId);
+      if (hint.autoPaused) {
+        client.setTimeScale(hint.timeScale);
+        syncTimeScale(hint.timeScale);
+        syncPlaybackPaused(false);
+      }
+    },
+  },
 );
 
 const gameAudio = new GameAudio();
@@ -1673,10 +1727,9 @@ const client = new ViewerClient({
       preSessionBriefing.hide();
       privateTestSetup.hide();
       pendingRaceStart = false;
-      const reconnect =
-        raceStarted && (payload.raceTime ?? 0) > 0.5
-          ? { timeScale: payload.timeScale, raceTime: payload.raceTime }
-          : undefined;
+      const reconnect = isSessionRestore(payload)
+        ? { timeScale: payload.timeScale, raceTime: payload.raceTime }
+        : undefined;
       beginRaceSession(payload.paused ?? true, reconnect);
       if (!reconnect) {
         clearRaceLogUi();
@@ -1725,6 +1778,12 @@ const client = new ViewerClient({
   },
   onEvents: (payload) => {
     if (!raceStarted) return;
+    if (payload.catchUp) {
+      seedRetirementTracking(payload.events, latestSnapshots);
+      restoreRaceLogEvents(payload.events);
+      eventLog.restore(payload.events);
+      return;
+    }
     for (const event of payload.events) {
       if (event.type === "Retirement" && event.entryId) retiredSeen.add(event.entryId);
       if (event.type === "Overtake") gameAudio.onOvertake(event.timestamp);
@@ -1758,6 +1817,13 @@ const client = new ViewerClient({
     }
   },
   onEngineerAdvice: (payload) => engineerPanel.showAdvice(payload),
+  onEngineerHint: (payload) => {
+    if (payload.autoPaused) {
+      syncPlaybackPaused(true);
+    }
+    engineerHintModal.show(payload);
+    raceControls.setStatus(`Radio — Car #${payload.carNumber}: ${payload.text}`);
+  },
   onEngineerStatus: (payload) =>
     engineerPanel.setEngineerStatus(payload.online, payload.model),
   onGarageAdvice: (payload) => carGarage.showGarageAdvice(payload),

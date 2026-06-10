@@ -35,6 +35,14 @@ export function fleetEntryMode(car: FleetCarPayload): FleetEntryMode {
   return car.entryMode ?? "homologated";
 }
 
+export function isExperimentalEntry(entryMode?: FleetEntryMode): boolean {
+  return entryMode === "experimental";
+}
+
+export function experimentalEntryBadgeHtml(): string {
+  return `<span class="entry-badge entry-exp" title="Experimental — non-championship entry">EXP</span>`;
+}
+
 export function getClassProgram(
   fleet: FleetCarPayload[],
   classId: string,

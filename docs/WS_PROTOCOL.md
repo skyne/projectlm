@@ -14,8 +14,8 @@ ProjectLM viewer ↔ server messages. All frames are JSON text:
 | `client_assignment` | After `join_session` | `ClientAssignmentPayload` |
 | `roster_update` | Join, leave, or roster change | `RosterUpdatePayload` |
 | `track_geometry` | Once after init | `TrackGeometryPayload` |
-| `tick` | Each sim step | `TickPayload` |
-| `events` | When sim emits events | `EventsPayload` |
+| `tick` | Each sim step; also once on connect for an active session | `TickPayload` |
+| `events` | When sim emits events; on connect, full live log with `catchUp: true` | `EventsPayload` |
 | `race_complete` | Race finished | `RaceCompletePayload` |
 | `error` | Failure | `{ message: string; code?: "join_required" \| "forbidden" \| "invalid_message" }` |
 

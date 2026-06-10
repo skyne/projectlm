@@ -9,9 +9,8 @@ export interface LiveryRenderOptions {
   logoDataUrl?: string | null;
   classId?: string;
   visualBuild?: CarBuildVisual;
-  /** Picks a stable hypercar outline when classId is Hypercar. */
+  /** Stable hypercar chassis when no visualBuild is supplied. */
   teamName?: string;
-  hypercarSilhouetteId?: string;
   /** Photo backdrop; set `null` for flat gradient only. */
   backgroundImage?: string | null;
   width?: number;
@@ -19,67 +18,72 @@ export interface LiveryRenderOptions {
 }
 
 const DEFAULT_LIVERY_BACKGROUND = "/assets/track_bg/tracks/lemans_la_sarthe.png";
+const LMGT3_BODY_MASK = "/assets/livery/lmgt3-body.svg";
 
-/** Sliced WEC hypercar line art (see assets/livery/hypercar/sheet.png). */
-export const HYPERCAR_SILHOUETTE_IDS = [
-  "bmw-m-hybrid-v8",
-  "cadillac-v-series-r",
-  "ferrari-499p",
-  "lamborghini-sc63",
-  "lmh-generic",
-  "peugeot-9x8",
-  "porsche-963",
+/** Hypercar chassis art in `configs/visual_catalog.json` — picked from team name when no build is passed. */
+export const HYPERCAR_CHASSIS_IDS = [
+  "LMDhDallara",
+  "LMDhOreca",
+  "LMDhMultimatic",
+  "LMDhLigier",
+  "LMHMonocoque",
+  "LMHInHouse",
+  "LMHDallaraBuilt",
+  "LMHMultimaticBuilt",
 ] as const;
 
-export type HypercarSilhouetteId = (typeof HYPERCAR_SILHOUETTE_IDS)[number];
+export type HypercarChassisId = (typeof HYPERCAR_CHASSIS_IDS)[number];
 
-const HYPERCAR_DEFAULT_SILHOUETTE: HypercarSilhouetteId = "ferrari-499p";
-
-/** Default side-profile art per WEC class (from visual catalog chassis layers). */
-const CLASS_SILHOUETTES: Record<string, string> = {
-  LMP2: "/assets/chassis/Oreca07.569f6c1f.png",
-  LMGT3: "/assets/livery/lmgt3-body.svg",
-};
-
-export function pickHypercarSilhouette(seed = ""): HypercarSilhouetteId {
-  if (!seed.trim()) return HYPERCAR_DEFAULT_SILHOUETTE;
+function hashSeed(seed: string): number {
   let hash = 0;
   for (const ch of seed.trim()) {
     hash = (hash * 31 + ch.charCodeAt(0)) | 0;
   }
-  const idx = Math.abs(hash) % HYPERCAR_SILHOUETTE_IDS.length;
-  return HYPERCAR_SILHOUETTE_IDS[idx] ?? HYPERCAR_DEFAULT_SILHOUETTE;
+  return hash;
 }
 
-function hypercarSilhouettePaths(id: HypercarSilhouetteId): {
-  outline: string;
-  mask: string;
-  details: string;
-} {
-  return {
-    outline: `/assets/livery/hypercar/${id}-outline.png`,
-    mask: `/assets/livery/hypercar/${id}-mask.png`,
-    details: `/assets/livery/hypercar/${id}-details.png`,
-  };
+export function pickHypercarChassis(seed = ""): HypercarChassisId {
+  if (!seed.trim()) return "LMDhDallara";
+  const idx = Math.abs(hashSeed(seed)) % HYPERCAR_CHASSIS_IDS.length;
+  return HYPERCAR_CHASSIS_IDS[idx] ?? "LMDhDallara";
+}
+
+/** Default compositor build for livery previews when callers omit visualBuild. */
+export function defaultLiveryVisual(classId?: string, teamName?: string): CarBuildVisual {
+  switch (classId) {
+    case "LMGT3":
+      return {
+        chassis_type: "GT3Spaceframe",
+        front_aero_type: "LowDragNose",
+        rear_aero_type: "HighDownforceWing",
+        wheel_package: "GT3Forged18",
+        hybrid_system: "None",
+      };
+    case "LMP2":
+      return {
+        chassis_type: "Oreca07",
+        front_aero_type: "LowDragNose",
+        rear_aero_type: "StandardWing",
+        wheel_package: "LMP2Forged18",
+        hybrid_system: "None",
+      };
+    default:
+      return {
+        chassis_type: pickHypercarChassis(teamName ?? ""),
+        front_aero_type: "LowDragNose",
+        rear_aero_type: "StandardWing",
+        wheel_package: "Hypercar18WideRear",
+        hybrid_system: "LMDh50kW",
+      };
+  }
+}
+
+function resolveVisualBuild(options: LiveryRenderOptions): CarBuildVisual {
+  return options.visualBuild ?? defaultLiveryVisual(options.classId, options.teamName);
 }
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 let graphicsCache: ReturnType<typeof loadCarGraphics> | null = null;
-
-type HypercarWheelAnchor = { cx: number; cy: number; r: number };
-type HypercarDetailsMeta = Record<string, { wheels: HypercarWheelAnchor[] }>;
-type LayerPlacement = { dx: number; dy: number };
-
-let detailsMetaCache: Promise<HypercarDetailsMeta> | null = null;
-
-async function loadHypercarDetailsMeta(): Promise<HypercarDetailsMeta> {
-  if (!detailsMetaCache) {
-    detailsMetaCache = fetch("/assets/livery/hypercar/details-meta.json")
-      .then((r) => (r.ok ? r.json() : {}))
-      .catch(() => ({}));
-  }
-  return detailsMetaCache;
-}
 
 function carGraphics(): ReturnType<typeof loadCarGraphics> {
   if (!graphicsCache) graphicsCache = loadCarGraphics();
@@ -107,9 +111,11 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return pending;
 }
 
-function silhouetteForClass(classId?: string): string {
-  if (classId && CLASS_SILHOUETTES[classId]) return CLASS_SILHOUETTES[classId];
-  return CLASS_SILHOUETTES.LMP2;
+interface ImageRect {
+  dx: number;
+  dy: number;
+  dw: number;
+  dh: number;
 }
 
 function patternBounds(
@@ -246,13 +252,6 @@ function snapImageRect(rect: ImageRect): ImageRect {
     dw: Math.round(rect.dw),
     dh: Math.round(rect.dh),
   };
-}
-
-interface ImageRect {
-  dx: number;
-  dy: number;
-  dw: number;
-  dh: number;
 }
 
 function matchesBackdrop(
@@ -490,198 +489,6 @@ function buildCarMaskFromCanvas(source: HTMLCanvasElement): HTMLCanvasElement {
   return maskCanvasFromImageData(data, width, height);
 }
 
-function pixelLuminance(r: number, g: number, b: number): number {
-  return 0.299 * r + 0.587 * g + 0.114 * b;
-}
-
-/** White / light pixels in `{id}-mask.png` become paintable alpha (black or transparent = off). */
-function artMaskAlphaAt(r: number, g: number, b: number, a: number): number {
-  if (a < 8) return 0;
-  const lum = pixelLuminance(r, g, b);
-  if (lum < 32) return 0;
-  return Math.min(255, Math.round((lum / 255) * (a / 255) * 255));
-}
-
-function frontWheelCentroid(img: HTMLImageElement): { x: number; y: number } | null {
-  const sample = document.createElement("canvas");
-  sample.width = img.naturalWidth;
-  sample.height = img.naturalHeight;
-  const sctx = sample.getContext("2d", { willReadFrequently: true });
-  if (!sctx) return null;
-  sctx.drawImage(img, 0, 0);
-  const { data, width, height } = sctx.getImageData(0, 0, sample.width, sample.height);
-  let sx = 0;
-  let sy = 0;
-  let n = 0;
-  const half = width / 2;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < half; x++) {
-      const i = (y * width + x) * 4;
-      if (data[i] > 200 && data[i + 1] < 100 && data[i + 2] < 100 && data[i + 3] > 128) {
-        sx += x;
-        sy += y;
-        n++;
-      }
-    }
-  }
-  if (n < 8) return null;
-  return { x: sx / n, y: sy / n };
-}
-
-function detailsPlacementOffset(
-  details: HTMLImageElement,
-  outlineW: number,
-  outlineH: number,
-  wheelAnchors: HypercarWheelAnchor[] | undefined,
-): LayerPlacement {
-  if (details.naturalWidth === outlineW && details.naturalHeight === outlineH) {
-    return { dx: 0, dy: 0 };
-  }
-  const anchor = wheelAnchors?.[0];
-  const centroid = frontWheelCentroid(details);
-  if (!anchor || !centroid) return { dx: 0, dy: 0 };
-  return {
-    dx: Math.round(anchor.cx - centroid.x),
-    dy: Math.round(anchor.cy - centroid.y),
-  };
-}
-
-/** Place layer 1:1 in outline pixel space (no stretch), then scale to the fitted display rect. */
-function rasterizeHypercarLayer(
-  img: HTMLImageElement,
-  outlineW: number,
-  outlineH: number,
-  smoothing = false,
-  placement: LayerPlacement = { dx: 0, dy: 0 },
-): HTMLCanvasElement {
-  const layer = document.createElement("canvas");
-  layer.width = outlineW;
-  layer.height = outlineH;
-  const ctx = layer.getContext("2d")!;
-  ctx.imageSmoothingEnabled = smoothing;
-  ctx.drawImage(img, placement.dx, placement.dy);
-  return layer;
-}
-
-/** Map any hypercar layer into outline pixel space, then onto the fitted display rect. */
-function blitHypercarLayer(
-  destCtx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  outlineW: number,
-  outlineH: number,
-  rect: ImageRect,
-  smoothing = true,
-  placement: LayerPlacement = { dx: 0, dy: 0 },
-): void {
-  const native = rasterizeHypercarLayer(img, outlineW, outlineH, smoothing, placement);
-  destCtx.imageSmoothingEnabled = smoothing;
-  destCtx.drawImage(native, rect.dx, rect.dy, rect.dw, rect.dh);
-}
-
-function maskFromNativeArtMask(
-  maskImg: HTMLImageElement,
-  outlineW: number,
-  outlineH: number,
-): HTMLCanvasElement {
-  const layer = rasterizeHypercarLayer(maskImg, outlineW, outlineH, false);
-  const lctx = layer.getContext("2d", { willReadFrequently: true });
-  if (!lctx) throw new Error("Canvas 2D unavailable");
-  const { data } = lctx.getImageData(0, 0, outlineW, outlineH);
-  const maskAlpha = new Uint8Array(outlineW * outlineH);
-  for (let p = 0; p < maskAlpha.length; p++) {
-    const i = p * 4;
-    maskAlpha[p] = artMaskAlphaAt(data[i], data[i + 1], data[i + 2], data[i + 3]);
-  }
-  return writeMaskAlpha(maskAlpha, outlineW, outlineH);
-}
-
-function scaleMaskToRect(
-  nativeMask: HTMLCanvasElement,
-  rect: ImageRect,
-  canvasW: number,
-  canvasH: number,
-): HTMLCanvasElement {
-  const scaled = document.createElement("canvas");
-  scaled.width = canvasW;
-  scaled.height = canvasH;
-  const sctx = scaled.getContext("2d")!;
-  sctx.imageSmoothingEnabled = false;
-  sctx.drawImage(nativeMask, rect.dx, rect.dy, rect.dw, rect.dh);
-  return scaled;
-}
-
-async function resolveHypercarLineArt(
-  options: LiveryRenderOptions,
-  width: number,
-  height: number,
-): Promise<{
-  outline: HTMLImageElement;
-  details: HTMLImageElement | null;
-  rect: ImageRect;
-  maskImg: HTMLImageElement;
-  bounds: ImageRect;
-  silhouetteId: HypercarSilhouetteId;
-  nativeW: number;
-  nativeH: number;
-  detailsPlacement: LayerPlacement;
-}> {
-  const silhouetteId =
-    (options.hypercarSilhouetteId as HypercarSilhouetteId | undefined) ??
-    pickHypercarSilhouette(options.teamName ?? "");
-  const paths = hypercarSilhouettePaths(silhouetteId);
-  const [outline, maskImg, details, detailsMeta] = await Promise.all([
-    loadImage(paths.outline),
-    loadImage(paths.mask),
-    loadImage(paths.details).catch(() => null),
-    loadHypercarDetailsMeta(),
-  ]);
-  const rect = fitImageRect(outline, width, height);
-  const nativeW = outline.naturalWidth;
-  const nativeH = outline.naturalHeight;
-  const detailsPlacement = details
-    ? detailsPlacementOffset(details, nativeW, nativeH, detailsMeta[silhouetteId]?.wheels)
-    : { dx: 0, dy: 0 };
-  return {
-    outline,
-    maskImg,
-    details,
-    rect,
-    bounds: rect,
-    silhouetteId,
-    nativeW,
-    nativeH,
-    detailsPlacement,
-  };
-}
-
-async function bodySilhouetteMask(
-  classId: string | undefined,
-  width: number,
-  height: number,
-  teamName?: string,
-): Promise<HTMLCanvasElement | null> {
-  try {
-    if (classId === "Hypercar") {
-      const hypercar = await resolveHypercarLineArt(
-        { ...defaultPaintOpts(), teamName, classId },
-        width,
-        height,
-      );
-      const nativeMask = maskFromNativeArtMask(hypercar.maskImg, hypercar.nativeW, hypercar.nativeH);
-      return scaleMaskToRect(nativeMask, hypercar.rect, width, height);
-    }
-    const img = await loadImage(silhouetteForClass(classId));
-    const rect = fitImageRect(img, width, height);
-    return buildCarMask(img, rect, width, height);
-  } catch {
-    return null;
-  }
-}
-
-function defaultPaintOpts(): LiveryRenderOptions {
-  return { primary: "#888", secondary: "#444", pattern: "solid" };
-}
-
 async function renderAssemblyPreview(
   visualBuild: CarBuildVisual,
   width: number,
@@ -704,6 +511,45 @@ async function renderAssemblyPreview(
   if (!ctx) throw new Error("Canvas 2D unavailable");
   ctx.drawImage(assemblyCanvas, rect.dx, rect.dy, rect.dw, rect.dh);
   return sample;
+}
+
+/** Body + aero paint mask (wheels excluded — chassis art uses empty wheel arches). */
+async function buildBodyPaintMask(
+  visualBuild: CarBuildVisual,
+  width: number,
+  height: number,
+): Promise<HTMLCanvasElement> {
+  const maskBuild: CarBuildVisual = { ...visualBuild, wheel_package: undefined };
+  const sample = await renderAssemblyPreview(maskBuild, width, height);
+  return dilateMask(buildCarMaskFromCanvas(sample), 1);
+}
+
+async function lmgt3BodySilhouetteMask(
+  width: number,
+  height: number,
+): Promise<HTMLCanvasElement | null> {
+  try {
+    const img = await loadImage(LMGT3_BODY_MASK);
+    const rect = fitImageRect(img, width, height);
+    return buildCarMask(img, rect, width, height);
+  } catch {
+    return null;
+  }
+}
+
+async function resolveLiveryPaintMask(
+  options: LiveryRenderOptions,
+  width: number,
+  height: number,
+): Promise<HTMLCanvasElement> {
+  const visualBuild = resolveVisualBuild(options);
+  let mask = await buildBodyPaintMask(visualBuild, width, height);
+  const classId = options.classId ?? classIdFromChassis(visualBuild.chassis_type);
+  if (classId === "LMGT3") {
+    const bodyMask = await lmgt3BodySilhouetteMask(width, height);
+    if (bodyMask) mask = mergeMasks(mask, bodyMask);
+  }
+  return mask;
 }
 
 function clipToMask(ctx: CanvasRenderingContext2D, mask: HTMLCanvasElement): void {
@@ -781,200 +627,6 @@ function paintTintedSilhouette(
   ctx.drawImage(car, 0, 0);
 }
 
-type HypercarDetailZone = "wheel" | "glass" | "headlight";
-
-/** Matches `{id}-details.png` from `tools/generate_hypercar_details.py`: R/G/B channels. */
-function classifyHypercarDetailPixel(
-  r: number,
-  g: number,
-  b: number,
-  a: number,
-): HypercarDetailZone | null {
-  if (a < 128) return null;
-  if (r > 200) return "wheel";
-  if (g > 200) return "glass";
-  if (b > 200) return "headlight";
-  return null;
-}
-
-function sampleDetailMaskNative(
-  details: HTMLImageElement,
-  outlineW: number,
-  outlineH: number,
-  detailsPlacement: LayerPlacement,
-): Uint8Array | null {
-  const layer = rasterizeHypercarLayer(details, outlineW, outlineH, false, detailsPlacement);
-  const lctx = layer.getContext("2d", { willReadFrequently: true });
-  if (!lctx) return null;
-  const { data } = lctx.getImageData(0, 0, outlineW, outlineH);
-  const zones = new Uint8Array(outlineW * outlineH);
-  for (let p = 0; p < zones.length; p++) {
-    const i = p * 4;
-    const zone = classifyHypercarDetailPixel(data[i], data[i + 1], data[i + 2], data[i + 3]);
-    zones[p] = zone === "wheel" ? 1 : zone === "glass" ? 2 : zone === "headlight" ? 3 : 0;
-  }
-  return zones;
-}
-
-function liveryPaintMask(
-  bodyMask: HTMLCanvasElement,
-  detailZones: Uint8Array | null,
-  canvasW: number,
-  canvasH: number,
-): HTMLCanvasElement {
-  if (!detailZones) return bodyMask;
-
-  const mctx = bodyMask.getContext("2d", { willReadFrequently: true });
-  if (!mctx) return bodyMask;
-  const { data } = mctx.getImageData(0, 0, canvasW, canvasH);
-  const paintAlpha = new Uint8Array(detailZones.length);
-  for (let p = 0; p < detailZones.length; p++) {
-    const i = p * 4;
-    const bodyAlpha = artMaskAlphaAt(data[i], data[i + 1], data[i + 2], data[i + 3]);
-    paintAlpha[p] = bodyAlpha > 96 && detailZones[p] === 0 ? bodyAlpha : 0;
-  }
-  return writeMaskAlpha(paintAlpha, canvasW, canvasH);
-}
-
-function paintHypercarDetailsNative(
-  cctx: CanvasRenderingContext2D,
-  detailZones: Uint8Array,
-  bodyMask: HTMLCanvasElement,
-  canvasW: number,
-  canvasH: number,
-): void {
-  const layer = document.createElement("canvas");
-  layer.width = canvasW;
-  layer.height = canvasH;
-  const lctx = layer.getContext("2d");
-  if (!lctx) return;
-  const out = lctx.createImageData(canvasW, canvasH);
-
-  for (let p = 0; p < canvasW * canvasH; p++) {
-    const i = p * 4;
-    const zone = detailZones[p];
-    if (zone === 1) {
-      out.data[i] = 20;
-      out.data[i + 1] = 22;
-      out.data[i + 2] = 26;
-      out.data[i + 3] = 255;
-    } else if (zone === 2) {
-      out.data[i] = 10;
-      out.data[i + 1] = 14;
-      out.data[i + 2] = 20;
-      out.data[i + 3] = 220;
-    } else if (zone === 3) {
-      out.data[i] = 205;
-      out.data[i + 1] = 220;
-      out.data[i + 2] = 235;
-      out.data[i + 3] = 165;
-    }
-  }
-
-  lctx.putImageData(out, 0, 0);
-  cctx.save();
-  cctx.drawImage(layer, 0, 0);
-  clipToMask(cctx, bodyMask);
-  cctx.restore();
-
-  const shine = document.createElement("canvas");
-  shine.width = canvasW;
-  shine.height = canvasH;
-  const shctx = shine.getContext("2d");
-  if (!shctx) return;
-  const shineData = shctx.createImageData(canvasW, canvasH);
-  for (let p = 0; p < canvasW * canvasH; p++) {
-    if (detailZones[p] !== 2) continue;
-    const i = p * 4;
-    shineData.data[i] = 255;
-    shineData.data[i + 1] = 255;
-    shineData.data[i + 2] = 255;
-    shineData.data[i + 3] = 52;
-  }
-  shctx.putImageData(shineData, 0, 0);
-  cctx.save();
-  cctx.globalCompositeOperation = "screen";
-  cctx.globalAlpha = 0.38;
-  cctx.drawImage(shine, 0, 0);
-  clipToMask(cctx, bodyMask);
-  cctx.restore();
-}
-
-function paintLineArtLivery(
-  ctx: CanvasRenderingContext2D,
-  outline: HTMLImageElement,
-  maskImg: HTMLImageElement,
-  rect: ImageRect,
-  options: LiveryRenderOptions,
-  canvasW: number,
-  canvasH: number,
-  outlineW: number,
-  outlineH: number,
-  details: HTMLImageElement | null = null,
-  detailsPlacement: LayerPlacement = { dx: 0, dy: 0 },
-): HTMLCanvasElement {
-  const nativeBounds: ImageRect = { dx: 0, dy: 0, dw: outlineW, dh: outlineH };
-  const bodyMask = maskFromNativeArtMask(maskImg, outlineW, outlineH);
-  const detailZones = details
-    ? sampleDetailMaskNative(details, outlineW, outlineH, detailsPlacement)
-    : null;
-  const paintMask = liveryPaintMask(bodyMask, detailZones, outlineW, outlineH);
-
-  const car = document.createElement("canvas");
-  car.width = outlineW;
-  car.height = outlineH;
-  const cctx = car.getContext("2d");
-  if (!cctx) return scaleMaskToRect(paintMask, rect, canvasW, canvasH);
-
-  cctx.fillStyle = options.primary;
-  cctx.fillRect(0, 0, outlineW, outlineH);
-  clipToMask(cctx, paintMask);
-
-  const stripes = document.createElement("canvas");
-  stripes.width = outlineW;
-  stripes.height = outlineH;
-  const stctx = stripes.getContext("2d");
-  if (stctx) {
-    applyStripePattern(
-      stctx,
-      options.pattern,
-      options.primary,
-      options.secondary,
-      nativeBounds,
-    );
-    clipToMask(stctx, paintMask);
-    cctx.drawImage(stripes, 0, 0);
-  }
-
-  if (detailZones) {
-    paintHypercarDetailsNative(cctx, detailZones, bodyMask, outlineW, outlineH);
-  }
-
-  const shade = document.createElement("canvas");
-  shade.width = outlineW;
-  shade.height = outlineH;
-  const shctx = shade.getContext("2d");
-  if (shctx) {
-    shctx.imageSmoothingEnabled = false;
-    shctx.drawImage(outline, 0, 0, outlineW, outlineH);
-    cctx.save();
-    clipToMask(cctx, paintMask);
-    cctx.globalCompositeOperation = "overlay";
-    cctx.globalAlpha = 0.42;
-    cctx.drawImage(shade, 0, 0);
-    cctx.globalAlpha = 0.16;
-    cctx.globalCompositeOperation = "soft-light";
-    cctx.drawImage(shade, 0, 0);
-    cctx.restore();
-  }
-
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(car, rect.dx, rect.dy, rect.dw, rect.dh);
-  ctx.drawImage(outline, 0, 0, outlineW, outlineH, rect.dx, rect.dy, rect.dw, rect.dh);
-
-  return scaleMaskToRect(paintMask, rect, canvasW, canvasH);
-}
-
 function drawFlatLiveryBackground(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -1022,90 +674,32 @@ async function resolvePaintSource(
   width: number,
   height: number,
 ): Promise<{
-  source: CanvasImageSource;
-  rect: ImageRect | null;
-  mask: HTMLCanvasElement | null;
-  maskImg: HTMLImageElement | null;
+  source: HTMLCanvasElement;
+  mask: HTMLCanvasElement;
   bounds: ImageRect;
-  lineArt: boolean;
-  details: HTMLImageElement | null;
-  outlineNativeW: number;
-  outlineNativeH: number;
-  detailsPlacement: LayerPlacement;
 }> {
-  if (options.classId === "Hypercar") {
-    const hypercar = await resolveHypercarLineArt(options, width, height);
-    return {
-      source: hypercar.outline,
-      rect: hypercar.rect,
-      mask: null,
-      maskImg: hypercar.maskImg,
-      bounds: hypercar.bounds,
-      lineArt: true,
-      details: hypercar.details,
-      outlineNativeW: hypercar.nativeW,
-      outlineNativeH: hypercar.nativeH,
-      detailsPlacement: hypercar.detailsPlacement,
-    };
-  }
-
-  if (options.visualBuild) {
-    const sample = await renderAssemblyPreview(options.visualBuild, width, height);
-    let asmMask = dilateMask(buildCarMaskFromCanvas(sample), 1);
-    const bodyMask = await bodySilhouetteMask(options.classId, width, height, options.teamName);
-    const mask = bodyMask ? mergeMasks(asmMask, bodyMask) : asmMask;
-    return {
-      source: sample,
-      rect: null,
-      mask,
-      maskImg: null,
-      bounds: { dx: width * 0.05, dy: height * 0.1, dw: width * 0.9, dh: height * 0.8 },
-      lineArt: false,
-      details: null,
-      outlineNativeW: 0,
-      outlineNativeH: 0,
-      detailsPlacement: { dx: 0, dy: 0 },
-    };
-  }
-
-  const src = silhouetteForClass(options.classId);
-  const img = await loadImage(src);
-  const rect = fitImageRect(img, width, height);
-  const mask = buildCarMask(img, rect, width, height);
+  const visualBuild = resolveVisualBuild(options);
+  const [source, mask] = await Promise.all([
+    renderAssemblyPreview(visualBuild, width, height),
+    resolveLiveryPaintMask(options, width, height),
+  ]);
   return {
-    source: img,
-    rect,
+    source,
     mask,
-    maskImg: null,
-    bounds: rect,
-    lineArt: false,
-    details: null,
-    outlineNativeW: 0,
-    outlineNativeH: 0,
-    detailsPlacement: { dx: 0, dy: 0 },
+    bounds: { dx: width * 0.05, dy: height * 0.1, dw: width * 0.9, dh: height * 0.8 },
   };
 }
 
 /**
  * Render a class-specific side profile with team livery colors and stripes.
+ * Uses the compositor assembly (chassis + aero + wheels) for all classes.
  */
 export async function renderClassLiveryCanvas(
   options: LiveryRenderOptions,
 ): Promise<HTMLCanvasElement> {
   const width = options.width ?? 560;
   const height = options.height ?? 140;
-  const {
-    source,
-    rect,
-    mask: prebuiltMask,
-    maskImg,
-    bounds,
-    lineArt,
-    details,
-    outlineNativeW,
-    outlineNativeH,
-    detailsPlacement,
-  } = await resolvePaintSource(options, width, height);
+  const { source, mask, bounds } = await resolvePaintSource(options, width, height);
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -1115,26 +709,10 @@ export async function renderClassLiveryCanvas(
 
   await drawLiveryBackground(ctx, width, height, options.backgroundImage);
 
-  let clipMask = prebuiltMask;
-  if (lineArt && rect && maskImg) {
-    clipMask = paintLineArtLivery(
-      ctx,
-      source as HTMLImageElement,
-      maskImg,
-      rect,
-      options,
-      width,
-      height,
-      outlineNativeW,
-      outlineNativeH,
-      details,
-      detailsPlacement,
-    );
-  } else if (prebuiltMask) {
-    paintTintedSilhouette(ctx, source, rect, prebuiltMask, options, width, height);
-  }
+  paintTintedSilhouette(ctx, source, null, mask, options, width, height);
+  ctx.drawImage(source, 0, 0);
 
-  if (options.logoDataUrl && clipMask) {
+  if (options.logoDataUrl) {
     const logo = await loadLogo(options.logoDataUrl);
     if (logo) {
       const logoSize = Math.min(bounds.dw * 0.2, height * 0.38);
@@ -1150,7 +728,7 @@ export async function renderClassLiveryCanvas(
         lctx.roundRect(lx - 4, ly - 4, logoSize + 8, logoSize + 8, 6);
         lctx.fill();
         lctx.drawImage(logo, lx, ly, logoSize, logoSize);
-        clipToMask(lctx, clipMask);
+        clipToMask(lctx, mask);
         ctx.drawImage(logoLayer, 0, 0);
       }
     }
@@ -1170,28 +748,22 @@ export async function tintAssemblyCanvas(
     options.classId ??
     (options.visualBuild ? classIdFromChassis(options.visualBuild.chassis_type) : undefined);
 
-  if (classId === "Hypercar") {
-    return renderClassLiveryCanvas({ ...options, classId: "Hypercar", width, height });
-  }
-
   const out = document.createElement("canvas");
   out.width = width;
   out.height = height;
   const ctx = out.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D unavailable");
 
-  const mctx = assembly.getContext("2d", { willReadFrequently: true });
-  if (!mctx) throw new Error("Canvas 2D unavailable");
-  const { data } = mctx.getImageData(0, 0, width, height);
-  let mask = dilateMask(maskCanvasFromImageData(data, width, height), 1);
-  if (classId) {
-    const bodyMask = await bodySilhouetteMask(classId, width, height, options.teamName);
-    if (bodyMask) mask = mergeMasks(mask, bodyMask);
-  }
+  const mask = await resolveLiveryPaintMask(
+    { ...options, classId, width, height },
+    width,
+    height,
+  );
 
   await drawLiveryBackground(ctx, width, height, options.backgroundImage);
 
   paintTintedSilhouette(ctx, assembly, null, mask, options, width, height);
+  ctx.drawImage(assembly, 0, 0);
 
   return out;
 }

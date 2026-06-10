@@ -8,7 +8,13 @@ export type FlagPhase =
   | "sc_in_lap"
   | "red_flag";
 
-export type TrackStatus = "racing" | "stranded" | "recovering" | "cleared";
+export type TrackStatus =
+  | "racing"
+  | "stalled"
+  | "stranded"
+  | "recovering"
+  | "returning_to_garage"
+  | "cleared";
 
 export type PendingPenalty = "none" | "drive_through" | "stop_go" | "black";
 
@@ -22,6 +28,9 @@ export interface SurfaceHazardSummary {
   centerLateralM?: number;
   spanMeters?: number;
   lateralSpanM?: number;
+  createdAt?: number;
+  clearAt?: number;
+  sourceEntryId?: string;
 }
 
 export interface MockRaceControlState {
@@ -39,8 +48,23 @@ export interface MockRaceControlState {
 
 /** Mock stranded lifecycle — simplified from C++ marshal + tow timers. */
 export const MOCK_MARSHAL_RESPONSE_SEC = 15;
-export const MOCK_TOW_DURATION_SEC = 90;
+export const MOCK_ON_TRACK_TOW_SEC = 360;
+export const MOCK_GARAGE_RETURN_SEC = 90;
+/** @deprecated use MOCK_ON_TRACK_TOW_SEC */
+export const MOCK_TOW_DURATION_SEC = MOCK_ON_TRACK_TOW_SEC;
 export const MOCK_STRANDED_STOP_SEC = 3;
+
+export const HAZARD_NATURAL_CLEAR_SEC: Record<HazardKind, number> = {
+  debris: 240,
+  fuel: 360,
+  oil: 600,
+  fire: 120,
+  coolant: 720,
+};
+
+export function hazardNaturalClearSec(kind: HazardKind | string): number {
+  return HAZARD_NATURAL_CLEAR_SEC[kind as HazardKind] ?? 240;
+}
 
 export const FLAG_PHASES: readonly FlagPhase[] = [
   "green",
@@ -53,8 +77,10 @@ export const FLAG_PHASES: readonly FlagPhase[] = [
 
 export const TRACK_STATUSES: readonly TrackStatus[] = [
   "racing",
+  "stalled",
   "stranded",
   "recovering",
+  "returning_to_garage",
   "cleared",
 ];
 
@@ -85,7 +111,7 @@ export function countTrackObstructions(
 ): number {
   let n = 0;
   for (const st of trackStatuses) {
-    if (st === "stranded" || st === "recovering") n++;
+    if (st === "stalled" || st === "stranded" || st === "recovering") n++;
   }
   return n;
 }

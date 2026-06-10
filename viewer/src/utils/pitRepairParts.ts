@@ -27,7 +27,7 @@ export const REPAIR_PART_LABELS: Record<string, string> = {
 };
 
 /** Subsystem tokens shown in pit UI (engine/body use dedicated checkboxes). */
-const PIT_SUBSYSTEM_ORDER = [
+export const PIT_SUBSYSTEM_ORDER = [
   "monocoque",
   "gearbox",
   "cooling",

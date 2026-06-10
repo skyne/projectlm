@@ -6,6 +6,7 @@ import {
   computeRaceLogStats,
   findPenaltyTrace,
   formatCarNumber,
+  formatRaceLogHtml,
   formatSidebarLogHtml,
   isRaceLogEvent,
   matchesSidebarLogFilter,
@@ -58,6 +59,32 @@ describe("raceLog", () => {
       retirements: 0,
     });
     assert.equal(categorizeEvent(events[0]!), "penalty");
+  });
+
+  it("formats overtake lines with defender car number not team name", () => {
+    const maps = {
+      teamNameByEntry: new Map([
+        ["e1", "Audi Sport Team SkyTech"],
+        ["e2", "Team WRT"],
+      ]),
+      carNumberByEntry: new Map([
+        ["e1", "8"],
+        ["e2", "5"],
+      ]),
+    };
+    const html = formatRaceLogHtml(
+      {
+        type: "Overtake",
+        timestamp: 60,
+        entryId: "e1",
+        otherEntryId: "e2",
+        message: "Loic Duval overtaking Team WRT",
+      },
+      maps,
+    );
+    assert.match(html, /#8 Audi Sport Team SkyTech/);
+    assert.match(html, /Loic Duval overtaking #5/);
+    assert.doesNotMatch(html, /Team WRT/);
   });
 
   it("formats compact sidebar lines with car numbers only", () => {

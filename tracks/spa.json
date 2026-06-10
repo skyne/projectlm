@@ -15027,5 +15027,157 @@
     "wikimedia_file": "Spa-Francorchamps of Belgium.svg",
     "attribution": "Wikimedia Commons \u2014 Spa-Francorchamps of Belgium.svg",
     "mode": "polyline-linear"
+  },
+  "surface_defaults": {
+    "verge_width_m": 2.0,
+    "runoff_width_m": 11.0,
+    "kerb_width_m": 0.5
+  },
+  "surface_profile": [
+    {
+      "name": "La Source gravel",
+      "start_t": 0.02,
+      "end_t": 0.08,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 10,
+      "width_start_m": 4,
+      "width_end_m": 14,
+      "envelope": "flare_entry",
+      "grip_multiplier": 0.42
+    },
+    {
+      "name": "Eau Rouge entry runoff",
+      "start_t": 0.08,
+      "end_t": 0.11,
+      "side": "inboard",
+      "surface": "runoff_concrete",
+      "width_m": 14,
+      "width_start_m": 6,
+      "width_end_m": 18,
+      "envelope": "flare_entry",
+      "grip_multiplier": 0.74
+    },
+    {
+      "name": "Raidillon tarmac runoff",
+      "start_t": 0.1,
+      "end_t": 0.16,
+      "side": "both",
+      "surface": "runoff_concrete",
+      "width_m": 12,
+      "width_start_m": 8,
+      "width_end_m": 16,
+      "envelope": "bell",
+      "grip_multiplier": 0.74
+    },
+    {
+      "name": "Les Combes gravel",
+      "start_t": 0.22,
+      "end_t": 0.27,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 11,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Malmedy gravel",
+      "start_t": 0.26,
+      "end_t": 0.3,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 10,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Bruxelles gravel",
+      "start_t": 0.32,
+      "end_t": 0.38,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 10,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Pouhon gravel",
+      "start_t": 0.48,
+      "end_t": 0.54,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 12,
+      "width_start_m": 8,
+      "width_end_m": 14,
+      "envelope": "bell",
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Double Gauche gravel",
+      "start_t": 0.58,
+      "end_t": 0.64,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 9,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Stavelot runoff",
+      "start_t": 0.66,
+      "end_t": 0.72,
+      "side": "outboard",
+      "surface": "runoff_concrete",
+      "width_m": 11,
+      "grip_multiplier": 0.74
+    },
+    {
+      "name": "Bus Stop chicane kerb",
+      "start_t": 0.82,
+      "end_t": 0.88,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Bus Stop gravel",
+      "start_t": 0.82,
+      "end_t": 0.88,
+      "side": "outboard",
+      "surface": "gravel",
+      "inner_offset_m": 2,
+      "width_m": 8,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Blanchimont gravel",
+      "start_t": 0.88,
+      "end_t": 0.94,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 12,
+      "width_start_m": 6,
+      "width_end_m": 16,
+      "envelope": "flare_exit",
+      "grip_multiplier": 0.42
+    },
+    {
+      "name": "Blanchimont barrier",
+      "start_t": 0.88,
+      "end_t": 0.94,
+      "side": "outboard",
+      "surface": "barrier_tecpro",
+      "inner_offset_m": 20,
+      "width_m": 1.2,
+      "grip_multiplier": 0.0
+    }
+  ],
+  "surface_metadata": {
+    "confidence": "estimated",
+    "last_reviewed": "2026-06-10",
+    "sources": [
+      "spa_francorchamps_workingprogress_2022",
+      "autosport_spa_gravel_return_2022",
+      "motorsportweek_spa_2022_overhaul",
+      "fia_appendix_o_2025"
+    ],
+    "notes": "2022 \u20ac80m safety programme: gravel at La Source, Les Combes, Malmedy, Bruxelles, Pouhon, Double Gauche, Blanchimont, Bus Stop; enlarged tarmac runoff through Eau Rouge/Raidillon. Widths are templates \u2014 not as-built surveys."
   }
 }

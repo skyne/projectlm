@@ -12,6 +12,7 @@ import {
   type SaveTeamColorsPayload,
   type GarageAdvicePayload,
   type EngineerAdvicePayload,
+  type EngineerHintPayload,
   type EngineerStatusPayload,
   type EventsPayload,
   type GameCatalogPayload,
@@ -88,6 +89,7 @@ export interface ViewerHandlers {
   onMetaState?: (payload: MetaStatePayload) => void;
   onGameCatalog?: (payload: GameCatalogPayload) => void;
   onEngineerAdvice?: (payload: EngineerAdvicePayload) => void;
+  onEngineerHint?: (payload: EngineerHintPayload) => void;
   onEngineerStatus?: (payload: EngineerStatusPayload) => void;
   onGarageAdvice?: (payload: GarageAdvicePayload) => void;
   onError?: (message: string) => void;
@@ -201,6 +203,9 @@ export class ViewerClient {
             break;
           case "engineer_advice":
             this.handlers.onEngineerAdvice?.(msg.payload as EngineerAdvicePayload);
+            break;
+          case "engineer_hint":
+            this.handlers.onEngineerHint?.(msg.payload as EngineerHintPayload);
             break;
           case "engineer_status":
             this.handlers.onEngineerStatus?.(msg.payload as EngineerStatusPayload);
@@ -443,6 +448,10 @@ export class ViewerClient {
 
   askEngineer(entryId: string, question?: string): void {
     this.send(clientMessage("ask_engineer", { entryId, question }));
+  }
+
+  dismissEngineerHint(hintId: string): void {
+    this.send(clientMessage("dismiss_engineer_hint", { hintId }));
   }
 
   getEngineerStatus(): void {

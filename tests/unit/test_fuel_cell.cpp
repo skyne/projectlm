@@ -51,6 +51,7 @@ TEST_CASE("Fuel cell has better H2 range than combustion ICE", "[unit][fuelcell]
   PhysicsConfig physics;
   TrackDefinition track;
   REQUIRE(LoadPhysicsConfig(ConfigPath("physics_config.txt"), physics));
+  physics.useFrenetDynamics = false;
   REQUIRE(LoadTrack(TrackPath("lemans_la_sarthe.json"), track));
 
   CarConfig ice;
@@ -74,6 +75,7 @@ TEST_CASE("Fuel cell avoids ICE vibration wear", "[unit][fuelcell]") {
   PhysicsConfig physics;
   TrackDefinition track;
   REQUIRE(LoadPhysicsConfig(ConfigPath("physics_config.txt"), physics));
+  physics.useFrenetDynamics = false;
   REQUIRE(LoadTrack(TrackPath("lemans_la_sarthe.json"), track));
 
   CarConfig fc;
@@ -119,6 +121,7 @@ TEST_CASE("Fuel cell exceeds ICE-style single-speed top speed cap",
   PhysicsConfig physics;
   TrackDefinition track;
   REQUIRE(LoadPhysicsConfig(ConfigPath("physics_config.txt"), physics));
+  physics.useFrenetDynamics = false;
   REQUIRE(LoadTrack(TrackPath("imola.json"), track));
 
   CarConfig fc;

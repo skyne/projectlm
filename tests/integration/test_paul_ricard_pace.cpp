@@ -50,6 +50,7 @@ TEST_CASE("Paul Ricard multiclass pace separation", "[integration][golden]") {
   REQUIRE(LoadPartCatalog(ConfigPath("part_catalog.txt"), catalog));
   REQUIRE(LoadPhysicsConfig(ConfigPath("physics_config.txt"), physics));
   REQUIRE(LoadAssemblyConfig(ConfigPath("physics_config.txt"), assembly));
+  physics.useFrenetDynamics = false;
   REQUIRE(LoadTrack(TrackPath("paul_ricard.json"), track));
 
   const auto rules = LoadClassRules(ConfigPath("class_rules.txt"));

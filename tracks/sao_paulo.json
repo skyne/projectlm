@@ -12787,5 +12787,73 @@
     "wikimedia_file": "2014 Interlagos circuit map.svg",
     "attribution": "Wikimedia Commons \u2014 2014 Interlagos circuit map.svg",
     "mode": "polyline-linear"
+  },
+  "surface_defaults": {
+    "verge_width_m": 2.0,
+    "runoff_width_m": 11.0,
+    "kerb_width_m": 0.5
+  },
+  "surface_profile": [
+    {
+      "name": "Senna S kerbs",
+      "start_t": 0.1,
+      "end_t": 0.16,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Senna S expanded runoff",
+      "start_t": 0.1,
+      "end_t": 0.18,
+      "side": "outboard",
+      "surface": "runoff_concrete",
+      "width_m": 12,
+      "width_start_m": 6,
+      "width_end_m": 14,
+      "envelope": "flare_exit",
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Descida do Lago runoff",
+      "start_t": 0.34,
+      "end_t": 0.42,
+      "side": "outboard",
+      "surface": "runoff_concrete",
+      "width_m": 11,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Bico de Pato gravel",
+      "start_t": 0.54,
+      "end_t": 0.6,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 10,
+      "width_start_m": 5,
+      "width_end_m": 12,
+      "envelope": "bell",
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Jun\u00e7\u00e3o barrier",
+      "start_t": 0.88,
+      "end_t": 0.94,
+      "side": "outboard",
+      "surface": "barrier_tecpro",
+      "width_m": 1.2,
+      "grip_multiplier": 0.0
+    }
+  ],
+  "surface_metadata": {
+    "confidence": "estimated",
+    "last_reviewed": "2026-06-10",
+    "sources": [
+      "racingcircuits_interlagos_2014_refurb",
+      "f1_interlagos_circuit_guide",
+      "fia_appendix_o_2025"
+    ],
+    "notes": "2014 $60M refurb: expanded Senna S / Curva do Sol runoff; Bico de Pato hairpin gravel; Jun\u00e7\u00e3o barrier on downhill approach to main straight."
   }
 }

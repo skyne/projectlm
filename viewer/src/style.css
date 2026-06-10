@@ -147,8 +147,13 @@ body {
 }
 
 .track-flag-marker {
-  pointer-events: none;
+  pointer-events: visiblePainted;
+  cursor: help;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
+.track-flag-hit {
+  pointer-events: all;
 }
 
 .track-flag-marker--yellow {
@@ -803,6 +808,10 @@ body.mock-sim-active #app {
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+}
+
+.telemetry-map-inner:has(.track-map-canvas-host--zoomable) {
+  background-image: none;
 }
 
 .telemetry-map-legend {
@@ -7060,6 +7069,10 @@ body.race-live .track-panel {
   border-color: #6ec4a8;
 }
 
+.health-ok {
+  color: var(--success);
+}
+
 .health-warn {
   color: var(--warning);
 }
@@ -7105,6 +7118,145 @@ body.race-live .track-panel {
   color: #fff;
   background: rgba(231, 76, 60, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.telemetry-condition-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+}
+
+.telemetry-condition-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.telemetry-condition-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding-top: 0.15rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.condition-diagram-wrap {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 46%) minmax(0, 1fr);
+  gap: 0.4rem 0.5rem;
+  align-items: start;
+}
+
+.condition-diagram-svg {
+  width: 100%;
+  max-height: 10.25rem;
+  display: block;
+}
+
+.condition-silhouette-outline {
+  fill: rgba(255, 255, 255, 0.04);
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.condition-wheel {
+  fill: rgba(255, 255, 255, 0.06);
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.condition-diagram-front {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  fill: var(--text-dim);
+  pointer-events: none;
+}
+
+.condition-corner-label {
+  font-size: 8.5px;
+  font-weight: 700;
+  fill: var(--text-muted);
+  pointer-events: none;
+}
+
+.condition-corner-health {
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.condition-corner-health.health-ok {
+  fill: var(--success);
+}
+
+.condition-corner-health.health-warn,
+.condition-corner-health.status-caution {
+  fill: var(--warning);
+}
+
+.condition-corner-health.health-critical {
+  fill: var(--danger);
+}
+
+.condition-corner-detail {
+  font-size: 7.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  fill: var(--text-muted);
+  pointer-events: none;
+}
+
+.condition-systems {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.condition-system-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.condition-system-title {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.condition-system-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.35rem;
+  align-items: baseline;
+  font-size: 0.72rem;
+}
+
+.condition-system-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.condition-system-health {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.condition-system-hint {
+  grid-column: 1 / -1;
+  font-size: 0.66rem;
+  color: var(--text-dim);
 }
 
 .telemetry-hint {
@@ -8511,6 +8663,88 @@ body.race-live .track-panel {
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 1.25rem;
+}
+
+#engineer-hint-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 14100;
+  pointer-events: none;
+}
+
+#engineer-hint-overlay .engineer-hint-overlay {
+  pointer-events: auto;
+}
+
+.engineer-hint-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 14100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+.engineer-hint-overlay.hidden {
+  display: none;
+}
+
+.engineer-hint-card {
+  width: min(520px, calc(100vw - 2rem));
+  background: linear-gradient(145deg, #141a24 0%, #0f1319 100%);
+  border: 1px solid rgba(120, 180, 255, 0.28);
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem 1.2rem;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+}
+
+.engineer-hint-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.engineer-hint-radio-badge {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(90, 160, 255, 0.18);
+  color: #9ec8ff;
+  border: 1px solid rgba(120, 180, 255, 0.35);
+}
+
+.engineer-hint-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  flex: 1;
+}
+
+.engineer-hint-car {
+  margin: 0;
+  width: 100%;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.engineer-hint-message {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.engineer-hint-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
 }
 
 .change-identity-btn {

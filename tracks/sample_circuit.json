@@ -183,5 +183,57 @@
       "max_speed_ms": 77.8,
       "straight": true
     }
-  ]
+  ],
+  "surface_defaults": {
+    "verge_width_m": 2.0,
+    "runoff_width_m": 11.0,
+    "kerb_width_m": 0.5
+  },
+  "surface_profile": [
+    {
+      "name": "T1 runoff",
+      "start_t": 0.095,
+      "end_t": 0.12,
+      "side": "outboard",
+      "surface": "runoff_concrete",
+      "width_m": 11.0,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Esses kerbs",
+      "start_t": 0.11,
+      "end_t": 0.16,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Stadium gravel",
+      "start_t": 0.57,
+      "end_t": 0.63,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 10.0,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Arena outer barrier",
+      "start_t": 0.63,
+      "end_t": 0.8,
+      "side": "outboard",
+      "surface": "barrier_armco",
+      "inner_offset_m": 12,
+      "width_m": 1.0,
+      "grip_multiplier": 0.0
+    }
+  ],
+  "surface_metadata": {
+    "confidence": "synthetic",
+    "last_reviewed": "2026-06-10",
+    "sources": [
+      "fia_appendix_o_2025"
+    ],
+    "notes": "Synthetic test circuit; FIA-template corner runoff for collision/viewer tests."
+  }
 }

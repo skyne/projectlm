@@ -157,6 +157,12 @@ export class EventLog {
     this.render();
   }
 
+  /** Replace sidebar log from server catch-up (page refresh / reconnect). */
+  restore(events: SimEvent[]): void {
+    this.allEvents = events.slice(-MAX_EVENTS);
+    this.render();
+  }
+
   clear(): void {
     this.allEvents = [];
     this.list.replaceChildren();

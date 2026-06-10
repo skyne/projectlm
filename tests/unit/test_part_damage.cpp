@@ -20,6 +20,63 @@ TEST_CASE("Part damage collision routes to side", "[unit][damage]") {
   REQUIRE(PartHealth(state, DamagePart::BodyFR) == 100.0);
 }
 
+TEST_CASE("Part damage front contact hits front axle only", "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  CarConfig car;
+  static const PartCatalog catalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(car, catalog, profiles);
+
+  ApplyCollisionDamage(state, profiles, 8.5, CollisionSide::Front, false);
+  REQUIRE(PartHealth(state, DamagePart::BodyFL) < 100.0);
+  REQUIRE(PartHealth(state, DamagePart::BodyFR) < 100.0);
+  REQUIRE(PartHealth(state, DamagePart::BodyRL) == 100.0);
+  REQUIRE(PartHealth(state, DamagePart::BodyRR) == 100.0);
+}
+
+TEST_CASE("Part damage rear contact hits rear axle only", "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  CarConfig car;
+  static const PartCatalog catalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(car, catalog, profiles);
+
+  ApplyCollisionDamage(state, profiles, 8.5, CollisionSide::Rear, false);
+  REQUIRE(PartHealth(state, DamagePart::BodyRL) < 100.0);
+  REQUIRE(PartHealth(state, DamagePart::BodyRR) < 100.0);
+  REQUIRE(PartHealth(state, DamagePart::BodyFL) == 100.0);
+}
+
+TEST_CASE("Unknown collision side avoids symmetric front corners", "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  CarConfig car;
+  static const PartCatalog catalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(car, catalog, profiles);
+
+  ApplyCollisionDamage(state, profiles, 6.0, CollisionSide::Unknown, false);
+  REQUIRE(PartHealth(state, DamagePart::BodyFL) < 100.0);
+  REQUIRE(PartHealth(state, DamagePart::BodyFR) == 100.0);
+}
+
+TEST_CASE("Debris hazard puncture rolls at speed on low grip", "[unit][damage]") {
+  const auto rolls = EvaluateDebrisTyrePuncture(35.0, 0.55, 0.8, 1.0, 424242U);
+  REQUIRE(rolls.size() >= 1);
+}
+
+TEST_CASE("CollisionContactSide classifies alongside and shunts", "[unit][damage]") {
+  const double combined = 10.0;
+  REQUIRE(CollisionContactSide(4.0, combined, 0.0, -1.0) == CollisionSide::Left);
+  REQUIRE(CollisionContactSide(4.0, combined, 0.0, 1.0) == CollisionSide::Right);
+  REQUIRE(CollisionContactSide(8.0, combined, 0.0, 0.0) == CollisionSide::Front);
+  REQUIRE(CollisionContactSide(-8.0, combined, 0.0, 0.0) == CollisionSide::Rear);
+  REQUIRE(MirrorCollisionSide(CollisionSide::Left) == CollisionSide::Right);
+  REQUIRE(MirrorCollisionSide(CollisionSide::Front) == CollisionSide::Rear);
+}
+
 TEST_CASE("Structural severity rises with diagonal damage", "[unit][damage]") {
   PartDamageState state;
   InitPartDamageState(state);
@@ -55,6 +112,7 @@ TEST_CASE("Stock 24h gradual wear keeps parts above 85 percent",
   REQUIRE(LoadPartCatalog(ConfigPath("part_catalog.txt"), catalog));
   REQUIRE(LoadPhysicsConfig(ConfigPath("physics_config.txt"), physics));
   REQUIRE(LoadAssemblyConfig(ConfigPath("physics_config.txt"), assembly));
+  physics.useFrenetDynamics = false;
   REQUIRE(LoadCarConfig(ConfigPath("car_config.txt"), car));
   REQUIRE(LoadTrack(TrackPath("lemans_la_sarthe.json"), track));
   CompileCarArchitecture(car, catalog, assembly);

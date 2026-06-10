@@ -13,6 +13,7 @@ import type {
   RaceCompletePayload,
   WeekendSessionType,
 } from "./protocol.js";
+import { attachEngineerHintWatcher } from "./engineer_hint_watch.js";
 import { attachPenaltyWatcher } from "./penalty_watch.js";
 import {
   classDisplayLabel,
@@ -215,6 +216,7 @@ export async function runSession(
   let waitingForComplete = false;
 
   const detachPenaltyWatcher = attachPenaltyWatcher(player);
+  const detachEngineerHintWatcher = attachEngineerHintWatcher(player);
 
   return new Promise<RaceCompletePayload>((resolve, reject) => {
     let settled = false;
@@ -238,6 +240,7 @@ export async function runSession(
       unsubTick();
       unsubComplete();
       detachPenaltyWatcher();
+      detachEngineerHintWatcher();
     };
 
     const maybeWaitForRaceComplete = () => {

@@ -1,7 +1,6 @@
 import type { CarSnapshot } from "../ws/protocol";
 import {
   buildCarConditionTelemetryHtml,
-  damageSummaryText,
   formatLimpModeLabel,
   formatTrackStatusLabel,
   isStrandedOrRecovering,
@@ -175,13 +174,11 @@ export function buildHybridWidgetHtml(
 
 export function buildDamageWidgetHtml(snap: CarSnapshot): string {
   const conditionBlock = buildCarConditionTelemetryHtml(snap);
-  const damageLine = damageSummaryText(snap);
 
   return `
     <div class="telemetry-widget-head">
       <span class="telemetry-widget-label">Condition</span>
     </div>
-    ${conditionBlock || `<p class="telemetry-widget-empty">No damage reported</p>`}
-    ${damageLine && !conditionBlock ? `<div class="telemetry-row telemetry-warn"><span>Damage</span><strong>${escapeHtml(damageLine)}</strong></div>` : ""}
+    ${conditionBlock}
   `;
 }

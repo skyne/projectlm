@@ -23,6 +23,7 @@ import {
   renderTimingStatusTagsHtml,
   type StandingsTagOptions,
 } from "../utils/carStatus";
+import { experimentalEntryBadgeHtml, isExperimentalEntry } from "../utils/fleetUi";
 
 type GapMode = "ahead" | "class-leader";
 
@@ -131,26 +132,6 @@ export class CompactLeaderboard {
               <path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8m9.4 4a7.4 7.4 0 0 1-.1 1l2 1.6-2 3.4-2.4-1a7.6 7.6 0 0 1-1.7 1l-.4 2.6H9.2l-.4-2.6a7.6 7.6 0 0 1-1.7-1l-2.4 1-2-3.4 2-1.6a7.4 7.4 0 0 1-.1-1 7.4 7.4 0 0 1 .1-1l-2-1.6 2-3.4 2.4 1a7.6 7.6 0 0 1 1.7-1l.4-2.6h5.6l.4 2.6a7.6 7.6 0 0 1 1.7 1l2.4-1 2 3.4-2 1.6q.1.5.1 1"/>
             </svg>
           </button>
-          <div class="standings-wec-settings-menu hidden" role="menu">
-            <p class="standings-wec-settings-heading">Gap reference</p>
-            <div class="standings-wec-btn-group" data-group="gap-mode" role="group">
-              <button type="button" class="standings-wec-btn active" data-value="class-leader" role="menuitemradio">Class leader</button>
-              <button type="button" class="standings-wec-btn" data-value="ahead" role="menuitemradio">Previous car</button>
-            </div>
-            <p class="standings-wec-settings-heading">Tags</p>
-            <div class="standings-wec-settings-toggles">
-              <label class="standings-wec-settings-check"><input type="checkbox" data-tag="class" checked /> Class</label>
-              <label class="standings-wec-settings-check"><input type="checkbox" data-tag="dmg" checked /> Damage</label>
-              <label class="standings-wec-settings-check"><input type="checkbox" data-tag="limp" checked /> Limp</label>
-              <label class="standings-wec-settings-check"><input type="checkbox" data-tag="tyre" checked /> Used tyre</label>
-            </div>
-            <p class="standings-wec-settings-heading">Extra data</p>
-            <div class="standings-wec-settings-toggles">
-              <label class="standings-wec-settings-check"><input type="checkbox" data-col="fuel" /> Fuel</label>
-              <label class="standings-wec-settings-check"><input type="checkbox" data-col="energy" /> Energy</label>
-              <label class="standings-wec-settings-check"><input type="checkbox" data-col="tyre-detail" /> Tyre detail</label>
-            </div>
-          </div>
         </div>
       </header>
 
@@ -171,6 +152,27 @@ export class CompactLeaderboard {
       </div>
 
       <div class="standings-wec-list compact-lb-list"></div>
+
+      <div class="standings-wec-settings-menu hidden" role="menu">
+        <p class="standings-wec-settings-heading">Gap reference</p>
+        <div class="standings-wec-btn-group" data-group="gap-mode" role="group">
+          <button type="button" class="standings-wec-btn active" data-value="class-leader" role="menuitemradio">Class leader</button>
+          <button type="button" class="standings-wec-btn" data-value="ahead" role="menuitemradio">Previous car</button>
+        </div>
+        <p class="standings-wec-settings-heading">Tags</p>
+        <div class="standings-wec-settings-toggles">
+          <label class="standings-wec-settings-check"><input type="checkbox" data-tag="class" checked /> Class</label>
+          <label class="standings-wec-settings-check"><input type="checkbox" data-tag="dmg" checked /> Damage</label>
+          <label class="standings-wec-settings-check"><input type="checkbox" data-tag="limp" checked /> Limp</label>
+          <label class="standings-wec-settings-check"><input type="checkbox" data-tag="tyre" checked /> Used tyre</label>
+        </div>
+        <p class="standings-wec-settings-heading">Extra data</p>
+        <div class="standings-wec-settings-toggles">
+          <label class="standings-wec-settings-check"><input type="checkbox" data-col="fuel" /> Fuel</label>
+          <label class="standings-wec-settings-check"><input type="checkbox" data-col="energy" /> Energy</label>
+          <label class="standings-wec-settings-check"><input type="checkbox" data-col="tyre-detail" /> Tyre detail</label>
+        </div>
+      </div>
     `;
     container.appendChild(this.root);
 
@@ -293,14 +295,23 @@ export class CompactLeaderboard {
     this.render();
   }
 
+  private positionSettingsMenu(): void {
+    const panel = this.root.getBoundingClientRect();
+    const btn = this.settingsBtn.getBoundingClientRect();
+    this.settingsMenu.style.top = `${btn.bottom - panel.top + 6}px`;
+    this.settingsMenu.style.right = `${panel.right - btn.right}px`;
+  }
+
   private toggleSettingsMenu(): void {
     const willOpen = this.settingsMenu.classList.contains("hidden");
     if (!willOpen) {
       this.closeSettingsMenu();
       return;
     }
+    this.positionSettingsMenu();
     this.settingsMenu.classList.remove("hidden");
     this.settingsBtn.setAttribute("aria-expanded", "true");
+    this.root.classList.add("is-settings-open");
     this.settingsDocListener = (ev: MouseEvent) => {
       if (
         !this.settingsMenu.contains(ev.target as Node) &&
@@ -315,6 +326,7 @@ export class CompactLeaderboard {
   private closeSettingsMenu(): void {
     this.settingsMenu.classList.add("hidden");
     this.settingsBtn.setAttribute("aria-expanded", "false");
+    this.root.classList.remove("is-settings-open");
     if (this.settingsDocListener) {
       document.removeEventListener("click", this.settingsDocListener);
       this.settingsDocListener = null;
@@ -342,7 +354,6 @@ export class CompactLeaderboard {
       gapCol.textContent = this.timingMode ? "Best" : "Gap";
     }
     this.root.querySelector(".standings-wec-scope")?.classList.toggle("hidden", this.timingMode);
-    this.settingsBtn.classList.toggle("hidden", this.timingMode);
   }
 
   update(snapshots: CarSnapshot[]): void {
@@ -570,12 +581,15 @@ export class CompactLeaderboard {
       row.driver.hidden = true;
     }
 
-    const tagList = resolveStandingsTags(snap, this.tagOptions());
-    const tagsHtml = renderTimingStatusTagsHtml(tagList, "standings-wec-tag");
+    const statusTags = resolveStandingsTags(snap, this.tagOptions());
+    let tagsHtml = renderTimingStatusTagsHtml(statusTags, "standings-wec-tag");
+    if (isExperimentalEntry(snap.entryMode)) {
+      tagsHtml = `${experimentalEntryBadgeHtml()}${tagsHtml}`;
+    }
     if (row.tags.innerHTML !== tagsHtml) {
       row.tags.innerHTML = tagsHtml;
     }
-    row.tags.hidden = tagList.length === 0;
+    row.tags.hidden = tagsHtml.length === 0;
 
     row.gap.textContent = gap;
 

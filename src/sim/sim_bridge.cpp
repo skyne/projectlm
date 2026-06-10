@@ -90,19 +90,19 @@ bool SimBridge::initFromRaceConfig(const std::string &raceConfigPath) {
   initWeatherOnSession(session, config);
   ApplyGridTyresForWeather(session);
   ApplyOpenSessionPlacement(session);
-  if (!initSession(session))
+  if (!initSession(std::move(session)))
     return false;
   applyCarConditions(config.carConditionsPath);
   return true;
 }
 
-bool SimBridge::initSession(const RaceSession &session) {
+bool SimBridge::initSession(RaceSession &&session) {
   if (session.cars.empty() || session.track.sectors.empty())
     return false;
 
-  session_ = session;
-  if (session_.corridor.length() <= 0.0)
-    InitSessionCorridor(session_);
+  session_ = std::move(session);
+  // Corridor holds a raw pointer into session_.track — rebuild after move.
+  InitSessionCorridor(session_);
   InitSessionRaceControl(session_);
   pendingEvents_.clear();
   pendingCommands_.clear();

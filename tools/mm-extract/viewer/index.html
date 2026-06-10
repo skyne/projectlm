@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MM car prototypes</title>
+  <style>
+    * { margin: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; }
+    #hud {
+      position: fixed; left: 12px; top: 12px; z-index: 2;
+      background: rgba(0,0,0,.6); padding: 12px 14px; border-radius: 8px; font-size: 13px; line-height: 1.5;
+      max-width: 320px;
+    }
+    #status { color: #8b949e; margin-top: 6px; }
+    #picker { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    button {
+      background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+      border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px;
+    }
+    button.active { background: #388bfd; border-color: #388bfd; color: #fff; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <strong>Motorsport Manager → GLB prototypes</strong>
+    <div id="picker">
+      <button data-car="formula" class="active">Formula</button>
+      <button data-car="lmp">LMP</button>
+      <button data-car="gt">GT</button>
+    </div>
+    <div id="status">Loading …</div>
+    <div style="margin-top:6px;color:#8b949e;font-size:12px">drag = orbit · scroll = zoom</div>
+  </div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+    const CACHE_BUST = "__BUILD_STAMP__";
+    const CARS = {
+      formula: { file: "./car_formula.glb", label: "Formula · SimCar_01 + wheels" },
+      lmp: { file: "./car_lmp.glb", label: "LMP · SimCarEndurance + game textures" },
+      gt: { file: "./car_gt.glb", label: "GT · SimCarGT + game textures" },
+    };
+
+    const status = document.getElementById("status");
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0d1117);
+    scene.fog = new THREE.Fog(0x0d1117, 12, 40);
+
+    const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 200);
+    camera.position.set(4, 2.2, 5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0.4, 0);
+    controls.update();
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const key = new THREE.DirectionalLight(0xffffff, 1.1);
+    key.position.set(5, 8, 4);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0x88aaff, 0.35);
+    fill.position.set(-4, 2, -3);
+    scene.add(fill);
+
+    const grid = new THREE.GridHelper(20, 20, 0x30363d, 0x21262d);
+    grid.position.y = -0.01;
+    scene.add(grid);
+
+    const loader = new GLTFLoader();
+    let active = null;
+
+    function clearCar() {
+      if (active) {
+        scene.remove(active);
+        active.traverse((o) => {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material) {
+            if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose());
+            else o.material.dispose();
+          }
+        });
+        active = null;
+      }
+    }
+
+    function loadCar(key) {
+      const spec = CARS[key];
+      status.textContent = `Loading ${spec.label} …`;
+      clearCar();
+      loader.load(
+        `${spec.file}?v=${CACHE_BUST}`,
+        (gltf) => {
+          active = gltf.scene;
+          scene.add(active);
+          const box = new THREE.Box3().setFromObject(active);
+          const size = box.getSize(new THREE.Vector3());
+          status.textContent = `${spec.label} · ~${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} m`;
+          controls.target.set(0, size.y * 0.25, 0);
+          controls.update();
+        },
+        undefined,
+        (err) => {
+          status.textContent = `Failed ${spec.file}: ${err.message}`;
+          console.error(err);
+        },
+      );
+    }
+
+    document.querySelectorAll("#picker button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#picker button").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        loadCar(btn.dataset.car);
+      });
+    });
+
+    loadCar("formula");
+
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    (function tick() {
+      requestAnimationFrame(tick);
+      renderer.render(scene, camera);
+    })();
+  </script>
+</body>
+</html>

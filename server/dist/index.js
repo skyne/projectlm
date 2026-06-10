@@ -112,6 +112,11 @@ function main() {
             }
         }
         if (sessionActive) {
+            const catchUpEvents = host.getActiveSessionEvents();
+            if (catchUpEvents.length > 0) {
+                const eventsPayload = { events: catchUpEvents, catchUp: true };
+                ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("events", eventsPayload)));
+            }
             const catchUp = {
                 raceTime: host.getRaceTime(),
                 snapshots: host.getSnapshots(),
@@ -642,6 +647,16 @@ function main() {
                     ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("engineer_advice", advice)));
                 }
             }
+            else if (msg.type === "dismiss_engineer_hint") {
+                const payload = msg.payload;
+                const hintId = String(payload.hintId ?? "").trim();
+                if (!hintId) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: "hintId required" })));
+                }
+                else {
+                    host.dismissEngineerHint(hintId);
+                }
+            }
             else if (msg.type === "get_track_preview") {
                 const trackId = String(msg.payload.trackId ?? "").trim();
                 const geometry = host.getTrackPreview(trackId);
@@ -848,6 +863,8 @@ function main() {
             ? "Private test"
             : `${weekendSessionType} session`;
         console.log(`[server] ${completeLabel} complete`);
+    }, (hint) => {
+        broadcast(clients, (0, ws_protocol_1.serverMessage)("engineer_hint", hint));
     });
     if (process.env.DEV_TOOLS !== "0") {
         startDevSessionLogApi(host.repoRoot, Number(process.env.DEV_HTTP_PORT ?? PORT + 1));

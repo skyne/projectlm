@@ -26,6 +26,65 @@
     ],
     "notes": "Typical width 12 m; main straight up to 14 m."
   },
+  "surface_defaults": {
+    "verge_width_m": 2.0,
+    "runoff_width_m": 11.0,
+    "kerb_width_m": 0.5
+  },
+  "surface_profile": [
+    {
+      "name": "Signes blue zone",
+      "start_t": 0.52,
+      "end_t": 0.58,
+      "side": "outboard",
+      "surface": "runoff_asphalt",
+      "variant": "blue",
+      "width_m": 18.0,
+      "width_start_m": 10,
+      "width_end_m": 20,
+      "envelope": "flare_exit",
+      "grip_multiplier": 0.78
+    },
+    {
+      "name": "Signes red zone",
+      "start_t": 0.53,
+      "end_t": 0.57,
+      "side": "outboard",
+      "surface": "runoff_asphalt",
+      "variant": "red",
+      "inner_offset_m": 18,
+      "width_m": 6.0,
+      "grip_multiplier": 0.42
+    },
+    {
+      "name": "Signes Tecpro",
+      "start_t": 0.52,
+      "end_t": 0.58,
+      "side": "outboard",
+      "surface": "barrier_tecpro",
+      "inner_offset_m": 24,
+      "width_m": 1.2,
+      "grip_multiplier": 0.0
+    },
+    {
+      "name": "T4 exit gravel",
+      "start_t": 0.36,
+      "end_t": 0.4,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 10.0,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Beausset sausage kerb",
+      "start_t": 0.7,
+      "end_t": 0.74,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    }
+  ],
   "interpolation": "linear",
   "control_points": [
     {
@@ -13079,5 +13138,16 @@
     "wikimedia_file": "Circuit Paul Ricard 2020 layout map.svg",
     "attribution": "Wikimedia Commons \u2014 Circuit Paul Ricard 2020 layout map.svg",
     "mode": "polyline-linear"
+  },
+  "surface_metadata": {
+    "confidence": "estimated",
+    "last_reviewed": "2026-06-10",
+    "sources": [
+      "circuit_paul_ricard_blue_line",
+      "circuit_paul_ricard_fia_grade_1",
+      "elmans_paul_ricard_facts",
+      "fia_appendix_o_2025"
+    ],
+    "notes": "Paul Ricard HTTT Blue Line\u2122: ~18 m blue zone (asphalt+tungsten), ~6 m red abrasive zone, Tecpro beyond. T4 retains gravel; Beausset double kerbs."
   }
 }

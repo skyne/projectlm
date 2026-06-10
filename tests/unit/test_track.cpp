@@ -3,6 +3,22 @@
 #include <catch_amalgamated.hpp>
 #include <cmath>
 
+TEST_CASE("All implemented tracks load surface profile", "[unit][track]") {
+  const char *tracks[] = {
+      "bahrain.json",       "cota.json",           "fuji.json",
+      "imola.json",         "lemans_la_sarthe.json", "losail.json",
+      "paul_ricard.json",   "sample_circuit.json", "sao_paulo.json",
+      "spa.json",
+  };
+  for (const char *file : tracks) {
+    TrackDefinition track;
+    INFO(file);
+    REQUIRE(LoadTrack(TrackPath(file), track));
+    REQUIRE(track.corridor.surfaceProfile.size() >= 3);
+    REQUIRE(track.corridor.surfaceDefaults.runoffWidthM > 0.0);
+  }
+}
+
 TEST_CASE("LoadTrack loads La Sarthe JSON", "[unit][track]") {
   TrackDefinition track;
   REQUIRE(LoadTrack(TrackPath("lemans_la_sarthe.json"), track));

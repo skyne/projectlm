@@ -14,6 +14,7 @@ static void LoadGoldenCar(PartCatalog &catalog, AssemblyConfig &assembly,
   REQUIRE(LoadAssemblyConfig(ConfigPath("physics_config.txt"), assembly));
   REQUIRE(LoadCarConfig(ConfigPath("car_config.txt"), car));
   REQUIRE(LoadTrack(TrackPath("lemans_la_sarthe.json"), track));
+  physics.useFrenetDynamics = false;
   CompileCarArchitecture(car, catalog, assembly);
 }
 
@@ -379,13 +380,17 @@ TEST_CASE("Engine wear scales linearly with stress not squared",
   gasState.currentRPM = static_cast<double>(car.engine.maxRPM) * 0.92;
   gasState.fuelRemaining = car.fuelTankCapacity;
   const double dt = 0.1;
-  const int ticks = 400;
+  // vibration_damage_rate is tuned for 24h WEC — need ~2.5 min at high RPM
+  // stress to accumulate measurable ICE wear in a unit test.
+  const int ticks = 1600;
   for (int i = 0; i < ticks; ++i)
     TickSimulation(car, track, gasState, dt, physics);
   const double gasWear = 100.0 - gasState.engineHealth;
 
   car.engine.fuelType = "Hydrogen";
+  car.engine.energyConverter.clear();
   CompileCarArchitecture(car, catalog, assembly);
+  REQUIRE_FALSE(car.isFuelCell);
 
   SimulationState h2State;
   h2State.currentSpeed = 75.0;

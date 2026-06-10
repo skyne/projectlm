@@ -45,6 +45,7 @@ import {
 import { mmPanelHeader } from "../utils/mmUi";
 import { formatProgressionLine, xpBarPercent } from "../utils/progression";
 import { mountLiveryCanvas } from "../graphics/liveryRenderer";
+import { carBuildToVisual } from "../graphics/visualCatalog";
 import { resolveTeamLivery } from "../utils/teamLivery";
 import { LiveryEditor } from "./LiveryEditor";
 
@@ -584,6 +585,7 @@ export class TeamHQ {
             logoDataUrl: livery.logoDataUrl,
             classId: car.classId,
             teamName: meta.teamName,
+            visualBuild: carBuildToVisual(car.build),
             width: 280,
             height: 72,
           });

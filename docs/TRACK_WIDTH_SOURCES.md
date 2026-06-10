@@ -112,3 +112,43 @@ tier-2 measurements are added.
 `track.cpp` loads `track_width_m`, `width_profile`, and `pit_lane.offset_m` into
 the sim corridor; additional `pit_lane` and `width_metadata` fields are retained
 for tooling and future corridor merge logic.
+
+---
+
+## Surface profile sources (`surface_profile`, `surface_metadata`)
+
+Corner-specific runoff, kerb, gravel, and barrier bands live in each track JSON.
+Values are **estimated** templates mapped from published safety programmes, FIA
+circuit maps, and motorsport press — not as-built CAD. Re-author with
+`python3 tools/author_surface_profiles.py` (COTA is maintained separately).
+
+| Track file | Segments | Confidence | Primary surface sources |
+|------------|----------:|:----------:|-------------------------|
+| `cota.json` | 33 | mapped | GRIDLIFE official safety map (`tracks/reference/cota_gridlife_safety_map.png`); 2024 F1 turf/fake-gravel overlays |
+| `spa.json` | 13 | estimated | Spa-Francorchamps 2022 working-progress bulletin; Autosport gravel return |
+| `imola.json` | 9 | estimated | Motorsport.com 2024 gravel expansion; Tracing Insights 2025 preview |
+| `lemans_la_sarthe.json` | 10 | estimated | FIA WEC / ACO Porsche Curves upgrades; Autosport safety revamp articles |
+| `paul_ricard.json` | 5 | estimated | Circuit Paul Ricard Blue Line™ docs; ELMS facts sheet |
+| `bahrain.json` | 5 | estimated | FIA Grade 1 + typical Gulf layout gravel at T4/T10 |
+| `fuji.json` | 5 | estimated | 2005 Tilke redesign safety (gravel + asphalt runoff) |
+| `losail.json` | 6 | estimated | 2025 Qatar GP gravel strips (T6, T10, T14, T16) |
+| `sao_paulo.json` | 5 | estimated | RacingCircuits.info 2014 Interlagos refurb |
+| `sample_circuit.json` | 4 | synthetic | FIA Appendix O test template |
+
+### Surface citation keys
+
+| Key | Summary | URL |
+|-----|---------|-----|
+| `spa_francorchamps_workingprogress_2022` | Official 2022 runoff/gravel corner list | https://www.spa-francorchamps.be/en/news/248_workingprogress |
+| `autosport_spa_gravel_return_2022` | F1 driver support for Spa gravel programme | https://www.autosport.com/f1/news/f1-drivers-support-return-of-gravel-to-spa-francorchamps-4978145/ |
+| `motorsport_imola_gravel_2024` | Imola asphalt→gravel at Piratella, Acque Minerali, Variante Alta | https://www.motorsport.com/f1/news/imola-brings-back-gravel-traps-to-help-drive-away-f1s-track-limits-problem/10611358/ |
+| `tracinginsights_imola_2025` | 2025 Emilia-Romagna GP corner guide | https://tracinginsights.com/blog/321894/all-you-need-to-know-2025-emilia-romagna-grand-prix/ |
+| `fiawec_lemans_track_upgrades` | Porsche Curves gravel widening + Mulsanne verges | https://www.fiawec.com/en/news/circuit-des-24-heures-track-upgrades/2862 |
+| `autosport_porsche_curves_safety` | Porsche Curves phase-2 asphalt runoff | https://www.autosport.com/wec/news/porsche-curves-safety-upgrade-on-le-mans-24-hours-circuit-completed-5322760/ |
+| `circuit_paul_ricard_blue_line` | Blue/red abrasive runoff zones | https://signature.circuitpaulricard.com/en/the-circuit/technologies-innovations |
+| `qatar_gp_2025_gravel_track_limits` | Losail T6/T10/T14/T16 gravel for 2025 | https://sports.yahoo.com/articles/f1-makes-track-changes-avoid-110000464.html |
+| `racingcircuits_interlagos_2014_refurb` | Senna S runoff expansion | https://www.racingcircuits.info/south-america/brazil/interlagos.html |
+| `gridlife_cota_driver_resources_safety_map` | Official runoff/gravel/barrier map (20 corners) | https://www.grid.life/cota-drivers-resources-1 |
+| `cota_track_limits_2024_motorsport` | COTA turf/fake gravel corners (2024 F1) | (see `cota.json` `surface_metadata`) |
+| `fuji_speedway_tilke_2005_redesign` | Grade 1 gravel + asphalt runoff layout | https://en.wikipedia.org/wiki/Fuji_Speedway |
+| `fia_appendix_o_2025` | Baseline runoff/barrier standards | https://www.fia.com/regulation/category/123 |

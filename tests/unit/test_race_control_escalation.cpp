@@ -47,9 +47,12 @@ TEST_CASE("FCY clears after obstruction removed and hold expires",
   UpdateTrackObstructions(session, 0.1);
   session.elapsedRaceTime = car.rcState().recoveryEndTime + 0.1;
   UpdateTrackObstructions(session, 0.1);
+  REQUIRE(car.rcState().trackStatus == TrackStatus::ReturningToGarage);
+  REQUIRE(CountTrackObstructions(session) == 0);
+  session.elapsedRaceTime = car.rcState().garageHandoverTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
   REQUIRE_FALSE(car.isRetired());
   REQUIRE(car.inGarageRebuild());
-  REQUIRE(CountTrackObstructions(session) == 0);
 
   session.raceControl.fcyHoldUntil = 0.0;
   session.raceControl.slowZoneHoldUntil = 0.0;
@@ -69,7 +72,7 @@ TEST_CASE("Collision processing leaves debris on track",
       session,
       {MakeCollisionEvent("entry-1", "entry-2", 4.0, 9.0, true)});
 
-  REQUIRE(session.raceControl.hazards.size() == 1);
+  REQUIRE(session.raceControl.hazards.size() == 3);
   REQUIRE(FindCar(session, "entry-1").rcState().collisionWarnings >= 1);
 }
 
@@ -213,9 +216,12 @@ TEST_CASE("Catastrophic same-side tow delivers car to garage rebuild",
 
   session.elapsedRaceTime = car.rcState().recoveryEndTime + 0.1;
   UpdateTrackObstructions(session, 0.1);
-
-  REQUIRE(car.rcState().trackStatus == TrackStatus::Cleared);
+  REQUIRE(car.rcState().trackStatus == TrackStatus::ReturningToGarage);
   REQUIRE(CountTrackObstructions(session) == 0);
+
+  session.elapsedRaceTime = car.rcState().garageHandoverTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
+  REQUIRE(car.rcState().trackStatus == TrackStatus::Cleared);
   REQUIRE_FALSE(car.isRetired());
   REQUIRE(car.inGarageRebuild());
 }
