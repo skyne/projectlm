@@ -192,6 +192,264 @@ export function formatRaceTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+/** Compact clock for sidebar feed (drops seconds when race is over an hour). */
+export function formatRaceTimeCompact(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+export function formatCarNumber(
+  entryId: string | undefined,
+  maps: RaceLogEntryMaps,
+): string {
+  if (!entryId) return "";
+  const raw = maps.carNumberByEntry.get(entryId)?.trim();
+  if (!raw) return "";
+  return `#${raw.replace(/^#/, "")}`;
+}
+
+export interface SidebarLogFilters {
+  track: boolean;
+  myTeam: boolean;
+  allIncidents: boolean;
+  traffic: boolean;
+}
+
+/** Union of all sidebar filter categories — used to decide what to keep in the compact feed buffer. */
+export function matchesSidebarRetainFilter(
+  event: SimEvent,
+  managedEntryIds: Set<string>,
+): boolean {
+  return matchesSidebarLogFilter(
+    event,
+    { track: true, myTeam: true, allIncidents: true, traffic: true },
+    managedEntryIds,
+  );
+}
+
+export function matchesSidebarLogFilter(
+  event: SimEvent,
+  filters: SidebarLogFilters,
+  managedEntryIds: Set<string>,
+): boolean {
+  if (!isRaceLogEvent(event)) return false;
+  const type = normalizeSimEventType(event.type);
+  const cat = categorizeEvent({ ...event, type });
+
+  if (isWeatherEvent(event)) return filters.track;
+
+  const isTrackWide =
+    cat === "race_control" ||
+    cat === "session" ||
+    type === "TrackClear" ||
+    type === "SurfaceHazard" ||
+    type === "SurfaceCleared";
+
+  if (isTrackWide && filters.track) return true;
+
+  const involvesManaged =
+    (event.entryId != null && managedEntryIds.has(event.entryId)) ||
+    (event.otherEntryId != null && managedEntryIds.has(event.otherEntryId));
+
+  if (involvesManaged && filters.myTeam) {
+    if (cat === "penalty" || cat === "pit") return true;
+    if (
+      type === "Retirement" ||
+      type === "Collision" ||
+      type === "Blocked" ||
+      type === "Stranded" ||
+      type === "RecoveryDispatched" ||
+      type === "RacingIncident" ||
+      type === "PenaltyWarning"
+    ) {
+      return true;
+    }
+  }
+
+  if (filters.allIncidents && (cat === "incident" || cat === "penalty")) return true;
+  if (filters.traffic && cat === "traffic") return true;
+  return false;
+}
+
+export function eventTypeShortLabel(type: SimEventType): string {
+  const labels: Partial<Record<SimEventType, string>> = {
+    PenaltyIssued: "PEN",
+    PenaltyWarning: "WARN",
+    DriveThroughServed: "DT",
+    StopGoServed: "SG",
+    MeatballFlag: "MEAT",
+    BlackFlag: "BLACK",
+    Disqualified: "DSQ",
+    BlueFlag: "BLUE",
+    Collision: "HIT",
+    Blocked: "BLK",
+    Retirement: "OUT",
+    RacingIncident: "INC",
+    Stranded: "STOP",
+    RecoveryDispatched: "REC",
+    TrackClear: "CLEAR",
+    SurfaceHazard: "HZ",
+    SurfaceCleared: "CLR",
+    FcyDeploy: "FCY",
+    FcyEnd: "FCY END",
+    SafetyCarDeploy: "SC",
+    SafetyCarInThisLap: "SC IN",
+    GreenFlag: "GREEN",
+    WhiteFlag: "WHITE",
+    RedFlagDeploy: "RED",
+    RedFlagExtended: "RED+",
+    RedFlagEnd: "GREEN",
+    SlowZone: "SZ",
+    PitEnter: "IN",
+    PitExit: "OUT",
+    Overtake: "PASS",
+    RaceComplete: "FIN",
+  };
+  return labels[type] ?? eventTypeLabel(type).split(/\s+/).slice(0, 2).join(" ");
+}
+
+function shortenSanction(sanction: string): string {
+  const lower = sanction.toLowerCase();
+  if (lower.includes("drive")) return "DT";
+  if (lower.includes("stop")) return "SG";
+  if (lower.includes("time")) return "TIME";
+  if (lower.includes("reprimand")) return "REP";
+  return sanction.split(/\s+/)[0]?.toUpperCase() ?? sanction;
+}
+
+function compactWeatherDetail(message: string): string {
+  return message.replace(/^Weather:\s*/i, "").trim();
+}
+
+function compactControlHint(event: SimEvent): string {
+  const msg = (event.message ?? "").replace(/\s+undefined/g, "").trim();
+  if (!msg) return "";
+  const type = normalizeSimEventType(event.type);
+  const upper = msg.toUpperCase();
+  if (upper === eventTypeShortLabel(type) || upper === eventTypeLabel(type)) return "";
+  if (type === "SlowZone" && /sector|turn|t\d/i.test(msg)) {
+    return msg.replace(/slow\s*zone\s*[-–:]?\s*/i, "").trim();
+  }
+  return msg.length > 48 ? `${msg.slice(0, 45)}…` : msg;
+}
+
+function truncateDetail(text: string, max = 42): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
+}
+
+function sidebarTagClass(type: SimEventType): string {
+  const cat = categorizeEvent({ type, timestamp: 0, message: "" });
+  if (cat === "race_control" || cat === "session") return "ctrl";
+  if (cat === "penalty") return "pen";
+  if (cat === "incident") return "inc";
+  if (cat === "pit") return "pit";
+  if (cat === "traffic") return "traf";
+  if (cat === "weather") return "wx";
+  return "misc";
+}
+
+/** Dense one-line HTML for the right-sidebar race feed. */
+export function formatSidebarLogHtml(event: SimEvent, maps: RaceLogEntryMaps): string {
+  const type = normalizeSimEventType(event.type);
+  const car = formatCarNumber(event.entryId, maps);
+  const other = formatCarNumber(event.otherEntryId, maps);
+  const tag = eventTypeShortLabel(type);
+  const tagHtml = `<span class="sidebar-log-tag sidebar-log-tag-${sidebarTagClass(type)}">${escapeHtml(tag)}</span>`;
+
+  if (isWeatherEvent(event)) {
+    const detail = compactWeatherDetail(event.message ?? "");
+    return `${tagHtml}<span class="sidebar-log-msg">${escapeHtml(truncateDetail(detail))}</span>`;
+  }
+
+  if (
+    RACE_CONTROL_TYPES.has(type) ||
+    type === "RaceComplete" ||
+    type === "TrackClear"
+  ) {
+    const hint = compactControlHint(event);
+    return hint
+      ? `${tagHtml}<span class="sidebar-log-msg">${escapeHtml(hint)}</span>`
+      : tagHtml;
+  }
+
+  if (type === "SurfaceHazard" || type === "SurfaceCleared") {
+    const msg = (event.message ?? "").replace(/\s+undefined/g, "").trim();
+    const detail = msg.replace(/^(surface\s*(hazard|cleared))\s*[-–:]?\s*/i, "").trim();
+    const carPart = car ? `<span class="sidebar-log-car">${escapeHtml(car)}</span>` : "";
+    const body = detail && !detail.toLowerCase().includes(car.replace("#", ""))
+      ? `<span class="sidebar-log-msg">${escapeHtml(truncateDetail(detail))}</span>`
+      : "";
+    return `${tagHtml}${carPart}${body}`;
+  }
+
+  if (type === "PenaltyIssued" || type === "PenaltyWarning") {
+    const parsed = parsePenaltyMessage(event.message ?? "");
+    const reason = parsed?.reason ?? (event.message ?? "");
+    const sanction = parsed?.sanction ? shortenSanction(parsed.sanction) : "";
+    const sfx = sanction
+      ? ` <span class="sidebar-log-sfx">(${escapeHtml(sanction)})</span>`
+      : "";
+    const carPart = car ? `<span class="sidebar-log-car">${escapeHtml(car)}</span>` : "";
+    return `${tagHtml}${carPart}<span class="sidebar-log-msg">${escapeHtml(truncateDetail(reason))}</span>${sfx}`;
+  }
+
+  if (type === "Retirement") {
+    const match = (event.message ?? "").match(/retired:\s*(.+)$/i);
+    const reason = match?.[1]?.trim() ?? (event.message ?? "");
+    const carPart = car ? `<span class="sidebar-log-car">${escapeHtml(car)}</span>` : "";
+    return `${tagHtml}${carPart}<span class="sidebar-log-msg">${escapeHtml(truncateDetail(reason))}</span>`;
+  }
+
+  if (type === "Collision" || type === "Blocked") {
+    const pair =
+      car && other ? `${car}×${other}` : car || other || "hit";
+    return `${tagHtml}<span class="sidebar-log-car">${escapeHtml(pair)}</span>`;
+  }
+
+  if (type === "Overtake") {
+    const pair = car && other ? `${car}>${other}` : car || other;
+    return `${tagHtml}<span class="sidebar-log-car">${escapeHtml(pair)}</span>`;
+  }
+
+  if (type === "PitEnter" || type === "PitExit") {
+    const carPart = car ? `<span class="sidebar-log-car">${escapeHtml(car)}</span>` : "";
+    return `${tagHtml}${carPart}`;
+  }
+
+  if (type === "RacingIncident") {
+    const detail = (event.message ?? "")
+      .replace(/^Racing incident — no penalty:\s*/i, "no pen · ")
+      .trim();
+    const carPart = car ? `<span class="sidebar-log-car">${escapeHtml(car)}</span>` : "";
+    return `${tagHtml}${carPart}<span class="sidebar-log-msg">${escapeHtml(truncateDetail(detail))}</span>`;
+  }
+
+  if (
+    type === "DriveThroughServed" ||
+    type === "StopGoServed" ||
+    type === "MeatballFlag" ||
+    type === "BlackFlag" ||
+    type === "Disqualified" ||
+    type === "BlueFlag" ||
+    type === "Stranded" ||
+    type === "RecoveryDispatched"
+  ) {
+    const carPart = car ? `<span class="sidebar-log-car">${escapeHtml(car)}</span>` : "";
+    const msg = (event.message ?? "").replace(/\s+undefined/g, "").trim();
+    const body = msg ? `<span class="sidebar-log-msg">${escapeHtml(truncateDetail(msg))}</span>` : "";
+    return `${tagHtml}${carPart}${body}`;
+  }
+
+  const msg = (event.message ?? "").replace(/\s+undefined/g, "").trim();
+  const carPart = car ? `<span class="sidebar-log-car">${escapeHtml(car)}</span>` : "";
+  return `${tagHtml}${carPart}${msg ? `<span class="sidebar-log-msg">${escapeHtml(truncateDetail(msg))}</span>` : ""}`;
+}
+
 export function formatEntryLabel(
   entryId: string | undefined,
   maps: RaceLogEntryMaps,

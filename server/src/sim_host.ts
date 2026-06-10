@@ -12,7 +12,10 @@ import {
   pendingJointTestingBundles,
   validatePrivateTestPayload,
 } from "./game/private_test";
-import { loadTrackGeometryById } from "./game/track_loader";
+import {
+  enrichTrackGeometryFromJson,
+  loadTrackGeometryById,
+} from "./game/track_loader";
 import { loadGameCatalog } from "./game/catalog";
 import { playerCarPath } from "./game/car_builder";
 import {
@@ -832,8 +835,13 @@ export class SimHost {
       this.repoRoot,
       this.parsedConfig.trackConfigPath,
     );
-    if (mapLabels.length === 0) return geometry;
-    return { ...geometry, mapLabels };
+    const withLabels =
+      mapLabels.length === 0 ? geometry : { ...geometry, mapLabels };
+    return enrichTrackGeometryFromJson(
+      withLabels,
+      this.repoRoot,
+      this.parsedConfig.trackConfigPath,
+    );
   }
 
   getTrackPreview(trackId: string): TrackGeometryPayload | null {

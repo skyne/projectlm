@@ -17,12 +17,14 @@ void StrandStoppedCar(Car &car, RaceSession &session, const std::string &reason,
 
 void SpawnSurfaceHazard(RaceSession &session, double distance,
                         HazardKind kind, const std::string &sourceEntryId,
-                        double gripMultiplier, double spanMeters);
+                        double gripMultiplier, double spanMeters,
+                        double centerLateralM = 0.0,
+                        double lateralSpanM = 0.0);
 
 void UpdateTrackHazards(RaceSession &session, double deltaTime);
 
 double LocalGripMultiplierAt(const RaceSession &session, double distance,
-                             double lapLength);
+                             double lateralNM, double lapLength);
 
 void UpdateRaceControl(RaceSession &session,
                        const std::vector<TrafficEvent> &trafficEvents);
@@ -69,6 +71,8 @@ struct DebugRaceControlRequest {
   std::string reason;
   std::string kind;
   double gripMultiplier = 0.7;
+  double lateralNM = 0.0;
+  double lateralSpanM = 0.0;
   bool active = true;
 };
 

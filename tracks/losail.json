@@ -2,6 +2,28 @@
   "name": "Lusail International Circuit",
   "closed": true,
   "lap_length": 5380.0,
+  "track_width_m": 12.0,
+  "width_profile": [
+    {
+      "name": "grid straight",
+      "start_t": 0.0,
+      "end_t": 0.12,
+      "width_m": 15.0
+    }
+  ],
+  "pit_lane": {
+    "width_m": 12.0,
+    "offset_m": 10.0,
+    "merge_lateral_offset": 0.58,
+    "merge_blend_m": 80.0
+  },
+  "width_metadata": {
+    "confidence": "estimated",
+    "last_reviewed": "2026-06-10",
+    "sources": [
+      "fia_appendix_o_2025"
+    ]
+  },
   "interpolation": "linear",
   "control_points": [
     {

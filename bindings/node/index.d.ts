@@ -55,6 +55,9 @@ export interface CarSnapshot {
   position: Vec3;
   tangent: Vec3;
   lateralOffset?: number;
+  lateralOffsetM?: number;
+  headingError?: number;
+  poseIncludesLateral?: boolean;
   carLengthM?: number;
   carWidthM?: number;
   driverName?: string;
@@ -239,6 +242,10 @@ export interface SurfaceHazardSummaryPayload {
   sectorIndex: number;
   kind: string;
   gripMultiplier: number;
+  centerDistance?: number;
+  centerLateralM?: number;
+  spanMeters?: number;
+  lateralSpanM?: number;
 }
 
 export interface RaceControlPayload {

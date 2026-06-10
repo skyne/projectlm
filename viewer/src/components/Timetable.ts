@@ -88,9 +88,9 @@ export class Timetable {
 
   constructor(container: HTMLElement) {
     this.root = document.createElement("section");
-    this.root.className = "panel timetable panel-wec";
+    this.root.className = "panel timetable panel-wec panel-dense";
     this.root.innerHTML = `
-      ${mmPanelHeader("Live Timing", { subtitle: "Sector times · lap history", badge: "LIVE" })}
+      ${mmPanelHeader("Live Timing", { subtitle: "Sector times · lap history", badge: "LIVE", theme: "dense" })}
       <div class="timetable-toolbar">
         <div class="timetable-view-toggle" role="group" aria-label="Column view">
           <button type="button" class="timetable-view-btn active" data-view="sectors">Sectors</button>

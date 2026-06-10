@@ -1,71 +1,29 @@
-import type { SimEvent, SimEventType } from "../ws/protocol";
-import { mmPanelHeader } from "../utils/mmUi";
+import type { SimEvent } from "../ws/protocol";
 import {
-  formatRaceLogHtml,
-  formatRaceTime,
-  isRaceLogEvent,
-  isWeatherEvent,
+  formatRaceTimeCompact,
+  formatSidebarLogHtml,
+  matchesSidebarLogFilter,
+  matchesSidebarRetainFilter,
+  normalizeSimEvent,
   type RaceLogEntryMaps,
+  type SidebarLogFilters,
 } from "../utils/raceLog";
 
-const MAX_EVENTS = 120;
+/** Max sidebar-eligible events retained (not raw race-log noise). */
+const MAX_RETAINED = 120;
 
-/** Penalties, flags, FCY/SC, surface hazards, session milestones. */
-const RACE_CONTROL_TYPES = new Set<SimEventType>([
-  "RaceComplete",
-  "TrackClear",
-  "SurfaceHazard",
-  "SurfaceCleared",
-  "BlueFlag",
-  "PenaltyIssued",
-  "DriveThroughServed",
-  "StopGoServed",
-  "MeatballFlag",
-  "BlackFlag",
-  "Disqualified",
-  "SlowZone",
-  "FcyDeploy",
-  "FcyEnd",
-  "SafetyCarDeploy",
-  "SafetyCarInThisLap",
-  "GreenFlag",
-  "WhiteFlag",
-  "RedFlagDeploy",
-  "RedFlagExtended",
-  "RedFlagEnd",
-]);
+const SETTINGS_ICON = `<svg class="standings-wec-settings-icon" viewBox="0 0 24 24" aria-hidden="true">
+  <path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8m9.4 4a7.4 7.4 0 0 1-.1 1l2 1.6-2 3.4-2.4-1a7.6 7.6 0 0 1-1.7 1l-.4 2.6H9.2l-.4-2.6a7.6 7.6 0 0 1-1.7-1l-2.4 1-2-3.4 2-1.6a7.4 7.4 0 0 1-.1-1 7.4 7.4 0 0 1 .1-1l-2-1.6 2-3.4 2.4 1a7.6 7.6 0 0 1 1.7-1l.4-2.6h5.6l.4 2.6a7.6 7.6 0 0 1 1.7 1l2.4-1 2 3.4-2 1.6q.1.5.1 1"/>
+</svg>`;
 
-const MY_TEAM_INCIDENT_TYPES = new Set<SimEventType>([
-  "Retirement",
-  "Collision",
-  "Blocked",
-  "PenaltyWarning",
-  "RacingIncident",
-  "Stranded",
-  "RecoveryDispatched",
-]);
-
-const ALL_INCIDENT_TYPES = new Set<SimEventType>([
-  "Retirement",
-  "Collision",
-  "Blocked",
-  "PenaltyWarning",
-  "RacingIncident",
-  "Stranded",
-]);
-
-const TRACK_TYPES = new Set<SimEventType>(["Overtake"]);
-
-export interface EventLogFilterState {
-  myTeam: boolean;
-  director: boolean;
-  incidents: boolean;
-  track: boolean;
-}
+export type EventLogFilterState = SidebarLogFilters;
 
 export class EventLog {
   readonly root: HTMLElement;
   private list: HTMLUListElement;
+  private settingsBtn: HTMLButtonElement;
+  private settingsMenu: HTMLElement;
+  private settingsDocListener: ((ev: MouseEvent) => void) | null = null;
   private playerEntryId = "entry-1";
   private managedEntryIds = new Set<string>(["entry-1"]);
   private entryMaps: RaceLogEntryMaps = {
@@ -73,32 +31,68 @@ export class EventLog {
     carNumberByEntry: new Map(),
   };
   private allEvents: SimEvent[] = [];
-  private filters: EventLogFilterState = {
+  private filters: SidebarLogFilters = {
+    track: true,
     myTeam: true,
-    director: true,
-    incidents: false,
-    track: false,
+    allIncidents: false,
+    traffic: false,
   };
 
   constructor(container: HTMLElement) {
     this.root = document.createElement("section");
-    this.root.className = "panel event-log panel-wec";
+    this.root.className = "panel event-log panel-wec sidebar-log-feed";
     this.root.innerHTML = `
-      ${mmPanelHeader("Race Log", { subtitle: "Penalties, incidents & track status", badge: "LIVE" })}
-      <div class="event-log-filters">
-        <label><input type="checkbox" data-filter="myTeam" checked /> My team</label>
-        <label><input type="checkbox" data-filter="director" checked /> Race control</label>
-        <label><input type="checkbox" data-filter="incidents" /> All incidents</label>
-        <label><input type="checkbox" data-filter="track" /> Traffic</label>
-      </div>
-      <ul class="event-list"></ul>
+      <header class="sidebar-log-header">
+        <div class="sidebar-log-header-text">
+          <span class="sidebar-log-kicker">Race Control</span>
+          <h2 class="sidebar-log-title">Track Feed</h2>
+        </div>
+        <div class="sidebar-log-header-actions">
+          <span class="mm-badge mm-badge-live-gradient sidebar-log-live">LIVE</span>
+          <button
+            type="button"
+            class="standings-wec-settings-btn sidebar-log-settings-btn"
+            aria-label="Track feed filters"
+            aria-expanded="false"
+            aria-haspopup="true"
+            title="Feed filters"
+          >
+            ${SETTINGS_ICON}
+          </button>
+          <div class="standings-wec-settings-menu sidebar-log-settings-menu hidden" role="menu">
+            <p class="standings-wec-settings-heading">Show</p>
+            <div class="standings-wec-settings-toggles sidebar-log-settings-toggles">
+              <label class="standings-wec-settings-check">
+                <input type="checkbox" data-filter="track" checked /> Track &amp; flags
+              </label>
+              <label class="standings-wec-settings-check">
+                <input type="checkbox" data-filter="myTeam" checked /> My cars
+              </label>
+              <label class="standings-wec-settings-check">
+                <input type="checkbox" data-filter="allIncidents" /> All incidents
+              </label>
+              <label class="standings-wec-settings-check">
+                <input type="checkbox" data-filter="traffic" /> Overtakes
+              </label>
+            </div>
+          </div>
+        </div>
+      </header>
+      <ul class="sidebar-log-list" aria-live="polite"></ul>
     `;
-    this.list = this.root.querySelector(".event-list")!;
+    this.list = this.root.querySelector(".sidebar-log-list")!;
+    this.settingsBtn = this.root.querySelector(".sidebar-log-settings-btn")!;
+    this.settingsMenu = this.root.querySelector(".sidebar-log-settings-menu")!;
     container.appendChild(this.root);
+
+    this.settingsBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.toggleSettingsMenu();
+    });
 
     this.root.querySelectorAll("[data-filter]").forEach((input) => {
       input.addEventListener("change", () => {
-        const key = (input as HTMLInputElement).dataset.filter as keyof EventLogFilterState;
+        const key = (input as HTMLInputElement).dataset.filter as keyof SidebarLogFilters;
         this.filters[key] = (input as HTMLInputElement).checked;
         this.render();
       });
@@ -111,6 +105,7 @@ export class EventLog {
 
   setManagedEntryIds(entryIds: string[]): void {
     this.managedEntryIds = new Set(entryIds.length ? entryIds : [this.playerEntryId]);
+    this.render();
   }
 
   setEntryNames(entries: Array<{ entryId: string; teamName: string }>): void {
@@ -120,14 +115,45 @@ export class EventLog {
 
   setEntryMaps(maps: RaceLogEntryMaps): void {
     this.entryMaps = maps;
+    this.render();
+  }
+
+  /**
+   * Merge eligible events from the full race log (e.g. after reconnect).
+   * Does not drop existing sidebar rows.
+   */
+  backfill(events: SimEvent[]): void {
+    if (!events.length) return;
+    const seen = new Set(this.allEvents.map((e) => this.eventKey(e)));
+    let added = false;
+    for (const event of events.map(normalizeSimEvent)) {
+      if (!matchesSidebarRetainFilter(event, this.managedEntryIds)) continue;
+      const key = this.eventKey(event);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      this.allEvents.push(event);
+      added = true;
+    }
+    if (!added) return;
+    this.allEvents.sort((a, b) => a.timestamp - b.timestamp);
+    this.trimBuffer();
+    this.render();
   }
 
   append(events: SimEvent[]): void {
     if (!events.length) return;
-    this.allEvents.push(...events);
-    while (this.allEvents.length > MAX_EVENTS) {
-      this.allEvents.shift();
+    const seen = new Set(this.allEvents.map((e) => this.eventKey(e)));
+    let added = false;
+    for (const event of events.map(normalizeSimEvent)) {
+      if (!matchesSidebarRetainFilter(event, this.managedEntryIds)) continue;
+      const key = this.eventKey(event);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      this.allEvents.push(event);
+      added = true;
     }
+    if (!added) return;
+    this.trimBuffer();
     this.render();
   }
 
@@ -136,42 +162,67 @@ export class EventLog {
     this.list.replaceChildren();
   }
 
+  private toggleSettingsMenu(): void {
+    const willOpen = this.settingsMenu.classList.contains("hidden");
+    if (!willOpen) {
+      this.closeSettingsMenu();
+      return;
+    }
+    this.settingsMenu.classList.remove("hidden");
+    this.settingsBtn.setAttribute("aria-expanded", "true");
+    this.settingsDocListener = (ev: MouseEvent) => {
+      if (
+        !this.settingsMenu.contains(ev.target as Node) &&
+        !this.settingsBtn.contains(ev.target as Node)
+      ) {
+        this.closeSettingsMenu();
+      }
+    };
+    document.addEventListener("click", this.settingsDocListener);
+  }
+
+  private closeSettingsMenu(): void {
+    this.settingsMenu.classList.add("hidden");
+    this.settingsBtn.setAttribute("aria-expanded", "false");
+    if (this.settingsDocListener) {
+      document.removeEventListener("click", this.settingsDocListener);
+      this.settingsDocListener = null;
+    }
+  }
+
+  private eventKey(event: SimEvent): string {
+    return `${event.timestamp}|${event.type}|${event.entryId ?? ""}|${event.otherEntryId ?? ""}`;
+  }
+
+  private trimBuffer(): void {
+    while (this.allEvents.length > MAX_RETAINED) {
+      this.allEvents.shift();
+    }
+  }
+
   private render(): void {
     this.list.replaceChildren();
+    let shown = 0;
     for (let i = this.allEvents.length - 1; i >= 0; i--) {
       const event = this.allEvents[i]!;
-      if (!this.shouldShow(event)) continue;
+      if (!matchesSidebarLogFilter(event, this.filters, this.managedEntryIds)) continue;
       this.list.appendChild(this.buildRow(event));
+      shown++;
+    }
+    if (shown === 0) {
+      const empty = document.createElement("li");
+      empty.className = "sidebar-log-empty";
+      empty.textContent = "No flags or car events yet";
+      this.list.appendChild(empty);
     }
   }
 
   private buildRow(event: SimEvent): HTMLLIElement {
     const li = document.createElement("li");
-    li.className = `event event-${event.type}${isWeatherEvent(event) ? " event-weather" : ""}`;
-    const time = formatRaceTime(event.timestamp);
-    li.innerHTML = `<span class="time">${time}</span> ${formatRaceLogHtml(event, this.entryMaps)}`;
+    const type = event.type.replace(/[^a-z0-9_-]/gi, "");
+    li.className = `sidebar-log-row sidebar-log-row-${type}`;
+    const time = formatRaceTimeCompact(event.timestamp);
+    li.innerHTML = `<span class="sidebar-log-time">${time}</span><span class="sidebar-log-body">${formatSidebarLogHtml(event, this.entryMaps)}</span>`;
     return li;
-  }
-
-  private isManagedEntry(entryId: string | undefined): boolean {
-    return entryId != null && this.managedEntryIds.has(entryId);
-  }
-
-  private shouldShow(event: SimEvent): boolean {
-    if (!isRaceLogEvent(event)) return false;
-
-    if (isWeatherEvent(event) && this.filters.director) return true;
-
-    const isManagedIncident =
-      MY_TEAM_INCIDENT_TYPES.has(event.type) && this.isManagedEntry(event.entryId);
-    const isRaceControl = RACE_CONTROL_TYPES.has(event.type);
-    const isAnyIncident = ALL_INCIDENT_TYPES.has(event.type);
-    const isTrack = TRACK_TYPES.has(event.type);
-
-    if (isManagedIncident && this.filters.myTeam) return true;
-    if (isRaceControl && this.filters.director) return true;
-    if (isAnyIncident && this.filters.incidents) return true;
-    if (isTrack && this.filters.track) return true;
-    return false;
   }
 }

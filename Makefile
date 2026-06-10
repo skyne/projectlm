@@ -14,11 +14,14 @@ CORE_SRCS = \
   src/core/simulation.cpp \
   src/core/weather.cpp \
   src/core/track.cpp \
+  src/core/track_corridor.cpp \
   src/core/track_sampler.cpp \
+  src/core/path_dynamics.cpp \
   src/core/telemetry.cpp
 
 SIM_SRCS = \
   src/sim/car_entity.cpp \
+  src/sim/path_controller.cpp \
   src/sim/race.cpp \
   src/sim/race_control.cpp \
   src/sim/race_control_common.cpp \
@@ -41,7 +44,9 @@ LIB_SRCS = $(CORE_SRCS) $(SIM_SRCS) $(CONFIG_SRCS)
 
 TEST_SRCS = \
   tests/unit/test_track.cpp \
+  tests/unit/test_track_corridor.cpp \
   tests/unit/test_track_sampler.cpp \
+  tests/unit/test_path_dynamics.cpp \
   tests/unit/test_simulation.cpp \
   tests/unit/test_part_damage.cpp \
   tests/unit/test_car_parts.cpp \
@@ -56,6 +61,8 @@ TEST_SRCS = \
   tests/unit/test_race_control_penalties.cpp \
   tests/unit/test_race_control_collisions.cpp \
   tests/unit/test_traffic_pit_rejoin.cpp \
+  tests/unit/test_traffic_2d.cpp \
+  tests/unit/test_simulation_frenet.cpp \
   tests/unit/test_race_control_escalation.cpp \
   tests/integration/test_lap_golden.cpp \
   tests/integration/test_multicar.cpp \

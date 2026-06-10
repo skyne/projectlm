@@ -591,9 +591,8 @@ class SimHost {
         const raw = this.session.getTrackGeometry();
         const geometry = "polyline" in raw ? raw : (0, adapters_1.normalizeTrackGeometry)(raw);
         const mapLabels = (0, config_parser_1.loadMapLabels)(this.repoRoot, this.parsedConfig.trackConfigPath);
-        if (mapLabels.length === 0)
-            return geometry;
-        return { ...geometry, mapLabels };
+        const withLabels = mapLabels.length === 0 ? geometry : { ...geometry, mapLabels };
+        return (0, track_loader_1.enrichTrackGeometryFromJson)(withLabels, this.repoRoot, this.parsedConfig.trackConfigPath);
     }
     getTrackPreview(trackId) {
         return (0, track_loader_1.loadTrackGeometryById)(this.repoRoot, trackId);

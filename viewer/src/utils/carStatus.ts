@@ -2,6 +2,13 @@ import type { CarSnapshot } from "../ws/protocol";
 import { escapeHtml } from "./mmUi";
 import { repairPartLabel } from "./pitRepairParts";
 import { resolveRetireReason } from "./retireReason";
+import { classTagShortLabel } from "./classLabels";
+import {
+  formatTyreWear,
+  wearBand,
+  wheelWearFromSnapshot,
+  worstWheelWear,
+} from "./formatTyre";
 
 export const DAMAGE_DISPLAY_THRESHOLD = 90;
 export const DAMAGE_BADGE_THRESHOLD = 85;
@@ -129,7 +136,7 @@ export function hasLimpMode(snap: CarSnapshot): boolean {
   return Boolean(snap.limpMode && snap.limpMode !== "none");
 }
 
-function formatLimpTag(snap: CarSnapshot): TimingStatusTag | null {
+export function formatLimpTag(snap: CarSnapshot): TimingStatusTag | null {
   const limp = formatLimpModeLabel(snap.limpMode);
   if (!limp) return null;
   const title = snap.limpReason ? `${limp} · ${snap.limpReason}` : limp;
@@ -166,6 +173,70 @@ function formatPenaltyTag(snap: CarSnapshot): TimingStatusTag | null {
     return { text: `S&G${laps}`, title: "Stop-and-go penalty", className: "status-penalty" };
   }
   return null;
+}
+
+export function hasWornTyre(snap: CarSnapshot): boolean {
+  const wear = worstWheelWear(wheelWearFromSnapshot(snap));
+  return wearBand(wear) !== "";
+}
+
+export function wornTyreTag(snap: CarSnapshot): TimingStatusTag | null {
+  const wear = worstWheelWear(wheelWearFromSnapshot(snap));
+  const band = wearBand(wear);
+  if (!band) return null;
+  return {
+    text: "TYRE",
+    title: `Tyre wear ${formatTyreWear(wear)}`,
+    className: band === "critical" ? "status-tyre-critical" : "status-tyre-warn",
+  };
+}
+
+export function classStandingsTag(snap: CarSnapshot): TimingStatusTag {
+  return {
+    text: classTagShortLabel(snap.classId),
+    title: snap.classId,
+    className: `standings-tag-class class-${snap.classId}`,
+  };
+}
+
+export interface StandingsTagOptions {
+  showClass?: boolean;
+  showDamage?: boolean;
+  showLimp?: boolean;
+  showTyre?: boolean;
+}
+
+/** Tags for the standings rail — operational tags always on; optional class/dmg/limp/tyre. */
+export function resolveStandingsTags(
+  snap: CarSnapshot,
+  options: StandingsTagOptions = {},
+): TimingStatusTag[] {
+  const { showClass = false, showDamage = false, showLimp = false, showTyre = false } =
+    options;
+
+  const ops = resolveTimingStatusTags(snap, { showDamage: false }).filter(
+    (tag) => tag.text !== "LIMP" && tag.text !== "DMG",
+  );
+
+  const optional: TimingStatusTag[] = [];
+  if (showClass) optional.push(classStandingsTag(snap));
+  if (showLimp) {
+    const limp = formatLimpTag(snap);
+    if (limp) optional.push(limp);
+  }
+  if (showDamage && hasCarDamage(snap)) {
+    optional.push({
+      text: "DMG",
+      title: damageBadgeTitle(snap),
+      className: "status-damaged",
+    });
+  }
+  if (showTyre) {
+    const tyre = wornTyreTag(snap);
+    if (tyre) optional.push(tyre);
+  }
+
+  return [...ops, ...optional];
 }
 
 export function resolveTimingStatusTags(
@@ -227,7 +298,7 @@ export function resolveTimingStatusTags(
 
 export function renderTimingStatusTagsHtml(
   tags: TimingStatusTag[],
-  tagClass: "status-tag" | "compact-lb-status" = "status-tag",
+  tagClass: "status-tag" | "compact-lb-status" | "standings-wec-tag" = "status-tag",
 ): string {
   if (!tags.length) return "";
   return tags

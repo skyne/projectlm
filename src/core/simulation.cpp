@@ -814,7 +814,8 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
                              p.tireWearSpeedThreshold * 0.5);
   SyncDerivedEngineHealth(state, car);
 
-  state.currentDistance += state.currentSpeed * deltaTime;
+  if (!p.useFrenetDynamics)
+    state.currentDistance += state.currentSpeed * deltaTime;
   state.elapsedRaceTime += deltaTime;
   state.currentLapTime += deltaTime;
   state.currentSectorTime += deltaTime;

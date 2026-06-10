@@ -2,6 +2,30 @@
   "name": "Bahrain International Circuit",
   "closed": true,
   "lap_length": 5412.0,
+  "track_width_m": 14.0,
+  "width_profile": [
+    {
+      "name": "grid straight",
+      "start_t": 0.0,
+      "end_t": 0.12,
+      "width_m": 22.0
+    }
+  ],
+  "pit_lane": {
+    "width_m": 12.0,
+    "offset_m": 12.0,
+    "merge_lateral_offset": 0.58,
+    "merge_blend_m": 80.0
+  },
+  "width_metadata": {
+    "confidence": "estimated",
+    "last_reviewed": "2026-06-10",
+    "sources": [
+      "fia_appendix_o_2025",
+      "bahrain_international_circuit_fia_grade_1"
+    ],
+    "notes": "Typical width 14 m; start/finish straight up to 22 m per FIA Grade 1 data."
+  },
   "interpolation": "linear",
   "control_points": [
     {

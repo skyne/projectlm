@@ -27,6 +27,10 @@ struct RaceControlState {
     int sectorIndex = 0;
     std::string kind;
     double gripMultiplier = 1.0;
+    double centerDistance = 0.0;
+    double centerLateralM = 0.0;
+    double spanMeters = 0.0;
+    double lateralSpanM = 0.0;
   };
   std::vector<SurfaceHazardSummary> surfaceHazards;
   double trackWetness = 0.0;

@@ -7,6 +7,13 @@
 #include <vector>
 
 class Car;
+class TrackCorridor;
+
+struct TrafficLateralContext {
+  double trackWidthM = 12.0;
+  const TrackCorridor *corridor = nullptr;
+  bool useFrenetDynamics = false;
+};
 
 struct CarBodyDimensions {
   double lengthM = 5.0;
@@ -52,15 +59,17 @@ constexpr double kPitRejoinYieldSec = 12.0;
 /** True when merge point has room for a pit-exit car at rejoinSpeedMs. */
 bool PitMergeGapSafe(const Car &rejoining, const std::vector<Car> &cars,
                      double lapLength, double mergeDistance,
-                     double rejoinSpeedMs);
+                     double rejoinSpeedMs,
+                     const TrafficLateralContext &lateral = {});
 
 void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
-                    double trackWidthM, double raceTime,
+                    double raceTime,
                     std::unordered_map<std::string, double> &eventCooldowns,
                     std::vector<TrafficModifiers> &modifiersOut,
                     std::vector<TrafficEvent> &eventsOut,
                     const SessionRaceControl &raceControl = SessionRaceControl{},
-                    const std::vector<Car *> &leaderboard = {});
+                    const std::vector<Car *> &leaderboard = {},
+                    const TrafficLateralContext &lateral = {});
 
 double WrapDistanceGap(double aheadDistance, double behindDistance,
                        double lapLength);

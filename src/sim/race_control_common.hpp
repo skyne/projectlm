@@ -28,8 +28,12 @@ struct SafetyCarState {
 struct TrackSurfaceHazard {
   std::string id;
   double centerDistance = 0.0;
+  /** Lateral centre from centreline (metres, left positive). */
+  double centerLateralM = 0.0;
   int sectorIndex = 0;
   double spanMeters = 20.0;
+  /** Across-track span (metres). 0 = full track width at centerDistance. */
+  double lateralSpanM = 0.0;
   double gripMultiplier = 0.7;
   HazardKind kind = HazardKind::Debris;
   double createdAt = 0.0;

@@ -851,6 +851,26 @@ void EnforceSafetyCarTrainPositions(RaceSession &session) {
   EnforceSafetyCarTrainPositionsInternal(session);
 }
 
+namespace {
+
+double DefaultHazardLateralSpan(HazardKind kind) {
+  switch (kind) {
+  case HazardKind::Oil:
+    return 2.5;
+  case HazardKind::Coolant:
+    return 3.0;
+  case HazardKind::Debris:
+    return 3.5;
+  case HazardKind::Fuel:
+    return 2.5;
+  case HazardKind::Fire:
+    return 5.0;
+  }
+  return 3.0;
+}
+
+} // namespace
+
 void BeginStrand(Car &car, RaceSession &session, const std::string &reason,
                  HazardKind hazardKind, double hazardGrip, double hazardSpan) {
   if (car.rcState().trackStatus != TrackStatus::Racing)
@@ -871,8 +891,12 @@ void BeginStrand(Car &car, RaceSession &session, const std::string &reason,
       session.track.sectorIndexAtDistance(car.state().currentDistance));
   car.state().currentSpeed = 0.0;
 
+  const double lateralNM =
+      car.lateralNM(session.trackWidthM, session.physics.useFrenetDynamics,
+                    &session.corridor);
   SpawnSurfaceHazard(session, car.state().currentDistance, hazardKind,
-                     car.entryId(), hazardGrip, hazardSpan);
+                     car.entryId(), hazardGrip, hazardSpan, lateralNM,
+                     DefaultHazardLateralSpan(hazardKind));
   EnsureSectorFlags(session);
   session.raceControl.sectorFlags[rc.obstructionSectorIndex] =
       static_cast<int>(SectorFlagLevel::DoubleYellow);
@@ -906,7 +930,8 @@ void SyncRaceControlFlags(SessionRaceControl &rc) {
 
 void SpawnSurfaceHazard(RaceSession &session, double distance,
                         HazardKind kind, const std::string &sourceEntryId,
-                        double gripMultiplier, double spanMeters) {
+                        double gripMultiplier, double spanMeters,
+                        double centerLateralM, double lateralSpanM) {
   for (const TrackSurfaceHazard &existing : session.raceControl.hazards) {
     if (existing.sourceEntryId == sourceEntryId &&
         session.elapsedRaceTime - existing.createdAt < 30.0 &&
@@ -917,9 +942,11 @@ void SpawnSurfaceHazard(RaceSession &session, double distance,
   TrackSurfaceHazard hz;
   hz.id = sourceEntryId + "-" + std::to_string(static_cast<int>(distance));
   hz.centerDistance = distance;
+  hz.centerLateralM = centerLateralM;
   hz.sectorIndex =
       static_cast<int>(session.track.sectorIndexAtDistance(distance));
   hz.spanMeters = spanMeters;
+  hz.lateralSpanM = lateralSpanM;
   hz.gripMultiplier = gripMultiplier;
   hz.kind = kind;
   hz.createdAt = session.elapsedRaceTime;
@@ -976,7 +1003,7 @@ void UpdateTrackHazards(RaceSession &session, double deltaTime) {
 }
 
 double LocalGripMultiplierAt(const RaceSession &session, double distance,
-                             double lapLength) {
+                             double lateralNM, double lapLength) {
   if (lapLength <= 0.0)
     return 1.0;
   double best = 1.0;
@@ -986,8 +1013,16 @@ double LocalGripMultiplierAt(const RaceSession &session, double distance,
     double delta = std::abs(wrapped - center);
     if (delta > lapLength * 0.5)
       delta = lapLength - delta;
-    if (delta <= hz.spanMeters * 0.5)
-      best = std::min(best, hz.gripMultiplier);
+    if (delta > hz.spanMeters * 0.5)
+      continue;
+
+    if (hz.lateralSpanM > 0.0) {
+      const double halfLateral = hz.lateralSpanM * 0.5;
+      if (std::abs(lateralNM - hz.centerLateralM) > halfLateral)
+        continue;
+    }
+
+    best = std::min(best, hz.gripMultiplier);
   }
   return best;
 }
@@ -1380,8 +1415,12 @@ void ProcessCollisionPenalties(RaceSession &session,
     const TrafficEvent &ev = *primary;
     EmitCollisionLog(session, *carA, *carB, ev.impact);
 
+    const double debrisN =
+        carA->lateralNM(session.trackWidthM, session.physics.useFrenetDynamics,
+                        &session.corridor);
     SpawnSurfaceHazard(session, carA->state().currentDistance,
-                       HazardKind::Debris, carA->entryId(), 0.62, 35.0);
+                       HazardKind::Debris, carA->entryId(), 0.62, 35.0,
+                       debrisN, DefaultHazardLateralSpan(HazardKind::Debris));
 
     const bool dualFault = events.size() >= 2;
     if (dualFault) {
@@ -2104,9 +2143,12 @@ bool ApplyDebugRaceControl(RaceSession &session,
     const double sectorEnd =
         session.track.sectors[static_cast<size_t>(req.sectorIndex)].endDistance;
     const double distance = (sectorStart + sectorEnd) * 0.5;
+    const double debugSpan =
+        req.lateralSpanM > 0.0 ? req.lateralSpanM
+                               : (req.lateralNM != 0.0 ? 3.0 : 0.0);
     SpawnSurfaceHazard(session, distance, ParseHazardKind(req.kind), "debug",
                        req.gripMultiplier > 0.0 ? req.gripMultiplier : 0.7,
-                       35.0);
+                       35.0, req.lateralNM, debugSpan);
     return true;
   }
 

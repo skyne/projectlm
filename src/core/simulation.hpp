@@ -46,6 +46,9 @@ struct SimulationState {
   double currentLapTime = 0.0;
   double currentSectorTime = 0.0;
   double currentSectorPeakSpeed = 0.0;
+  double lateralOffsetM = 0.0;
+  double headingError = 0.0;
+  double lateralVelocity = 0.0;
 
   double maxTireWear() const {
     return std::max({tireWear[0], tireWear[1], tireWear[2], tireWear[3]});
@@ -165,6 +168,11 @@ struct PhysicsConfig {
   /** Scales regenMJ = regenRate * brake * dt * hybridRegenBaseScale. */
   double hybridRegenBaseScale = 0.38;
   double punctureWearThreshold = 0.88;
+  bool useFrenetDynamics = false;
+  double pathLateralGain = 8000.0;
+  double pathLateralDamping = 1200.0;
+  double kerbGripScale = 0.75;
+  double offTrackGripScale = 0.35;
 };
 
 void TickSimulation(const CarConfig &car, const TrackDefinition &track,

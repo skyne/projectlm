@@ -6,7 +6,9 @@ import {
   sessionTimingTitle,
 } from "../utils/weekendSessions";
 import { formatCarNumber } from "../entryNumbers";
+import { classTagShortLabel } from "../utils/classLabels";
 import {
+  dedupeSnapshotsByEntryId,
   effectiveLeaderboardGapScope,
   orderLeaderboardBoard,
   type GapScope,
@@ -15,36 +17,80 @@ import { formatGapCompact, formatLapTime } from "../utils/formatTime";
 import { formatTyreTemp, formatTyreWear, tyreTempBand } from "../utils/formatTyre";
 import { tyreCompoundIconHtml } from "../utils/tyreCompound";
 import { formatFuelAmount, usesBatteryFuelDisplay } from "../utils/fuelDisplay";
-import { resolveRetireReason } from "../utils/retireReason";
 import {
   hasCarDamage,
-  resolveTimingStatusTags,
+  resolveStandingsTags,
   renderTimingStatusTagsHtml,
+  type StandingsTagOptions,
 } from "../utils/carStatus";
 
-type GapMode = "leader" | "ahead";
+type GapMode = "ahead" | "class-leader";
+
+export interface CompactLeaderboardHandlers {
+  onEntryClick: (entryId: string) => void;
+}
+
+interface TagToggles {
+  class: boolean;
+  dmg: boolean;
+  limp: boolean;
+  tyre: boolean;
+}
 
 interface CompactLbRow {
   root: HTMLDivElement;
   pos: HTMLSpanElement;
   num: HTMLSpanElement;
   team: HTMLSpanElement;
-  detail: HTMLSpanElement;
-  badge: HTMLSpanElement;
-  status: HTMLSpanElement;
-  lap: HTMLSpanElement;
+  driver: HTMLSpanElement;
+  tags: HTMLSpanElement;
   gap: HTMLSpanElement;
   extras: HTMLSpanElement;
+}
+
+function resolveActiveClassId(
+  snapshots: CarSnapshot[],
+  playerEntryId: string,
+  managedEntryIds: Set<string>,
+): string {
+  for (const entryId of [playerEntryId, ...managedEntryIds]) {
+    const classId = snapshots.find((s) => s.entryId === entryId)?.classId;
+    if (classId) return classId;
+  }
+  return dedupeSnapshotsByEntryId(snapshots)[0]?.classId ?? "Class";
+}
+
+function abbrevDriver(name: string | undefined): string {
+  if (!name) return "";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].toUpperCase();
+  return `${parts[0][0]}. ${parts[parts.length - 1].toUpperCase()}`;
+}
+
+function classLeaderFor(car: CarSnapshot, snapshots: CarSnapshot[]): CarSnapshot | null {
+  const pool = dedupeSnapshotsByEntryId(snapshots).filter(
+    (s) => s.classId === car.classId && !s.retired,
+  );
+  if (pool.length === 0) return null;
+  pool.sort(
+    (a, b) =>
+      (a.classPosition ?? a.racePosition) - (b.classPosition ?? b.racePosition),
+  );
+  return pool[0];
 }
 
 export class CompactLeaderboard {
   readonly root: HTMLElement;
   private listEl: HTMLElement;
-  private gapMode: GapMode = "leader";
+  private scopeClassBtn!: HTMLButtonElement;
+  private settingsMenu!: HTMLElement;
+  private settingsBtn!: HTMLButtonElement;
+  private gapMode: GapMode = "class-leader";
   private gapScope: GapScope = "class";
-  private showEnergy = true;
-  private showFuel = true;
-  private showTyre = true;
+  private tagToggles: TagToggles = { class: true, dmg: true, limp: true, tyre: true };
+  private showEnergy = false;
+  private showFuel = false;
+  private showTyreDetail = false;
   private playerEntryId = "entry-1";
   private managedEntryIds = new Set<string>();
   private selectedEntryId = "";
@@ -55,52 +101,121 @@ export class CompactLeaderboard {
   private snapshots: CarSnapshot[] = [];
   private rowByEntryId = new Map<string, CompactLbRow>();
   private lastBoardOrder: string[] = [];
+  private titleEl!: HTMLElement;
   private badgeEl!: HTMLElement;
+  private colsEl!: HTMLElement;
+  private settingsDocListener: ((ev: MouseEvent) => void) | null = null;
+  private handlers: CompactLeaderboardHandlers | null;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, handlers?: CompactLeaderboardHandlers) {
+    this.handlers = handlers ?? null;
     this.root = document.createElement("aside");
-    this.root.className = "compact-leaderboard panel-wec hidden";
+    this.root.className = "compact-leaderboard standings-wec panel-wec panel-dense hidden";
     this.root.innerHTML = `
-      <header class="compact-lb-header">
-        <span class="compact-lb-title">Standings</span>
-        <span class="mm-badge mm-badge-live">LIVE</span>
+      <header class="standings-wec-header">
+        <div class="standings-wec-header-text">
+          <span class="standings-wec-kicker">Live Race</span>
+          <h2 class="standings-wec-title">Standings</h2>
+        </div>
+        <div class="standings-wec-header-actions">
+          <span class="mm-badge mm-badge-live-gradient standings-wec-live">LIVE</span>
+          <button
+            type="button"
+            class="standings-wec-settings-btn"
+            aria-label="Standings display settings"
+            aria-expanded="false"
+            aria-haspopup="true"
+            title="Display settings"
+          >
+            <svg class="standings-wec-settings-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8m9.4 4a7.4 7.4 0 0 1-.1 1l2 1.6-2 3.4-2.4-1a7.6 7.6 0 0 1-1.7 1l-.4 2.6H9.2l-.4-2.6a7.6 7.6 0 0 1-1.7-1l-2.4 1-2-3.4 2-1.6a7.4 7.4 0 0 1-.1-1 7.4 7.4 0 0 1 .1-1l-2-1.6 2-3.4 2.4 1a7.6 7.6 0 0 1 1.7-1l.4-2.6h5.6l.4 2.6a7.6 7.6 0 0 1 1.7 1l2.4-1 2 3.4-2 1.6q.1.5.1 1"/>
+            </svg>
+          </button>
+          <div class="standings-wec-settings-menu hidden" role="menu">
+            <p class="standings-wec-settings-heading">Gap reference</p>
+            <div class="standings-wec-btn-group" data-group="gap-mode" role="group">
+              <button type="button" class="standings-wec-btn active" data-value="class-leader" role="menuitemradio">Class leader</button>
+              <button type="button" class="standings-wec-btn" data-value="ahead" role="menuitemradio">Previous car</button>
+            </div>
+            <p class="standings-wec-settings-heading">Tags</p>
+            <div class="standings-wec-settings-toggles">
+              <label class="standings-wec-settings-check"><input type="checkbox" data-tag="class" checked /> Class</label>
+              <label class="standings-wec-settings-check"><input type="checkbox" data-tag="dmg" checked /> Damage</label>
+              <label class="standings-wec-settings-check"><input type="checkbox" data-tag="limp" checked /> Limp</label>
+              <label class="standings-wec-settings-check"><input type="checkbox" data-tag="tyre" checked /> Used tyre</label>
+            </div>
+            <p class="standings-wec-settings-heading">Extra data</p>
+            <div class="standings-wec-settings-toggles">
+              <label class="standings-wec-settings-check"><input type="checkbox" data-col="fuel" /> Fuel</label>
+              <label class="standings-wec-settings-check"><input type="checkbox" data-col="energy" /> Energy</label>
+              <label class="standings-wec-settings-check"><input type="checkbox" data-col="tyre-detail" /> Tyre detail</label>
+            </div>
+          </div>
+        </div>
       </header>
-      <div class="compact-lb-toggles">
-        <div class="compact-lb-toggle-row">
-          <span class="compact-lb-label">Gap to</span>
-          <div class="compact-lb-btn-group" data-group="gap-mode">
-            <button type="button" class="compact-lb-btn active" data-value="leader">Leader</button>
-            <button type="button" class="compact-lb-btn" data-value="ahead">Ahead</button>
-          </div>
-        </div>
-        <div class="compact-lb-toggle-row">
-          <span class="compact-lb-label">Scope</span>
-          <div class="compact-lb-btn-group" data-group="gap-scope">
-            <button type="button" class="compact-lb-btn" data-value="overall">Race</button>
-            <button type="button" class="compact-lb-btn active" data-value="class">Class</button>
-          </div>
-        </div>
-        <div class="compact-lb-toggle-row compact-lb-cols">
-          <label><input type="checkbox" data-col="fuel" checked /> Fuel</label>
-          <label><input type="checkbox" data-col="energy" checked /> Energy</label>
-          <label><input type="checkbox" data-col="tyre" checked /> Tyres</label>
-        </div>
+
+      <div class="standings-wec-scope" role="tablist" aria-label="Standings scope">
+        <button type="button" class="standings-wec-scope-btn active" data-scope="class" role="tab" aria-selected="true">
+          Class
+        </button>
+        <button type="button" class="standings-wec-scope-btn" data-scope="overall" role="tab" aria-selected="false">
+          Overall
+        </button>
       </div>
-      <div class="compact-lb-list"></div>
+
+      <div class="standings-wec-cols" aria-hidden="true">
+        <span>P</span>
+        <span>#</span>
+        <span>Team</span>
+        <span class="standings-wec-cols-gap">Gap</span>
+      </div>
+
+      <div class="standings-wec-list compact-lb-list"></div>
     `;
     container.appendChild(this.root);
-    this.listEl = this.root.querySelector(".compact-lb-list")!;
-    this.badgeEl = this.root.querySelector(".compact-lb-header .mm-badge")!;
 
-    this.root.querySelectorAll(".compact-lb-btn-group").forEach((group) => {
+    this.listEl = this.root.querySelector(".standings-wec-list")!;
+    this.titleEl = this.root.querySelector(".standings-wec-title")!;
+    this.badgeEl = this.root.querySelector(".standings-wec-live")!;
+    this.colsEl = this.root.querySelector(".standings-wec-cols")!;
+    this.scopeClassBtn = this.root.querySelector('[data-scope="class"]')!;
+    this.settingsBtn = this.root.querySelector(".standings-wec-settings-btn")!;
+    this.settingsMenu = this.root.querySelector(".standings-wec-settings-menu")!;
+
+    this.syncGapModeButtons();
+
+    this.settingsBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.toggleSettingsMenu();
+    });
+
+    this.root.querySelectorAll(".standings-wec-scope-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const scope = (btn as HTMLButtonElement).dataset.scope as GapScope | undefined;
+        if (!scope || scope === this.gapScope) return;
+        this.gapScope = scope;
+        this.syncScopeTabs();
+        this.render();
+      });
+    });
+
+    this.root.querySelectorAll(".standings-wec-btn-group").forEach((group) => {
       group.addEventListener("click", (ev) => {
-        const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>(".compact-lb-btn");
+        const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>(".standings-wec-btn");
         if (!btn?.dataset.value) return;
-        group.querySelectorAll(".compact-lb-btn").forEach((b) => b.classList.remove("active"));
+        group.querySelectorAll(".standings-wec-btn").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         const name = (group as HTMLElement).dataset.group;
         if (name === "gap-mode") this.gapMode = btn.dataset.value as GapMode;
-        if (name === "gap-scope") this.gapScope = btn.dataset.value as GapScope;
+        this.render();
+      });
+    });
+
+    this.root.querySelectorAll("[data-tag]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const tag = (input as HTMLInputElement).dataset.tag as keyof TagToggles | undefined;
+        if (!tag) return;
+        this.tagToggles[tag] = (input as HTMLInputElement).checked;
         this.render();
       });
     });
@@ -111,14 +226,29 @@ export class CompactLeaderboard {
         const checked = (input as HTMLInputElement).checked;
         if (col === "fuel") this.showFuel = checked;
         if (col === "energy") this.showEnergy = checked;
-        if (col === "tyre") this.showTyre = checked;
+        if (col === "tyre-detail") this.showTyreDetail = checked;
         this.render();
       });
+    });
+
+    this.listEl.addEventListener("click", (ev) => {
+      const row = (ev.target as HTMLElement).closest<HTMLElement>(".standings-wec-row");
+      if (!row?.dataset.entryId) return;
+      this.handlers?.onEntryClick(row.dataset.entryId);
+    });
+
+    this.listEl.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const row = (ev.target as HTMLElement).closest<HTMLElement>(".standings-wec-row");
+      if (!row?.dataset.entryId) return;
+      ev.preventDefault();
+      this.handlers?.onEntryClick(row.dataset.entryId);
     });
   }
 
   setVisible(visible: boolean): void {
     this.root.classList.toggle("hidden", !visible);
+    if (!visible) this.closeSettingsMenu();
   }
 
   setPlayerEntry(entryId: string): void {
@@ -127,6 +257,7 @@ export class CompactLeaderboard {
 
   setManagedEntryIds(entryIds: string[]): void {
     this.managedEntryIds = new Set(entryIds);
+    this.syncScopeClassLabel();
     this.render();
   }
 
@@ -156,26 +287,67 @@ export class CompactLeaderboard {
     this.sessionKind = sessionKind;
     if (sessionKind === "private_test") {
       this.gapScope = "overall";
-      this.syncGapScopeButtons();
+      this.syncScopeTabs();
     }
     this.syncScopeToggleVisibility();
     this.render();
   }
 
-  private applySessionHeader(): void {
-    const title = this.root.querySelector(".compact-lb-title");
-    if (title) {
-      title.textContent = this.timingMode
-        ? sessionTimingTitle(this.sessionType)
-        : sessionStandingsTitle(this.sessionType);
+  private toggleSettingsMenu(): void {
+    const willOpen = this.settingsMenu.classList.contains("hidden");
+    if (!willOpen) {
+      this.closeSettingsMenu();
+      return;
     }
+    this.settingsMenu.classList.remove("hidden");
+    this.settingsBtn.setAttribute("aria-expanded", "true");
+    this.settingsDocListener = (ev: MouseEvent) => {
+      if (
+        !this.settingsMenu.contains(ev.target as Node) &&
+        !this.settingsBtn.contains(ev.target as Node)
+      ) {
+        this.closeSettingsMenu();
+      }
+    };
+    document.addEventListener("click", this.settingsDocListener);
+  }
+
+  private closeSettingsMenu(): void {
+    this.settingsMenu.classList.add("hidden");
+    this.settingsBtn.setAttribute("aria-expanded", "false");
+    if (this.settingsDocListener) {
+      document.removeEventListener("click", this.settingsDocListener);
+      this.settingsDocListener = null;
+    }
+  }
+
+  private syncGapModeButtons(): void {
+    this.root.querySelectorAll('[data-group="gap-mode"] .standings-wec-btn').forEach((btn) => {
+      const el = btn as HTMLButtonElement;
+      el.classList.toggle("active", el.dataset.value === this.gapMode);
+    });
+  }
+
+  private applySessionHeader(): void {
+    const kicker = this.root.querySelector(".standings-wec-kicker");
+    if (kicker) {
+      kicker.textContent = this.timingMode ? "Live Timing" : "Live Race";
+    }
+    this.titleEl.textContent = this.timingMode
+      ? sessionTimingTitle(this.sessionType)
+      : sessionStandingsTitle(this.sessionType);
     this.badgeEl.textContent = sessionShortLabel(this.sessionType);
-    const toggles = this.root.querySelector(".compact-lb-toggles");
-    toggles?.classList.toggle("hidden", this.timingMode);
+    const gapCol = this.colsEl.querySelector(".standings-wec-cols-gap");
+    if (gapCol) {
+      gapCol.textContent = this.timingMode ? "Best" : "Gap";
+    }
+    this.root.querySelector(".standings-wec-scope")?.classList.toggle("hidden", this.timingMode);
+    this.settingsBtn.classList.toggle("hidden", this.timingMode);
   }
 
   update(snapshots: CarSnapshot[]): void {
     this.snapshots = snapshots;
+    this.syncScopeClassLabel();
     if (this.root.classList.contains("hidden")) return;
     this.render();
   }
@@ -197,29 +369,46 @@ export class CompactLeaderboard {
     });
   }
 
-  private syncGapScopeButtons(): void {
-    const group = this.root.querySelector<HTMLElement>(
-      '.compact-lb-btn-group[data-group="gap-scope"]',
-    );
-    if (!group) return;
-    group.querySelectorAll(".compact-lb-btn").forEach((btn) => {
+  private syncScopeTabs(): void {
+    this.root.querySelectorAll(".standings-wec-scope-btn").forEach((btn) => {
       const el = btn as HTMLButtonElement;
-      el.classList.toggle("active", el.dataset.value === this.gapScope);
+      const active = el.dataset.scope === this.gapScope;
+      el.classList.toggle("active", active);
+      el.setAttribute("aria-selected", active ? "true" : "false");
     });
   }
 
-  private syncScopeToggleVisibility(): void {
-    const scopeRow = this.root.querySelector<HTMLElement>(
-      '.compact-lb-toggle-row:has([data-group="gap-scope"])',
+  private syncScopeClassLabel(): void {
+    const classId = resolveActiveClassId(
+      this.snapshots,
+      this.selectedEntryId || this.playerEntryId,
+      this.managedEntryIds,
     );
+    this.scopeClassBtn.textContent = classTagShortLabel(classId);
+  }
+
+  private syncScopeToggleVisibility(): void {
+    const scopeRow = this.root.querySelector(".standings-wec-scope");
     scopeRow?.classList.toggle("hidden", this.sessionKind === "private_test");
   }
 
-  private gapForCar(car: CarSnapshot, board: CarSnapshot[]): string {
-    const idx = board.findIndex((s) => s.entryId === car.entryId);
-    if (idx <= 0) return "—";
+  private isClassLeader(car: CarSnapshot): boolean {
+    const leader = classLeaderFor(car, this.snapshots);
+    return leader?.entryId === car.entryId;
+  }
+
+  private gapForCar(car: CarSnapshot, board: CarSnapshot[], index: number): string {
+    if (!this.timingMode && this.isClassLeader(car)) {
+      return `LAP ${car.lap}`;
+    }
+
+    if (this.timingMode) {
+      return formatBestLap(car.bestLapTime);
+    }
 
     if (this.gapMode === "ahead") {
+      const idx = board.findIndex((s) => s.entryId === car.entryId);
+      if (idx <= 0) return "—";
       const ahead = board[idx - 1];
       return formatGapCompact(
         this.computeTimeGap(car, ahead),
@@ -227,16 +416,24 @@ export class CompactLeaderboard {
       );
     }
 
-    const leader = board[0];
-    if (car.entryId === leader.entryId) return "—";
-    if (this.timingMode && car.gapToLeader > 0) {
+    const classLeader = classLeaderFor(car, this.snapshots);
+    if (!classLeader || classLeader.entryId === car.entryId) return "—";
+
+    if (car.gapToLeader > 0 && car.gapToLeader < 60 && this.gapScope === "class") {
       return `+${car.gapToLeader.toFixed(3)}`;
     }
-    const lapDiff = Math.max(0, leader.lap - car.lap);
-    if (this.gapScope === "overall" && car.gapToLeader > 0) {
-      return formatGapCompact(car.gapToLeader, lapDiff);
-    }
-    return formatGapCompact(this.computeTimeGap(car, leader), lapDiff);
+
+    const lapDiff = Math.max(0, classLeader.lap - car.lap);
+    return formatGapCompact(this.computeTimeGap(car, classLeader), lapDiff);
+  }
+
+  private tagOptions(): StandingsTagOptions {
+    return {
+      showClass: this.tagToggles.class,
+      showDamage: this.tagToggles.dmg,
+      showLimp: this.tagToggles.limp,
+      showTyre: this.tagToggles.tyre,
+    };
   }
 
   private render(): void {
@@ -245,7 +442,7 @@ export class CompactLeaderboard {
       this.rowByEntryId.clear();
       this.lastBoardOrder = [];
       this.listEl.replaceChildren();
-      this.listEl.innerHTML = `<p class="compact-lb-empty">Waiting for timing…</p>`;
+      this.listEl.innerHTML = `<p class="standings-wec-empty">Waiting for timing…</p>`;
       return;
     }
 
@@ -277,40 +474,39 @@ export class CompactLeaderboard {
     if (row) return row;
 
     const root = document.createElement("div");
-    root.className = "compact-lb-row";
+    root.className = "standings-wec-row compact-lb-row";
     root.dataset.entryId = entryId;
+    root.setAttribute("role", "button");
+    root.tabIndex = 0;
 
     const pos = document.createElement("span");
-    pos.className = "compact-lb-pos";
+    pos.className = "standings-wec-pos compact-lb-pos";
 
     const num = document.createElement("span");
-    num.className = "compact-lb-num";
+    num.className = "standings-wec-num compact-lb-num";
+
+    const main = document.createElement("div");
+    main.className = "standings-wec-main";
 
     const team = document.createElement("span");
-    team.className = "compact-lb-team";
+    team.className = "standings-wec-team compact-lb-team";
 
-    const detail = document.createElement("span");
-    detail.className = "compact-lb-detail";
+    const driver = document.createElement("span");
+    driver.className = "standings-wec-driver";
 
-    const badge = document.createElement("span");
-    badge.className = "compact-lb-class-badge class-badge";
+    const tags = document.createElement("span");
+    tags.className = "standings-wec-tags compact-lb-status-wrap";
 
-    const status = document.createElement("span");
-    status.className = "compact-lb-status";
-
-    const lap = document.createElement("span");
-    lap.className = "compact-lb-lap";
+    main.append(team, driver, tags);
 
     const gap = document.createElement("span");
-    gap.className = "compact-lb-gap";
+    gap.className = "standings-wec-gap compact-lb-gap";
 
-    detail.append(badge, status, lap, gap);
+    const extras = document.createElement("div");
+    extras.className = "standings-wec-extras compact-lb-extras";
 
-    const extras = document.createElement("span");
-    extras.className = "compact-lb-extras";
-
-    root.append(pos, num, team, detail, extras);
-    row = { root, pos, num, team, detail, badge, status, lap, gap, extras };
+    root.append(pos, num, main, gap, extras);
+    row = { root, pos, num, team, driver, tags, gap, extras };
     this.rowByEntryId.set(entryId, row);
     return row;
   }
@@ -321,8 +517,15 @@ export class CompactLeaderboard {
     board: CarSnapshot[],
     index: number,
   ): void {
-    row.root.classList.toggle("is-player", this.managedEntryIds.has(snap.entryId));
-    row.root.classList.toggle("is-selected", snap.entryId === this.selectedEntryId);
+    const isClassLeader = this.isClassLeader(snap);
+
+    const isOwned = this.managedEntryIds.has(snap.entryId);
+    const isCommand = snap.entryId === this.selectedEntryId;
+    row.root.classList.toggle("is-owned", isOwned);
+    row.root.classList.toggle("is-player", isOwned);
+    row.root.classList.toggle("is-selected", isCommand);
+    row.root.classList.toggle("is-command", isCommand && isOwned);
+    row.root.classList.toggle("is-leader", isClassLeader && !this.timingMode);
     row.root.classList.toggle("is-retired", snap.retired);
     row.root.classList.toggle("in-garage", snap.inGarage === true);
     row.root.classList.toggle("in-pit", !snap.inGarage && snap.inPit);
@@ -334,6 +537,7 @@ export class CompactLeaderboard {
       "is-damaged",
       this.managedEntryIds.has(snap.entryId) && hasCarDamage(snap),
     );
+    row.root.dataset.classId = snap.classId;
 
     const pos = this.timingMode
       ? index + 1
@@ -341,50 +545,38 @@ export class CompactLeaderboard {
         ? (snap.classPosition ?? snap.racePosition)
         : snap.racePosition;
     const num = formatCarNumber(snap);
-    const gap = this.gapForCar(snap, board);
+    const gap = this.gapForCar(snap, board, index);
 
     row.pos.textContent = String(pos);
     row.num.textContent = num || "—";
-    row.team.textContent = snap.teamName;
+    row.team.textContent = snap.teamName.toUpperCase();
     row.team.title = snap.teamName;
+    row.root.setAttribute(
+      "aria-label",
+      `${snap.teamName} #${num || "?"}${isOwned ? (isCommand ? ", selected for commands" : ", your team") : ""}`,
+    );
+    row.root.title = isOwned
+      ? isCommand
+        ? "Selected — pit commands target this car. Click to follow on map."
+        : "Your team — click to select and follow on map"
+      : "Click to follow on map";
 
-    row.badge.className = `compact-lb-class-badge class-badge class-${snap.classId}`;
-    row.badge.textContent = snap.classId.slice(0, 3);
-    let expBadge = row.root.querySelector<HTMLElement>(".entry-badge.entry-exp");
-    if (snap.entryMode === "experimental") {
-      if (!expBadge) {
-        expBadge = document.createElement("span");
-        expBadge.className = "entry-badge entry-exp";
-        row.detail.insertBefore(expBadge, row.badge);
-      }
-      expBadge.textContent = "EXP";
-      expBadge.hidden = false;
-    } else if (expBadge) {
-      expBadge.hidden = true;
-    }
-
-    if (snap.retired) {
-      row.status.className = "compact-lb-status status-retired";
-      row.status.textContent = "OUT";
-      row.status.title = resolveRetireReason(snap);
-      row.status.hidden = false;
+    if (snap.driverName) {
+      row.driver.textContent = abbrevDriver(snap.driverName);
+      row.driver.title = snap.driverName;
+      row.driver.hidden = false;
     } else {
-      const tags = resolveTimingStatusTags(snap, {
-        showDamage: this.managedEntryIds.has(snap.entryId),
-      });
-      const statusHtml = renderTimingStatusTagsHtml(tags, "compact-lb-status");
-      if (statusHtml) {
-        row.status.className = "compact-lb-status-wrap";
-        row.status.innerHTML = statusHtml;
-        row.status.hidden = false;
-      } else {
-        row.status.className = "compact-lb-status-wrap";
-        row.status.innerHTML = "";
-        row.status.hidden = true;
-      }
+      row.driver.textContent = "";
+      row.driver.hidden = true;
     }
 
-    row.lap.textContent = this.timingMode ? formatBestLap(snap.bestLapTime) : `L${snap.lap}`;
+    const tagList = resolveStandingsTags(snap, this.tagOptions());
+    const tagsHtml = renderTimingStatusTagsHtml(tagList, "standings-wec-tag");
+    if (row.tags.innerHTML !== tagsHtml) {
+      row.tags.innerHTML = tagsHtml;
+    }
+    row.tags.hidden = tagList.length === 0;
+
     row.gap.textContent = gap;
 
     const extras: string[] = [];
@@ -405,10 +597,10 @@ export class CompactLeaderboard {
             : "—";
       extras.push(`<span class="compact-lb-meta" title="Hybrid deploy">${energy}</span>`);
     }
-    if (this.showTyre) {
+    if (this.showTyreDetail) {
       const tempBand = tyreTempBand(snap.tireTempC);
       extras.push(
-        `<span class="compact-lb-meta tyre-meta tyre-${tempBand}" title="Tyre compound / temp / wear">${tyreCompoundIconHtml(snap.tireCompound, { size: 16 })}${formatTyreTemp(snap.tireTempC)} · ${formatTyreWear(snap.tireWear)}</span>`,
+        `<span class="compact-lb-meta tyre-meta tyre-${tempBand}" title="Tyre compound / temp / wear">${tyreCompoundIconHtml(snap.tireCompound, { size: 14 })}${formatTyreTemp(snap.tireTempC)} · ${formatTyreWear(snap.tireWear)}</span>`,
       );
     }
 

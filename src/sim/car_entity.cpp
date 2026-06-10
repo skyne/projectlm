@@ -28,7 +28,10 @@ void MaybeRollHiddenFault(PartDamageState &damage, double impact, uint32_t salt)
 } // namespace
 #include "car_parts.hpp"
 #include "driver.hpp"
+#include "path_controller.hpp"
+#include "path_dynamics.hpp"
 #include "track.hpp"
+#include "track_corridor.hpp"
 #include "traffic.hpp"
 #include "weather.hpp"
 #include <algorithm>
@@ -346,11 +349,24 @@ void Car::beginRejoinYield(double seconds) {
   rejoinYieldSec_ = std::max(rejoinYieldSec_, seconds);
 }
 
+double Car::lateralNM(double trackWidthM, bool useFrenetDynamics,
+                      const TrackCorridor *corridor,
+                      double arcLengthM) const {
+  if (useFrenetDynamics)
+    return state_.lateralOffsetM;
+  const double s =
+      arcLengthM >= 0.0 ? arcLengthM : state_.currentDistance;
+  if (corridor != nullptr && corridor->length() > 0.0)
+    return corridor->lateralOffsetM(s, lateralOffset_);
+  return lateralOffset_ * trackWidthM * 0.5;
+}
+
 bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
                              const StaffModifiers &staff,
                              double remainingSessionSec, bool redFlagActive,
                              const std::vector<Car> *peerCars,
-                             bool requireMergeGap) {
+                             bool requireMergeGap,
+                             const TrafficLateralContext *lateral) {
   if (!pit_.inPit)
     return false;
 
@@ -502,7 +518,9 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
       pit_.pitLaneDistance = lane.totalLength();
       if (requireMergeGap && peerCars != nullptr &&
           !PitMergeGapSafe(*this, *peerCars, track.lapLength(),
-                           lane.mergeTrackDistance, speedLimit)) {
+                           lane.mergeTrackDistance, speedLimit,
+                           lateral != nullptr ? *lateral
+                                              : TrafficLateralContext{})) {
         pit_.statusMessage = "Waiting for gap";
         break;
       }
@@ -554,24 +572,31 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
   return false;
 }
 
-void Car::applyTrafficVisuals(const TrafficModifiers &traffic, double deltaTime) {
+void Car::applyTrafficVisuals(const TrafficModifiers &traffic, double deltaTime,
+                              const TrackCorridor &corridor, bool useFrenet) {
   overtakingVisual_ = traffic.overtaking;
   blockedVisual_ = traffic.blocked;
 
-  const double target = rejoinYieldSec_ > 0.0
-                            ? 0.58
-                            : traffic.overtaking
-                                  ? 0.55
-                                  : traffic.blocked
-                                        ? 0.0
-                                        : (gridPosition_ % 2 == 0 ? 0.12 : -0.12);
-  const double blend = std::min(1.0, deltaTime * 2.5);
-  lateralOffset_ = std::clamp(lateralOffset_ + (target - lateralOffset_) * blend,
-                              -0.75, 0.75);
+  const PathTarget pathTarget =
+      computePathTarget(*this, corridor, traffic, state_.currentDistance);
+  pathTargetNM_ = pathTarget.targetNM;
+
+  if (useFrenet)
+    return;
+
+  const double maxN =
+      std::max(1e-6, corridor.maxLateralN(state_.currentDistance));
+  const double targetNorm =
+      std::clamp(pathTarget.targetNM / maxN, -0.95, 0.95);
+  const double blend =
+      std::min(1.0, deltaTime * (2.5 + pathTarget.urgency * 4.0));
+  lateralOffset_ = std::clamp(
+      lateralOffset_ + (targetNorm - lateralOffset_) * blend, -0.95, 0.95);
 }
 
-CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physics,
-                      double deltaTime, double raceTime,
+CarTickResult Car::tick(const TrackDefinition &track,
+                      const TrackCorridor &corridor,
+                      const PhysicsConfig &physics, double deltaTime, double raceTime,
                       TelemetryLog *telemetry,
                       const TrafficModifiers *traffic,
                       const WeatherState &weather, bool isNight,
@@ -620,7 +645,7 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
 
   if (traffic != nullptr) {
     driver_.setPressure(traffic->pressureLevel);
-    applyTrafficVisuals(*traffic, deltaTime);
+    applyTrafficVisuals(*traffic, deltaTime, corridor, physics.useFrenetDynamics);
     if (traffic->speedCapMs > 0.0)
       mods.speedCapMs = traffic->speedCapMs;
     if (traffic->blueFlag)
@@ -824,6 +849,48 @@ CarTickResult Car::tick(const TrackDefinition &track, const PhysicsConfig &physi
   } else if (limp == LimpMode::ReducedPower) {
     mods.throttleMultiplier *= 0.45;
     mods.speedCapMs = mods.speedCapMs > 0.0 ? std::min(mods.speedCapMs, 50.0) : 50.0;
+  }
+
+  if (physics.useFrenetDynamics) {
+    if (traffic == nullptr) {
+      pathTargetNM_ =
+          computePathTarget(*this, corridor, TrafficModifiers{},
+                            state_.currentDistance)
+              .targetNM;
+    }
+
+    const double s = state_.currentDistance;
+    PathDynamicsInput pd;
+    pd.targetNM = pathTargetNM_;
+    pd.trackWidthM = corridor.widthAt(s);
+    pd.effectiveKappa = corridor.effectiveCurvature(s, state_.lateralOffsetM);
+    pd.mu = physics.tireFriction * mods.weatherGripScale * mods.localGripScale;
+    pd.mass = std::max(1.0, config_.calculatedTotalMass);
+    pd.v = std::max(physics.minSpeed, state_.currentSpeed);
+    pd.beta = state_.headingError;
+    pd.n = state_.lateralOffsetM;
+    pd.lateralVelocity = state_.lateralVelocity;
+    pd.FxDesired = 0.0;
+    pd.maxLateralN = physics.pathLateralGain * 1.5;
+
+    const PathDynamicsOutput out = stepPathDynamics(pd, deltaTime);
+    state_.lateralOffsetM += out.dn * deltaTime;
+    state_.headingError += out.dBeta * deltaTime;
+    state_.lateralVelocity = out.dn;
+    state_.currentDistance += out.ds * deltaTime;
+
+    const double maxN = corridor.maxLateralN(s);
+    const double carHalfWidth = body_.widthM * 0.5;
+    const double limitN = std::max(0.0, maxN - carHalfWidth);
+    if (std::abs(state_.lateralOffsetM) > limitN) {
+      state_.lateralOffsetM = std::copysign(limitN, state_.lateralOffsetM);
+      state_.lateralVelocity *= 0.25;
+      state_.currentSpeed =
+          std::max(physics.minSpeed, state_.currentSpeed * 0.97);
+    }
+    if (maxN > 1e-6)
+      lateralOffset_ =
+          std::clamp(state_.lateralOffsetM / maxN, -1.0, 1.0);
   }
 
   TickSimulation(config_, track, state_, deltaTime, physics, &telemetry_, mods);
@@ -1090,12 +1157,37 @@ bool Car::handlePostPitRepairDecision(const TrackDefinition &track,
 }
 
 CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition,
-                          double remainingSessionSec) const {
+                          double remainingSessionSec,
+                          const TrackCorridor *corridor,
+                          const PhysicsConfig *physics,
+                          double trackWidthM) const {
   TrackPose pose;
+  double lateralM = 0.0;
+  bool poseIncludesLateral = false;
+  double headingRad = 0.0;
+
   if (pit_.inPit && track.pitLane.valid()) {
     pose = track.pitLane.poseAtDistance(pit_.pitLaneDistance);
+  } else if (corridor != nullptr && corridor->length() > 0.0) {
+    const bool frenet =
+        physics != nullptr && physics->useFrenetDynamics;
+    lateralM = lateralNM(trackWidthM, frenet, corridor);
+    pose = corridor->poseAt(state_.currentDistance, lateralM);
+    poseIncludesLateral = true;
+    if (frenet)
+      headingRad = state_.headingError;
   } else {
     pose = track.poseAtRaceDistance(state_.currentDistance);
+    lateralM = lateralOffset_ * trackWidthM * 0.5;
+  }
+
+  if (std::abs(headingRad) > 1e-9) {
+    const double c = std::cos(headingRad);
+    const double s = std::sin(headingRad);
+    const double tx = pose.tangent.x;
+    const double tz = pose.tangent.z;
+    pose.tangent.x = tx * c - tz * s;
+    pose.tangent.z = tx * s + tz * c;
   }
 
   CarSnapshot snap;
@@ -1206,6 +1298,9 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition,
       telemetry_.laps().empty() ? 0.0 : telemetry_.laps().back().lapTime;
   snap.bestLapTime = bestLapTime_;
   snap.lateralOffset = lateralOffset_;
+  snap.lateralOffsetM = lateralM;
+  snap.headingError = headingRad;
+  snap.poseIncludesLateral = poseIncludesLateral;
   snap.carLengthM = body_.lengthM;
   snap.carWidthM = body_.widthM;
   snap.driverName = driver_.active().name;

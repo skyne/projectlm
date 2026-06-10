@@ -829,13 +829,13 @@ TEST_CASE("Red flag pauses driver stint clock while on track",
   TrafficModifiers traffic;
 
   session.raceControl.flagPhase = FlagPhase::RedFlag;
-  car.tick(session.track, session.physics, 30.0, 0.0, nullptr, &traffic,
-           session.weather, false, 3600.0, true);
+  car.tick(session.track, session.corridor, session.physics, 30.0, 0.0, nullptr,
+           &traffic, session.weather, false, 3600.0, true);
   REQUIRE(car.driver().stintTimeSeconds == Catch::Approx(0.0));
 
   session.raceControl.flagPhase = FlagPhase::Green;
-  car.tick(session.track, session.physics, 12.5, 30.0, nullptr, &traffic,
-           session.weather, false, 3600.0, false);
+  car.tick(session.track, session.corridor, session.physics, 12.5, 30.0,
+           nullptr, &traffic, session.weather, false, 3600.0, false);
   REQUIRE(car.driver().stintTimeSeconds == Catch::Approx(12.5));
 }
 

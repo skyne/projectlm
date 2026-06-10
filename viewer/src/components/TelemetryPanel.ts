@@ -1,10 +1,16 @@
 import type { CarSnapshot, WeekendSessionType } from "../ws/protocol";
 import { sessionLabel, sessionShortLabel, sessionTelemetrySubtitle } from "../utils/weekendSessions";
 import { mmPanelHeader } from "../utils/mmUi";
-import { buildTelemetryCardHtml } from "../utils/telemetryCard";
 import { FuelTracker } from "../utils/fuelTracker";
 import type { DriverMode } from "./RaceControls";
 import { hybridStrategyLabel, type HybridStrategy } from "../utils/hybridStrategy";
+import {
+  buildCarSummaryHtml,
+  buildDamageWidgetHtml,
+  buildFuelWidgetHtml,
+  buildHybridWidgetHtml,
+  buildTyreWidgetHtml,
+} from "../utils/telemetryWidgets";
 
 export interface TelemetryPanelHandlers {
   onDriverMode: (entryId: string, mode: DriverMode) => void;
@@ -23,7 +29,7 @@ export interface TelemetryEntryOption {
 interface ColumnSlot {
   root: HTMLElement;
   select: HTMLSelectElement;
-  card: HTMLElement;
+  summary: HTMLElement;
   modeButtons: NodeListOf<HTMLButtonElement>;
   hybridButtons: NodeListOf<HTMLButtonElement>;
   hybridGroup: HTMLElement;
@@ -33,12 +39,15 @@ interface ColumnSlot {
 export class TelemetryPanel {
   readonly root: HTMLElement;
   readonly mapContainer: HTMLElement;
-  private columnsWrap!: HTMLElement;
+  private carsWrap!: HTMLElement;
+  private fuelWidget!: HTMLElement;
+  private tyreWidget!: HTMLElement;
+  private hybridWidget!: HTMLElement;
+  private damageWidget!: HTMLElement;
   private slots: ColumnSlot[] = [];
   private handlers: TelemetryPanelHandlers;
   private snapshots: CarSnapshot[] = [];
   private entries: TelemetryEntryOption[] = [];
-  private playerEntryId = "entry-1";
   private fuelTracker = new FuelTracker();
   private visible = false;
   private titleEl!: HTMLElement;
@@ -48,11 +57,11 @@ export class TelemetryPanel {
   constructor(container: HTMLElement, handlers: TelemetryPanelHandlers) {
     this.handlers = handlers;
     this.root = document.createElement("section");
-    this.root.className = "panel telemetry-panel panel-wec hidden";
+    this.root.className = "panel telemetry-panel panel-wec panel-grid hidden";
     this.root.innerHTML = `
-      ${mmPanelHeader("Telemetry", { subtitle: "Multi-car live data · strategy", badge: "LIVE" })}
-      <div class="telemetry-layout">
-        <aside class="telemetry-map-panel">
+      ${mmPanelHeader("Telemetry", { subtitle: "Multi-car live data · strategy", badge: "LIVE", theme: "grid" })}
+      <div class="telemetry-bento">
+        <div class="telemetry-tile telemetry-tile-map">
           <div class="telemetry-map-toolbar">
             <span class="telemetry-map-toolbar-label">Team on track</span>
             <button type="button" class="secondary-btn telemetry-map-fit-btn">Fit team</button>
@@ -62,14 +71,27 @@ export class TelemetryPanel {
             <span class="telemetry-map-hint">Scroll to zoom · drag to pan · double-click reset</span>
           </div>
           <div class="telemetry-map-legend" aria-label="Team cars on map"></div>
-        </aside>
-        <div class="telemetry-columns"></div>
+        </div>
+        <div class="telemetry-tile telemetry-tile-cars">
+          <div class="telemetry-widget-head">
+            <span class="telemetry-widget-label">Fleet</span>
+          </div>
+          <div class="telemetry-cars-row"></div>
+        </div>
+        <div class="telemetry-tile telemetry-tile-fuel" id="telemetry-fuel-widget"></div>
+        <div class="telemetry-tile telemetry-tile-tyres" id="telemetry-tyre-widget"></div>
+        <div class="telemetry-tile telemetry-tile-hybrid" id="telemetry-hybrid-widget"></div>
+        <div class="telemetry-tile telemetry-tile-damage" id="telemetry-damage-widget"></div>
       </div>
     `;
     container.appendChild(this.root);
 
     this.mapContainer = this.root.querySelector("#telemetry-map-host")!;
-    this.columnsWrap = this.root.querySelector(".telemetry-columns")!;
+    this.carsWrap = this.root.querySelector(".telemetry-cars-row")!;
+    this.fuelWidget = this.root.querySelector("#telemetry-fuel-widget")!;
+    this.tyreWidget = this.root.querySelector("#telemetry-tyre-widget")!;
+    this.hybridWidget = this.root.querySelector("#telemetry-hybrid-widget")!;
+    this.damageWidget = this.root.querySelector("#telemetry-damage-widget")!;
     this.titleEl = this.root.querySelector(".mm-panel-title")!;
     this.subtitleEl = this.root.querySelector(".mm-panel-subtitle")!;
     this.badgeEl = this.root.querySelector(".mm-badge")!;
@@ -94,8 +116,8 @@ export class TelemetryPanel {
     this.badgeEl.textContent = sessionShortLabel(sessionType);
   }
 
-  setPlayerEntry(entryId: string): void {
-    this.playerEntryId = entryId;
+  setPlayerEntry(_entryId: string): void {
+    // Widgets follow slot 0; player highlight is on the car slot if mapped there.
   }
 
   setEntries(entries: TelemetryEntryOption[]): void {
@@ -103,17 +125,12 @@ export class TelemetryPanel {
     this.entries = entries;
 
     if (this.slots.length !== entries.length) {
-      this.columnsWrap.replaceChildren();
+      this.carsWrap.replaceChildren();
       this.slots = [];
       for (let i = 0; i < entries.length; i++) {
         this.slots.push(this.createColumn(i));
       }
     }
-
-    this.columnsWrap.style.setProperty(
-      "--telemetry-grid-cols",
-      String(entries.length <= 1 ? 1 : 2),
-    );
 
     const legendEl = this.root.querySelector(".telemetry-map-legend")!;
     legendEl.replaceChildren();
@@ -156,8 +173,12 @@ export class TelemetryPanel {
   reset(): void {
     this.fuelTracker.reset();
     for (const slot of this.slots) {
-      slot.card.textContent = "Waiting for telemetry…";
+      slot.summary.textContent = "Waiting for telemetry…";
     }
+    this.fuelWidget.textContent = "";
+    this.tyreWidget.textContent = "";
+    this.hybridWidget.textContent = "";
+    this.damageWidget.textContent = "";
   }
 
   update(snapshots: CarSnapshot[]): void {
@@ -172,7 +193,7 @@ export class TelemetryPanel {
 
   private createColumn(index: number): ColumnSlot {
     const col = document.createElement("div");
-    col.className = "telemetry-column";
+    col.className = "telemetry-car-slot";
     col.innerHTML = `
       <div class="telemetry-column-head telemetry-column-head-compact">
         <label class="mm-field telemetry-car-field">
@@ -197,12 +218,12 @@ export class TelemetryPanel {
           </div>
         </div>
       </div>
-      <div class="race-telemetry-card telemetry-slot-card">Select a car…</div>
+      <div class="telemetry-car-summary">Select a car…</div>
     `;
-    this.columnsWrap.appendChild(col);
+    this.carsWrap.appendChild(col);
 
     const select = col.querySelector(".telemetry-car-select") as HTMLSelectElement;
-    const card = col.querySelector(".telemetry-slot-card") as HTMLElement;
+    const summary = col.querySelector(".telemetry-car-summary") as HTMLElement;
     const modeButtons = col.querySelectorAll(".driver-mode-btn[data-mode]") as NodeListOf<HTMLButtonElement>;
     const hybridButtons = col.querySelectorAll(".hybrid-strategy-btn") as NodeListOf<HTMLButtonElement>;
     const hybridGroup = col.querySelector(".telemetry-hybrid-group") as HTMLElement;
@@ -225,11 +246,12 @@ export class TelemetryPanel {
       });
     }
 
-    return { root: col, select, card, modeButtons, hybridButtons, hybridGroup, entryId: "" };
+    return { root: col, select, summary, modeButtons, hybridButtons, hybridGroup, entryId: "" };
   }
 
   private renderAllColumns(): void {
     for (let i = 0; i < this.slots.length; i++) this.renderColumn(i);
+    this.renderWidgets(0);
   }
 
   private renderColumn(index: number): void {
@@ -238,13 +260,15 @@ export class TelemetryPanel {
     slot.entryId = entryId;
 
     if (!entryId) {
-      slot.card.textContent = "Select a car…";
+      slot.summary.textContent = "Select a car…";
+      if (index === 0) this.renderWidgets(index);
       return;
     }
 
     const snap = this.snapshots.find((s) => s.entryId === entryId);
     if (!snap) {
-      slot.card.textContent = "Waiting for telemetry…";
+      slot.summary.textContent = "Waiting for telemetry…";
+      if (index === 0) this.renderWidgets(index);
       return;
     }
 
@@ -261,14 +285,36 @@ export class TelemetryPanel {
       this.setColumnHybridStrategy(index, strategy, false);
     }
 
-    const fuelStats = this.fuelTracker.stats(snap.entryId, snap.fuel);
+    slot.summary.innerHTML = buildCarSummaryHtml(snap);
+    if (index === 0) this.renderWidgets(index);
+  }
 
-    slot.card.innerHTML = buildTelemetryCardHtml(snap, {
-      extended: true,
-      compact: true,
-      fuelStats,
-      hybridBudgetMJ: snap.hybridBudgetMJ ?? null,
-    });
+  private renderWidgets(slotIndex: number): void {
+    const slot = this.slots[slotIndex];
+    if (!slot?.entryId) {
+      this.fuelWidget.innerHTML = `<p class="telemetry-widget-empty">Select a car in slot 1</p>`;
+      this.tyreWidget.innerHTML = "";
+      this.hybridWidget.innerHTML = "";
+      this.damageWidget.innerHTML = "";
+      return;
+    }
+
+    const snap = this.snapshots.find((s) => s.entryId === slot.entryId);
+    if (!snap) {
+      this.fuelWidget.innerHTML = `<p class="telemetry-widget-empty">Waiting for telemetry…</p>`;
+      this.tyreWidget.innerHTML = "";
+      this.hybridWidget.innerHTML = "";
+      this.damageWidget.innerHTML = "";
+      return;
+    }
+
+    const fuelStats = this.fuelTracker.stats(snap.entryId, snap.fuel);
+    const ctx = { fuelStats, hybridBudgetMJ: snap.hybridBudgetMJ ?? null };
+
+    this.fuelWidget.innerHTML = buildFuelWidgetHtml(snap, ctx);
+    this.tyreWidget.innerHTML = buildTyreWidgetHtml(snap);
+    this.hybridWidget.innerHTML = buildHybridWidgetHtml(snap, ctx);
+    this.damageWidget.innerHTML = buildDamageWidgetHtml(snap);
   }
 
   private setColumnMode(index: number, mode: DriverMode, notify: boolean): void {

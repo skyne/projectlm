@@ -5,6 +5,7 @@
 #include "pit_stop.hpp"
 #include "race_control_common.hpp"
 #include "track.hpp"
+#include "track_corridor.hpp"
 #include "weather.hpp"
 #include <random>
 #include <string>
@@ -15,8 +16,12 @@ enum class SessionMode { Race, Practice, Qualifying };
 
 SessionMode ParseSessionMode(const std::string &value);
 
+/** Build corridor width/racing-line profiles after track load. */
+void InitSessionCorridor(RaceSession &session);
+
 struct RaceSession {
   TrackDefinition track;
+  TrackCorridor corridor;
   PhysicsConfig physics;
   SessionMode sessionMode = SessionMode::Race;
   std::vector<Car> cars;

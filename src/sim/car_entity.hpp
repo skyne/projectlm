@@ -9,6 +9,7 @@
 #include "simulation.hpp"
 #include "telemetry.hpp"
 #include "track.hpp"
+#include "track_corridor.hpp"
 #include "traffic.hpp"
 #include "weather.hpp"
 #include <map>
@@ -88,6 +89,12 @@ struct CarSnapshot {
   Vec3 position;
   Vec3 tangent;
   double lateralOffset = 0.0;
+  /** Lateral offset from centreline in metres (left positive). */
+  double lateralOffsetM = 0.0;
+  /** Heading error relative to path tangent (radians). */
+  double headingError = 0.0;
+  /** When true, position/tangent already include lateral offset. */
+  bool poseIncludesLateral = false;
   double carLengthM = 5.0;
   double carWidthM = 2.0;
   std::string driverName;
@@ -191,6 +198,10 @@ public:
   void setLateralOffset(double offset) {
     lateralOffset_ = std::clamp(offset, -1.0, 1.0);
   }
+  /** Lateral offset from centreline in metres (left positive). */
+  double lateralNM(double trackWidthM, bool useFrenetDynamics,
+                   const TrackCorridor *corridor = nullptr,
+                   double arcLengthM = -1.0) const;
   CarBodyDimensions bodyDimensions() const { return body_; }
   double wingAngleDelta() const { return wingAngleDelta_; }
   double brakeBias() const { return brakeBias_; }
@@ -229,9 +240,10 @@ public:
   void setDrivers(DriverState drivers);
   void resetForRestart();
 
-  CarTickResult tick(const TrackDefinition &track, const PhysicsConfig &physics,
-                     double deltaTime, double raceTime,
-                     TelemetryLog *telemetry = nullptr,
+  CarTickResult tick(const TrackDefinition &track,
+                     const TrackCorridor &corridor,
+                     const PhysicsConfig &physics, double deltaTime,
+                     double raceTime, TelemetryLog *telemetry = nullptr,
                      const TrafficModifiers *traffic = nullptr,
                      const WeatherState &weather = WeatherState{},
                      bool isNight = false,
@@ -245,14 +257,19 @@ public:
                           double remainingSessionSec = 86400.0 * 7.0,
                           bool redFlagActive = false,
                           const std::vector<Car> *peerCars = nullptr,
-                          bool requireMergeGap = false);
+                          bool requireMergeGap = false,
+                          const TrafficLateralContext *lateral = nullptr);
   void beginRejoinYield(double seconds = kPitRejoinYieldSec);
   bool isRejoiningYield() const { return rejoinYieldSec_ > 0.0; }
   void applyCommand(const SimCommand &command);
-  void applyTrafficVisuals(const TrafficModifiers &traffic, double deltaTime);
+  void applyTrafficVisuals(const TrafficModifiers &traffic, double deltaTime,
+                           const TrackCorridor &corridor, bool useFrenet);
 
   CarSnapshot snapshot(const TrackDefinition &track, int racePosition,
-                       double remainingSessionSec = 86400.0 * 7.0) const;
+                       double remainingSessionSec = 86400.0 * 7.0,
+                       const TrackCorridor *corridor = nullptr,
+                       const PhysicsConfig *physics = nullptr,
+                       double trackWidthM = 12.0) const;
 
   bool isAheadOf(const Car &other) const;
   void markRetired(const std::string &reason);
@@ -283,6 +300,7 @@ private:
   TelemetryLog telemetry_;
   double bestLapTime_ = 0.0;
   double lateralOffset_ = 0.0;
+  double pathTargetNM_ = 0.0;
   double rejoinYieldSec_ = 0.0;
   double wingAngleDelta_ = 0.0;
   double brakeBias_ = 0.5;

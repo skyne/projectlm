@@ -324,8 +324,9 @@ static void BuildDefaultPitLane(TrackDefinition &track) {
     return;
 
   constexpr double kLaneFraction = 0.06;
-  constexpr double kLateralOffsetM = 10.0;
   constexpr double kSampleStepM = 12.0;
+  const double kLateralOffsetM =
+      track.corridor.pitLane.offsetM > 0.0 ? track.corridor.pitLane.offsetM : 10.0;
 
   const double segLen = lapLen * kLaneFraction;
   std::vector<Vec3> points;
@@ -590,9 +591,93 @@ static bool ParseSectorObject(const std::string &s, size_t &i,
     } else if (key == "straight") {
       if (!ParseBool(s, i, sector.isStraightaway))
         return false;
+    } else if (key == "width_m") {
+      if (!ParseNumber(s, i, sector.widthM))
+        return false;
     } else {
       while (i < s.size() && s[i] != ',' && s[i] != '}')
         ++i;
+    }
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == ',') {
+      ++i;
+      continue;
+    }
+  }
+}
+
+static bool ParseWidthSegmentObject(const std::string &s, size_t &i,
+                                  TrackWidthSegment &segment) {
+  if (!Expect(s, i, '{'))
+    return false;
+  while (true) {
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == '}')
+      return ++i, true;
+    std::string key;
+    if (!ParseString(s, i, key) || !Expect(s, i, ':'))
+      return false;
+    if (key == "name") {
+      if (!ParseString(s, i, segment.name))
+        return false;
+    } else if (key == "start_t") {
+      if (!ParseNumber(s, i, segment.startT))
+        return false;
+    } else if (key == "end_t") {
+      if (!ParseNumber(s, i, segment.endT))
+        return false;
+    } else if (key == "width_m") {
+      if (!ParseNumber(s, i, segment.widthM))
+        return false;
+    } else {
+      while (i < s.size() && s[i] != ',' && s[i] != '}')
+        ++i;
+    }
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == ',') {
+      ++i;
+      continue;
+    }
+  }
+}
+
+static bool ParseWidthProfileArray(const std::string &s, size_t &i,
+                                   std::vector<TrackWidthSegment> &profile) {
+  if (!Expect(s, i, '['))
+    return false;
+  while (true) {
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == ']')
+      return ++i, true;
+    TrackWidthSegment segment;
+    if (!ParseWidthSegmentObject(s, i, segment))
+      return false;
+    profile.push_back(segment);
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == ',') {
+      ++i;
+      continue;
+    }
+  }
+}
+
+static bool ParsePitLaneObject(const std::string &s, size_t &i,
+                             PitLaneGeometry &geometry) {
+  if (!Expect(s, i, '{'))
+    return false;
+  while (true) {
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == '}')
+      return ++i, true;
+    std::string key;
+    if (!ParseString(s, i, key) || !Expect(s, i, ':'))
+      return false;
+    if (key == "offset_m") {
+      if (!ParseNumber(s, i, geometry.offsetM))
+        return false;
+    } else {
+      if (!SkipJsonValue(s, i))
+        return false;
     }
     SkipWs(s, i);
     if (i < s.size() && s[i] == ',') {
@@ -633,9 +718,12 @@ static bool LoadTrackJson(const std::string &filename, TrackDefinition &track) {
   std::vector<Vec3> controlPoints;
   std::vector<Vec3> displayPolyline;
   std::vector<TrackSector> sectors;
+  std::vector<TrackWidthSegment> widthProfile;
+  PitLaneGeometry pitLaneGeometry;
   bool closed = true;
   bool linear = false;
   double targetLength = 0.0;
+  double trackWidthM = 12.0;
   std::string name;
 
   size_t i = 0;
@@ -671,6 +759,15 @@ static bool LoadTrackJson(const std::string &filename, TrackDefinition &track) {
     } else if (key == "sectors") {
       if (!ParseSectorsArray(content, i, sectors))
         return false;
+    } else if (key == "track_width_m") {
+      if (!ParseNumber(content, i, trackWidthM))
+        return false;
+    } else if (key == "width_profile") {
+      if (!ParseWidthProfileArray(content, i, widthProfile))
+        return false;
+    } else if (key == "pit_lane") {
+      if (!ParsePitLaneObject(content, i, pitLaneGeometry))
+        return false;
     } else {
       if (!SkipJsonValue(content, i))
         return false;
@@ -686,6 +783,9 @@ static bool LoadTrackJson(const std::string &filename, TrackDefinition &track) {
   track.name = name.empty() ? "Unnamed Track" : name;
   track.sectors = sectors;
   track.displayPolyline = displayPolyline;
+  track.corridor.defaultWidthM = trackWidthM;
+  track.corridor.widthProfile = widthProfile;
+  track.corridor.pitLane = pitLaneGeometry;
   track.spline.setControlPoints(controlPoints, closed);
   track.spline.setLinear(linear);
   track.spline.build(2.0);

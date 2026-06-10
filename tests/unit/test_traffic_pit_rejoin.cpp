@@ -66,8 +66,8 @@ TEST_CASE("Rejoining car yields instead of causing rear-end collision",
   std::vector<TrafficModifiers> mods;
   std::vector<TrafficEvent> events;
   std::unordered_map<std::string, double> cooldowns;
-  ResolveTraffic(session.cars, session.track.lapLength(), 14.0, 100.0, cooldowns,
-                 mods, events);
+  ResolveTraffic(session.cars, session.track.lapLength(), 100.0, cooldowns, mods,
+                 events, SessionRaceControl{}, {}, {14.0, nullptr, false});
 
   const size_t fastIdx = 0;
   const size_t rejoinIdx = 1;
@@ -75,6 +75,32 @@ TEST_CASE("Rejoining car yields instead of causing rear-end collision",
   REQUIRE_FALSE(mods[fastIdx].collision);
   REQUIRE(mods[rejoinIdx].blueFlag);
   REQUIRE(mods[rejoinIdx].speedCapMs > 0.0);
+}
+
+TEST_CASE("PitMergeGapSafe train on centerline allows merge when rejoin outside lane",
+          "[unit][traffic][pit]") {
+  RaceSession session = MakeMinimalRaceSession();
+  AddMinimalPitLane(session);
+  AddTestCar(session, "rejoin", "Rejoin Team");
+  AddTestCar(session, "fast", "Fast Team");
+  Car &rejoin = FindCar(session, "rejoin");
+  Car &fast = FindCar(session, "fast");
+
+  const double lap = session.track.lapLength();
+  const double merge = session.track.pitLane.mergeTrackDistance;
+  const double pitSpeed = session.track.pitLane.speedLimitMs;
+
+  rejoin.state().currentLap = 2;
+  fast.state().currentLap = 2;
+  fast.state().currentDistance = merge - 25.0;
+  fast.state().currentSpeed = 55.0;
+  fast.setLateralOffset(0.0);
+
+  TrafficLateralContext lateral;
+  lateral.trackWidthM = session.trackWidthM;
+  lateral.useFrenetDynamics = true;
+
+  REQUIRE(PitMergeGapSafe(rejoin, session.cars, lap, merge, pitSpeed, lateral));
 }
 
 TEST_CASE("Pit exit waits for gap before merging on green flag",

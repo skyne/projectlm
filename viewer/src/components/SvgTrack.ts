@@ -1,8 +1,10 @@
 import type {
   CarSnapshot,
   RaceControlPayload,
+  SurfaceHazardSummaryPayload,
   TrackGeometryPayload,
   TrackSectorGeometry,
+  TrackWidthSegment,
 } from "../ws/protocol";
 import { formatMapCarLabel, formatCarNumber } from "../entryNumbers";
 import {
@@ -18,6 +20,7 @@ import { PIT_LANE_FRACTION } from "../utils/pitCommands";
 import { resolveTrackTheme, type TrackTheme } from "../utils/trackThemes";
 import type { TeamLiveryPayload } from "../ws/protocol";
 import { sectorFlagTitle } from "../utils/sectorFlags";
+import { isTimingSectorName } from "../utils/timingSectors";
 
 const PIT_BOX_FRACTION = 0.48;
 const PIT_LANE_BLEND = 0.34;
@@ -116,10 +119,16 @@ function carGlowWidth(
   snap: CarSnapshot,
   isPlayer: boolean,
   isTeam: boolean,
+  broadcast: boolean,
 ): { width: number; opacity: number } {
   if (snap.blackFlag || snap.meatballFlag) return { width: 3, opacity: 0.9 };
   if (snap.trackStatus === "stranded" || snap.trackStatus === "recovering") {
     return { width: 4, opacity: 0.85 };
+  }
+  if (broadcast) {
+    if (isPlayer) return { width: 3, opacity: 0.8 };
+    if (isTeam) return { width: 2, opacity: 0.55 };
+    return { width: 1.2, opacity: 0.3 };
   }
   if (isPlayer) return { width: 4, opacity: 0.75 };
   if (isTeam) return { width: 2, opacity: 0.55 };
@@ -147,8 +156,14 @@ interface CarMarker {
   wheelRL: SVGCircleElement;
   wheelRR: SVGCircleElement;
   glow: SVGCircleElement;
+  highlightHalo: SVGCircleElement | null;
+  badge: SVGCircleElement | null;
   label: SVGTextElement;
   title: SVGTitleElement;
+}
+
+function broadcastBadgeRadius(carNumber: string): number {
+  return Math.max(6.5, 5 + carNumber.length * 1.75);
 }
 
 function separateLabels(points: SvgPoint[], minDist: number, iterations = 10): void {
@@ -188,6 +203,8 @@ interface FitTransform {
 export interface SvgTrackOptions {
   /** Enable scroll-to-zoom and drag-to-pan on the map. */
   zoomable?: boolean;
+  /** Broadcast map: glow on all cars, stronger team/player halos. */
+  broadcast?: boolean;
 }
 
 const MIN_ZOOM = 1;
@@ -212,6 +229,7 @@ export class SvgTrack {
   private highlightedEntryIds = new Set<string>();
   private carPositions = new Map<string, { x: number; y: number }>();
   private zoomable: boolean;
+  private broadcast: boolean;
   private zoom = 1;
   private panX = 0;
   private panY = 0;
@@ -235,6 +253,8 @@ export class SvgTrack {
   private asphaltWet = false;
   private lastWetSheenOpacity = -1;
   private lapLengthM = 7000;
+  private defaultHalfWidthM = 6;
+  private widthProfile: TrackWidthSegment[] | undefined;
   private pitLanePath: {
     points: SvgPoint[];
     cumulative: number[];
@@ -249,8 +269,12 @@ export class SvgTrack {
 
   constructor(container: HTMLElement, options: SvgTrackOptions = {}) {
     this.zoomable = options.zoomable ?? false;
+    this.broadcast = options.broadcast ?? false;
+    if (this.broadcast) {
+      container.classList.add("track-map-canvas-host--broadcast");
+    }
     this.root = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    this.root.setAttribute("class", "track-svg");
+    this.root.setAttribute("class", this.broadcast ? "track-svg broadcast-track" : "track-svg");
     this.root.setAttribute("preserveAspectRatio", "xMidYMid meet");
 
     this.defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
@@ -478,25 +502,28 @@ export class SvgTrack {
   updateRaceControlOverlay(raceControl?: RaceControlPayload): void {
     const flags = raceControl?.sectorFlags ?? [];
     const hazards = raceControl?.surfaceHazards ?? [];
-    const key = `${flags.join(",")}|${hazards.map((h) => `${h.sectorIndex}:${h.kind}`).join(",")}`;
+    const key = `${flags.join(",")}|${hazards.map((h) => `${h.sectorIndex}:${h.kind}:${h.centerDistance ?? ""}:${h.centerLateralM ?? ""}:${h.spanMeters ?? ""}:${h.lateralSpanM ?? ""}`).join(",")}`;
     if (key === this.lastRaceControlKey) return;
     this.lastRaceControlKey = key;
 
     for (let i = 0; i < this.sectorBandPaths.length; i++) {
       const path = this.sectorBandPaths[i];
       const level = flags[i] ?? 0;
+      const bandW = this.broadcast ? "5" : "18";
+      const flagW2 = this.broadcast ? "8" : "22";
+      const flagW1 = this.broadcast ? "7" : "20";
       if (level >= 2) {
         path.setAttribute("stroke", "#e67e22");
-        path.setAttribute("opacity", "0.72");
-        path.setAttribute("stroke-width", "22");
+        path.setAttribute("opacity", "0.85");
+        path.setAttribute("stroke-width", flagW2);
       } else if (level >= 1) {
         path.setAttribute("stroke", "#f1c40f");
-        path.setAttribute("opacity", "0.62");
-        path.setAttribute("stroke-width", "20");
+        path.setAttribute("opacity", "0.78");
+        path.setAttribute("stroke-width", flagW1);
       } else {
         path.setAttribute("stroke", this.theme.sectorColors[i % this.theme.sectorColors.length]);
-        path.setAttribute("opacity", "0.28");
-        path.setAttribute("stroke-width", "18");
+        path.setAttribute("opacity", this.broadcast ? "0.42" : "0.28");
+        path.setAttribute("stroke-width", bandW);
       }
     }
 
@@ -517,16 +544,20 @@ export class SvgTrack {
 
     this.hazardsGroup.replaceChildren();
     for (const hz of hazards) {
+      if (hz.centerDistance != null) {
+        this.appendHazardPatch(hz);
+        continue;
+      }
       const mid = this.sectorMidpoints[hz.sectorIndex];
       if (!mid) continue;
-      const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      const marker = document.createElementNS(SVG_NS, "circle");
       marker.setAttribute("class", "track-hazard-marker");
       marker.setAttribute("cx", String(mid.x));
       marker.setAttribute("cy", String(mid.y));
       marker.setAttribute("r", "10");
       marker.setAttribute("fill", hazardFill(hz.kind));
       marker.setAttribute("opacity", "0.85");
-      const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      const title = document.createElementNS(SVG_NS, "title");
       title.textContent = `${hz.kind} — grip ×${hz.gripMultiplier.toFixed(2)}`;
       marker.appendChild(title);
       this.hazardsGroup.appendChild(marker);
@@ -579,6 +610,8 @@ export class SvgTrack {
     this.lastRaceControlKey = "";
     this.wetSheenPath = null;
     this.pitLanePath = null;
+    this.defaultHalfWidthM = 6;
+    this.widthProfile = undefined;
     this.fit = null;
     this.zoom = 1;
     this.panX = 0;
@@ -675,13 +708,23 @@ export class SvgTrack {
     this.zoom = 1;
 
     this.installDefs(viewBoxX, viewBoxY, viewWidth, viewHeight);
+    if (this.broadcast) {
+      this.installBroadcastDefs();
+    }
 
     const pathD = this.pointsToPath(svgPoints, true);
-    if (!hasBakedTrackSurface(this.trackId)) {
+    if (!this.broadcast && !hasBakedTrackSurface(this.trackId)) {
       this.drawInfield(pathD);
     }
     this.drawSectorBands(svgPoints, geometry.sectors, cumulativeT, totalLength);
-    this.drawTrackSurface(pathD, svgPoints);
+    if (this.broadcast) {
+      this.drawTrackSurfaceBroadcast(pathD);
+      if (geometry.defaultWidthM != null || geometry.widthProfile?.length) {
+        this.drawCorridorEdges(svgPoints, cumulativeT, geometry);
+      }
+    } else {
+      this.drawTrackSurface(pathD, svgPoints, geometry, cumulativeT);
+    }
 
     this.drawPitLane(svgPoints, cumulativeT, totalLength);
 
@@ -704,12 +747,13 @@ export class SvgTrack {
     }
 
     for (const sector of geometry.sectors) {
+      if (this.broadcast && !isTimingSectorName(sector.name)) continue;
       const p = toSvg(sector.labelX, sector.labelZ);
       const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
       label.setAttribute("x", String(p.x));
       label.setAttribute("y", String(p.y));
-      label.setAttribute("class", "sector-label");
-      label.textContent = sector.name;
+      label.setAttribute("class", this.broadcast ? "sector-label sector-label-wec" : "sector-label");
+      label.textContent = sector.name.toUpperCase();
       this.labelsGroup.appendChild(label);
     }
 
@@ -732,6 +776,8 @@ export class SvgTrack {
 
     this.setLayerVisibility(this.layerVisibility);
     this.lapLengthM = geometry.lapLength > 0 ? geometry.lapLength : this.lapLengthM;
+    this.defaultHalfWidthM = (geometry.defaultWidthM ?? 12) / 2;
+    this.widthProfile = geometry.widthProfile;
     this.cachePitLanePath(svgPoints, cumulativeT, totalLength);
     this.renderedGeometry = geometry;
     this.renderedThemeId = this.theme.id;
@@ -771,8 +817,17 @@ export class SvgTrack {
 
         const glow = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         glow.setAttribute("class", "car-glow");
-        glow.setAttribute("r", "14");
+        glow.setAttribute("r", this.broadcast ? "11" : "14");
         glow.setAttribute("fill", "none");
+
+        let highlightHalo: SVGCircleElement | null = null;
+        let badge: SVGCircleElement | null = null;
+        if (this.broadcast) {
+          highlightHalo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          highlightHalo.setAttribute("class", "car-highlight-halo");
+          badge = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          badge.setAttribute("class", "car-number-badge");
+        }
 
         const body = document.createElementNS("http://www.w3.org/2000/svg", "path");
         body.setAttribute("class", "car-body");
@@ -794,17 +849,36 @@ export class SvgTrack {
 
         const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
 
-        group.append(glow, body, cockpit, wheelFL, wheelFR, wheelRL, wheelRR, label, title);
+        if (this.broadcast) {
+          group.classList.add("broadcast-car-marker");
+          group.append(highlightHalo!, badge!, label, title);
+        } else {
+          group.append(glow, body, cockpit, wheelFL, wheelFR, wheelRL, wheelRR, label, title);
+        }
         this.carsGroup.appendChild(group);
 
-        marker = { group, body, cockpit, wheelFL, wheelFR, wheelRL, wheelRR, glow, label, title };
+        marker = {
+          group,
+          body,
+          cockpit,
+          wheelFL,
+          wheelFR,
+          wheelRL,
+          wheelRR,
+          glow,
+          highlightHalo,
+          badge,
+          label,
+          title,
+        };
         this.carElements.set(snap.entryId, marker);
       }
 
-      marker.group.setAttribute(
-        "transform",
-        `translate(${p.x}, ${p.y}) rotate(${angle})`,
-      );
+      if (this.broadcast) {
+        marker.group.setAttribute("transform", `translate(${p.x}, ${p.y})`);
+      } else {
+        marker.group.setAttribute("transform", `translate(${p.x}, ${p.y}) rotate(${angle})`);
+      }
 
       if (isPlayer !== marker.group.classList.contains("player-car")) {
         marker.group.classList.toggle("player-car", isPlayer);
@@ -826,49 +900,90 @@ export class SvgTrack {
         marker.group.dataset.classId = snap.classId;
       }
 
-      const bodyPath = this.carBodyPath(lengthPx, widthPx);
-      marker.body.setAttribute("d", bodyPath);
-      marker.body.setAttribute("fill", color);
-      marker.body.setAttribute(
-        "opacity",
-        isSafetyCar ? "0.98" : snap.inPit ? "0.45" : snap.pitQueued ? "0.65" : "0.92",
-      );
-      marker.body.setAttribute(
-        "stroke",
-        isSafetyCar
-          ? "#f39c12"
-          : snap.overtaking
-            ? "#f1c40f"
-            : snap.blocked
-              ? "#e67e22"
-              : "#0f1117",
-      );
-      marker.body.setAttribute("stroke-width", isPlayer ? "1.5" : "1");
+      if (this.broadcast && marker.badge) {
+        marker.group.querySelector(".car-class-ring")?.remove();
+        if (!marker.highlightHalo) {
+          const highlightHalo = document.createElementNS(SVG_NS, "circle");
+          highlightHalo.setAttribute("class", "car-highlight-halo");
+          marker.group.insertBefore(highlightHalo, marker.badge);
+          marker.highlightHalo = highlightHalo;
+        }
+        const radius = broadcastBadgeRadius(carNumber);
+        const classFill = isSafetyCar ? color : classColor(snap.classId);
+        const showHighlight = teamLiveryCar && !isSafetyCar;
+        const highlightStroke =
+          showHighlight && this.teamLivery ? this.teamLivery.primary : "#22d3ee";
 
-      marker.cockpit.setAttribute("d", this.cockpitPath(lengthPx, widthPx));
-      marker.cockpit.setAttribute("fill", accentColor);
-      marker.cockpit.setAttribute("opacity", teamLiveryCar ? "0.92" : "0.85");
+        if (showHighlight && marker.highlightHalo) {
+          marker.highlightHalo.setAttribute("cx", "0");
+          marker.highlightHalo.setAttribute("cy", "0");
+          marker.highlightHalo.setAttribute("r", String(radius + 2.4));
+          marker.highlightHalo.setAttribute("fill", "none");
+          marker.highlightHalo.setAttribute("stroke", highlightStroke);
+          marker.highlightHalo.setAttribute("stroke-width", "2");
+          marker.highlightHalo.style.display = "";
+        } else if (marker.highlightHalo) {
+          marker.highlightHalo.style.display = "none";
+        }
 
-      const wheelR = Math.max(1.8, widthPx * 0.22);
-      const wheelPositions: Array<[SVGCircleElement, number, number]> = [
-        [marker.wheelFL, lengthPx * 0.28, -widthPx * 0.42],
-        [marker.wheelFR, lengthPx * 0.28, widthPx * 0.42],
-        [marker.wheelRL, -lengthPx * 0.32, -widthPx * 0.42],
-        [marker.wheelRR, -lengthPx * 0.32, widthPx * 0.42],
-      ];
-      for (const [wheel, cx, cy] of wheelPositions) {
-        wheel.setAttribute("cx", String(cx));
-        wheel.setAttribute("cy", String(cy));
-        wheel.setAttribute("r", String(wheelR));
-        wheel.setAttribute("fill", "#0f1117");
-        wheel.setAttribute("stroke", color);
-        wheel.setAttribute("stroke-width", "0.8");
+        marker.badge.setAttribute("cx", "0");
+        marker.badge.setAttribute("cy", "0");
+        marker.badge.setAttribute("r", String(radius));
+        marker.badge.setAttribute("fill", classFill);
+        marker.badge.setAttribute("stroke", isSafetyCar ? "#c27d0e" : "#0b0d14");
+        marker.badge.setAttribute("stroke-width", "1.25");
+        marker.label.setAttribute("font-size", carNumber.length > 2 ? "5.5" : "6.5");
+        marker.label.setAttribute("font-weight", "700");
+        marker.label.setAttribute("fill", "#fff");
       }
 
-      marker.glow.setAttribute("stroke", carGlowStroke(snap, color));
-      const glowWidth = carGlowWidth(snap, isPlayer, isTeam);
-      marker.glow.setAttribute("stroke-width", String(glowWidth.width));
-      marker.glow.setAttribute("opacity", String(glowWidth.opacity));
+      if (!this.broadcast) {
+        const bodyPath = this.carBodyPath(lengthPx, widthPx);
+        marker.body.setAttribute("d", bodyPath);
+        marker.body.setAttribute("fill", color);
+        marker.body.setAttribute(
+          "opacity",
+          isSafetyCar ? "0.98" : snap.inPit ? "0.45" : snap.pitQueued ? "0.65" : "0.92",
+        );
+        marker.body.setAttribute(
+          "stroke",
+          isSafetyCar
+            ? "#f39c12"
+            : snap.overtaking
+              ? "#f1c40f"
+              : snap.blocked
+                ? "#e67e22"
+                : "#0f1117",
+        );
+        marker.body.setAttribute("stroke-width", isPlayer ? "1.5" : "1");
+
+        marker.cockpit.setAttribute("d", this.cockpitPath(lengthPx, widthPx));
+        marker.cockpit.setAttribute("fill", accentColor);
+        marker.cockpit.setAttribute("opacity", teamLiveryCar ? "0.92" : "0.85");
+
+        const wheelR = Math.max(1.8, widthPx * 0.22);
+        const wheelPositions: Array<[SVGCircleElement, number, number]> = [
+          [marker.wheelFL, lengthPx * 0.28, -widthPx * 0.42],
+          [marker.wheelFR, lengthPx * 0.28, widthPx * 0.42],
+          [marker.wheelRL, -lengthPx * 0.32, -widthPx * 0.42],
+          [marker.wheelRR, -lengthPx * 0.32, widthPx * 0.42],
+        ];
+        for (const [wheel, cx, cy] of wheelPositions) {
+          wheel.setAttribute("cx", String(cx));
+          wheel.setAttribute("cy", String(cy));
+          wheel.setAttribute("r", String(wheelR));
+          wheel.setAttribute("fill", "#0f1117");
+          wheel.setAttribute("stroke", color);
+          wheel.setAttribute("stroke-width", "0.8");
+        }
+      }
+
+      if (!this.broadcast) {
+        marker.glow.setAttribute("stroke", carGlowStroke(snap, color));
+        const glowWidth = carGlowWidth(snap, isPlayer, isTeam, this.broadcast);
+        marker.glow.setAttribute("stroke-width", String(glowWidth.width));
+        marker.glow.setAttribute("opacity", String(glowWidth.opacity));
+      }
 
       marker.group.classList.toggle(
         "stranded-car",
@@ -877,11 +992,13 @@ export class SvgTrack {
       marker.group.classList.toggle("meatball-car", snap.meatballFlag === true);
       marker.group.classList.toggle("black-flag-car", snap.blackFlag === true);
 
-      marker.label.textContent = numberLabel;
-      marker.label.setAttribute(
-        "fill",
-        isPlayer ? "#fff" : isTeam ? color : "rgba(240, 242, 245, 0.92)",
-      );
+      marker.label.textContent = this.broadcast ? carNumber : numberLabel;
+      if (!this.broadcast) {
+        marker.label.setAttribute(
+          "fill",
+          isPlayer ? "#fff" : isTeam ? color : "rgba(240, 242, 245, 0.92)",
+        );
+      }
       marker.title.textContent = `#${carNumber || "?"} ${snap.classId} · ${snap.teamName}${snap.inPit ? " (PIT)" : ""}${snap.overtaking ? " overtaking" : ""}${snap.trackStatus === "stranded" ? " (STOPPED)" : snap.trackStatus === "recovering" ? " (RECOVERY)" : ""}${snap.meatballFlag ? " (MEATBALL)" : ""}${snap.blackFlag ? " (BLACK)" : ""}`;
       const retiredOpacity = snap.retired ? "0.35" : "1";
       if (marker.group.style.opacity !== retiredOpacity) {
@@ -1026,8 +1143,114 @@ export class SvgTrack {
     this.bgGroup.appendChild(infield);
   }
 
-  private drawTrackSurface(pathD: string, svgPoints: SvgPoint[]): void {
+  private installBroadcastDefs(): void {
+    const glow = document.createElementNS(SVG_NS, "filter");
+    glow.setAttribute("id", "broadcast-glow");
+    glow.setAttribute("x", "-40%");
+    glow.setAttribute("y", "-40%");
+    glow.setAttribute("width", "180%");
+    glow.setAttribute("height", "180%");
+    const blur = document.createElementNS(SVG_NS, "feGaussianBlur");
+    blur.setAttribute("stdDeviation", "1.8");
+    blur.setAttribute("result", "blur");
+    const merge = document.createElementNS(SVG_NS, "feMerge");
+    const mergeNode1 = document.createElementNS(SVG_NS, "feMergeNode");
+    mergeNode1.setAttribute("in", "blur");
+    const mergeNode2 = document.createElementNS(SVG_NS, "feMergeNode");
+    mergeNode2.setAttribute("in", "SourceGraphic");
+    merge.append(mergeNode1, mergeNode2);
+    glow.append(blur, merge);
+    this.defs.appendChild(glow);
+
+    const trackGrad = document.createElementNS(SVG_NS, "linearGradient");
+    trackGrad.setAttribute("id", "broadcast-track-gradient");
+    trackGrad.setAttribute("x1", "0%");
+    trackGrad.setAttribute("y1", "0%");
+    trackGrad.setAttribute("x2", "100%");
+    trackGrad.setAttribute("y2", "100%");
+    for (const [offset, color] of [
+      ["0%", "#8b5cf6"],
+      ["50%", "#6366f1"],
+      ["100%", "#22d3ee"],
+    ] as const) {
+      const stop = document.createElementNS(SVG_NS, "stop");
+      stop.setAttribute("offset", offset);
+      stop.setAttribute("stop-color", color);
+      trackGrad.appendChild(stop);
+    }
+    this.defs.appendChild(trackGrad);
+  }
+
+  /** Neon broadcast ribbon — same footprint as classic track (28/18/11), neon colors. */
+  private drawTrackSurfaceBroadcast(pathD: string): void {
+    const outerGlow = document.createElementNS(SVG_NS, "path");
+    outerGlow.setAttribute("d", pathD);
+    outerGlow.setAttribute("fill", "none");
+    outerGlow.setAttribute("stroke", "#22d3ee");
+    outerGlow.setAttribute("stroke-width", "28");
+    outerGlow.setAttribute("stroke-linejoin", "round");
+    outerGlow.setAttribute("stroke-linecap", "round");
+    outerGlow.setAttribute("opacity", "0.18");
+    outerGlow.setAttribute("filter", "url(#broadcast-glow)");
+    outerGlow.setAttribute("class", "track-broadcast-outer");
+    this.trackGroup.appendChild(outerGlow);
+
+    const midGlow = document.createElementNS(SVG_NS, "path");
+    midGlow.setAttribute("d", pathD);
+    midGlow.setAttribute("fill", "none");
+    midGlow.setAttribute("stroke", "#8b5cf6");
+    midGlow.setAttribute("stroke-width", "20");
+    midGlow.setAttribute("stroke-linejoin", "round");
+    midGlow.setAttribute("stroke-linecap", "round");
+    midGlow.setAttribute("opacity", "0.28");
+    midGlow.setAttribute("class", "track-broadcast-mid");
+    this.trackGroup.appendChild(midGlow);
+
+    const edge = document.createElementNS(SVG_NS, "path");
+    edge.setAttribute("d", pathD);
+    edge.setAttribute("fill", "none");
+    edge.setAttribute("stroke", "#1a2438");
+    edge.setAttribute("stroke-width", "18");
+    edge.setAttribute("stroke-linejoin", "round");
+    edge.setAttribute("stroke-linecap", "round");
+    edge.setAttribute("class", "track-broadcast-edge");
+    this.trackGroup.appendChild(edge);
+
+    const core = document.createElementNS(SVG_NS, "path");
+    core.setAttribute("d", pathD);
+    core.setAttribute("fill", "none");
+    core.setAttribute("stroke", "url(#broadcast-track-gradient)");
+    core.setAttribute("stroke-width", String(TRACK_ASPHALT_WIDTH));
+    core.setAttribute("stroke-linejoin", "round");
+    core.setAttribute("stroke-linecap", "round");
+    core.setAttribute("class", "track-broadcast-core");
+    this.trackGroup.appendChild(core);
+
+    const centerLine = document.createElementNS(SVG_NS, "path");
+    centerLine.setAttribute("d", pathD);
+    centerLine.setAttribute("fill", "none");
+    centerLine.setAttribute("stroke", "rgba(255,255,255,0.35)");
+    centerLine.setAttribute("stroke-width", "0.6");
+    centerLine.setAttribute("stroke-linejoin", "round");
+    centerLine.setAttribute("stroke-linecap", "round");
+    centerLine.setAttribute("stroke-dasharray", "4 10");
+    centerLine.setAttribute("class", "track-broadcast-center");
+    this.trackGroup.appendChild(centerLine);
+  }
+
+  private drawTrackSurface(
+    pathD: string,
+    svgPoints: SvgPoint[],
+    geometry: TrackGeometryPayload,
+    cumulative: number[],
+  ): void {
     const t = this.theme;
+    const useCorridor =
+      geometry.defaultWidthM != null || (geometry.widthProfile?.length ?? 0) > 0;
+
+    if (useCorridor) {
+      this.drawCorridorRibbon(svgPoints, cumulative, geometry);
+    }
 
     const runoff = document.createElementNS("http://www.w3.org/2000/svg", "path");
     runoff.setAttribute("d", pathD);
@@ -1049,21 +1272,37 @@ export class SvgTrack {
     edge.setAttribute("stroke-linecap", "round");
     this.trackGroup.appendChild(edge);
 
-    const asphalt = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    asphalt.setAttribute("d", pathD);
-    asphalt.setAttribute("fill", "none");
-    asphalt.setAttribute("stroke", "url(#track-asphalt-gradient)");
-    asphalt.setAttribute("stroke-width", String(TRACK_ASPHALT_WIDTH));
-    asphalt.setAttribute("stroke-linejoin", "round");
-    asphalt.setAttribute("stroke-linecap", "round");
-    asphalt.setAttribute("class", "track-outline");
-    this.trackGroup.appendChild(asphalt);
+    if (!useCorridor) {
+      const asphalt = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      asphalt.setAttribute("d", pathD);
+      asphalt.setAttribute("fill", "none");
+      asphalt.setAttribute("stroke", "url(#track-asphalt-gradient)");
+      asphalt.setAttribute("stroke-width", String(TRACK_ASPHALT_WIDTH));
+      asphalt.setAttribute("stroke-linejoin", "round");
+      asphalt.setAttribute("stroke-linecap", "round");
+      asphalt.setAttribute("class", "track-outline");
+      this.trackGroup.appendChild(asphalt);
+    } else {
+      const center = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      center.setAttribute("d", pathD);
+      center.setAttribute("fill", "none");
+      center.setAttribute("stroke", "rgba(255,255,255,0.14)");
+      center.setAttribute("stroke-width", "1.2");
+      center.setAttribute("stroke-linejoin", "round");
+      center.setAttribute("stroke-linecap", "round");
+      center.setAttribute("class", "track-centerline");
+      center.setAttribute("stroke-dasharray", "6 10");
+      this.trackGroup.appendChild(center);
+    }
 
     const wetSheen = document.createElementNS("http://www.w3.org/2000/svg", "path");
     wetSheen.setAttribute("d", pathD);
     wetSheen.setAttribute("fill", "none");
     wetSheen.setAttribute("stroke", "rgba(130, 165, 195, 0.65)");
-    wetSheen.setAttribute("stroke-width", String(TRACK_ASPHALT_WIDTH - 0.5));
+    wetSheen.setAttribute(
+      "stroke-width",
+      String(useCorridor ? 2 : TRACK_ASPHALT_WIDTH - 0.5),
+    );
     wetSheen.setAttribute("stroke-linejoin", "round");
     wetSheen.setAttribute("stroke-linecap", "round");
     wetSheen.setAttribute("class", "track-wet-sheen");
@@ -1434,15 +1673,52 @@ export class SvgTrack {
       }
     }
 
+    if (snap.poseIncludesLateral) {
+      const base = this.worldToSvg(snap.position.x, snap.position.z);
+      const tangent = snap.tangent ?? { x: 1, y: 0, z: 0 };
+      return {
+        x: base.x,
+        y: base.y,
+        angle: (Math.atan2(tangent.z, tangent.x) * 180) / Math.PI,
+        onPitLane: false,
+      };
+    }
+
+    if (this.fit && this.renderedGeometry) {
+      const svgPoints = this.renderedGeometry.polyline.map((pt) =>
+        this.worldToSvg(pt.x, pt.z),
+      );
+      const distanceM =
+        snap.distance ?? snap.normalizedT * Math.max(this.lapLengthM, 1);
+      const distAlong = this.distanceMToSvgAlong(distanceM);
+      const lateralM =
+        snap.lateralOffsetM ??
+        (snap.lateralOffset ?? 0) * this.halfWidthAtDistanceM(distanceM);
+      const frame = this.sampleTrackFrame(
+        svgPoints,
+        this.fit.cumulativeT,
+        distAlong,
+        this.metersToLateralSvg(lateralM, distanceM),
+      );
+      if (frame) {
+        let angle = this.frameAngleDeg(frame);
+        if (snap.headingError != null) {
+          angle += (snap.headingError * 180) / Math.PI;
+        }
+        return { x: frame.x, y: frame.y, angle, onPitLane: false };
+      }
+    }
+
     const base = this.worldToSvg(snap.position.x, snap.position.z);
     const tangent = snap.tangent ?? { x: 1, y: 0, z: 0 };
-    const perpX = -tangent.z;
-    const perpZ = tangent.x;
-    const lateral = (snap.lateralOffset ?? 0) * 8;
+    let angle = (Math.atan2(tangent.z, tangent.x) * 180) / Math.PI;
+    if (snap.headingError != null) {
+      angle += (snap.headingError * 180) / Math.PI;
+    }
     return {
-      x: base.x + perpX * lateral,
-      y: base.y + perpZ * lateral,
-      angle: (Math.atan2(tangent.z, tangent.x) * 180) / Math.PI,
+      x: base.x,
+      y: base.y,
+      angle,
       onPitLane: false,
     };
   }
@@ -1597,7 +1873,11 @@ export class SvgTrack {
 
     const wallCenterOffset = halfTrack + edgeGap + wallThickness / 2;
     const tarmacInnerEdge = halfTrack + edgeGap + wallThickness;
-    const tarmacCenterOffset = tarmacInnerEdge + tarmacWidth / 2;
+    const pitOffsetM = this.renderedGeometry?.pitLane?.offsetM;
+    const tarmacCenterOffset =
+      pitOffsetM != null && pitOffsetM > 0
+        ? this.metersToLateralSvg(pitOffsetM)
+        : tarmacInnerEdge + tarmacWidth / 2;
     const markingOffset = tarmacCenterOffset;
     const buildingCenterOffset = tarmacInnerEdge + tarmacWidth + buildingGap + buildingDepth / 2;
 
@@ -1747,6 +2027,7 @@ export class SvgTrack {
     totalLength: number,
   ): void {
     sectors.forEach((sector, idx) => {
+      if (this.broadcast && !isTimingSectorName(sector.name)) return;
       const startLen = sector.startT * totalLength;
       const endLen = sector.endT * totalLength;
       const segmentPoints = this.slicePolylineByLength(
@@ -1761,10 +2042,10 @@ export class SvgTrack {
       path.setAttribute("d", this.pointsToPath(segmentPoints, false));
       path.setAttribute("fill", "none");
       path.setAttribute("stroke", this.theme.sectorColors[idx % this.theme.sectorColors.length]);
-      path.setAttribute("stroke-width", "18");
+      path.setAttribute("stroke-width", this.broadcast ? "5" : "18");
       path.setAttribute("stroke-linecap", "round");
       path.setAttribute("stroke-linejoin", "round");
-      path.setAttribute("opacity", "0.28");
+      path.setAttribute("opacity", this.broadcast ? "0.38" : "0.28");
       path.setAttribute("class", "sector-band");
       path.setAttribute("data-sector-index", String(idx));
       this.sectorsGroup.appendChild(path);
@@ -1854,6 +2135,189 @@ export class SvgTrack {
       `L ${-hl},${hw}`,
       "Z",
     ].join(" ");
+  }
+
+  private sampleCorridorEdges(
+    svgPoints: SvgPoint[],
+    cumulative: number[],
+    geometry: TrackGeometryPayload,
+  ): { left: SvgPoint[]; right: SvgPoint[] } {
+    if (!this.fit) return { left: [], right: [] };
+    const left: SvgPoint[] = [];
+    const right: SvgPoint[] = [];
+    const sampleStep = Math.max(4, this.fit.totalLength / 200);
+    const lap = Math.max(geometry.lapLength, this.lapLengthM, 1);
+
+    for (let d = 0; d <= this.fit.totalLength + 1e-6; d += sampleStep) {
+      const distanceM = d * (lap / this.fit.totalLength);
+      const halfW = this.halfWidthAtDistanceM(distanceM);
+      const lateralSvg = this.metersToLateralSvg(halfW, distanceM);
+      const frame = this.sampleTrackFrame(svgPoints, cumulative, d, 0);
+      if (!frame) continue;
+      left.push({
+        x: frame.x - frame.nx * lateralSvg,
+        y: frame.y - frame.ny * lateralSvg,
+      });
+      right.push({
+        x: frame.x + frame.nx * lateralSvg,
+        y: frame.y + frame.ny * lateralSvg,
+      });
+    }
+    return { left, right };
+  }
+
+  private drawCorridorRibbon(
+    svgPoints: SvgPoint[],
+    cumulative: number[],
+    geometry: TrackGeometryPayload,
+  ): void {
+    const { left, right } = this.sampleCorridorEdges(svgPoints, cumulative, geometry);
+    if (left.length < 2 || right.length < 2) return;
+
+    const ribbon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    const outline = [...left, ...right.slice().reverse()];
+    ribbon.setAttribute("points", outline.map((p) => `${p.x},${p.y}`).join(" "));
+    ribbon.setAttribute("fill", "url(#track-asphalt-gradient)");
+    ribbon.setAttribute("stroke", this.theme.asphaltDark);
+    ribbon.setAttribute("stroke-width", "1.2");
+    ribbon.setAttribute("stroke-linejoin", "round");
+    ribbon.setAttribute("class", "track-corridor-ribbon");
+    ribbon.setAttribute("opacity", "0.94");
+    this.trackGroup.appendChild(ribbon);
+  }
+
+  private drawCorridorEdges(
+    svgPoints: SvgPoint[],
+    cumulative: number[],
+    geometry: TrackGeometryPayload,
+  ): void {
+    const { left, right } = this.sampleCorridorEdges(svgPoints, cumulative, geometry);
+    if (left.length < 2) return;
+    const t = this.theme;
+
+    for (const [edge, className] of [
+      [left, "track-corridor-edge-inner"],
+      [right, "track-corridor-edge-outer"],
+    ] as const) {
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", this.pointsToPath(edge, false));
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", t.asphaltDark);
+      path.setAttribute("stroke-width", "1.4");
+      path.setAttribute("stroke-linejoin", "round");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("class", className);
+      path.setAttribute("opacity", "0.55");
+      this.trackGroup.appendChild(path);
+    }
+  }
+
+  private metersToLateralSvg(lateralM: number, distanceM?: number): number {
+    const halfWidthM =
+      distanceM != null ? this.halfWidthAtDistanceM(distanceM) : this.defaultHalfWidthM;
+    if (halfWidthM <= 0) return 0;
+    return (lateralM / halfWidthM) * (TRACK_ASPHALT_WIDTH * 0.5);
+  }
+
+  private distanceMToSvgAlong(distanceM: number): number {
+    if (!this.fit) return 0;
+    return distanceM * (this.fit.totalLength / Math.max(this.lapLengthM, 1));
+  }
+
+  private halfWidthAtDistanceM(distanceM: number): number {
+    const defaultWidthM = this.defaultHalfWidthM * 2;
+    const profile = this.widthProfile;
+    if (!profile?.length || this.lapLengthM <= 0) return defaultWidthM / 2;
+
+    const lap = this.lapLengthM;
+    const normT = ((((distanceM % lap) + lap) % lap) / lap);
+    for (const seg of profile) {
+      if (normT >= seg.startT && normT <= seg.endT) {
+        return seg.widthM / 2;
+      }
+    }
+    return defaultWidthM / 2;
+  }
+
+  private hazardMarkerPosition(hz: SurfaceHazardSummaryPayload): SvgPoint | null {
+    if (!this.fit || !this.renderedGeometry || hz.centerDistance == null) return null;
+    const svgPoints = this.renderedGeometry.polyline.map((pt) =>
+      this.worldToSvg(pt.x, pt.z),
+    );
+    const distAlong = this.distanceMToSvgAlong(hz.centerDistance);
+    const lateralSvg = this.metersToLateralSvg(
+      hz.centerLateralM ?? 0,
+      hz.centerDistance,
+    );
+    const frame = this.sampleTrackFrame(
+      svgPoints,
+      this.fit.cumulativeT,
+      distAlong,
+      lateralSvg,
+    );
+    return frame ? { x: frame.x, y: frame.y } : null;
+  }
+
+  private appendHazardPatch(hz: SurfaceHazardSummaryPayload): void {
+    if (!this.fit || !this.renderedGeometry || hz.centerDistance == null) return;
+
+    const svgPoints = this.renderedGeometry.polyline.map((pt) =>
+      this.worldToSvg(pt.x, pt.z),
+    );
+    const distAlong = this.distanceMToSvgAlong(hz.centerDistance);
+    const lateralSvg = this.metersToLateralSvg(
+      hz.centerLateralM ?? 0,
+      hz.centerDistance,
+    );
+    const frame = this.sampleTrackFrame(
+      svgPoints,
+      this.fit.cumulativeT,
+      distAlong,
+      lateralSvg,
+    );
+    if (!frame) return;
+
+    const alongM = hz.spanMeters ?? 12;
+    const acrossM =
+      hz.lateralSpanM && hz.lateralSpanM > 0
+        ? hz.lateralSpanM
+        : this.halfWidthAtDistanceM(hz.centerDistance) * 2;
+    const alongSvg = this.distanceMToSvgAlong(alongM);
+    const acrossSvg = this.metersToLateralSvg(acrossM / 2, hz.centerDistance) * 2;
+    const angle = this.frameAngleDeg(frame);
+    const fill = hazardFill(hz.kind);
+
+    const group = document.createElementNS(SVG_NS, "g");
+    group.setAttribute("class", "track-hazard-marker");
+    group.setAttribute(
+      "transform",
+      `translate(${frame.x}, ${frame.y}) rotate(${angle})`,
+    );
+
+    const useEllipse = alongSvg >= acrossSvg * 0.65;
+    const shape = useEllipse
+      ? document.createElementNS(SVG_NS, "ellipse")
+      : document.createElementNS(SVG_NS, "rect");
+    if (useEllipse) {
+      shape.setAttribute("cx", "0");
+      shape.setAttribute("cy", "0");
+      shape.setAttribute("rx", String(alongSvg / 2));
+      shape.setAttribute("ry", String(acrossSvg / 2));
+    } else {
+      shape.setAttribute("x", String(-acrossSvg / 2));
+      shape.setAttribute("y", String(-alongSvg / 2));
+      shape.setAttribute("width", String(acrossSvg));
+      shape.setAttribute("height", String(alongSvg));
+      shape.setAttribute("rx", "2");
+    }
+    shape.setAttribute("fill", fill);
+    shape.setAttribute("opacity", "0.85");
+
+    const title = document.createElementNS(SVG_NS, "title");
+    title.textContent = `${hz.kind} — grip ×${hz.gripMultiplier.toFixed(2)}`;
+    group.appendChild(shape);
+    group.appendChild(title);
+    this.hazardsGroup.appendChild(group);
   }
 
   private worldToSvg(x: number, z: number): { x: number; y: number } {
