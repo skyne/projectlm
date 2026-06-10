@@ -167,6 +167,10 @@ struct CarSnapshot {
   bool blackFlag = false;
   int collisionWarnings = 0;
   double penaltyStopSeconds = 0.0;
+  bool unstableOnTrack = false;
+  double riskyRejoinSec = 0.0;
+  double lastContactSeverity = 0.0;
+  std::string surfaceZone;
 };
 
 class Car {
@@ -285,6 +289,8 @@ private:
                                   bool evenIfRaceable,
                                   const std::string &status);
   void restoreFullStintEnergy();
+  /** Practice/quali tow: refill fuel tank (or BEV pack), fresh tyres; keep hybrid buffer. */
+  void restoreOpenSessionFuelOnly();
   std::string entryId_;
   std::string teamName_;
   std::string carNumber_;
@@ -305,6 +311,9 @@ private:
   double wingAngleDelta_ = 0.0;
   double brakeBias_ = 0.5;
   double collisionCooldown_ = 0.0;
+  double lastContactSeverity_ = 0.0;
+  double debrisPunctureCooldown_ = 0.0;
+  double boundaryHitCooldown_ = 0.0;
   double setupFeedbackTimer_ = 0.0;
   double outOfFuelTimer_ = 0.0;
   bool overtakingVisual_ = false;

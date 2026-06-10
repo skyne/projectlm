@@ -186,7 +186,7 @@ cooling.MaxFlowEndurance.dissipation=2.40
 # =====================
 tire.Soft.mass=11.0
 tire.Soft.grip=1.16
-tire.Soft.wear_rate=0.08
+tire.Soft.wear_rate=0.065
 tire.Soft.optimal_temp=85.0
 
 tire.Medium.mass=11.0
@@ -626,7 +626,8 @@ hybrid.NoneEndurance.stint_budget_mj=0.0
 
 hybrid.HypercarHV.mass=32.0
 hybrid.HypercarHV.deploy_kw=200.0
-hybrid.HypercarHV.regen_rate=0.50
+# 0.65 (was 0.50) — race deploy depleted each lap; quali tow refills full stint budget.
+hybrid.HypercarHV.regen_rate=0.65
 hybrid.HypercarHV.stint_budget_mj=4.5
 
 hybrid.LMDh50kW.mass=36.0

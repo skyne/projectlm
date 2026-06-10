@@ -8,6 +8,7 @@ min_weight_kg=1030
 max_weight_kg=1090
 assembly_mass_offset_kg=0
 aero_balance_modifier=1.05
+aero_balance_modifier=1.05
 drag_modifier=0.85
 max_driver_stint_hours=3.5
 template_car=configs/cars/lemans2026/bmw_m_hybrid_v8.txt

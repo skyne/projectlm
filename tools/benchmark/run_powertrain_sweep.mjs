@@ -351,6 +351,7 @@ function runSession({ configRel, sessionType }) {
   let stintStartLap = 1;
   let fuelAtLastPit = 110;
   let sincePit = 0;
+  let inPitLap = false;
 
   while (!sim.isRaceComplete()) {
     let remaining = SIM_DT * TIME_SCALE;
@@ -378,10 +379,18 @@ function runSession({ configRel, sessionType }) {
       }
     }
     for (const ev of sim.drainEvents()) {
+      if (ev.type === "pit_enter" && sessionType === "race") {
+        inPitLap = true;
+      }
+      if (ev.type === "pit_exit" && sessionType === "race") {
+        inPitLap = false;
+      }
       if (ev.type === "lap_complete" && sessionType === "race") {
         sincePit++;
         const s = sim.getSnapshots()[0];
-        if (s.lastLapTime > 0 && s.lap >= 3) raceLaps.push(s.lastLapTime);
+        if (s.lastLapTime > 0 && s.lap >= 3 && !inPitLap) {
+          raceLaps.push(s.lastLapTime);
+        }
       }
       if (ev.type === "pit_enter" && sessionType === "race") {
         const s = sim.getSnapshots()[0];

@@ -419,12 +419,8 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
       state.hybridDeployRemainingMJ = std::min(
           car.hybridStintDeployBudgetMJ,
           state.hybridDeployRemainingMJ + regenMJ);
-      if (car.isGeneratorOnly) {
+      if (car.isGeneratorOnly)
         state.batteryChargeMJ = state.hybridDeployRemainingMJ;
-      } else if (IsBatteryPrimaryEv(car)) {
-        state.batteryChargeMJ = state.hybridDeployRemainingMJ;
-        state.fuelRemaining = state.batteryChargeMJ;
-      }
     }
   } else {
     state.brakeHeat = std::max(0.0, state.brakeHeat - deltaTime * 0.35);
@@ -484,13 +480,9 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
     if (car.isElectricDrive)
       torqueCurveMultiplier = 1.0;
 
-    const bool speedCapBinding =
-        mods.speedCapMs > 0.0 && state.currentSpeed >= mods.speedCapMs * 0.98;
-    const double throttleTarget = speedCapBinding ? 0.20 : 1.0;
     const double lagTau = std::max(0.01, car.throttleLagTau);
     state.throttleBlend +=
-        (throttleTarget - state.throttleBlend) *
-        std::min(1.0, deltaTime / lagTau);
+        (1.0 - state.throttleBlend) * std::min(1.0, deltaTime / lagTau);
 
     double engineForce = 0.0;
     if (car.isElectricDrive) {
@@ -662,12 +654,12 @@ void TickSimulation(const CarConfig &car, const TrackDefinition &track,
   if (!outOfFuel) {
     if (car.isFuelCell && state.fuelRemaining > 0.0) {
       state.fuelRemaining -=
-          (generatorFuelKw * 0.0000153 * car.powertrainFuelBurnMult *
+          (generatorFuelKw * 0.000046 * car.powertrainFuelBurnMult *
            mods.fuelMultiplier) *
           deltaTime;
     } else if (car.isGeneratorOnly && state.fuelRemaining > 0.0) {
       state.fuelRemaining -=
-          (generatorFuelKw * 0.0000367 * car.powertrainFuelBurnMult *
+          (generatorFuelKw * 0.00032 * car.powertrainFuelBurnMult *
            mods.fuelMultiplier) *
           deltaTime;
     } else if (!car.isElectricDrive) {

@@ -34,6 +34,8 @@ const char *FlagPhaseName(FlagPhase phase) {
 
 const char *TrackStatusName(TrackStatus status) {
   switch (status) {
+  case TrackStatus::Stalled:
+    return "stalled";
   case TrackStatus::Stranded:
     return "stranded";
   case TrackStatus::Recovering:

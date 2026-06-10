@@ -15027,5 +15027,57 @@
     "wikimedia_file": "Spa-Francorchamps of Belgium.svg",
     "attribution": "Wikimedia Commons \u2014 Spa-Francorchamps of Belgium.svg",
     "mode": "polyline-linear"
-  }
+  },
+  "surface_defaults": {
+    "verge_width_m": 2.0,
+    "runoff_width_m": 11.0,
+    "kerb_width_m": 0.5
+  },
+  "surface_profile": [
+    {
+      "name": "Eau Rouge runoff",
+      "start_t": 0.1,
+      "end_t": 0.18,
+      "side": "outboard",
+      "surface": "runoff_concrete",
+      "width_m": 11.0,
+      "grip_multiplier": 0.74
+    },
+    {
+      "name": "Pouhon gravel",
+      "start_t": 0.48,
+      "end_t": 0.54,
+      "side": "outboard",
+      "surface": "gravel",
+      "width_m": 12.0,
+      "grip_multiplier": 0.45
+    },
+    {
+      "name": "Bus Stop chicane kerb",
+      "start_t": 0.82,
+      "end_t": 0.88,
+      "side": "both",
+      "surface": "kerb_sausage",
+      "width_m": 0.5,
+      "grip_multiplier": 0.72
+    },
+    {
+      "name": "Blanchimont runoff",
+      "start_t": 0.88,
+      "end_t": 0.94,
+      "side": "outboard",
+      "surface": "runoff_asphalt",
+      "width_m": 10.0,
+      "grip_multiplier": 0.78
+    },
+    {
+      "name": "Blanchimont barrier",
+      "start_t": 0.88,
+      "end_t": 0.94,
+      "side": "outboard",
+      "surface": "barrier_tecpro",
+      "width_m": 1.2,
+      "grip_multiplier": 0.0
+    }
+  ]
 }

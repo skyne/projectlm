@@ -59,7 +59,8 @@ thermal_damage_rate=0.018
 
 # === WEAR ===
 vibration_damage_rate=0.00075
-tire_wear_effect=0.5
+# 0.40 (was 0.50) — 25% wear was costing ~8–10 s/lap vs fresh; WEC doubles stints.
+tire_wear_effect=0.40
 tire_wear_speed_threshold=15.0
 tire_ambient_temp_c=55.0
 fuel_overrun_fraction=0.28

@@ -37,8 +37,6 @@ bool RepairTokenAllowed(const std::string &token, const PartDamageState &damage,
 }
 
 constexpr double kFuelRateSecPerLiter = 0.038;
-/** BEV pit recharge (fast DC / swap rig) — slower per unit than fuel flow. */
-constexpr double kBatteryRechargeSecPerMJ = 0.08;
 constexpr double kTireChangeSec = 2.8;
 constexpr double kRepairBodySec = 8.0;
 constexpr double kDriverChangeSec = 15.0;
@@ -87,12 +85,9 @@ double ComputePitServiceDuration(const PitStopPlan &plan, const CarConfig &car,
 
   double total = 0.0;
 
-  if (plan.fuelLiters > 0.0) {
-    const double ratePerUnit = IsBatteryPrimaryEv(car)
-                                   ? kBatteryRechargeSecPerMJ
-                                   : kFuelRateSecPerLiter;
-    total += plan.fuelLiters * ratePerUnit * mechanicFactor * pitWorkScale;
-  }
+  if (plan.fuelLiters > 0.0)
+    total += plan.fuelLiters * kFuelRateSecPerLiter * mechanicFactor *
+             pitWorkScale;
 
   total += static_cast<double>(plan.tiresToChange.size()) * kTireChangeSec *
            mechanicFactor * pitWorkScale;
@@ -216,15 +211,10 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
 
   (void)plan.brakeBiasDelta;
 
-  // hybridStintDeployBudgetMJ is a per-stint allowance: every serviced stop
-  // resets it (hybrid ERS, FC buffer, REX pack). Battery-primary EVs charge
-  // through the fuel service instead. Penalty-only stops grant nothing.
-  const bool penaltyOnly = plan.driveThrough || plan.stopGo;
-  if (car.hybridStintDeployBudgetMJ > 0.0 && !penaltyOnly &&
-      !IsBatteryPrimaryEv(car)) {
+  if (car.isGeneratorOnly && car.hybridStintDeployBudgetMJ > 0.0 &&
+      !plan.driveThrough) {
+    state.batteryChargeMJ = car.hybridStintDeployBudgetMJ;
     state.hybridDeployRemainingMJ = car.hybridStintDeployBudgetMJ;
-    if (car.isGeneratorOnly)
-      state.batteryChargeMJ = car.hybridStintDeployBudgetMJ;
   }
 }
 
@@ -261,8 +251,10 @@ bool CarNeedsEmergencyPit(const CarConfig &car, const SimulationState &state,
   if (tank > 0.0 && state.fuelRemaining >= 0.0 &&
       state.fuelRemaining / tank <= kEmergencyFuelFraction)
     return true;
-  // Low hybrid deploy budget is intentionally not an emergency: regen restores
-  // it on track and serviced stops reset it (per-stint allowance).
+  const double hybridBudget = car.hybridStintDeployBudgetMJ;
+  if (hybridBudget > 0.0 && state.hybridDeployRemainingMJ >= 0.0 &&
+      state.hybridDeployRemainingMJ / hybridBudget <= kEmergencyFuelFraction)
+    return true;
   return false;
 }
 

@@ -2,6 +2,7 @@
 #include "car_entity.hpp"
 #include "driver.hpp"
 #include "overtake_battle.hpp"
+#include "part_damage.hpp"
 #include "track_corridor.hpp"
 #include <algorithm>
 #include <cmath>
@@ -73,6 +74,143 @@ double LateralSepMetres(const Car &self, const Car &other,
   return std::abs(self.lateralOffset() - other.lateralOffset()) *
          lateral.trackWidthM * 0.5;
 }
+
+double LateralNMetres(const Car &car, const TrafficLateralContext &lateral) {
+  const double s = car.state().currentDistance;
+  if (UsesMetreLateral(car, lateral))
+    return car.lateralNM(lateral.trackWidthM, lateral.useFrenetDynamics,
+                         lateral.corridor, s);
+  return car.lateralOffset() * lateral.trackWidthM * 0.5;
+}
+
+double ComputeBaseImpact(double relativeSpeed) {
+  return std::min(10.0, (relativeSpeed - 6.5) * 0.75);
+}
+
+double ComputeObliqueFactor(CollisionSide side, double lateralSep,
+                            double widthOverlap) {
+  if (side == CollisionSide::Left || side == CollisionSide::Right) {
+    const double overlap =
+        1.0 - lateralSep / std::max(0.5, widthOverlap);
+    return 1.0 + 0.4 * std::clamp(overlap, 0.0, 1.0);
+  }
+  if (side == CollisionSide::Front || side == CollisionSide::Rear)
+    return 1.1;
+  return 1.0;
+}
+
+double ComputeClassFactor(double aggressorMass, double victimMass) {
+  if (victimMass <= 0.0)
+    return 1.0;
+  return std::clamp(std::sqrt(aggressorMass / victimMass), 1.0, 1.6);
+}
+
+double ComputeChicaneFactor(const TrackCorridor *corridor, double s, double n) {
+  if (corridor == nullptr || corridor->length() <= 0.0)
+    return 1.0;
+  const double kappa = std::abs(corridor->effectiveCurvature(s, n));
+  return 1.0 + std::min(0.35, kappa * 80.0);
+}
+
+double ComputeKerbEdgeFactor(const TrackCorridor *corridor, double s, double n) {
+  if (corridor == nullptr || corridor->length() <= 0.0)
+    return 1.0;
+  const double halfW = corridor->maxLateralN(s);
+  if (halfW <= 0.1)
+    return 1.0;
+  const double edgeDist = std::abs(std::abs(n) - halfW);
+  const double band = std::max(0.5, halfW * 0.15);
+  if (edgeDist < band)
+    return 1.0 + 0.25 * (1.0 - edgeDist / band);
+  return 1.0;
+}
+
+double ComputeWeatherFactor(double weatherGripScale) {
+  if (weatherGripScale > 0.0 && weatherGripScale < 1.0)
+    return std::min(1.25, 1.0 / weatherGripScale);
+  return 1.0;
+}
+
+double ComputeEffectiveSeverity(double baseImpact, CollisionSide side,
+                                double lateralSep, double widthOverlap,
+                                double aggressorMass, double victimMass,
+                                const TrackCorridor *corridor, double s,
+                                double n, double weatherGripScale) {
+  double severity = baseImpact;
+  severity *= ComputeObliqueFactor(side, lateralSep, widthOverlap);
+  severity *= ComputeClassFactor(aggressorMass, victimMass);
+  severity *= ComputeChicaneFactor(corridor, s, n);
+  severity *= ComputeKerbEdgeFactor(corridor, s, n);
+  severity *= ComputeWeatherFactor(weatherGripScale);
+  return std::min(15.0, severity);
+}
+
+uint32_t HashCollisionSeed(uint32_t seed, int salt) {
+  seed ^= static_cast<uint32_t>(salt + 0x9e3779b9);
+  seed *= 0x85ebca6bU;
+  seed ^= seed >> 13;
+  return seed;
+}
+
+void ApplyCollisionModifier(TrafficModifiers &mod, double severity,
+                            double baseImpact, CollisionSide side,
+                            double overlapFactor) {
+  if (severity <= 0.0)
+    return;
+  if (severity >= mod.collisionDamage) {
+    mod.collisionDamage = severity;
+    mod.collisionBaseImpact = baseImpact;
+    mod.collisionSide = side;
+    mod.collisionOverlapFactor = overlapFactor;
+    mod.collision = true;
+  }
+}
+
+void MaybeApplyInstability(TrafficModifiers &mod, double severity,
+                           double driverSkill, uint32_t seed) {
+  if (severity < 5.0)
+    return;
+  const double skillNorm = std::clamp(driverSkill / 100.0, 0.0, 1.0);
+  const double chance =
+      std::clamp((severity - 5.0) / 8.0, 0.0, 0.95) * (1.0 - 0.35 * skillNorm);
+  const double roll =
+      static_cast<double>(HashCollisionSeed(seed, 7) % 10000) / 10000.0;
+  if (roll >= chance)
+    return;
+  mod.instabilitySec =
+      std::max(mod.instabilitySec, 0.8 + (severity - 5.0) * 0.35);
+  mod.instabilityGripScale =
+      std::min(mod.instabilityGripScale,
+               std::max(0.55, 1.0 - severity * 0.04));
+  const double wanderSign =
+      (HashCollisionSeed(seed, 11) % 2 == 0) ? 1.0 : -1.0;
+  mod.lateralWanderMps +=
+      wanderSign * (0.4 + severity * 0.07);
+  mod.unstableOnTrack = true;
+}
+
+void ApplyContactImpulse(TrafficModifiers &aggressorMod,
+                         TrafficModifiers &victimMod, CollisionSide aggressorSide,
+                         double severity, double aggressorMass,
+                         double victimMass) {
+  const double massRatio =
+      std::sqrt(aggressorMass / std::max(1.0, victimMass));
+  const double impulseMag =
+      severity * 0.35 * std::min(1.8, massRatio);
+  if (aggressorSide == CollisionSide::Front) {
+    victimMod.impulseSpeedMs += impulseMag;
+    aggressorMod.impulseSpeedMs -= impulseMag * 0.3;
+  } else if (aggressorSide == CollisionSide::Rear) {
+    victimMod.impulseSpeedMs -= impulseMag * 0.5;
+    aggressorMod.impulseSpeedMs += impulseMag * 0.35;
+  } else if (aggressorSide == CollisionSide::Left ||
+             aggressorSide == CollisionSide::Right) {
+    const double latSign = aggressorSide == CollisionSide::Left ? -1.0 : 1.0;
+    victimMod.impulseLateralMps += latSign * impulseMag * 0.5;
+    aggressorMod.impulseLateralMps -= latSign * impulseMag * 0.25;
+  }
+}
+
 } // namespace
 
 CarBodyDimensions DimensionsForClass(const std::string &classId) {
@@ -202,6 +340,8 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
                                      selfRaceDist, lapLength);
       const double combinedLength =
           (selfDim.lengthM + otherDim.lengthM) * 0.5 + safetyGap;
+      const double widthOverlap =
+          (selfDim.widthM + otherDim.widthM) * 0.42;
 
       if (other.isOnTrackObstruction() && gap > 0.0 &&
           gap < combinedLength * 5.0) {
@@ -210,6 +350,24 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
             selfMod.speedCapMs,
             std::max(kMinTrafficSpeedMs, 12.0));
         selfMod.blockingEntryId = other.entryId();
+      }
+
+      const bool otherUnstable = other.rcState().unstableOnTrack;
+      const bool otherRiskyRejoin = other.rcState().riskyRejoinSec > 0.0;
+      if ((otherUnstable || otherRiskyRejoin) && gap > 0.0 &&
+          gap < combinedLength * 2.8) {
+        const double lateralSepUnstable = LateralSepMetres(self, other, lateral);
+        if (lateralSepUnstable < widthOverlap * 1.25) {
+          selfMod.speedCapMs = std::max(
+              selfMod.speedCapMs,
+              std::max(kMinTrafficSpeedMs,
+                       other.state().currentSpeed * (otherUnstable ? 0.91 : 0.94)));
+          if (otherUnstable && gap < combinedLength * 1.6 &&
+              lateralSepUnstable < widthOverlap * 1.05) {
+            selfMod.localGripScale =
+                std::min(selfMod.localGripScale, 0.9);
+          }
+        }
       }
 
       if (selfObstruction)
@@ -222,8 +380,6 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
           self.state().currentSpeed - other.state().currentSpeed;
 
       const double lateralSep = LateralSepMetres(self, other, lateral);
-      const double widthOverlap =
-          (selfDim.widthM + otherDim.widthM) * 0.42;
 
       // Rejoining cars yield — only when closing traffic shares the corridor.
       if (other.isRejoiningYield() && gap > 0.0 && relativeSpeed > 4.0 &&
@@ -238,16 +394,49 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
       }
       if (gap < combinedLength * 0.85 &&
           lateralSep < widthOverlap) {
-        const TrafficModifiers &otherMod = modifiersOut[j];
+        TrafficModifiers &otherMod = modifiersOut[j];
         const bool negotiatedPass =
             gap > 0.0 && selfMod.overtaking && otherMod.yielding;
         if (relativeSpeed > 8.5) {
-          const double impact =
-              std::min(10.0, (relativeSpeed - 6.5) * 0.75);
-          if (negotiatedPass && impact < 5.0)
+          const double baseImpact = ComputeBaseImpact(relativeSpeed);
+          if (negotiatedPass && baseImpact < 5.0)
             continue;
-          selfMod.collisionDamage = std::max(selfMod.collisionDamage, impact);
-          selfMod.collision = true;
+
+          const double selfN = LateralNMetres(self, lateral);
+          const double otherN = LateralNMetres(other, lateral);
+          const CollisionSide selfSide =
+              CollisionContactSide(gap, combinedLength, selfN, otherN);
+          const CollisionSide otherSide = MirrorCollisionSide(selfSide);
+          const double overlapFactor =
+              std::clamp(1.0 - lateralSep / std::max(0.5, widthOverlap), 0.35,
+                         1.0);
+          const double sSelf = self.state().currentDistance;
+          const double selfMass = self.config().calculatedTotalMass;
+          const double otherMass = other.config().calculatedTotalMass;
+          const double effectiveSeverity = ComputeEffectiveSeverity(
+              baseImpact, selfSide, lateralSep, widthOverlap, selfMass,
+              otherMass, lateral.corridor, sSelf, selfN,
+              lateral.weatherGripScale);
+          const double victimSeverity = effectiveSeverity * overlapFactor;
+
+          ApplyCollisionModifier(selfMod, effectiveSeverity, baseImpact, selfSide,
+                               overlapFactor);
+          ApplyCollisionModifier(otherMod, victimSeverity, baseImpact, otherSide,
+                               overlapFactor);
+          ApplyContactImpulse(selfMod, otherMod, selfSide, effectiveSeverity,
+                              selfMass, otherMass);
+
+          const uint32_t pairSeed =
+              HashCollisionSeed(static_cast<uint32_t>(i * 131U + j), 3);
+          MaybeApplyInstability(selfMod, effectiveSeverity,
+                                self.driver().active().consistency, pairSeed);
+          MaybeApplyInstability(otherMod, victimSeverity,
+                                other.driver().active().consistency, pairSeed + 1);
+
+          if (battles != nullptr)
+            AbortBattleOnCollision(*battles, self.entryId(), other.entryId(),
+                                   modifiersOut, cars);
+
           const std::string key =
               self.entryId() + ":" + other.entryId() + ":c";
           if (CooldownReady(eventCooldowns, key, raceTime,
@@ -260,10 +449,12 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
               std::ostringstream oss;
               oss << EntryDisplayLabel(self) << " contact with "
                   << EntryDisplayLabel(other) << " (impact " << std::fixed
-                  << std::setprecision(1) << impact << ")";
+                  << std::setprecision(1) << effectiveSeverity << ")";
               ev.message = oss.str();
             }
-            ev.impact = impact;
+            ev.impact = effectiveSeverity;
+            ev.baseImpact = baseImpact;
+            ev.contactSide = selfSide;
             ev.relativeSpeedMs = relativeSpeed;
             ev.lateralSepM = lateralSep;
             ev.closingFromRear = gap > 0.0;

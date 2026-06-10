@@ -539,6 +539,40 @@ describe("tickPitBot briefing integration", () => {
     assert.ok(commands.includes("hybrid_strategy=harvest"));
   });
 
+  it("tickPitBot pushes hypercar on dry race when engine health is 85%", () => {
+    const entryId = "e-push";
+    const submitted: string[] = [];
+    tickPitBot(
+      [snap({ entryId, classId: "Hypercar", teamName: "Sweep", lap: 8, engineHealth: 85 })],
+      [entryId],
+      initCarState([entryId], 0, { minLap: 3 }),
+      { phase: "race", wet: 0 },
+      (_id, cmd) => {
+        submitted.push(cmd);
+        return true;
+      },
+    );
+    assert.ok(submitted.includes("driver_mode=push"));
+    assert.ok(submitted.includes("hybrid_strategy=deploy"));
+  });
+
+  it("tickPitBot conserves when engine health drops to 80%", () => {
+    const entryId = "e-low";
+    const submitted: string[] = [];
+    tickPitBot(
+      [snap({ entryId, classId: "Hypercar", teamName: "Sweep", lap: 8, engineHealth: 80 })],
+      [entryId],
+      initCarState([entryId], 0, { minLap: 3 }),
+      { phase: "race", wet: 0 },
+      (_id, cmd) => {
+        submitted.push(cmd);
+        return true;
+      },
+    );
+    assert.ok(submitted.includes("driver_mode=conserve"));
+    assert.ok(submitted.includes("hybrid_strategy=balanced"));
+  });
+
   it("tickPitBot uses conserve briefing driver mode during race", () => {
     const entryId = "e-conserve";
     const submitted: string[] = [];

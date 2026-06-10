@@ -54,4 +54,9 @@ void UpdateOvertakeBattles(const std::vector<Car> &cars, double lapLength,
                            std::vector<TrafficEvent> &eventsOut,
                            std::unordered_map<std::string, double> &eventCooldowns);
 
+void AbortBattleOnCollision(std::vector<OvertakeBattle> &battles,
+                            const std::string &entryA, const std::string &entryB,
+                            std::vector<TrafficModifiers> &modifiers,
+                            const std::vector<Car> &cars);
+
 #endif

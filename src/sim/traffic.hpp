@@ -1,6 +1,7 @@
 #ifndef TRAFFIC_HPP
 #define TRAFFIC_HPP
 
+#include "part_damage.hpp"
 #include "race_control_common.hpp"
 #include <string>
 #include <unordered_map>
@@ -13,6 +14,8 @@ struct TrafficLateralContext {
   double trackWidthM = 12.0;
   const TrackCorridor *corridor = nullptr;
   bool useFrenetDynamics = false;
+  /** Dry = 1.0; rain lowers grip and amplifies collision upset. */
+  double weatherGripScale = 1.0;
 };
 
 struct CarBodyDimensions {
@@ -53,7 +56,19 @@ inline int TrafficPathIntentPriority(TrafficPathIntent intent) {
 struct TrafficModifiers {
   double speedCapMs = 0.0;
   double draftThrottleBoost = 0.0;
+  /** Effective contact severity (0–15); drives part damage. */
   double collisionDamage = 0.0;
+  double collisionBaseImpact = 0.0;
+  CollisionSide collisionSide = CollisionSide::Unknown;
+  double collisionOverlapFactor = 1.0;
+  double impulseSpeedMs = 0.0;
+  double impulseLateralMps = 0.0;
+  double instabilitySec = 0.0;
+  double instabilityGripScale = 1.0;
+  double lateralWanderMps = 0.0;
+  bool unstableOnTrack = false;
+  bool onDebrisHazard = false;
+  double debrisSeverity = 0.0;
   bool blocked = false;
   bool overtaking = false;
   bool collision = false;
@@ -76,8 +91,10 @@ struct TrafficEvent {
   std::string entryId;
   std::string otherEntryId;
   std::string message;
-  /** Collision severity estimate from closing speed (0–10). */
+  /** Effective contact severity (0–15). */
   double impact = 0.0;
+  double baseImpact = 0.0;
+  CollisionSide contactSide = CollisionSide::Unknown;
   /** Positive when entryId was closing on otherEntryId. */
   double relativeSpeedMs = 0.0;
   /** Lateral separation in metres at contact. */

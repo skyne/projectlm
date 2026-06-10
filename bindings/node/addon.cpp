@@ -293,6 +293,18 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
     obj.Set("meatballFlag", true);
   if (snapshot.blackFlag)
     obj.Set("blackFlag", true);
+  if (snapshot.collisionWarnings > 0)
+    obj.Set("collisionWarnings", snapshot.collisionWarnings);
+  if (snapshot.penaltyStopSeconds > 0.0)
+    obj.Set("penaltyStopSeconds", snapshot.penaltyStopSeconds);
+  if (snapshot.unstableOnTrack)
+    obj.Set("unstableOnTrack", true);
+  if (snapshot.riskyRejoinSec > 0.0)
+    obj.Set("riskyRejoinSec", snapshot.riskyRejoinSec);
+  if (snapshot.lastContactSeverity > 0.0)
+    obj.Set("lastContactSeverity", snapshot.lastContactSeverity);
+  if (!snapshot.surfaceZone.empty())
+    obj.Set("surfaceZone", snapshot.surfaceZone);
   return obj;
 }
 
@@ -306,6 +318,12 @@ Napi::Object EventToObject(Napi::Env env, const SimEvent &event) {
   obj.Set("sectorIndex", event.sectorIndex);
   obj.Set("timestamp", event.timestamp);
   obj.Set("message", event.message);
+  if (event.collisionImpact > 0.0)
+    obj.Set("collisionImpact", event.collisionImpact);
+  if (event.collisionBaseImpact > 0.0)
+    obj.Set("collisionBaseImpact", event.collisionBaseImpact);
+  if (event.collisionContactSide != 0)
+    obj.Set("collisionContactSide", event.collisionContactSide);
   return obj;
 }
 

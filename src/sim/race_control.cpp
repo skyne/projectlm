@@ -724,7 +724,7 @@ double StopGoSecondsForCollision(double impact, const Car *victim) {
 }
 
 bool IsSideBySideRacingIncident(const TrafficEvent &ev) {
-  return !ev.closingFromRear && ev.impact < 4.0 && ev.lateralSepM < 1.6;
+  return !ev.closingFromRear && ev.impact < 4.5 && ev.lateralSepM < 1.6;
 }
 
 void EmitRacingIncident(const RaceSession &session, const Car &a,
@@ -737,7 +737,7 @@ void EmitRacingIncident(const RaceSession &session, const Car &a,
 }
 
 void EmitCollisionLog(RaceSession &session, const Car &a, const Car &b,
-                      double impact) {
+                      const TrafficEvent &ev) {
   const std::string key =
       "collision-log:" + CollisionPairKey(a.entryId(), b.entryId());
   if (!CooldownReady(session.trafficEventCooldowns, key,
@@ -745,9 +745,18 @@ void EmitCollisionLog(RaceSession &session, const Car &a, const Car &b,
     return;
   std::ostringstream oss;
   oss << EntryDisplayLabel(a) << " collided with " << EntryDisplayLabel(b)
-      << " (impact " << std::fixed << std::setprecision(1) << impact << ")";
-  EmitControlEvent(SimEventType::Collision, session.elapsedRaceTime, oss.str(),
-                   a.entryId(), b.entryId());
+      << " (impact " << std::fixed << std::setprecision(1) << ev.impact << ")";
+  SimEvent out;
+  out.type = SimEventType::Collision;
+  out.entryId = a.entryId();
+  out.otherEntryId = b.entryId();
+  out.timestamp = session.elapsedRaceTime;
+  out.message = oss.str();
+  out.collisionImpact = ev.impact;
+  out.collisionBaseImpact = ev.baseImpact;
+  out.collisionContactSide = static_cast<int>(ev.contactSide);
+  if (g_raceEventOut != nullptr)
+    g_raceEventOut->push_back(std::move(out));
 }
 
 bool IsEnergyDepletionReason(const std::string &reason) {
@@ -901,9 +910,10 @@ void SpawnCollisionHazards(RaceSession &session, const TrafficEvent &ev,
       CollisionPairKey(carA.entryId(), carB.entryId()) + "-" +
       std::to_string(static_cast<int>(session.elapsedRaceTime * 10.0));
 
+  const double debrisSev = std::clamp(ev.impact / 15.0, 0.25, 1.0);
   SpawnSurfaceHazard(session, distance, HazardKind::Debris,
                      "collision:" + eventId + ":debris", 0.62, 35.0, lateral,
-                     DefaultHazardLateralSpan(HazardKind::Debris));
+                     DefaultHazardLateralSpan(HazardKind::Debris), debrisSev);
 
   if (ev.impact < kCollisionFluidImpact)
     return;
@@ -985,7 +995,8 @@ void SyncRaceControlFlags(SessionRaceControl &rc) {
 void SpawnSurfaceHazard(RaceSession &session, double distance,
                         HazardKind kind, const std::string &sourceEntryId,
                         double gripMultiplier, double spanMeters,
-                        double centerLateralM, double lateralSpanM) {
+                        double centerLateralM, double lateralSpanM,
+                        double debrisSeverity) {
   for (const TrackSurfaceHazard &existing : session.raceControl.hazards) {
     if (existing.sourceEntryId == sourceEntryId &&
         session.elapsedRaceTime - existing.createdAt < 30.0 &&
@@ -1002,6 +1013,7 @@ void SpawnSurfaceHazard(RaceSession &session, double distance,
   hz.spanMeters = spanMeters;
   hz.lateralSpanM = lateralSpanM;
   hz.gripMultiplier = gripMultiplier;
+  hz.debrisSeverity = debrisSeverity;
   hz.kind = kind;
   hz.createdAt = session.elapsedRaceTime;
   hz.clearAt = session.elapsedRaceTime + HazardNaturalClearSec(kind);
@@ -1055,6 +1067,26 @@ void UpdateTrackHazards(RaceSession &session, double deltaTime) {
     RefreshIncidentSectorFlags(session);
 }
 
+namespace {
+
+bool HazardCoversPosition(const TrackSurfaceHazard &hz, double wrapped,
+                          double lapLength, double lateralNM) {
+  const double center = std::fmod(hz.centerDistance, lapLength);
+  double delta = std::abs(wrapped - center);
+  if (delta > lapLength * 0.5)
+    delta = lapLength - delta;
+  if (delta > hz.spanMeters * 0.5)
+    return false;
+  if (hz.lateralSpanM > 0.0) {
+    const double halfLateral = hz.lateralSpanM * 0.5;
+    if (std::abs(lateralNM - hz.centerLateralM) > halfLateral)
+      return false;
+  }
+  return true;
+}
+
+} // namespace
+
 double LocalGripMultiplierAt(const RaceSession &session, double distance,
                              double lateralNM, double lapLength) {
   if (lapLength <= 0.0)
@@ -1062,29 +1094,39 @@ double LocalGripMultiplierAt(const RaceSession &session, double distance,
   double best = 1.0;
   const double wrapped = std::fmod(distance, lapLength);
   for (const TrackSurfaceHazard &hz : session.raceControl.hazards) {
-    const double center = std::fmod(hz.centerDistance, lapLength);
-    double delta = std::abs(wrapped - center);
-    if (delta > lapLength * 0.5)
-      delta = lapLength - delta;
-    if (delta > hz.spanMeters * 0.5)
+    if (!HazardCoversPosition(hz, wrapped, lapLength, lateralNM))
       continue;
-
-    if (hz.lateralSpanM > 0.0) {
-      const double halfLateral = hz.lateralSpanM * 0.5;
-      if (std::abs(lateralNM - hz.centerLateralM) > halfLateral)
-        continue;
-    }
-
     best = std::min(best, hz.gripMultiplier);
   }
   return best;
+}
+
+HazardDriveContact HazardDriveContactAt(const RaceSession &session,
+                                        double distance, double lateralNM,
+                                        double lapLength) {
+  HazardDriveContact contact;
+  if (lapLength <= 0.0)
+    return contact;
+  const double wrapped = std::fmod(distance, lapLength);
+  for (const TrackSurfaceHazard &hz : session.raceControl.hazards) {
+    if (hz.kind != HazardKind::Debris)
+      continue;
+    if (!HazardCoversPosition(hz, wrapped, lapLength, lateralNM))
+      continue;
+    contact.onDebris = true;
+    contact.gripMultiplier = std::min(contact.gripMultiplier, hz.gripMultiplier);
+    contact.debrisSeverity =
+        std::max(contact.debrisSeverity, hz.debrisSeverity);
+  }
+  return contact;
 }
 
 int CountTrackObstructions(const RaceSession &session) {
   int count = 0;
   for (const Car &car : session.cars) {
     const TrackStatus st = car.rcState().trackStatus;
-    if (st == TrackStatus::Stranded || st == TrackStatus::Recovering)
+    if (st == TrackStatus::Stalled || st == TrackStatus::Stranded ||
+        st == TrackStatus::Recovering)
       ++count;
   }
   return count;
@@ -1334,6 +1376,34 @@ void UpdateTrackObstructions(RaceSession &session, double deltaTime) {
       continue;
 
     CarRaceControlState &rc = car.rcState();
+    if (rc.trackStatus == TrackStatus::Stalled) {
+      car.state().currentSpeed = 0.0;
+      if (rc.stallRestartAt >= 0.0 &&
+          session.elapsedRaceTime >= rc.stallRestartAt) {
+        rc.trackStatus = TrackStatus::Racing;
+        rc.stallRestartAt = -1.0;
+        const double skill = car.driver().active().trafficManagement;
+        if (skill < 55.0) {
+          car.beginRejoinYield(2.5);
+          rc.riskyRejoinSec = 3.0;
+        } else {
+          car.beginRejoinYield(kPitRejoinYieldSec);
+          rc.riskyRejoinSec = 0.0;
+        }
+        car.state().currentSpeed = 8.0;
+      } else {
+        const LimpMode limp = EvaluateLimpMode(
+            car.state().partDamage, car.config(), car.state().tyreDeflation,
+            car.state().batteryChargeMJ > 0.0 ? car.state().batteryChargeMJ
+                                              : car.state().hybridDeployRemainingMJ);
+        if (car.state().engineHealth <= 0.0 || limp == LimpMode::Immobilized) {
+          BeginStrand(car, session, "Immobilized after contact stall",
+                      HazardKind::Debris, 0.6, 35.0);
+        }
+      }
+      continue;
+    }
+
     if (rc.trackStatus == TrackStatus::Stranded) {
       car.state().currentSpeed = 0.0;
 
@@ -1494,7 +1564,7 @@ void ProcessCollisionPenalties(RaceSession &session,
       continue;
 
     const TrafficEvent &ev = *primary;
-    EmitCollisionLog(session, *carA, *carB, ev.impact);
+    EmitCollisionLog(session, *carA, *carB, ev);
     SpawnCollisionHazards(session, ev, *carA, *carB);
 
     const bool dualFault = events.size() >= 2;

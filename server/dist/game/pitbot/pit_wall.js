@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SETUP_CLASS_ORDER = exports.GARAGE_RELEASE_GAP_QUALIFYING_SEC = exports.GARAGE_RELEASE_GAP_PRACTICE_SEC = void 0;
+exports.SETUP_CLASS_ORDER = exports.GARAGE_RELEASE_GAP_QUALIFYING_SEC = exports.GARAGE_RELEASE_GAP_PRACTICE_SEC = exports.ENGINE_CONSERVE_HEALTH = void 0;
 exports.initCarState = initCarState;
 exports.penaltyDisplayName = penaltyDisplayName;
 exports.penaltyServeCommand = penaltyServeCommand;
@@ -23,7 +23,8 @@ const BIAS_HYPER = 0.01;
 const BIAS_GT3 = 0.01;
 const BIAS_LMP2 = 0.01;
 const COOLANT_CONSERVE_C = 100;
-const ENGINE_CONSERVE_HEALTH = 92;
+/** Below this engine %, pit-bot switches to conserve + balanced hybrid (was 92). */
+exports.ENGINE_CONSERVE_HEALTH = 80;
 /** Gap between successive cars leaving garage in practice (sim seconds). */
 exports.GARAGE_RELEASE_GAP_PRACTICE_SEC = 3;
 /** Gap between successive cars leaving garage in qualifying (sim seconds). */
@@ -43,12 +44,13 @@ function driverMode(s, all, wet, tread, plan, tactics, strategistSkill = 50) {
     const coolant = s.coolantTempC ?? 70;
     const health = s.engineHealth ?? 100;
     if (coolant >= COOLANT_CONSERVE_C ||
-        health <= ENGINE_CONSERVE_HEALTH ||
+        health <= exports.ENGINE_CONSERVE_HEALTH ||
         tread === "wet" ||
         tactics?.conserveCar) {
         return "driver_mode=conserve";
     }
-    let mode = plan?.driverMode ?? "normal";
+    const defaultDrySlickMode = wet < tyre_grip_1.INTER_TYRE_THRESHOLD && tread === "slick" ? "push" : "normal";
+    let mode = plan?.driverMode ?? defaultDrySlickMode;
     if (tactics) {
         if (tactics.briefingId === "hold_position" ||
             tactics.briefingId === "defend" ||
@@ -67,9 +69,6 @@ function driverMode(s, all, wet, tread, plan, tactics, strategistSkill = 50) {
             mode = "normal";
         }
     }
-    else if (wet < tyre_grip_1.INTER_TYRE_THRESHOLD && tread === "slick" && !plan?.driverMode) {
-        mode = "push";
-    }
     if (mode === "conserve")
         return "driver_mode=conserve";
     if (mode === "push" && wet < tyre_grip_1.INTER_TYRE_THRESHOLD && tread === "slick") {
@@ -82,14 +81,17 @@ function hybridStrategy(s, wet, tread, phase, tactics) {
         return null;
     const coolant = s.coolantTempC ?? 70;
     const health = s.engineHealth ?? 100;
-    if (coolant >= COOLANT_CONSERVE_C || health <= ENGINE_CONSERVE_HEALTH || tread !== "slick") {
+    if (coolant >= COOLANT_CONSERVE_C || health <= exports.ENGINE_CONSERVE_HEALTH || tread !== "slick") {
         return "hybrid_strategy=balanced";
     }
     if (tactics?.hybridStrategy) {
         return `hybrid_strategy=${tactics.hybridStrategy}`;
     }
-    if (phase === "race" && wet < tyre_grip_1.INTER_TYRE_THRESHOLD)
-        return "hybrid_strategy=deploy";
+    if (wet < tyre_grip_1.INTER_TYRE_THRESHOLD && tread === "slick") {
+        return phase === "qualifying" || phase === "practice" || phase === "race"
+            ? "hybrid_strategy=deploy"
+            : "hybrid_strategy=balanced";
+    }
     return "hybrid_strategy=balanced";
 }
 function setupWing(s) {

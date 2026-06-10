@@ -398,6 +398,26 @@ function snap(overrides) {
         strict_1.default.ok(commands.includes("driver_mode=conserve"));
         strict_1.default.ok(commands.includes("hybrid_strategy=harvest"));
     });
+    (0, node_test_1.it)("tickPitBot pushes hypercar on dry race when engine health is 85%", () => {
+        const entryId = "e-push";
+        const submitted = [];
+        (0, pit_wall_1.tickPitBot)([snap({ entryId, classId: "Hypercar", teamName: "Sweep", lap: 8, engineHealth: 85 })], [entryId], (0, pit_wall_1.initCarState)([entryId], 0, { minLap: 3 }), { phase: "race", wet: 0 }, (_id, cmd) => {
+            submitted.push(cmd);
+            return true;
+        });
+        strict_1.default.ok(submitted.includes("driver_mode=push"));
+        strict_1.default.ok(submitted.includes("hybrid_strategy=deploy"));
+    });
+    (0, node_test_1.it)("tickPitBot conserves when engine health drops to 80%", () => {
+        const entryId = "e-low";
+        const submitted = [];
+        (0, pit_wall_1.tickPitBot)([snap({ entryId, classId: "Hypercar", teamName: "Sweep", lap: 8, engineHealth: 80 })], [entryId], (0, pit_wall_1.initCarState)([entryId], 0, { minLap: 3 }), { phase: "race", wet: 0 }, (_id, cmd) => {
+            submitted.push(cmd);
+            return true;
+        });
+        strict_1.default.ok(submitted.includes("driver_mode=conserve"));
+        strict_1.default.ok(submitted.includes("hybrid_strategy=balanced"));
+    });
     (0, node_test_1.it)("tickPitBot uses conserve briefing driver mode during race", () => {
         const entryId = "e-conserve";
         const submitted = [];

@@ -37,7 +37,8 @@ const BIAS_HYPER = 0.01;
 const BIAS_GT3 = 0.01;
 const BIAS_LMP2 = 0.01;
 const COOLANT_CONSERVE_C = 100;
-const ENGINE_CONSERVE_HEALTH = 92;
+/** Below this engine %, pit-bot switches to conserve + balanced hybrid (was 92). */
+export const ENGINE_CONSERVE_HEALTH = 80;
 
 export interface CarPitState {
   bestLap: number;
@@ -110,7 +111,10 @@ function driverMode(
     return "driver_mode=conserve";
   }
 
-  let mode: "push" | "normal" | "conserve" = plan?.driverMode ?? "normal";
+  const defaultDrySlickMode: "push" | "normal" =
+    wet < INTER_TYRE_THRESHOLD && tread === "slick" ? "push" : "normal";
+  let mode: "push" | "normal" | "conserve" =
+    plan?.driverMode ?? defaultDrySlickMode;
   if (tactics) {
     if (
       tactics.briefingId === "hold_position" ||
@@ -131,8 +135,6 @@ function driverMode(
     if (tactics.teammatePolicy === "support" && tactics.priority === "support") {
       mode = "normal";
     }
-  } else if (wet < INTER_TYRE_THRESHOLD && tread === "slick" && !plan?.driverMode) {
-    mode = "push";
   }
 
   if (mode === "conserve") return "driver_mode=conserve";
@@ -158,7 +160,11 @@ function hybridStrategy(
   if (tactics?.hybridStrategy) {
     return `hybrid_strategy=${tactics.hybridStrategy}`;
   }
-  if (phase === "race" && wet < INTER_TYRE_THRESHOLD) return "hybrid_strategy=deploy";
+  if (wet < INTER_TYRE_THRESHOLD && tread === "slick") {
+    return phase === "qualifying" || phase === "practice" || phase === "race"
+      ? "hybrid_strategy=deploy"
+      : "hybrid_strategy=balanced";
+  }
   return "hybrid_strategy=balanced";
 }
 

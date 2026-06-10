@@ -641,6 +641,159 @@ static bool ParseWidthSegmentObject(const std::string &s, size_t &i,
   }
 }
 
+static bool ParseSurfaceKind(const std::string &token, TrackSurfaceKind &kind) {
+  if (token == "verge")
+    kind = TrackSurfaceKind::Verge;
+  else if (token == "kerb_positive")
+    kind = TrackSurfaceKind::KerbPositive;
+  else if (token == "kerb_negative")
+    kind = TrackSurfaceKind::KerbNegative;
+  else if (token == "kerb_sausage")
+    kind = TrackSurfaceKind::KerbSausage;
+  else if (token == "runoff_concrete")
+    kind = TrackSurfaceKind::RunoffConcrete;
+  else if (token == "runoff_asphalt")
+    kind = TrackSurfaceKind::RunoffAsphalt;
+  else if (token == "gravel")
+    kind = TrackSurfaceKind::Gravel;
+  else if (token == "barrier_armco")
+    kind = TrackSurfaceKind::BarrierArmco;
+  else if (token == "barrier_tecpro")
+    kind = TrackSurfaceKind::BarrierTecpro;
+  else if (token == "barrier_wall")
+    kind = TrackSurfaceKind::BarrierWall;
+  else
+    return false;
+  return true;
+}
+
+static bool ParseSurfaceSide(const std::string &token, TrackSurfaceSide &side) {
+  if (token == "inboard")
+    side = TrackSurfaceSide::Inboard;
+  else if (token == "outboard")
+    side = TrackSurfaceSide::Outboard;
+  else if (token == "both")
+    side = TrackSurfaceSide::Both;
+  else
+    return false;
+  return true;
+}
+
+static bool ParseSurfaceSegmentObject(const std::string &s, size_t &i,
+                                      TrackSurfaceSegment &segment) {
+  if (!Expect(s, i, '{'))
+    return false;
+  while (true) {
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == '}')
+      return ++i, true;
+    std::string key;
+    if (!ParseString(s, i, key) || !Expect(s, i, ':'))
+      return false;
+    if (key == "name") {
+      if (!ParseString(s, i, segment.name))
+        return false;
+    } else if (key == "start_t") {
+      if (!ParseNumber(s, i, segment.startT))
+        return false;
+    } else if (key == "end_t") {
+      if (!ParseNumber(s, i, segment.endT))
+        return false;
+    } else if (key == "side") {
+      std::string sideToken;
+      if (!ParseString(s, i, sideToken) ||
+          !ParseSurfaceSide(sideToken, segment.side))
+        return false;
+    } else if (key == "surface") {
+      std::string surfaceToken;
+      if (!ParseString(s, i, surfaceToken) ||
+          !ParseSurfaceKind(surfaceToken, segment.surface))
+        return false;
+    } else if (key == "variant") {
+      if (!ParseString(s, i, segment.variant))
+        return false;
+    } else if (key == "width_m") {
+      if (!ParseNumber(s, i, segment.widthM))
+        return false;
+    } else if (key == "width_start_m") {
+      if (!ParseNumber(s, i, segment.widthStartM))
+        return false;
+    } else if (key == "width_end_m") {
+      if (!ParseNumber(s, i, segment.widthEndM))
+        return false;
+    } else if (key == "inner_offset_m") {
+      if (!ParseNumber(s, i, segment.innerOffsetM))
+        return false;
+    } else if (key == "envelope") {
+      if (!ParseString(s, i, segment.envelope))
+        return false;
+    } else if (key == "grip_multiplier") {
+      if (!ParseNumber(s, i, segment.gripMultiplier))
+        return false;
+    } else {
+      while (i < s.size() && s[i] != ',' && s[i] != '}')
+        ++i;
+    }
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == ',') {
+      ++i;
+      continue;
+    }
+  }
+}
+
+static bool ParseSurfaceProfileArray(const std::string &s, size_t &i,
+                                     std::vector<TrackSurfaceSegment> &profile) {
+  if (!Expect(s, i, '['))
+    return false;
+  while (true) {
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == ']')
+      return ++i, true;
+    TrackSurfaceSegment segment;
+    if (!ParseSurfaceSegmentObject(s, i, segment))
+      return false;
+    profile.push_back(segment);
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == ',') {
+      ++i;
+      continue;
+    }
+  }
+}
+
+static bool ParseSurfaceDefaultsObject(const std::string &s, size_t &i,
+                                       TrackSurfaceDefaults &defaults) {
+  if (!Expect(s, i, '{'))
+    return false;
+  while (true) {
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == '}')
+      return ++i, true;
+    std::string key;
+    if (!ParseString(s, i, key) || !Expect(s, i, ':'))
+      return false;
+    if (key == "verge_width_m") {
+      if (!ParseNumber(s, i, defaults.vergeWidthM))
+        return false;
+    } else if (key == "runoff_width_m") {
+      if (!ParseNumber(s, i, defaults.runoffWidthM))
+        return false;
+    } else if (key == "kerb_width_m") {
+      if (!ParseNumber(s, i, defaults.kerbWidthM))
+        return false;
+    } else {
+      if (!SkipJsonValue(s, i))
+        return false;
+    }
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == ',') {
+      ++i;
+      continue;
+    }
+  }
+}
+
 static bool ParseWidthProfileArray(const std::string &s, size_t &i,
                                    std::vector<TrackWidthSegment> &profile) {
   if (!Expect(s, i, '['))
@@ -719,6 +872,8 @@ static bool LoadTrackJson(const std::string &filename, TrackDefinition &track) {
   std::vector<Vec3> displayPolyline;
   std::vector<TrackSector> sectors;
   std::vector<TrackWidthSegment> widthProfile;
+  std::vector<TrackSurfaceSegment> surfaceProfile;
+  TrackSurfaceDefaults surfaceDefaults;
   PitLaneGeometry pitLaneGeometry;
   bool closed = true;
   bool linear = false;
@@ -768,6 +923,12 @@ static bool LoadTrackJson(const std::string &filename, TrackDefinition &track) {
     } else if (key == "pit_lane") {
       if (!ParsePitLaneObject(content, i, pitLaneGeometry))
         return false;
+    } else if (key == "surface_profile") {
+      if (!ParseSurfaceProfileArray(content, i, surfaceProfile))
+        return false;
+    } else if (key == "surface_defaults") {
+      if (!ParseSurfaceDefaultsObject(content, i, surfaceDefaults))
+        return false;
     } else {
       if (!SkipJsonValue(content, i))
         return false;
@@ -785,6 +946,8 @@ static bool LoadTrackJson(const std::string &filename, TrackDefinition &track) {
   track.displayPolyline = displayPolyline;
   track.corridor.defaultWidthM = trackWidthM;
   track.corridor.widthProfile = widthProfile;
+  track.corridor.surfaceProfile = surfaceProfile;
+  track.corridor.surfaceDefaults = surfaceDefaults;
   track.corridor.pitLane = pitLaneGeometry;
   track.spline.setControlPoints(controlPoints, closed);
   track.spline.setLinear(linear);

@@ -10,6 +10,8 @@ enum class SectorFlagLevel : int { Green = 0, Yellow = 1, DoubleYellow = 2 };
 
 enum class TrackStatus {
   Racing,
+  /** Driveable car stopped on track — self-restart, no marshal tow. */
+  Stalled,
   Stranded,
   Recovering,
   ReturningToGarage,
@@ -41,6 +43,8 @@ struct TrackSurfaceHazard {
   /** Across-track span (metres). 0 = full track width at centerDistance. */
   double lateralSpanM = 0.0;
   double gripMultiplier = 0.7;
+  /** 0–1 severity of debris patch (collision impact + bodywork lost). */
+  double debrisSeverity = 0.0;
   HazardKind kind = HazardKind::Debris;
   double createdAt = 0.0;
   double clearAt = -1.0;
@@ -106,6 +110,14 @@ struct CarRaceControlState {
   int collisionWarnings = 0;
   double penaltyStopSeconds = 0.0;
   double recoveryProgress = 0.0;
+  /** Post-contact loss of control timer (seconds remaining). */
+  double instabilitySec = 0.0;
+  double instabilityGripScale = 1.0;
+  double lateralWanderMps = 0.0;
+  bool unstableOnTrack = false;
+  /** Sim time when a Stalled car may self-restart. */
+  double stallRestartAt = -1.0;
+  double riskyRejoinSec = 0.0;
 };
 
 const char *FlagPhaseName(FlagPhase phase);

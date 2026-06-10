@@ -441,3 +441,33 @@ void UpdateOvertakeBattles(const std::vector<Car> &cars, double lapLength,
     }
   }
 }
+
+void AbortBattleOnCollision(std::vector<OvertakeBattle> &battles,
+                            const std::string &entryA, const std::string &entryB,
+                            std::vector<TrafficModifiers> &modifiers,
+                            const std::vector<Car> &cars) {
+  for (OvertakeBattle &battle : battles) {
+    const bool match =
+        (battle.attackerId == entryA && battle.defenderId == entryB) ||
+        (battle.attackerId == entryB && battle.defenderId == entryA);
+    if (!match)
+      continue;
+    if (battle.phase == BattlePhase::Abort)
+      continue;
+    battle.phase = BattlePhase::Abort;
+    const size_t ai = CarIndex(cars, battle.attackerId);
+    const size_t di = CarIndex(cars, battle.defenderId);
+    if (ai >= cars.size() || di >= cars.size())
+      continue;
+    if (ai < modifiers.size()) {
+      modifiers[ai].overtaking = false;
+      modifiers[ai].alongside = false;
+      modifiers[ai].defending = false;
+    }
+    if (di < modifiers.size()) {
+      modifiers[di].yielding = false;
+      modifiers[di].alongside = false;
+      modifiers[di].defending = false;
+    }
+  }
+}

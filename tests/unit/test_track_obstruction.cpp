@@ -129,6 +129,43 @@ TEST_CASE("Practice out of fuel tow refuels in garage instead of retiring",
   REQUIRE(c.rcState().trackStatus == TrackStatus::Racing);
 }
 
+TEST_CASE("Practice tow refuel preserves hybrid deploy budget and resets tyres",
+          "[unit][obstruction][open_session]") {
+  RaceSession session = MakeMinimalSession();
+  session.sessionMode = SessionMode::Qualifying;
+  CarConfig carCfg;
+  carCfg.fuelTankCapacity = 110.0;
+  carCfg.hybridDeployPowerKW = 200.0;
+  carCfg.hybridStintDeployBudgetMJ = 4.5;
+  RaceClass cls{"Hypercar", "Hypercar"};
+  AddCar(session, carCfg, cls, "Team A", 1, "1", "entry-1");
+  Car &c = session.cars.front();
+  c.state().fuelRemaining = 0.0;
+  c.state().hybridDeployRemainingMJ = 1.25;
+  c.state().batteryChargeMJ = 1.25;
+  c.state().tireWear[0] = 0.55;
+  c.state().currentSpeed = 0.0;
+  for (int i = 0; i < 35; ++i)
+    UpdateTrackObstructions(session, 0.1);
+  REQUIRE(c.rcState().trackStatus == TrackStatus::Stranded);
+
+  session.elapsedRaceTime = c.rcState().marshalDispatchTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
+  session.elapsedRaceTime = c.rcState().recoveryEndTime + 0.1;
+  UpdateTrackObstructions(session, 0.1);
+  REQUIRE(c.inGarageRebuild());
+
+  while (c.inGarageRebuild()) {
+    c.tickGarageRebuild(session.track, session.elapsedRaceTime, 3600.0);
+    session.elapsedRaceTime += 1.0;
+  }
+
+  REQUIRE(c.state().fuelRemaining == Catch::Approx(110.0));
+  REQUIRE(c.state().hybridDeployRemainingMJ == Catch::Approx(1.25));
+  REQUIRE(c.state().batteryChargeMJ == Catch::Approx(1.25));
+  REQUIRE(c.state().tireWear[0] == Catch::Approx(0.0));
+}
+
 TEST_CASE("Garage rejoin after tow clears sector flags and allows FCY end",
           "[unit][obstruction][open_session]") {
   RaceSession session = MakeMinimalSession();

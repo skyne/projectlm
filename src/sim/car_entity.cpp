@@ -40,6 +40,9 @@ void MaybeRollHiddenFault(PartDamageState &damage, double impact, uint32_t salt)
 #include <functional>
 
 namespace {
+/** Rolling-start speed (~43 km/h). Standing grid at 0 m/s inflated race L3 ~15 s. */
+constexpr double kRollingStartSpeedMs = 12.0;
+
 bool IsValidCarNumber(const std::string &number) {
   if (number.empty())
     return false;
@@ -111,6 +114,7 @@ void Car::placeOnGrid(int gridPosition) {
   state_.currentDistance = -(gridPosition - 1) * (body_.lengthM + 2.0);
   lateralOffset_ = (gridPosition % 2 == 0) ? 0.15 : -0.15;
   garageHold_ = false;
+  state_.currentSpeed = kRollingStartSpeedMs;
 }
 
 void Car::placeInGarageHold(const TrackDefinition &track) {
@@ -153,7 +157,7 @@ bool Car::releaseFromGarage(const TrackDefinition &track) {
     pit_.statusMessage = "Leaving garage";
     return true;
   }
-  state_.currentSpeed = 12.0;
+  state_.currentSpeed = kRollingStartSpeedMs;
   pit_.statusMessage = "On track";
   return true;
 }
@@ -607,7 +611,8 @@ CarTickResult Car::tick(const TrackDefinition &track,
     return result;
 
   const TrackStatus ts = rc_.trackStatus;
-  if (ts == TrackStatus::Stranded || ts == TrackStatus::Recovering)
+  if (ts == TrackStatus::Stranded || ts == TrackStatus::Recovering ||
+      ts == TrackStatus::Stalled)
     return result;
 
   if (!pauseDriverStint)
@@ -623,11 +628,9 @@ CarTickResult Car::tick(const TrackDefinition &track,
   mods.skillFactor = driver_.paceFactor(weather.trackWetness, isNight,
                                         weather.visibilityKm,
                                         weather.windSpeedMs);
-  if (config_.hybridDeployPowerKW > 0.0 || IsBatteryPrimaryEv(config_)) {
+  if (config_.hybridDeployPowerKW > 0.0) {
     HybridStrategyModifiers(driver_.hybridStrategy, mods.hybridDeployScale,
                             mods.hybridRegenScale);
-    if (IsBatteryPrimaryEv(config_))
-      mods.hybridDeployScale = 0.0;
   } else {
     mods.hybridDeployScale = 0.0;
     mods.hybridRegenScale = 0.0;
@@ -642,7 +645,26 @@ CarTickResult Car::tick(const TrackDefinition &track,
       288.15 / std::max(1.0, weather.ambientTempC + 273.15);
   mods.windHeadwindMs = weather.windSpeedMs * 0.35;
 
+  if (rc_.instabilitySec > 0.0) {
+    rc_.instabilitySec = std::max(0.0, rc_.instabilitySec - deltaTime);
+    mods.localGripScale *= rc_.instabilityGripScale;
+    state_.lateralVelocity += rc_.lateralWanderMps * deltaTime;
+    mods.throttleMultiplier *= 0.88;
+    if (rc_.instabilitySec <= 0.0) {
+      rc_.unstableOnTrack = false;
+      rc_.lateralWanderMps = 0.0;
+    }
+  }
+
   if (traffic != nullptr) {
+    if (traffic->instabilitySec > 0.0) {
+      rc_.instabilitySec =
+          std::max(rc_.instabilitySec, traffic->instabilitySec);
+      rc_.instabilityGripScale =
+          std::min(rc_.instabilityGripScale, traffic->instabilityGripScale);
+      rc_.lateralWanderMps += traffic->lateralWanderMps;
+      rc_.unstableOnTrack = rc_.unstableOnTrack || traffic->unstableOnTrack;
+    }
     driver_.setPressure(traffic->pressureLevel);
     applyTrafficVisuals(*traffic, deltaTime, corridor, physics.useFrenetDynamics);
     if (traffic->speedCapMs > 0.0)
@@ -655,16 +677,45 @@ CarTickResult Car::tick(const TrackDefinition &track,
       mods.throttleMultiplier *= 1.0 + traffic->scRestartThrottleBoost;
     if (traffic->draftThrottleBoost > 0.0)
       mods.draftThrottleBoost = traffic->draftThrottleBoost;
+    if (traffic->onDebrisHazard && debrisPunctureCooldown_ <= 0.0 &&
+        state_.currentSpeed > 12.0) {
+      const uint32_t seed = static_cast<uint32_t>(
+          entryId_.length() * 97U + state_.currentLap +
+          static_cast<int>(state_.currentDistance));
+      for (const TyrePunctureRoll &roll : EvaluateDebrisTyrePuncture(
+               state_.currentSpeed, traffic->localGripScale,
+               traffic->debrisSeverity, mods.weatherGripScale, seed)) {
+        if (roll.wheelIdx >= 0)
+          ApplyTyrePuncture(state_, roll.wheelIdx, roll.instantFlat);
+      }
+      debrisPunctureCooldown_ = 0.35;
+    }
+    if (traffic->impulseSpeedMs != 0.0)
+      state_.currentSpeed =
+          std::max(0.0, state_.currentSpeed + traffic->impulseSpeedMs);
+    if (traffic->impulseLateralMps != 0.0)
+      state_.lateralVelocity += traffic->impulseLateralMps;
+
     if (traffic->collisionDamage > 0.0) {
       if (collisionCooldown_ <= 0.0) {
         static const PartCatalog kCatalog{};
         CarDamageProfiles profiles;
         BuildCarDamageProfiles(config_, kCatalog, profiles);
-        const CollisionSide side = CollisionSideFromLateral(lateralOffset_);
+        const CollisionSide side =
+            traffic->collisionSide != CollisionSide::Unknown
+                ? traffic->collisionSide
+                : CollisionSideFromLateral(lateralOffset_);
+        lastContactSeverity_ = traffic->collisionDamage;
         ApplyCollisionDamage(state_.partDamage, profiles, traffic->collisionDamage,
                              side, config_.hybridDeployPowerKW > 0.0);
-        for (int w : CollisionPunctureWheels(traffic->collisionDamage, side))
-          ApplyTyrePuncture(state_, w, true);
+        const uint32_t punctureSeed =
+            static_cast<uint32_t>(entryId_.length() * 131U + state_.currentLap);
+        for (const TyrePunctureRoll &roll : EvaluateCollisionTyrePuncture(
+                 traffic->collisionDamage, side, traffic->collisionOverlapFactor,
+                 punctureSeed)) {
+          if (roll.wheelIdx >= 0)
+            ApplyTyrePuncture(state_, roll.wheelIdx, roll.instantFlat);
+        }
         SyncDerivedEngineHealth(state_, config_);
         MaybeRollHiddenFault(state_.partDamage, traffic->collisionDamage,
                              static_cast<uint32_t>(entryId_.length() + state_.currentLap));
@@ -687,6 +738,12 @@ CarTickResult Car::tick(const TrackDefinition &track,
 
   if (collisionCooldown_ > 0.0)
     collisionCooldown_ = std::max(0.0, collisionCooldown_ - deltaTime);
+  if (debrisPunctureCooldown_ > 0.0)
+    debrisPunctureCooldown_ = std::max(0.0, debrisPunctureCooldown_ - deltaTime);
+  if (boundaryHitCooldown_ > 0.0)
+    boundaryHitCooldown_ = std::max(0.0, boundaryHitCooldown_ - deltaTime);
+  if (rc_.riskyRejoinSec > 0.0)
+    rc_.riskyRejoinSec = std::max(0.0, rc_.riskyRejoinSec - deltaTime);
   if (rejoinYieldSec_ > 0.0)
     rejoinYieldSec_ = std::max(0.0, rejoinYieldSec_ - deltaTime);
 
@@ -876,11 +933,15 @@ CarTickResult Car::tick(const TrackDefinition &track,
       }
     }
 
+    const LateralSurfaceZone surfaceZone =
+        corridor.lateralZoneAt(s, state_.lateralOffsetM);
+
     PathDynamicsInput pd;
     pd.targetNM = pathTargetNM_;
     pd.trackWidthM = corridor.widthAt(s);
     pd.effectiveKappa = corridor.effectiveCurvature(s, state_.lateralOffsetM);
-    pd.mu = physics.tireFriction * mods.weatherGripScale * mods.localGripScale;
+    pd.mu = physics.tireFriction * mods.weatherGripScale * mods.localGripScale *
+            corridor.zoneGripAt(s, state_.lateralOffsetM);
     pd.mass = std::max(1.0, config_.calculatedTotalMass);
     pd.v = std::max(physics.minSpeed, state_.currentSpeed);
     pd.beta = state_.headingError;
@@ -899,18 +960,62 @@ CarTickResult Car::tick(const TrackDefinition &track,
         state_.headingError, -physics.maxHeadingErrorRad,
         physics.maxHeadingErrorRad);
 
-    const double maxN = corridor.maxLateralN(s);
+    const double halfAsphalt = corridor.asphaltHalfWidth(s);
     const double carHalfWidth = body_.widthM * 0.5;
-    const double limitN = std::max(0.0, maxN - carHalfWidth);
-    if (std::abs(state_.lateralOffsetM) > limitN) {
-      state_.lateralOffsetM = std::copysign(limitN, state_.lateralOffsetM);
-      state_.lateralVelocity *= 0.25;
+    const double maxExtent = corridor.maxLateralExtentN(s, state_.lateralOffsetM);
+    const double outerLimit = std::max(0.0, maxExtent - carHalfWidth);
+    const LateralSurfaceZone zoneAfter =
+        corridor.lateralZoneAt(s, state_.lateralOffsetM);
+    const bool hitBoundary =
+        std::abs(state_.lateralOffsetM) > outerLimit ||
+        zoneAfter == LateralSurfaceZone::InboardBoundary ||
+        zoneAfter == LateralSurfaceZone::OutboardBoundary;
+    if (std::abs(state_.lateralOffsetM) > outerLimit) {
+      state_.lateralOffsetM = std::copysign(outerLimit, state_.lateralOffsetM);
+      state_.lateralVelocity = 0.0;
       state_.currentSpeed =
-          std::max(physics.minSpeed, state_.currentSpeed * 0.97);
+          std::max(physics.minSpeed, state_.currentSpeed * 0.82);
     }
-    if (maxN > 1e-6)
+    if (hitBoundary && boundaryHitCooldown_ <= 0.0) {
+      static const PartCatalog kCatalog{};
+      CarDamageProfiles profiles;
+      BuildCarDamageProfiles(config_, kCatalog, profiles);
+      const double wallImpact =
+          std::min(14.0, 4.0 + state_.currentSpeed / 7.5);
+      const CollisionSide wallSide =
+          state_.lateralOffsetM < 0.0 ? CollisionSide::Left
+                                        : CollisionSide::Right;
+      ApplyCollisionDamage(state_.partDamage, profiles, wallImpact, wallSide,
+                           config_.hybridDeployPowerKW > 0.0);
+      if (wallImpact >= kMonocoqueStressImpact)
+        ApplyMonocoqueImpactDamage(state_.partDamage, profiles, wallImpact);
+      lastContactSeverity_ = std::max(lastContactSeverity_, wallImpact);
+      boundaryHitCooldown_ = 2.0;
+      setupFeedback_ = "Barrier impact — check bodywork";
+      setupFeedbackTimer_ = 5.0;
+    } else if (surfaceZone == LateralSurfaceZone::InboardRunoff ||
+               surfaceZone == LateralSurfaceZone::OutboardRunoff) {
+      state_.currentSpeed = std::max(
+          physics.minSpeed,
+          state_.currentSpeed * (1.0 - 0.012 * deltaTime));
+    }
+    if (halfAsphalt > 1e-6)
       lateralOffset_ =
-          std::clamp(state_.lateralOffsetM / maxN, -1.0, 1.0);
+          std::clamp(state_.lateralOffsetM / halfAsphalt, -1.0, 1.0);
+  }
+
+  if (rc_.trackStatus == TrackStatus::Racing && rc_.unstableOnTrack &&
+      state_.currentSpeed < 0.5) {
+    rc_.trackStatus = TrackStatus::Stalled;
+    const double skill = driver_.active().trafficManagement;
+    rc_.stallRestartAt =
+        raceTime + 3.0 +
+        (1.0 - std::clamp(skill / 100.0, 0.0, 1.0)) * 5.0;
+    rc_.unstableOnTrack = false;
+    rc_.instabilitySec = 0.0;
+    rc_.lateralWanderMps = 0.0;
+    state_.currentSpeed = 0.0;
+    state_.lateralVelocity = 0.0;
   }
 
   if (!HasDrivableEnergy(config_, state_.fuelRemaining, state_.batteryChargeMJ,
@@ -968,7 +1073,8 @@ CarTickResult Car::tick(const TrackDefinition &track,
 
 bool Car::isOnTrackObstruction() const {
   const TrackStatus ts = rc_.trackStatus;
-  return ts == TrackStatus::Stranded || ts == TrackStatus::Recovering;
+  return ts == TrackStatus::Stalled || ts == TrackStatus::Stranded ||
+         ts == TrackStatus::Recovering;
 }
 
 void Car::markRetired(const std::string &reason) {
@@ -1036,6 +1142,31 @@ void Car::restoreFullStintEnergy() {
   outOfFuelTimer_ = 0.0;
 }
 
+void Car::restoreOpenSessionFuelOnly() {
+  const double preservedDeploy = state_.hybridDeployRemainingMJ;
+  const double preservedBattery = state_.batteryChargeMJ;
+
+  if (IsBatteryPrimaryEv(config_)) {
+    state_.batteryChargeMJ = config_.hybridStintDeployBudgetMJ;
+    state_.fuelRemaining = state_.batteryChargeMJ;
+    state_.hybridDeployRemainingMJ = state_.batteryChargeMJ;
+  } else {
+    state_.fuelRemaining = config_.fuelTankCapacity;
+    if (config_.hybridDeployPowerKW > 0.0 || config_.isFuelCell ||
+        config_.isGeneratorOnly) {
+      state_.hybridDeployRemainingMJ = preservedDeploy;
+      state_.batteryChargeMJ = preservedBattery;
+    }
+  }
+
+  for (int i = 0; i < 4; ++i) {
+    state_.tireWear[i] = 0.0;
+    state_.tireTempC[i] = 85.0;
+    ClearTyreDeflation(state_, i);
+  }
+  outOfFuelTimer_ = 0.0;
+}
+
 void Car::beginOpenSessionEnergyRecovery(const TrackDefinition &track,
                                          double raceTime) {
   static constexpr double kOpenSessionRefuelSec = 75.0;
@@ -1082,7 +1213,7 @@ void Car::tickGarageRebuild(const TrackDefinition &track, double raceTime,
     const std::string &recoveryReason = rc_.obstructionReason;
     if (recoveryReason.find("Out of fuel") != std::string::npos ||
         recoveryReason.find("Battery depleted") != std::string::npos) {
-      restoreFullStintEnergy();
+      restoreOpenSessionFuelOnly();
       rc_.obstructionReason.clear();
     }
     SyncDerivedEngineHealth(state_, config_);
@@ -1409,6 +1540,15 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition,
   snap.collisionWarnings = rc_.collisionWarnings;
   snap.penaltyStopSeconds = rc_.penaltyStopSeconds;
   snap.recoveryProgress = rc_.recoveryProgress;
+  snap.unstableOnTrack = rc_.unstableOnTrack;
+  snap.riskyRejoinSec = rc_.riskyRejoinSec;
+  if (lastContactSeverity_ > 0.0)
+    snap.lastContactSeverity = lastContactSeverity_;
+  if (corridor != nullptr && corridor->length() > 0.0) {
+    const double s = state_.currentDistance;
+    snap.surfaceZone = LateralSurfaceZoneName(
+        corridor->lateralZoneAt(s, state_.lateralOffsetM));
+  }
   return snap;
 }
 

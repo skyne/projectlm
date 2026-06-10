@@ -172,6 +172,11 @@ void TickRace(RaceSession &session, double deltaTime) {
   trafficLateral.useFrenetDynamics = session.physics.useFrenetDynamics;
   if (session.corridor.length() > 0.0)
     trafficLateral.corridor = &session.corridor;
+  if (!session.cars.empty()) {
+    trafficLateral.weatherGripScale = WeatherTireGripScale(
+        session.weather, session.cars[0].config().tireChoice,
+        session.cars[0].config().tyreTread);
+  }
 
   std::vector<TrafficModifiers> trafficMods;
   std::vector<TrafficEvent> trafficEvents;
@@ -197,10 +202,16 @@ void TickRace(RaceSession &session, double deltaTime) {
                       &session.corridor);
     trafficMods[i].localGripScale = LocalGripMultiplierAt(
         session, car.state().currentDistance, lateralNM, lapLength);
+    const HazardDriveContact hazard = HazardDriveContactAt(
+        session, car.state().currentDistance, lateralNM, lapLength);
+    trafficMods[i].onDebrisHazard = hazard.onDebris;
+    trafficMods[i].debrisSeverity = hazard.debrisSeverity;
   }
 
   for (const TrafficEvent &ev : trafficEvents) {
     if (g_raceEventOut == nullptr)
+      continue;
+    if (ev.type == TrafficEvent::Type::Collision)
       continue;
     SimEvent event;
     event.entryId = ev.entryId;
@@ -209,8 +220,6 @@ void TickRace(RaceSession &session, double deltaTime) {
     event.message = ev.message;
     if (ev.type == TrafficEvent::Type::Overtake)
       event.type = SimEventType::Overtake;
-    else if (ev.type == TrafficEvent::Type::Collision)
-      event.type = SimEventType::Collision;
     else
       event.type = SimEventType::Blocked;
     g_raceEventOut->push_back(std::move(event));

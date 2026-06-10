@@ -699,13 +699,10 @@ void CompileCarArchitecture(CarConfig &car, const PartCatalog &catalog,
   }
 
   if (car.engine.fuelType == "Electric" && fs.isBatteryPack) {
+    car.hybridStintDeployBudgetMJ = fs.energyMj;
     if (pt.isGeneratorOnly && fs.rexFuelLiters > 0.0) {
-      // REX carries a small transient buffer, not the full traction pack —
-      // its per-stint energy comes from generator fuel.
-      car.hybridStintDeployBudgetMJ = std::min(fs.energyMj, 15.0);
       car.fuelTankCapacity = fs.rexFuelLiters;
     } else {
-      car.hybridStintDeployBudgetMJ = fs.energyMj;
       car.fuelTankCapacity = fs.energyMj;
     }
   }
