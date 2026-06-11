@@ -95,5 +95,15 @@ export function trackGeometryEqual(
       return false;
     }
   }
+  const aPit = a.pitLane?.polyline ?? [];
+  const bPit = b.pitLane?.polyline ?? [];
+  if (aPit.length !== bPit.length) return false;
+  for (let i = 0; i < aPit.length; i++) {
+    const pa = aPit[i];
+    const pb = bPit[i];
+    if (pa.x !== pb.x || pa.z !== pb.z || pa.role !== pb.role) return false;
+  }
+  if (a.pitLane?.widthM !== b.pitLane?.widthM) return false;
+
   return labelsEqual(a.mapLabels, b.mapLabels);
 }

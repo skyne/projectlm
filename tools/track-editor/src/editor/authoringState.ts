@@ -254,9 +254,27 @@ export function setAuthoringNodeWidth(
   if (surface !== "layout") return track;
   const authoring = track.authoring;
   if (!authoring || index < 0 || index >= authoring.nodes.length) return track;
-  const nodes = authoring.nodes.map((n, i) =>
-    i === index ? { ...n, width_m: width_m != null && width_m > 0 ? width_m : undefined } : n,
-  );
+  const width =
+    width_m != null && width_m > 0 ? width_m : undefined;
+  const nodes = authoring.nodes.map((n) => ({ ...n }));
+  nodes[index] = { ...nodes[index], width_m: width };
+
+  if (width != null) {
+    let left = index;
+    while (left > 0 && isStraightAuthoringSegment(track, "layout", left - 1)) {
+      nodes[left - 1] = { ...nodes[left - 1], width_m: width };
+      left--;
+    }
+    let right = index;
+    while (
+      right < nodes.length - 1 &&
+      isStraightAuthoringSegment(track, "layout", right)
+    ) {
+      nodes[right + 1] = { ...nodes[right + 1], width_m: width };
+      right++;
+    }
+  }
+
   return applyLayoutAuthoring(track, { ...authoring, nodes });
 }
 

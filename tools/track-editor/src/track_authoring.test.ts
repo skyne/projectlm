@@ -121,9 +121,9 @@ describe("track_authoring", () => {
     };
     const profile = buildWidthProfileFromAuthoring(track);
     assert.ok(profile && profile.length >= 2);
-    // Width is keyed to the destination node on each span.
-    assert.equal(profile[0].width_m, 12);
-    assert.equal(profile[1].width_m, 11);
+    // Span width is the max of both endpoint node widths.
+    assert.equal(profile[0].width_m, 15);
+    assert.equal(profile[1].width_m, 12);
     const synced = syncTrackPolyline(track);
     assert.ok((synced.width_profile?.length ?? 0) >= 2);
   });

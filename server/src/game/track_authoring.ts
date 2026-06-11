@@ -140,6 +140,70 @@ function authoringHasWidthOverrides(authoring: TrackAuthoring, track: TrackJson)
   return (track.width_profile?.length ?? 0) > 0;
 }
 
+function chordLengthToIndex(
+  polyline: TrackPoint3[],
+  closed: boolean,
+  endIndex: number,
+): number {
+  let total = 0;
+  const limit = closed ? polyline.length : polyline.length - 1;
+  const last = Math.min(endIndex, polyline.length - 1);
+  for (let i = 1; i <= last; i++) {
+    const a = polyline[i - 1];
+    const b = polyline[i % polyline.length];
+    if (!closed && i >= limit) break;
+    total += Math.hypot(b.x - a.x, b.z - a.z);
+  }
+  return total;
+}
+
+function totalChordLength(polyline: TrackPoint3[], closed: boolean): number {
+  return chordLengthToIndex(polyline, closed, polyline.length - 1);
+}
+
+/** Monotonic lap-t for each authoring node (follows node order along compiled path). */
+export function authoringNodeTs(
+  nodes: PolylineAuthoringNode[],
+  compiled: TrackPoint3[],
+  closed: boolean,
+): number[] {
+  if (compiled.length < 2 || nodes.length === 0) return [];
+
+  const total = totalChordLength(compiled, closed);
+  if (total <= 0) return nodes.map(() => 0);
+
+  let lastIdx = 0;
+  const limit = compiled.length;
+  return nodes.map((node) => {
+    let bestIdx = lastIdx;
+    let bestD = Infinity;
+    const searchEnd = closed ? limit + lastIdx : limit;
+    for (let k = lastIdx; k < searchEnd; k++) {
+      const idx = k % compiled.length;
+      const pt = compiled[idx];
+      const d = Math.hypot(node.x - pt.x, node.z - pt.z);
+      if (d < bestD) {
+        bestD = d;
+        bestIdx = idx;
+      }
+    }
+    lastIdx = bestIdx;
+    return chordLengthToIndex(compiled, closed, bestIdx) / total;
+  });
+}
+
+function spanWidthM(
+  node: PolylineAuthoringNode,
+  endNode: PolylineAuthoringNode,
+  seg: TrackAuthoringSegment | undefined,
+  defaultW: number,
+): number {
+  const w0 = node.width_m ?? seg?.width_m;
+  const w1 = endNode.width_m;
+  if (w0 == null && w1 == null) return defaultW;
+  return Math.max(w0 ?? defaultW, w1 ?? defaultW);
+}
+
 function pushWidthSpan(
   out: TrackWidthSegmentJson[],
   startT: number,
@@ -168,6 +232,7 @@ export function buildWidthProfileFromAuthoring(track: TrackJson): TrackWidthSegm
   const defaultW = track.track_width_m ?? 12;
   const segments = ensureTrackAuthoringSegments(authoring);
   const nodes = authoring.nodes;
+  const nodeTs = authoringNodeTs(nodes, compiled, closed);
   const profile: TrackWidthSegmentJson[] = [];
 
   const spanCount = closed ? nodes.length : nodes.length - 1;
@@ -176,17 +241,9 @@ export function buildWidthProfileFromAuthoring(track: TrackJson): TrackWidthSegm
     const node = nodes[i];
     const endNode = nodes[next % nodes.length];
     const seg = segments[i];
-    // Width is defined at the destination node (width "at" node N applies on approach).
-    const widthM =
-      endNode.width_m ?? node.width_m ?? seg?.width_m ?? defaultW;
-    const start = projectPointOnCompiledPolyline(compiled, closed, lapLength, node.x, node.z).t;
-    const end = projectPointOnCompiledPolyline(
-      compiled,
-      closed,
-      lapLength,
-      endNode.x,
-      endNode.z,
-    ).t;
+    const widthM = spanWidthM(node, endNode, seg, defaultW);
+    const start = nodeTs[i] ?? 0;
+    const end = nodeTs[next % nodes.length] ?? 1;
 
     if (closed && end <= start && i < spanCount - 1) {
       pushWidthSpan(profile, start, 1, widthM);

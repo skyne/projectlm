@@ -246,7 +246,7 @@ export class TrackEditorApp {
     pitTarmacLabel.prepend(this.showPitTarmacToggle);
     this.showPitTarmacToggle.addEventListener("change", () => {
       this.showPitTarmac = this.showPitTarmacToggle.checked;
-      this.refreshLayerVisibility();
+      this.refreshPreview();
     });
 
     this.layoutSimplifyBtn = this.button("Simplify to nodes", () => this.simplifyToAuthoring());
@@ -897,6 +897,14 @@ export class TrackEditorApp {
     );
     this.svgTrack.setGeometry(geometry);
     this.refreshLayerVisibility();
+    const defaultW = geometry.defaultWidthM ?? this.track?.track_width_m ?? 12;
+    const widthVaries = (geometry.widthProfile ?? []).some(
+      (seg) => Math.abs(seg.widthM - defaultW) > 0.05,
+    );
+    this.svgTrack.refreshEditorDecorations({
+      showPitTarmac: this.showPitTarmac,
+      showWidthCorridor: this.surface === "layout" && widthVaries,
+    });
     this.syncReferenceOverlayRender();
     this.renderHandles();
     this.syncLapLengthFields();

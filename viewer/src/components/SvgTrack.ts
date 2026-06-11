@@ -336,6 +336,7 @@ export class SvgTrack {
   private pitGroup: SVGGElement;
   private referenceOverlayGroup: SVGGElement;
   private editorOverlayGroup: SVGGElement;
+  private editorDecorGroup: SVGGElement;
   private hitLayer: SVGRectElement | null = null;
   private fit: FitTransform | null = null;
   private playerEntryId = "entry-1";
@@ -433,6 +434,9 @@ export class SvgTrack {
     this.editorOverlayGroup = this.createGroup("editor-overlay");
     this.editorOverlayGroup.setAttribute("class", "editor-overlay");
     this.editorOverlayGroup.setAttribute("pointer-events", "none");
+    this.editorDecorGroup = this.createGroup("editor-decor-layer");
+    this.editorDecorGroup.setAttribute("class", "editor-decor-layer");
+    this.editorDecorGroup.setAttribute("pointer-events", "none");
 
     this.root.append(
       this.defs,
@@ -448,6 +452,7 @@ export class SvgTrack {
       this.labelsGroup,
       this.carsGroup,
       this.editorOverlayGroup,
+      this.editorDecorGroup,
     );
     container.appendChild(this.root);
     if (this.zoomable) {
@@ -1091,6 +1096,94 @@ export class SvgTrack {
     this.pitGroup.style.display = this.layerVisibility.pit ? "" : "none";
   }
 
+  /** Track editor: width corridor edges and pit tarmac preview drawn above the map. */
+  refreshEditorDecorations(options: {
+    showPitTarmac: boolean;
+    showWidthCorridor: boolean;
+  }): void {
+    this.editorDecorGroup.replaceChildren();
+    if (!this.generousPan || !this.fit || !this.renderedGeometry) return;
+
+    const geometry = this.renderedGeometry;
+    const svgPoints = geometry.polyline.map((pt) => this.worldToSvg(pt.x, pt.z));
+    const cumulative = this.fit.cumulativeT;
+
+    if (options.showWidthCorridor && (geometry.widthProfile?.length ?? 0) > 0) {
+      const { left, right } = this.sampleCorridorEdges(svgPoints, cumulative, geometry);
+      if (left.length >= 2 && right.length >= 2) {
+        const fill = document.createElementNS(SVG_NS, "polygon");
+        fill.setAttribute(
+          "points",
+          [...left, ...right.slice().reverse()].map((p) => `${p.x},${p.y}`).join(" "),
+        );
+        fill.setAttribute("fill", "rgba(80, 200, 255, 0.12)");
+        fill.setAttribute("stroke", "none");
+        fill.setAttribute("class", "editor-width-corridor-fill");
+        this.editorDecorGroup.appendChild(fill);
+
+        for (const [edge, className] of [
+          [left, "editor-width-corridor-edge"],
+          [right, "editor-width-corridor-edge"],
+        ] as const) {
+          const path = document.createElementNS(SVG_NS, "path");
+          path.setAttribute("d", this.pointsToPath(edge, false));
+          path.setAttribute("fill", "none");
+          path.setAttribute("stroke", "rgba(90, 220, 255, 0.92)");
+          path.setAttribute("stroke-width", "2.4");
+          path.setAttribute("stroke-linejoin", "round");
+          path.setAttribute("stroke-linecap", "round");
+          path.setAttribute("class", className);
+          this.editorDecorGroup.appendChild(path);
+        }
+      }
+    }
+
+    if (options.showPitTarmac) {
+      const pitPath = this.buildAuthoredPitLanePath();
+      if (pitPath && pitPath.points.length >= 2) {
+        const pitHalfM = (geometry.pitLane?.widthM ?? 12) / 2;
+        const left: SvgPoint[] = [];
+        const right: SvgPoint[] = [];
+        const sampleStep = Math.max(3, pitPath.totalLength / 80);
+        for (let d = 0; d <= pitPath.totalLength + 1e-6; d += sampleStep) {
+          const frame = this.samplePathFrame(pitPath.points, pitPath.cumulative, d);
+          if (!frame) continue;
+          const lateral = this.metersToLateralSvg(pitHalfM, d);
+          left.push({
+            x: frame.x - frame.nx * lateral,
+            y: frame.y - frame.ny * lateral,
+          });
+          right.push({
+            x: frame.x + frame.nx * lateral,
+            y: frame.y + frame.ny * lateral,
+          });
+        }
+        if (left.length >= 2 && right.length >= 2) {
+          const ribbon = document.createElementNS(SVG_NS, "polygon");
+          ribbon.setAttribute(
+            "points",
+            [...left, ...right.slice().reverse()].map((p) => `${p.x},${p.y}`).join(" "),
+          );
+          ribbon.setAttribute("fill", "rgba(255, 176, 64, 0.58)");
+          ribbon.setAttribute("stroke", "rgba(255, 210, 120, 0.9)");
+          ribbon.setAttribute("stroke-width", "1.2");
+          ribbon.setAttribute("stroke-linejoin", "round");
+          ribbon.setAttribute("class", "editor-pit-tarmac");
+          this.editorDecorGroup.appendChild(ribbon);
+
+          const center = document.createElementNS(SVG_NS, "path");
+          center.setAttribute("d", this.pointsToSmoothPath(pitPath.points, false));
+          center.setAttribute("fill", "none");
+          center.setAttribute("stroke", "rgba(255, 230, 160, 0.75)");
+          center.setAttribute("stroke-width", "1.4");
+          center.setAttribute("stroke-dasharray", "5 7");
+          center.setAttribute("class", "editor-pit-centerline");
+          this.editorDecorGroup.appendChild(center);
+        }
+      }
+    }
+  }
+
   clearCars(): void {
     this.carsGroup.replaceChildren();
     this.carElements.clear();
@@ -1104,6 +1197,7 @@ export class SvgTrack {
     this.hazardsGroup.replaceChildren();
     this.flagsGroup.replaceChildren();
     this.pitGroup.replaceChildren();
+    this.editorDecorGroup.replaceChildren();
     this.runoffGroup.replaceChildren();
     this.surfaceAccentGroup.replaceChildren();
     this.trackGroup.replaceChildren();
@@ -1281,6 +1375,13 @@ export class SvgTrack {
       this.installBroadcastDefs();
     }
 
+    // Pit lane + width sampling read renderedGeometry — set before any draw calls.
+    this.renderedGeometry = geometry;
+    this.lapLengthM = geometry.lapLength > 0 ? geometry.lapLength : this.lapLengthM;
+    this.defaultHalfWidthM = (geometry.defaultWidthM ?? 12) / 2;
+    this.widthProfile = geometry.widthProfile;
+    this.surfaceDefaults = geometry.surfaceDefaults;
+
     const pathD = this.pointsToPath(svgPoints, true);
     if (!this.broadcast && !hasBakedTrackSurface(this.trackId)) {
       this.drawInfield(pathD);
@@ -1353,12 +1454,7 @@ export class SvgTrack {
     }
 
     this.setLayerVisibility(this.layerVisibility);
-    this.lapLengthM = geometry.lapLength > 0 ? geometry.lapLength : this.lapLengthM;
-    this.defaultHalfWidthM = (geometry.defaultWidthM ?? 12) / 2;
-    this.widthProfile = geometry.widthProfile;
-    this.surfaceDefaults = geometry.surfaceDefaults;
     this.cachePitLanePath(svgPoints, cumulativeT, totalLength);
-    this.renderedGeometry = geometry;
     this.renderedThemeId = this.theme.id;
   }
 
@@ -3011,7 +3107,10 @@ export class SvgTrack {
     const polyline = this.renderedGeometry?.pitLane?.polyline;
     if (!polyline || polyline.length < 2) return null;
 
-    const points = polyline.map((pt) => toSvg(pt.x, pt.z));
+    const points = polyline.map((pt) => {
+      const svg = this.worldToSvgCoords(pt.x, pt.z);
+      return svg ? { x: svg.x, y: svg.y } : { x: 0, y: 0 };
+    });
     const cumulative: number[] = [0];
     let total = 0;
     for (let i = 1; i < points.length; i++) {
@@ -4231,7 +4330,13 @@ export class SvgTrack {
     if (lateralM === 0) return 0;
     const refHalfM =
       this.defaultHalfWidthM > 0 ? this.defaultHalfWidthM : TRACK_ASPHALT_WIDTH / 2;
-    return (lateralM / refHalfM) * (TRACK_ASPHALT_WIDTH * 0.5);
+    const ratio = lateralM / refHalfM;
+    if (this.generousPan) {
+      // Track editor: exaggerate width deltas so node edits are obvious on screen.
+      const exaggerated = 1 + (ratio - 1) * 8;
+      return exaggerated * (TRACK_ASPHALT_WIDTH * 0.5);
+    }
+    return ratio * (TRACK_ASPHALT_WIDTH * 0.5);
   }
 
   private distanceMToSvgAlong(distanceM: number): number {
