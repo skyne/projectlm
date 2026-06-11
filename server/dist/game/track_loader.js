@@ -34,113 +34,31 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.loadTrackGeometryFromPath = loadTrackGeometryFromPath;
+exports.loadTrackJsonFromPath = loadTrackJsonFromPath;
 exports.loadTrackGeometryById = loadTrackGeometryById;
 exports.enrichTrackGeometryFromJson = enrichTrackGeometryFromJson;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const track_catalog_1 = require("./track_catalog");
-const perimeter_surfaces_1 = require("./perimeter_surfaces");
-function parsePitLane(pit) {
-    if (!pit)
-        return undefined;
-    const out = {};
-    if (pit.width_m != null)
-        out.widthM = pit.width_m;
-    if (pit.offset_m != null)
-        out.offsetM = pit.offset_m;
-    if (pit.merge_lateral_offset != null)
-        out.mergeLateralOffset = pit.merge_lateral_offset;
-    if (pit.merge_blend_m != null)
-        out.mergeBlendM = pit.merge_blend_m;
-    return Object.keys(out).length > 0 ? out : undefined;
-}
-function parseSurfaceProfile(profile) {
-    if (!profile?.length)
-        return undefined;
-    return profile.map((seg) => ({
-        startT: seg.start_t,
-        endT: seg.end_t,
-        side: seg.side,
-        surface: seg.surface,
-        widthM: seg.width_m,
-        ...(seg.width_start_m != null ? { widthStartM: seg.width_start_m } : {}),
-        ...(seg.width_end_m != null ? { widthEndM: seg.width_end_m } : {}),
-        ...(seg.inner_offset_m != null ? { innerOffsetM: seg.inner_offset_m } : {}),
-        ...(seg.envelope != null ? { envelope: seg.envelope } : {}),
-        ...(seg.variant != null ? { variant: seg.variant } : {}),
-        ...(seg.grip_multiplier != null ? { gripMultiplier: seg.grip_multiplier } : {}),
-        ...(seg.name != null ? { name: seg.name } : {}),
-    }));
-}
-function parseSurfaceDefaults(defaults) {
-    if (!defaults)
-        return undefined;
-    const out = {};
-    if (defaults.verge_width_m != null)
-        out.vergeWidthM = defaults.verge_width_m;
-    if (defaults.runoff_width_m != null)
-        out.runoffWidthM = defaults.runoff_width_m;
-    if (defaults.kerb_width_m != null)
-        out.kerbWidthM = defaults.kerb_width_m;
-    return Object.keys(out).length > 0 ? out : undefined;
-}
-function parseWidthProfile(profile) {
-    if (!profile?.length)
-        return undefined;
-    return profile.map((seg) => ({
-        startT: seg.start_t,
-        endT: seg.end_t,
-        widthM: seg.width_m,
-    }));
-}
-function buildGeometry(track, fallbackName) {
-    const polyline = track.display_polyline?.map((p) => ({ x: p.x, z: p.z })) ??
-        track.control_points?.map((p) => ({ x: p.x, z: p.z })) ??
-        [];
-    const lapLength = track.lap_length ?? 0;
-    const sectors = (track.sectors ?? []).map((sector) => {
-        const midT = (sector.start_t + sector.end_t) * 0.5;
-        const idx = Math.min(polyline.length - 1, Math.max(0, Math.round(midT * Math.max(polyline.length - 1, 0))));
-        const label = polyline[idx] ?? { x: 0, z: 0 };
-        return {
-            name: sector.name,
-            startT: sector.start_t,
-            endT: sector.end_t,
-            labelX: label.x,
-            labelZ: label.z,
-        };
-    });
-    const defaultWidthM = track.track_width_m;
-    const widthProfile = parseWidthProfile(track.width_profile);
-    const surfaceDefaults = parseSurfaceDefaults(track.surface_defaults);
-    const surfaceProfile = (0, perimeter_surfaces_1.synthesizePerimeterSurfaces)({
-        profile: parseSurfaceProfile(track.surface_profile) ?? [],
-        defaultWidthM: defaultWidthM ?? 12,
-        widthProfile,
-        surfaceDefaults,
-    });
-    const pitLane = parsePitLane(track.pit_lane);
-    return {
-        name: track.name || fallbackName,
-        lapLength,
-        closed: track.closed ?? true,
-        polyline,
-        sectors,
-        mapLabels: track.map_labels,
-        ...(defaultWidthM != null ? { defaultWidthM } : {}),
-        ...(widthProfile ? { widthProfile } : {}),
-        ...(surfaceProfile.length > 0 ? { surfaceProfile } : {}),
-        ...(surfaceDefaults ? { surfaceDefaults } : {}),
-        ...(pitLane ? { pitLane } : {}),
-    };
-}
+const track_geometry_build_1 = require("./track_geometry_build");
 function loadTrackGeometryFromPath(repoRoot, trackConfigPath, fallbackName = "Circuit") {
     const abs = path.join(repoRoot, trackConfigPath);
     if (!fs.existsSync(abs))
         return null;
     try {
         const track = JSON.parse(fs.readFileSync(abs, "utf8"));
-        return buildGeometry(track, fallbackName);
+        return (0, track_geometry_build_1.buildTrackGeometry)(track, fallbackName);
+    }
+    catch {
+        return null;
+    }
+}
+function loadTrackJsonFromPath(repoRoot, trackConfigPath) {
+    const abs = path.join(repoRoot, trackConfigPath);
+    if (!fs.existsSync(abs))
+        return null;
+    try {
+        return JSON.parse(fs.readFileSync(abs, "utf8"));
     }
     catch {
         return null;

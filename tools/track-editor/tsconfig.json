@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@viewer/*": ["../../viewer/src/*"],
+      "@server/*": ["../../server/src/*"]
+    }
+  },
+  "include": ["src/**/*"]
+}

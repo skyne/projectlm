@@ -255,7 +255,24 @@ function trySubmit(
   submitCommand: (entryId: string, command: string) => boolean,
   entryId: string,
   command: string,
+  debugCtx?: Pick<PitBotContext, "flagPhase">,
 ): boolean {
+  if (isRedFlagPhase(debugCtx?.flagPhase)) {
+    // #region agent log
+    fetch("http://127.0.0.1:7359/ingest/317d99f6-3f96-46df-b08d-299e1b20c234", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "067494" },
+      body: JSON.stringify({
+        sessionId: "067494",
+        hypothesisId: "C",
+        location: "pit_wall.ts:trySubmit",
+        message: "pitbot_command_during_red_flag",
+        data: { entryId, command, flagPhase: debugCtx?.flagPhase },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }
   return submitCommand(entryId, command);
 }
 
@@ -347,7 +364,7 @@ export function releaseFromGarage(
       continue;
     }
 
-    if (trySubmit(submitCommand, entryId, "release")) {
+    if (trySubmit(submitCommand, entryId, "release", ctx)) {
       st.released = true;
       return;
     }
@@ -435,7 +452,7 @@ export function tickPitBot(
       shouldServeDeferrablePenaltyNow(s, sincePit, st.fuelAtLastPit)
     ) {
       const cmd = penaltyServeCommand(s);
-      if (trySubmit(submitCommand, entryId, cmd)) {
+      if (trySubmit(submitCommand, entryId, cmd, ctx)) {
         actions.push({
           entryId,
           command: cmd,
@@ -476,11 +493,12 @@ export function tickPitBot(
     ) {
       if (!redFlag) {
         const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase, tactics);
-        if (hybrid) trySubmit(submitCommand, entryId, hybrid);
+        if (hybrid) trySubmit(submitCommand, entryId, hybrid, ctx);
         trySubmit(
           submitCommand,
           entryId,
           driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill),
+          ctx,
         );
       }
       continue;
@@ -491,7 +509,7 @@ export function tickPitBot(
         const rfPlan = planRedFlagEmergencyPit(s, { wet: ctx.wet });
         if (rfPlan?.pitNow) {
           const cmd = `pit|${rfPlan.parts.join("|")}`;
-          if (trySubmit(submitCommand, entryId, cmd)) {
+          if (trySubmit(submitCommand, entryId, cmd, ctx)) {
             actions.push({ entryId, command: cmd, label: rfPlan.label });
           }
         }
@@ -509,11 +527,12 @@ export function tickPitBot(
       })
     ) {
       const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase, tactics);
-      if (hybrid) trySubmit(submitCommand, entryId, hybrid);
+      if (hybrid) trySubmit(submitCommand, entryId, hybrid, ctx);
       trySubmit(
         submitCommand,
         entryId,
         driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill),
+        ctx,
       );
       continue;
     }
@@ -537,7 +556,7 @@ export function tickPitBot(
 
     if (plan?.pitNow) {
       const cmd = `pit|${plan.parts.join("|")}`;
-      if (trySubmit(submitCommand, entryId, cmd)) {
+      if (trySubmit(submitCommand, entryId, cmd, ctx)) {
         applyPitSuccess(s, st, ctx.wet, plan);
         const label =
           mustServePenalty(s) &&
@@ -550,11 +569,12 @@ export function tickPitBot(
     }
 
     const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase, tactics);
-    if (hybrid) trySubmit(submitCommand, entryId, hybrid);
+    if (hybrid) trySubmit(submitCommand, entryId, hybrid, ctx);
     trySubmit(
       submitCommand,
       entryId,
       driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill),
+      ctx,
     );
   }
 

@@ -1,4 +1,5 @@
 #include "sim_bridge.hpp"
+#include "sim_checkpoint.hpp"
 #include "race_control.hpp"
 #include "car_condition_io.hpp"
 #include "class_rules.hpp"
@@ -390,6 +391,7 @@ RaceControlState SimBridge::getRaceControl() const {
       rc.redFlagActive
           ? std::max(0.0, rc.redFlagUntil - session_.elapsedRaceTime)
           : 0.0;
+  state.redFlagReason = rc.redFlagReason;
   state.surfaceHazards.reserve(rc.hazards.size());
   for (const TrackSurfaceHazard &hz : rc.hazards) {
     state.surfaceHazards.push_back({hz.sectorIndex, HazardKindName(hz.kind),

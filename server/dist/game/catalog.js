@@ -42,6 +42,7 @@ exports.defaultWheelPackageForClass = defaultWheelPackageForClass;
 exports.defaultSuspensionForClass = defaultSuspensionForClass;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const glossary_1 = require("./glossary");
 const driver_catalog_1 = require("./driver_catalog");
 const driver_market_1 = require("./driver_market");
 const car_marketplace_1 = require("./car_marketplace");
@@ -281,12 +282,24 @@ function loadGameCatalog(repoRoot) {
         ruleChangeProposals: regulations_1.RULE_CHANGE_PROPOSALS,
         carPlatforms: (0, car_marketplace_1.loadCarPlatforms)(repoRoot),
         fleetRules: (0, fleet_1.fleetRulesPayload)(),
+        driverRosterRules: {
+            maxDriversPerCar: driver_market_1.MAX_DRIVERS_PER_CAR,
+            reserveSlotsPerCar: driver_market_1.RESERVE_DRIVER_SLOTS_PER_CAR,
+            minRosterCap: driver_market_1.MIN_DRIVER_ROSTER_CAP,
+        },
         driverStatDefs: driver_catalog_1.DRIVER_STAT_DEFS,
-        driverPointPool: driver_catalog_1.DRIVER_POINT_POOL,
+        driverPointPool: (0, driver_catalog_1.computeBronzeDriverPointPool)(repoRoot),
+        customDriverTemplate: (0, driver_catalog_1.computeBronzeDriverTemplate)(repoRoot),
+        wecCatalogDriverIds: (0, driver_catalog_1.listWecCatalogDriverIds)(repoRoot),
+        wecDriverGenders: Object.fromEntries([...(0, driver_catalog_1.buildWecCatalogDriverIndex)(repoRoot).entries()].map(([id, d]) => [
+            id,
+            d.gender === "female" ? "female" : "male",
+        ])),
         lemansDriverCount,
         driverMarketPreview: (0, driver_market_1.buildDriverMarketPreview)(repoRoot),
         defaultEngines,
         assemblyRules: (0, part_compatibility_1.loadAssemblyRules)(repoRoot),
+        glossary: glossary_1.GLOSSARY,
     };
 }
 function defaultBuildForClass(repoRoot, classId) {

@@ -39,6 +39,7 @@ struct DriverSnapshot {
   double overtaking = 0.0;
   double defending = 0.0;
   double setupFeedback = 0.0;
+  double adaptability = 0.0;
   double stamina = 0.0;
   double composure = 0.0;
   bool active = false;
@@ -254,8 +255,8 @@ public:
                      double remainingSessionSec = 86400.0 * 7.0,
                      bool pauseDriverStint = false);
 
-  bool processPitEntry(double normalizedT, bool lapJustCompleted,
-                       bool redFlagActive = false);
+  bool processPitEntry(const TrackDefinition &track, double normalizedT,
+                       bool lapJustCompleted, bool redFlagActive = false);
   bool processPitLaneTick(const TrackDefinition &track, double deltaTime,
                           const StaffModifiers &staff,
                           double remainingSessionSec = 86400.0 * 7.0,
@@ -277,6 +278,7 @@ public:
 
   bool isAheadOf(const Car &other) const;
   void markRetired(const std::string &reason);
+  void restoreFromSnapshot(const CarSnapshot &snapshot);
 
 private:
   void tryIgniteFire(double chance, double raceTime);

@@ -341,7 +341,7 @@ function hiddenFaultSummary(snap: CarSnapshot): string[] {
 
 function collectConditionParts(snap: CarSnapshot): ConditionPart[] {
   const garage = new Set(snap.partIrreparable ?? []);
-  const rows: DamageTelemetryPart[] = [
+  const rows: ConditionPart[] = [
     {
       token: "engine",
       label: "Engine",

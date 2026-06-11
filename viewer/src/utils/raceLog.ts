@@ -324,16 +324,32 @@ function compactWeatherDetail(message: string): string {
   return message.replace(/^Weather:\s*/i, "").trim();
 }
 
-function compactControlHint(event: SimEvent): string {
+function formatRaceControlDetail(event: SimEvent, maxLen = 96): string {
   const msg = (event.message ?? "").replace(/\s+undefined/g, "").trim();
   if (!msg) return "";
+  const detail = msg.replace(/^Race control:\s*/i, "").trim();
+  if (detail.length <= maxLen) return detail;
+  return `${detail.slice(0, maxLen - 1)}…`;
+}
+
+function compactControlHint(event: SimEvent): string {
   const type = normalizeSimEventType(event.type);
+  if (
+    type === "RedFlagDeploy" ||
+    type === "RedFlagExtended" ||
+    type === "RedFlagEnd"
+  ) {
+    return formatRaceControlDetail(event, 88);
+  }
+  const msg = (event.message ?? "").replace(/\s+undefined/g, "").trim();
+  if (!msg) return "";
   const upper = msg.toUpperCase();
   if (upper === eventTypeShortLabel(type) || upper === eventTypeLabel(type)) return "";
   if (type === "SlowZone" && /sector|turn|t\d/i.test(msg)) {
     return msg.replace(/slow\s*zone\s*[-–:]?\s*/i, "").trim();
   }
-  return msg.length > 48 ? `${msg.slice(0, 45)}…` : msg;
+  const detail = formatRaceControlDetail(event, 48);
+  return detail;
 }
 
 function truncateDetail(text: string, max = 42): string {
@@ -591,6 +607,13 @@ export function formatRaceLogHtml(
   if (type === "RacingIncident") {
     const detail = (event.message ?? "").replace(/^Racing incident — no penalty:\s*/i, "");
     return `<span class="race-log-cat ${catClass}">${label}</span> ${escapeHtml(detail || event.message || "")}`;
+  }
+
+  if (type === "RedFlagDeploy" || type === "RedFlagExtended" || type === "RedFlagEnd") {
+    const detail = formatRaceControlDetail(event, 120);
+    return detail
+      ? `<span class="race-log-cat ${catClass}">${label}</span> <span class="race-log-reason">${escapeHtml(detail)}</span>`
+      : `<span class="race-log-cat ${catClass}">${label}</span>`;
   }
 
   let msg = (event.message ?? "").replace(/\s+undefined/g, "");

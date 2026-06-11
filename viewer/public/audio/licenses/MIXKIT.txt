@@ -1,7 +1,17 @@
 Music and sound effects from Mixkit (https://mixkit.co/)
 Licensed under the Mixkit Free License — free for commercial and non-commercial use.
 Attribution appreciated but not required.
-Tracks: Silent Descent (614), Epical Drums 01 (676), Games Worldbeat (466)
+
+Menu music: Silent Descent (614), Valley Sunset (127), Spirit in the Woods (139),
+           Zanarkand (251), Relax Beat (292), Relaxation 05 (749),
+           Forest Treasure (138), Smooth Meditation (324)
+Race music: Epical Drums 01 (676), Sports Highlights (51), Games Music (706),
+            Daredevil (80), Techno Fest Vibes (124), Trap Electro Vibes (126),
+            A Game (777), Rought and Ready (50)
+Briefing music: Games Worldbeat (466), Epic Games (76), PlaceIt World 01 (724),
+                Sci-Fi Score (464), Fright Night (871), Echoes (188),
+                Fallen (Asper) (565), Nield Grohm Hanging 1 (538)
+
 SFX: Huge crowd cheering victory (462), Crowd at the stadium (2111),
      Police short whistle (615)
 Pass-by: Fast car drive by (1538), Speeding swoosh (1484),

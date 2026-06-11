@@ -136,6 +136,28 @@ export class SessionLogWriter {
   getActiveEvents(): SimEvent[] {
     return [...this.events];
   }
+
+  exportActiveState(): { activeId: string | null; events: SimEvent[] } {
+    return {
+      activeId: this.activeId,
+      events: [...this.events],
+    };
+  }
+
+  importActiveState(data: {
+    activeId: string | null;
+    events: SimEvent[];
+    meta?: Omit<
+      SessionLogIndexEntry,
+      "id" | "savedAt" | "eventCount" | "incidentCount" | "raceTimeSec"
+    >;
+  }): void {
+    this.activeId = data.activeId;
+    this.events = [...data.events];
+    if (data.meta) {
+      this.meta = { ...data.meta };
+    }
+  }
 }
 
 export function listSessionLogs(repoRoot: string): SessionLogIndexEntry[] {

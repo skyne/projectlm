@@ -48,7 +48,8 @@ void ApplyPitServices(PitStopPlan &plan, CarConfig &car,
 
 bool ShouldEnterPitLane(const PitStopState &pit, double normalizedT,
                         bool lapJustCompleted, int currentLap,
-                        bool redFlagActive = false);
+                        double entryT, bool redFlagActive = false,
+                        double entryWindow = 0.015);
 
 bool PitPlanHasActiveService(const PitStopPlan &plan);
 

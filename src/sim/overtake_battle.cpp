@@ -11,6 +11,10 @@
 namespace {
 
 constexpr double kDecisionIntervalSec = 0.22;
+/** Abort committed attacks when cars are within this gap (car-lengths). */
+constexpr double kOverlapAbortGapMul = 0.48;
+/** Cap pass-line urgency when closer than this (car-lengths). */
+constexpr double kTightGapUrgencyMul = 0.58;
 constexpr double kPassMarginM = 1.15;
 constexpr double kBrakingKappaThreshold = 0.0065;
 constexpr double kMinTrafficSpeedMs = 22.0;
@@ -120,6 +124,40 @@ bool ShouldCommitAttack(const Car &/*attacker*/, double overtakeSkill,
 
 bool IsAlongside(double gap, double combinedLength) {
   return gap < combinedLength * 0.55;
+}
+
+bool ShouldAbortForImminentOverlap(double gap, double combinedLength,
+                                   double relativeSpeed) {
+  if (gap <= 0.0 || gap > combinedLength * kOverlapAbortGapMul)
+    return false;
+  if (gap < combinedLength * 0.36)
+    return true;
+  return relativeSpeed > 2.5;
+}
+
+void AbortBattleForOverlap(OvertakeBattle &battle, TrafficModifiers &attMod,
+                           const Car &defender, double gap,
+                           double combinedLength) {
+  battle.phase = BattlePhase::Abort;
+  attMod.overtaking = false;
+  attMod.alongside = false;
+  attMod.pathIntent = TrafficPathIntent::RacingLine;
+  attMod.pathUrgency = 0.0;
+  const double gapNorm =
+      std::clamp(gap / std::max(combinedLength * kOverlapAbortGapMul, 1.0), 0.0,
+                 1.0);
+  attMod.throttleLift =
+      std::max(attMod.throttleLift, 0.04 + (1.0 - gapNorm) * 0.05);
+  attMod.speedCapMs = std::max(
+      attMod.speedCapMs,
+      std::max(kMinTrafficSpeedMs, defender.state().currentSpeed * 0.97));
+  attMod.blockingEntryId = defender.entryId();
+}
+
+double AttackUrgencyForGap(double gap, double combinedLength) {
+  if (gap >= combinedLength * kTightGapUrgencyMul)
+    return 1.0;
+  return 0.35 + 0.65 * (gap / std::max(combinedLength * kTightGapUrgencyMul, 1.0));
 }
 
 void PruneBattles(std::vector<OvertakeBattle> &battles,
@@ -554,6 +592,11 @@ void UpdateOvertakeBattles(const std::vector<Car> &cars, double lapLength,
         break;
 
       case BattlePhase::Committed: {
+        if (ShouldAbortForImminentOverlap(gap, combinedLength, relativeSpeed)) {
+          AbortBattleForOverlap(*battle, modifiers[i], defender, gap,
+                                combinedLength);
+          break;
+        }
         if (battle->attackerSide == PassSide::None)
           battle->attackerSide =
               PickAttackerSide(attacker, corridor, s, overtakeSkill);
@@ -631,8 +674,10 @@ void UpdateOvertakeBattles(const std::vector<Car> &cars, double lapLength,
         break;
 
       case BattlePhase::Alongside:
-        if (gap > combinedLength * 0.9 &&
-            relativeSpeed < 2.0) {
+        if (ShouldAbortForImminentOverlap(gap, combinedLength, relativeSpeed)) {
+          AbortBattleForOverlap(*battle, modifiers[i], defender, gap,
+                                combinedLength);
+        } else if (gap > combinedLength * 0.9 && relativeSpeed < 2.0) {
           battle->phase = BattlePhase::Abort;
         }
         break;
@@ -647,7 +692,7 @@ void UpdateOvertakeBattles(const std::vector<Car> &cars, double lapLength,
 
   PruneBattles(battles, cars, lapLength, raceTime);
 
-  for (const OvertakeBattle &battle : battles) {
+  for (OvertakeBattle &battle : battles) {
     if (battle.phase == BattlePhase::None ||
         battle.phase == BattlePhase::Approach ||
         battle.phase == BattlePhase::Abort)
@@ -686,11 +731,17 @@ void UpdateOvertakeBattles(const std::vector<Car> &cars, double lapLength,
                               relativeSpeed, legitimacy, battle.attackerSide,
                               battle.alongside, battle.inBrakingZone, attMod);
       } else {
-        attMod.overtaking = true;
-        MergePathIntent(attMod, AttackIntent(battle.attackerSide), 1.0);
-        attMod.draftThrottleBoost =
-            std::max(attMod.draftThrottleBoost,
-                     0.012 + cars[ai].driver().overtakingFactor() * 0.012);
+        if (ShouldAbortForImminentOverlap(gap, combinedLength, relativeSpeed)) {
+          AbortBattleForOverlap(battle, attMod, defender, gap, combinedLength);
+        } else {
+          attMod.overtaking = true;
+          const double urgency =
+              AttackUrgencyForGap(gap, combinedLength);
+          MergePathIntent(attMod, AttackIntent(battle.attackerSide), urgency);
+          attMod.draftThrottleBoost =
+              std::max(attMod.draftThrottleBoost,
+                       0.012 + cars[ai].driver().overtakingFactor() * 0.012);
+        }
       }
     }
 

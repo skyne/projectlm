@@ -259,9 +259,25 @@ export class NegotiationPanel {
     }
   }
 
+  activeSession(): NegotiationSessionPayload | null {
+    return this.session;
+  }
+
+  setErrorMessage(message: string): void {
+    const noteEl = this.root.querySelector(".negotiation-note")!;
+    noteEl.textContent = message;
+    noteEl.classList.add("negotiation-error");
+  }
+
+  clearErrorMessage(): void {
+    const noteEl = this.root.querySelector(".negotiation-note")!;
+    noteEl.classList.remove("negotiation-error");
+  }
+
   show(session: NegotiationSessionPayload, context: NegotiationPanelContext = {}): void {
     this.session = session;
     this.context = context;
+    this.clearErrorMessage();
     this.root.classList.remove("hidden");
 
     const anchor = session.lastCounterOffer ?? session.anchorTerms;
@@ -486,7 +502,9 @@ export class NegotiationPanel {
 
     const lastNote = s.history[s.history.length - 1]?.note;
     const noteEl = this.root.querySelector(".negotiation-note")!;
-    if (s.status === "pending_response") {
+    if (noteEl.classList.contains("negotiation-error")) {
+      // Keep inline validation errors until the next show() or clearErrorMessage().
+    } else if (s.status === "pending_response") {
       noteEl.textContent = "Proposal submitted — awaiting response…";
     } else if (s.kind === "inter_team_agreement") {
       const teams = counterpartyTeams(s);

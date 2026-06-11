@@ -5,6 +5,7 @@ import type {
   CalendarEventPayload,
   CarBuildPayload,
   CreateTeamPayload,
+  FleetCarPayload,
   MetaStatePayload,
   SeasonStartSnapshotPayload,
   CarSessionBriefing,
@@ -47,9 +48,37 @@ import {
   type WeekendSessionType,
 } from "./game/weekend_sessions";
 import {
+  applyOffWeekTraining,
   applyPrivateTestProgression,
+  applyWeekendProgression,
+  collectWeekendParticipants,
+  OFF_WEEK_TRAINING_COST,
+  MAX_OFF_WEEK_TRAINING_SLOTS,
   type ProgressionSummary,
 } from "./game/progression";
+import {
+  defaultFacilities,
+  FACILITY_DEFS,
+  type FacilityId,
+  type FacilityState,
+} from "./game/facilities";
+import {
+  type PartInstance,
+} from "./game/part_instances";
+import { mergePartInstancesFromFleet } from "./game/part_instance_seed";
+import {
+  applyPartProject,
+  PART_PROJECT_BUDGET_COST,
+  PART_PROJECT_RD_COST,
+  validatePartProject,
+  type PartProjectFocus,
+} from "./game/part_projects";
+import type {
+  OffWeekTrainingPayload,
+  PartInstancePayload,
+  StartPartProjectPayload,
+  UpgradeFacilityPayload,
+} from "./ws_protocol";
 import {
   buildPrivateTestProgress,
   collectPrivateTestParticipants,
@@ -66,16 +95,24 @@ import {
   defaultDriverAssignments,
   ensureDriverIds,
   sanitizeAssignedDriverIds,
+  buildWecCatalogDriverIndex,
+  computeBronzeDriverPointPool,
+  listWecCatalogDriverIds,
+  normalizePlayerRosterDriver,
   validateCustomDriver,
   validateDriverStats,
   validateExclusiveDriverAssignments,
+  validateMaxDriversPerCar,
   type DriverProfilePayload,
 } from "./game/driver_catalog";
 import {
   buildDriverMarket,
   DRIVER_MARKET_REFRESH_COST,
+  driverRosterCapMessage,
   findMarketListing,
   marketSeedForRound,
+  MAX_DRIVERS_PER_CAR,
+  maxDriverRosterForFleet,
 } from "./game/driver_market";
 import {
   applyPlayerTeamRoundResult,
@@ -115,6 +152,8 @@ import {
   findVacantCarsForRole,
   isStaffSlotFilled,
   migrateStaffToPerCar,
+  moveStaffBetweenCars,
+  releaseStaffSlot,
   staffForCar,
   type StaffMember,
 } from "./game/staff";
@@ -510,6 +549,13 @@ export class MetaStateManager {
     syncLegacyFields(this.state);
     if (this.ensureSeasonFinalized()) {
       this.store.save(this.state);
+    }
+    if (this.state.setupComplete && (this.state.fleet?.length ?? 0) > 0) {
+      const before = (this.state.partInstances ?? []).length;
+      this.syncPartInstancesFromFleet();
+      if ((this.state.partInstances ?? []).length > before) {
+        this.store.save(this.state);
+      }
     }
   }
 
@@ -1009,6 +1055,70 @@ export class MetaStateManager {
     return staffForCar((this.state.staff ?? []) as StaffMember[], carId);
   }
 
+  fireStaff(
+    carId: string,
+    role: string,
+  ): MetaStatePayload | { error: string } {
+    if (!this.state.setupComplete) {
+      return { error: "Found your team before managing crew" };
+    }
+
+    const fleetIds = (this.state.fleet ?? []).map((c) => c.id);
+    if (!fleetIds.includes(carId)) {
+      return { error: "Unknown car" };
+    }
+
+    const staffRole = role as StaffRole;
+    const staff = (this.state.staff ?? []) as StaffMember[];
+    const member = staff.find(
+      (s) => s.role === staffRole && s.assignedCarId === carId,
+    );
+    if (!isStaffSlotFilled(member)) {
+      return { error: "That slot is already vacant" };
+    }
+
+    const severance = staffSeveranceCost(member!);
+    if (this.state.budget < severance) {
+      return {
+        error: `Insufficient budget (need $${severance.toLocaleString()} severance)`,
+      };
+    }
+
+    const result = releaseStaffSlot(staff, carId, staffRole);
+    if ("error" in result) return result;
+
+    this.state.budget -= severance;
+    this.state.staff = result;
+    return this.persist();
+  }
+
+  reassignStaff(
+    fromCarId: string,
+    toCarId: string,
+    role: string,
+  ): MetaStatePayload | { error: string } {
+    if (!this.state.setupComplete) {
+      return { error: "Found your team before managing crew" };
+    }
+
+    const fleetIds = (this.state.fleet ?? []).map((c) => c.id);
+    if (!fleetIds.includes(fromCarId) || !fleetIds.includes(toCarId)) {
+      return { error: "Unknown car" };
+    }
+
+    const staffRole = role as StaffRole;
+    const result = moveStaffBetweenCars(
+      (this.state.staff ?? []) as StaffMember[],
+      fromCarId,
+      toCarId,
+      staffRole,
+    );
+    if ("error" in result) return result;
+
+    this.state.staff = result;
+    return this.persist();
+  }
+
   investRd(partId: string, points: number): MetaStatePayload {
     const cost = points * 10000;
     if (this.state.rdPoints < points || this.state.budget < cost) {
@@ -1020,6 +1130,126 @@ export class MetaStateManager {
       this.state.unlockedParts.push(partId);
     }
     return this.persist();
+  }
+
+  private ensureFacilities(): FacilityState[] {
+    if (!this.state.facilities?.length) {
+      this.state.facilities = defaultFacilities();
+    }
+    return this.state.facilities as FacilityState[];
+  }
+
+  private fleetAssignments(): Record<string, string[]> {
+    const out: Record<string, string[]> = {};
+    for (const car of this.state.fleet ?? []) {
+      out[car.id] = car.assignedDriverIds ?? [];
+    }
+    return out;
+  }
+
+  private syncPartInstancesFromFleet(fleet?: FleetCarPayload[]): void {
+    const cars = fleet ?? this.state.fleet ?? [];
+    if (!cars.length) return;
+    this.state.partInstances = mergePartInstancesFromFleet(
+      (this.state.partInstances ?? []) as PartInstance[],
+      cars,
+    ) as PartInstancePayload[];
+  }
+
+  applySessionProgression(
+    sessionType: WeekendSessionType,
+    options: { lapsCompleted?: number; classified?: boolean } = {},
+  ): { meta: MetaStatePayload; summary: ProgressionSummary } {
+    const fleetIds = (this.state.fleet ?? []).map((c) => c.id);
+    const { driverIds, staffIds } = collectWeekendParticipants(
+      fleetIds,
+      this.state.driverRoster ?? [],
+      (this.state.staff ?? []) as StaffMember[],
+      this.fleetAssignments(),
+    );
+    const progression = applyWeekendProgression(
+      this.state.driverRoster ?? [],
+      (this.state.staff ?? []) as StaffMember[],
+      driverIds,
+      staffIds,
+      sessionType,
+      options,
+    );
+    this.state.driverRoster = progression.drivers;
+    this.state.staff = progression.staff;
+    return { meta: this.persist(), summary: progression.summary };
+  }
+
+  runOffWeekTraining(
+    payload: OffWeekTrainingPayload,
+  ): { meta: MetaStatePayload; summary?: ProgressionSummary; error?: string } {
+    const used = this.state.offWeekTrainingUsed ?? 0;
+    if (used >= MAX_OFF_WEEK_TRAINING_SLOTS) {
+      return { meta: this.getState(), error: "No off-week training slots left" };
+    }
+    if (this.state.budget < OFF_WEEK_TRAINING_COST) {
+      return { meta: this.getState(), error: "Insufficient budget" };
+    }
+    const facilities = this.ensureFacilities();
+    const result = applyOffWeekTraining(
+      this.state.driverRoster ?? [],
+      (this.state.staff ?? []) as StaffMember[],
+      payload.action,
+      { driverId: payload.driverId, staffId: payload.staffId },
+      facilities,
+    );
+    if (result.error) return { meta: this.getState(), error: result.error };
+    this.state.driverRoster = result.drivers;
+    this.state.staff = result.staff;
+    this.state.budget -= OFF_WEEK_TRAINING_COST;
+    this.state.offWeekTrainingUsed = used + 1;
+    return { meta: this.persist(), summary: result.summary };
+  }
+
+  startPartProject(
+    payload: StartPartProjectPayload,
+  ): { meta: MetaStatePayload; error?: string } {
+    const instances = (this.state.partInstances ?? []) as PartInstance[];
+    const part = instances.find((p) => p.id === payload.partInstanceId);
+    const facilities = this.ensureFacilities();
+    const engineer = (this.state.staff ?? []).find((s) => s.role === "engineer");
+    const err = validatePartProject(
+      part,
+      facilities,
+      this.state.rdPoints,
+      this.state.budget,
+      payload.focus as PartProjectFocus,
+    );
+    if (err) return { meta: this.getState(), error: err };
+    const idx = instances.findIndex((p) => p.id === payload.partInstanceId);
+    instances[idx] = applyPartProject(
+      part!,
+      payload.focus as PartProjectFocus,
+      engineer?.skill ?? 75,
+    );
+    this.state.partInstances = instances as PartInstancePayload[];
+    this.state.rdPoints -= PART_PROJECT_RD_COST;
+    this.state.budget -= PART_PROJECT_BUDGET_COST;
+    return { meta: this.persist() };
+  }
+
+  upgradeFacility(
+    payload: UpgradeFacilityPayload,
+  ): { meta: MetaStatePayload; error?: string } {
+    const id = payload.facilityId as FacilityId;
+    const def = FACILITY_DEFS[id];
+    if (!def) return { meta: this.getState(), error: "Unknown facility" };
+    const facilities = this.ensureFacilities();
+    const row = facilities.find((f) => f.id === id);
+    if (!row) return { meta: this.getState(), error: "Facility not found" };
+    if (row.tier >= 1) return { meta: this.getState(), error: "Already built" };
+    if (this.state.budget < def.buildCost) {
+      return { meta: this.getState(), error: "Insufficient budget" };
+    }
+    row.tier = 1;
+    this.state.facilities = facilities;
+    this.state.budget -= def.buildCost;
+    return { meta: this.persist() };
   }
 
   clearLastCompletedRound(): void {
@@ -1378,6 +1608,7 @@ export class MetaStateManager {
     this.state.budget += finances.netEarnings;
     this.state.rdPoints += finances.rdPointsEarned;
     this.state.weekendProgress = undefined;
+    this.state.offWeekTrainingUsed = 0;
 
     const nextRound = nextCalendarRound(
       this.state.calendar,
@@ -1482,8 +1713,10 @@ export class MetaStateManager {
     if (!payload.driverRoster || payload.driverRoster.length < 1) {
       return { error: "Add at least one driver to your line-up" };
     }
+    const driverPool = computeBronzeDriverPointPool(this.repoRoot);
+    const catalogIds = new Set(listWecCatalogDriverIds(this.repoRoot));
     for (const driver of payload.driverRoster) {
-      const err = validateCustomDriver(driver);
+      const err = validateCustomDriver(driver, driverPool, catalogIds);
       if (err) {
         const label = driver.name.trim() || "A driver";
         return { error: `${label}: ${err}` };
@@ -1592,6 +1825,7 @@ export class MetaStateManager {
     this.regenerateDriverMarket();
     this.regenerateStaffMarket();
     this.captureSeasonStartSnapshot();
+    this.syncPartInstancesFromFleet(firstCars);
     return this.persist();
   }
 
@@ -1616,8 +1850,10 @@ export class MetaStateManager {
     if (draft.logoDataUrl && !isValidLogoDataUrl(draft.logoDataUrl)) {
       return { error: "Team logo is invalid or too large" };
     }
+    const driverPool = computeBronzeDriverPointPool(this.repoRoot);
+    const catalogIds = new Set(listWecCatalogDriverIds(this.repoRoot));
     for (const driver of draft.driverRoster ?? []) {
-      const err = validateCustomDriver(driver);
+      const err = validateCustomDriver(driver, driverPool, catalogIds);
       if (err) return { error: err };
     }
 
@@ -1694,6 +1930,7 @@ export class MetaStateManager {
       (this.state.fleet ?? []).map((c) => c.id),
     );
     this.state.staff = migratedStaff.staff;
+    this.syncPartInstancesFromFleet(cars);
     return this.persist();
   }
 
@@ -1776,6 +2013,7 @@ export class MetaStateManager {
     }
 
     writePlayerCarConfig(this.repoRoot, this.state);
+    this.syncPartInstancesFromFleet(this.state.fleet);
     return this.persist();
   }
 
@@ -1816,11 +2054,28 @@ export class MetaStateManager {
     if (roster.length < 1) {
       return { error: "Roster must have at least one driver" };
     }
-    for (const d of roster) {
-      const err = validateCustomDriver(d);
-      if (err) return { error: err };
+    const fleetCount = this.state.fleet?.length ?? 1;
+    const rosterCap = maxDriverRosterForFleet(fleetCount);
+    if (roster.length > rosterCap) {
+      return {
+        error: `Roster cannot exceed ${driverRosterCapMessage(fleetCount, rosterCap)}`,
+      };
     }
-    this.state.driverRoster = ensureDriverIds(roster.map((d) => ({ ...d })));
+    const driverPool = computeBronzeDriverPointPool(this.repoRoot);
+    const catalogIds = new Set(listWecCatalogDriverIds(this.repoRoot));
+    const catalogIndex = buildWecCatalogDriverIndex(this.repoRoot);
+    const normalized: DriverProfilePayload[] = [];
+    for (const d of roster) {
+      const result = normalizePlayerRosterDriver(
+        d,
+        catalogIndex,
+        catalogIds,
+        driverPool,
+      );
+      if ("error" in result) return { error: result.error };
+      normalized.push(result);
+    }
+    this.state.driverRoster = ensureDriverIds(normalized);
 
     if (assignments && this.state.fleet?.length) {
       for (const car of this.state.fleet) {
@@ -1841,6 +2096,12 @@ export class MetaStateManager {
         this.state.driverRoster,
       );
       if (exclusiveErr) return { error: exclusiveErr };
+      const perCarErr = validateMaxDriversPerCar(
+        this.state.fleet,
+        this.state.driverRoster,
+        MAX_DRIVERS_PER_CAR,
+      );
+      if (perCarErr) return { error: perCarErr };
     } else if (this.state.fleet?.length) {
       for (const car of this.state.fleet) {
         car.assignedDriverIds = sanitizeAssignedDriverIds(
@@ -1861,6 +2122,12 @@ export class MetaStateManager {
           car.assignedDriverIds = defaults[car.id] ?? car.assignedDriverIds ?? [];
         }
       }
+      const perCarErr = validateMaxDriversPerCar(
+        this.state.fleet,
+        this.state.driverRoster,
+        MAX_DRIVERS_PER_CAR,
+      );
+      if (perCarErr) return { error: perCarErr };
     }
 
     this.regenerateDriverMarket();
@@ -2036,6 +2303,7 @@ export class MetaStateManager {
       driverMarket: this.state.driverMarket ?? [],
       rosterOverrides: this.state.aiRivalSeason?.rosterOverrides,
       employmentContracts: this.state.employmentContracts ?? [],
+      fleetCarCount: this.state.fleet?.length ?? 1,
     });
     if ("error" in applied) return applied;
 
@@ -2161,10 +2429,10 @@ export class MetaStateManager {
         prestigeScore: this.playerPrestigeScore(),
         offer,
       });
-      this.replaceNegotiation(evaluated.session);
       if (evaluated.accepted) {
         return this.finalizeSponsorNegotiation(evaluated.session, offer.id);
       }
+      this.replaceNegotiation(evaluated.session);
       return this.persist();
     }
 
@@ -2209,11 +2477,11 @@ export class MetaStateManager {
 
     const ctx = this.driverNegotiationContext(listing);
     const evaluated = evaluateDriverOffer(session, payload, ctx);
-    this.replaceNegotiation(evaluated.session);
 
     if (evaluated.accepted) {
       return this.finalizeDriverNegotiation(evaluated.session, listing);
     }
+    this.replaceNegotiation(evaluated.session);
     return this.persist();
   }
 
@@ -2238,7 +2506,6 @@ export class MetaStateManager {
           offer,
         },
       );
-      this.replaceNegotiation(evaluated.session);
       if (!evaluated.accepted) {
         return { error: "Could not finalize at counter-offer terms" };
       }
@@ -2256,9 +2523,8 @@ export class MetaStateManager {
 
     const ctx = this.driverNegotiationContext(listing);
     const evaluated = acceptCounterOffer(session, ctx);
-    this.replaceNegotiation(evaluated.session);
     if (!evaluated.accepted) {
-      return { error: "Could not finalize at counter-offer terms" };
+      return { error: evaluated.note || "Could not finalize at counter-offer terms" };
     }
     return this.finalizeDriverNegotiation(evaluated.session, listing);
   }

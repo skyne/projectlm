@@ -73,12 +73,12 @@ TEST_CASE("sectorIndexAtDistance wraps sectors", "[unit][track]") {
   REQUIRE(sMid < track.sectors.size());
 }
 
-TEST_CASE("BuildDefaultPitLane creates drivable pit lane", "[unit][track]") {
+TEST_CASE("Authored pit lane polyline loads drivable pit lane", "[unit][track]") {
   TrackDefinition track;
   REQUIRE(LoadTrack(TrackPath("lemans_la_sarthe.json"), track));
   REQUIRE(track.pitLane.valid());
-  REQUIRE(track.pitLane.totalLength() ==
-          Catch::Approx(track.lapLength() * 0.06).margin(5.0));
+  REQUIRE(track.corridor.pitLane.polyline.size() >= 2);
+  REQUIRE(track.pitLane.totalLength() > 100.0);
   REQUIRE(track.pitLane.boxDistance > 0.0);
   REQUIRE(track.pitLane.boxDistance < track.pitLane.totalLength());
   REQUIRE(track.pitLane.speedLimitMs == Catch::Approx(60.0 / 3.6).margin(0.01));

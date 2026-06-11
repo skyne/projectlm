@@ -1,0 +1,498 @@
+@import url("../../../viewer/src/game-theme.css");
+
+:root {
+  color-scheme: dark;
+  --te-bg: #0c0f14;
+  --te-panel: #151a22;
+  --te-border: rgba(212, 168, 67, 0.22);
+  --te-text: #e8ecf2;
+  --te-muted: #8b95a8;
+  --te-accent: #d4a843;
+  --te-danger: #e74c3c;
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--te-bg);
+  color: var(--te-text);
+}
+
+.te-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.te-toolbar {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--te-border);
+  background: var(--te-panel);
+}
+
+.te-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.te-toolbar-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--te-muted);
+}
+
+.te-main {
+  position: relative;
+  z-index: 0;
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.te-canvas-wrap {
+  position: relative;
+  z-index: 0;
+  min-height: 60vh;
+  overflow: hidden;
+  background: #06080c;
+  isolation: isolate;
+}
+
+.te-canvas-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 60vh;
+}
+
+/* Override viewer game-theme rules if .track-map-canvas-host leaks in */
+.te-app .track-map-canvas-host {
+  position: relative !important;
+  inset: auto !important;
+  z-index: 0 !important;
+}
+
+.te-canvas-host .track-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.te-canvas-host .track-svg .te-handles {
+  pointer-events: none;
+}
+
+.te-canvas-host .track-svg .te-reference-edit {
+  pointer-events: all;
+}
+
+.te-canvas-host .track-svg .te-pit-path {
+  pointer-events: none;
+}
+
+.te-canvas-host .track-svg .te-handle {
+  stroke: var(--te-accent);
+  stroke-width: 1.2;
+  cursor: grab;
+  pointer-events: all;
+}
+
+/* Default handle fill — typed authoring / pit role handles set fill via inline style */
+.te-canvas-host .track-svg .te-handle:not(.te-handle--node):not([class*="te-handle--pit-"]) {
+  fill: rgba(255, 255, 255, 0.55);
+}
+
+.te-canvas-host .track-svg .te-handles--dragging .te-handle {
+  cursor: grabbing;
+}
+
+.te-canvas-host .track-svg.track-svg-space-pan {
+  cursor: grab;
+}
+
+.te-canvas-host .track-svg.track-svg-space-pan.track-svg-dragging {
+  cursor: grabbing;
+}
+
+.te-canvas-host .track-svg .te-handle--segment {
+  fill: rgba(255, 255, 255, 0.5);
+  stroke: #6fa8ff;
+  stroke-width: 1;
+  cursor: move;
+  pointer-events: all;
+}
+
+.te-pit-segment-line {
+  stroke: rgba(255, 196, 48, 0.28);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.te-pit-segment-line--selected {
+  stroke: rgba(111, 168, 255, 0.75);
+  stroke-width: 2.5;
+}
+
+.te-pit-segment-line--speed {
+  stroke-dasharray: 8 6;
+}
+
+.te-canvas-host .track-svg .te-handle--node {
+  cursor: grab;
+}
+
+.te-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.te-handles {
+  pointer-events: none;
+}
+
+.te-pit-path {
+  pointer-events: none;
+}
+
+.te-start-finish-line {
+  stroke: #f5f5f5;
+  stroke-width: 2;
+  stroke-dasharray: 3 3;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.te-canvas-host .track-svg .te-handle--start-finish {
+  cursor: crosshair;
+}
+
+.te-layout-path-line {
+  fill: none;
+  stroke: rgba(140, 180, 255, 0.45);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.te-layout-segment-line--straight {
+  stroke-dasharray: 4 8;
+}
+
+.te-context-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 200px;
+  background: #1e2430;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  padding: 4px 0;
+}
+
+.te-context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: #e8ecf4;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.te-context-menu-item:hover:not(:disabled) {
+  background: rgba(111, 168, 255, 0.18);
+}
+
+.te-context-menu-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.te-context-menu-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.te-pit-path-line {
+  fill: none;
+  stroke: rgba(255, 196, 48, 0.55);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.te-handle {
+  fill: #fff;
+  stroke: var(--te-accent);
+  stroke-width: 2;
+  cursor: grab;
+  pointer-events: all;
+}
+
+.te-handles--dragging .te-handle {
+  cursor: grabbing;
+}
+
+.te-canvas-host--zoomable .track-svg {
+  cursor: grab;
+}
+
+.te-canvas-host--zoomable .track-svg.track-svg-dragging {
+  cursor: grabbing;
+}
+
+.te-zoom-hint {
+  align-self: center;
+  font-size: 0.75rem;
+  color: var(--te-muted);
+  margin-left: auto;
+}
+
+.te-canvas-host .track-svg .te-handle--selected {
+  fill-opacity: 0.92;
+  stroke: #fff;
+  stroke-width: 1.4;
+}
+
+.te-handle--selected:not(.te-handle--node):not([class*="te-handle--pit-"]) {
+  fill: var(--te-accent);
+  stroke: #fff;
+  stroke-width: 1.4;
+}
+
+.te-handle[class*="te-handle--pit-"] {
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 1.2;
+}
+
+.te-handle--pit-entry.te-handle--selected,
+.te-handle--pit-box.te-handle--selected,
+.te-handle--pit-exit.te-handle--selected,
+.te-handle--pit-waypoint.te-handle--selected {
+  stroke: #fff;
+  stroke-width: 1.4;
+}
+
+.te-pit-actions {
+  margin-bottom: 0.5rem;
+}
+
+.te-pit-role-panel {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--te-border);
+}
+
+.te-sidebar {
+  position: relative;
+  z-index: 1;
+  border-left: 1px solid var(--te-border);
+  background: var(--te-panel);
+  padding: 1rem;
+  overflow: auto;
+}
+
+.te-sidebar-title {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: var(--te-accent);
+}
+
+.te-sidebar-sub {
+  margin: 1rem 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--te-muted);
+}
+
+.te-field {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.te-field-inline {
+  margin-top: 0.5rem;
+}
+
+.te-input,
+.te-select {
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--te-border);
+  border-radius: 4px;
+  background: #0c1018;
+  color: var(--te-text);
+}
+
+.te-input-num {
+  width: 5rem;
+}
+
+.te-pit-grid .te-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.te-sector-row {
+  display: grid;
+  grid-template-columns: 1fr 4.5rem 4.5rem;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.te-meta {
+  font-size: 0.8rem;
+  color: var(--te-muted);
+}
+
+.te-btn {
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--te-border);
+  border-radius: 4px;
+  background: #1a2230;
+  color: var(--te-text);
+  cursor: pointer;
+}
+
+.te-btn:hover:not(:disabled) {
+  border-color: var(--te-accent);
+}
+
+.te-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.te-btn--primary {
+  background: rgba(212, 168, 67, 0.25);
+  border-color: var(--te-accent);
+  font-weight: 600;
+}
+
+.te-btn--primary:hover:not(:disabled) {
+  background: rgba(212, 168, 67, 0.38);
+}
+
+.te-tool--active {
+  background: rgba(212, 168, 67, 0.2);
+  border-color: var(--te-accent);
+}
+
+.te-btn--danger {
+  border-color: rgba(231, 76, 60, 0.45);
+  color: #f5b0a8;
+}
+
+.te-lap-length-panel {
+  margin-bottom: 0.75rem;
+}
+
+.te-lap-length-panel .te-btn--small {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+}
+
+.te-pit-derived {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--te-border);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.te-pit-derived-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.te-derived-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.te-derived-list dt {
+  margin: 0;
+  color: var(--te-muted);
+  font-family: ui-monospace, monospace;
+}
+
+.te-derived-list dd {
+  margin: 0;
+  color: var(--te-text);
+}
+
+.te-ref-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.te-ref-panel .te-field {
+  margin-top: 0.35rem;
+}
+
+.te-ref-image.te-ref-interactive {
+  cursor: move;
+}
+
+.te-ref-scale-handle {
+  cursor: nwse-resize;
+}
+
+.te-ref-frozen-shield {
+  cursor: default;
+}
+
+.te-status {
+  position: relative;
+  z-index: 20;
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+  border-top: 1px solid var(--te-border);
+  color: var(--te-muted);
+  background: var(--te-panel);
+}
+
+.te-status--error {
+  color: var(--te-danger);
+}
+
+@media (max-width: 900px) {
+  .te-main {
+    grid-template-columns: 1fr;
+  }
+}

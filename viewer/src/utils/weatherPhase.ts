@@ -13,6 +13,22 @@ export function phaseLabel(phase: string | undefined): string {
   }
 }
 
+/** Compact label for fixed-width forecast rows. */
+export function phaseShortLabel(phase: string | undefined): string {
+  switch (phase) {
+    case "LightRain":
+      return "Lt rain";
+    case "HeavyRain":
+      return "Heavy";
+    case "Cloudy":
+      return "Cloud";
+    case "Drying":
+      return "Drying";
+    default:
+      return "Dry";
+  }
+}
+
 export function phaseColor(phase: string | undefined): string {
   switch (phase) {
     case "LightRain":

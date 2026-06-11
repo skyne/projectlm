@@ -1,13 +1,23 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { EngineBuildPayload } from "../ws_protocol";
+import { GLOSSARY } from "./glossary";
 import {
-  DRIVER_POINT_POOL,
+  computeBronzeDriverPointPool,
+  computeBronzeDriverTemplate,
   DRIVER_STAT_DEFS,
+  buildWecCatalogDriverIndex,
+  listWecCatalogDriverIds,
   loadLeMansDriverCatalog,
+  type DriverProfilePayload,
   type DriverStatDef,
 } from "./driver_catalog";
-import { buildDriverMarketPreview } from "./driver_market";
+import {
+  buildDriverMarketPreview,
+  MAX_DRIVERS_PER_CAR,
+  MIN_DRIVER_ROSTER_CAP,
+  RESERVE_DRIVER_SLOTS_PER_CAR,
+} from "./driver_market";
 import { loadCarPlatforms } from "./car_marketplace";
 import { fleetRulesPayload } from "./fleet";
 import { cylindersForLayout } from "./engine_model";
@@ -71,12 +81,21 @@ export interface GameCatalogPayload {
   ruleChangeProposals: typeof RULE_CHANGE_PROPOSALS;
   carPlatforms: ReturnType<typeof loadCarPlatforms>;
   fleetRules: ReturnType<typeof fleetRulesPayload>;
+  driverRosterRules: {
+    maxDriversPerCar: number;
+    reserveSlotsPerCar: number;
+    minRosterCap: number;
+  };
   driverStatDefs: DriverStatDef[];
   driverPointPool: number;
+  customDriverTemplate: DriverProfilePayload;
+  wecCatalogDriverIds: string[];
+  wecDriverGenders: Record<string, "female" | "male">;
   lemansDriverCount: number;
   driverMarketPreview: ReturnType<typeof buildDriverMarketPreview>;
   defaultEngines: Record<string, EngineBuildPayload>;
   assemblyRules: AssemblyRule[];
+  glossary: typeof GLOSSARY;
 }
 
 const CLASS_DESCRIPTIONS: Record<string, string> = {
@@ -322,12 +341,26 @@ export function loadGameCatalog(repoRoot: string): GameCatalogPayload {
     ruleChangeProposals: RULE_CHANGE_PROPOSALS,
     carPlatforms: loadCarPlatforms(repoRoot),
     fleetRules: fleetRulesPayload(),
+    driverRosterRules: {
+      maxDriversPerCar: MAX_DRIVERS_PER_CAR,
+      reserveSlotsPerCar: RESERVE_DRIVER_SLOTS_PER_CAR,
+      minRosterCap: MIN_DRIVER_ROSTER_CAP,
+    },
     driverStatDefs: DRIVER_STAT_DEFS,
-    driverPointPool: DRIVER_POINT_POOL,
+    driverPointPool: computeBronzeDriverPointPool(repoRoot),
+    customDriverTemplate: computeBronzeDriverTemplate(repoRoot),
+    wecCatalogDriverIds: listWecCatalogDriverIds(repoRoot),
+    wecDriverGenders: Object.fromEntries(
+      [...buildWecCatalogDriverIndex(repoRoot).entries()].map(([id, d]) => [
+        id,
+        d.gender === "female" ? "female" : "male",
+      ]),
+    ),
     lemansDriverCount,
     driverMarketPreview: buildDriverMarketPreview(repoRoot),
     defaultEngines,
     assemblyRules: loadAssemblyRules(repoRoot),
+    glossary: GLOSSARY,
   };
 }
 

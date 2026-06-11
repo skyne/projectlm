@@ -39,6 +39,10 @@ import { WeatherForecastPanel } from "./components/WeatherForecastPanel";
 import { AudioControls } from "./components/AudioControls";
 import { GameAudio } from "./audio/GameAudio";
 import {
+  loadEngineerHintsEnabled,
+  saveEngineerHintsEnabled,
+} from "./engineerHintSettings";
+import {
   ViewerClient,
   hasSavedDisplayName,
   loadJoinPreferences,
@@ -139,6 +143,7 @@ const eventLog = new EventLog(document.getElementById("event-log-container")!);
 const raceLogPanel = new RaceLogPanel(raceLogContainer);
 let raceLogEvents: SimEvent[] = [];
 let lastSessionLogId: string | null = null;
+let engineerHintsEnabled = loadEngineerHintsEnabled();
 const teamNameByEntry = new Map<string, string>();
 const carNumberByEntry = new Map<string, string>();
 
@@ -601,12 +606,37 @@ const negotiationPanel = new NegotiationPanel(document.body, {
     driverCenter.setStatus("Submitting offer…");
   },
   onAcceptCounter: (negotiationId) => {
-    const session = latestMeta?.negotiations?.find((n) => n.id === negotiationId);
+    negotiationPanel.clearErrorMessage();
+    const session =
+      latestMeta?.negotiations?.find((n) => n.id === negotiationId) ??
+      negotiationPanel.activeSession();
+
+    if (!client.canSend("accept_negotiation")) {
+      const message =
+        "Only the host or a player can accept contract offers — rejoin with the right role.";
+      driverCenter.setStatus(message);
+      negotiationPanel.setErrorMessage(message);
+      return;
+    }
+
     if (session?.kind === "inter_team_agreement" && session.lastCounterOffer) {
       client.submitNegotiationOffer(negotiationId, session.lastCounterOffer);
       driverCenter.setStatus("Accepting rival terms…");
       return;
     }
+
+    if (
+      session &&
+      (session.kind === "driver_employment" || session.kind === "driver_buyout") &&
+      !session.lastCounterOffer
+    ) {
+      const message =
+        "No counter-offer on file — wait for their response or submit an offer.";
+      driverCenter.setStatus(message);
+      negotiationPanel.setErrorMessage(message);
+      return;
+    }
+
     client.acceptNegotiation(negotiationId);
     driverCenter.setStatus("Accepting counter-offer…");
   },
@@ -634,6 +664,11 @@ const driverCenter = new DriverCenter(driversContainer, {
     driverCenter.setStatus("Quick signing…");
   },
   onNegotiate: (listing) => {
+    const existing = findActiveDriverNegotiation(latestMeta, listing.id);
+    if (existing) {
+      resumeDriverNegotiation(listing, existing);
+      return;
+    }
     const kind =
       listing.source === "wec_active" && listing.contractedTeam
         ? "driver_buyout"
@@ -718,6 +753,37 @@ function partnerSetsMatch(a: Set<string>, b: Set<string>): boolean {
     if (!b.has(key)) return false;
   }
   return true;
+}
+
+const ACTIVE_NEGOTIATION_STATUSES = new Set([
+  "open",
+  "countered",
+  "pending_response",
+]);
+
+function findActiveDriverNegotiation(
+  meta: import("./ws/protocol").MetaStatePayload | null | undefined,
+  listingId: string,
+): import("./ws/protocol").NegotiationSessionPayload | undefined {
+  return (meta?.negotiations ?? []).find(
+    (session) =>
+      session.subjectRef === listingId &&
+      (session.kind === "driver_employment" || session.kind === "driver_buyout") &&
+      ACTIVE_NEGOTIATION_STATUSES.has(session.status),
+  );
+}
+
+function resumeDriverNegotiation(
+  listing: import("./ws/protocol").DriverMarketListingPayload,
+  session: import("./ws/protocol").NegotiationSessionPayload,
+): void {
+  pendingNegotiation = {
+    kind: "driver",
+    subjectRef: listing.id,
+    listing,
+  };
+  driverCenter.setStatus(`Resuming talks with ${listing.driver.name}…`);
+  negotiationPanel.show(session, { listing });
 }
 
 function findNegotiationSession(
@@ -843,7 +909,19 @@ const teamHQ = new TeamHQ(teamContainer, {
     client.signStaffContract(listingId, carId);
     teamHQ.setCrewStatus("Offering contract…");
   },
+  onFireStaff: (carId, role) => {
+    client.fireStaff(carId, role);
+    teamHQ.setCrewStatus("Releasing crew member…");
+  },
+  onReassignStaff: (fromCarId, toCarId, role) => {
+    client.reassignStaff(fromCarId, toCarId, role);
+    teamHQ.setCrewStatus("Reassigning crew…");
+  },
   onRdInvest: (partId, points) => client.rdInvest(partId, points),
+  onOffWeekTraining: (payload) => client.offWeekTraining(payload),
+  onUpgradeFacility: (facilityId) => client.upgradeFacility(facilityId),
+  onStartPartProject: (partInstanceId, focus) =>
+    client.startPartProject(partInstanceId, focus),
   onSignSponsor: (offerId) => client.signSponsor(offerId),
   onNegotiateSponsor: (offerId) => {
     client.startNegotiation("sponsor_partnership", offerId);
@@ -1137,10 +1215,15 @@ function updateRaceControlBanner(rc: RaceControlPayload | undefined): void {
   let label = "";
   if (showRed) {
     const remaining = rc?.redFlagSecondsRemaining;
+    const visKm = rc?.visibilityKm;
+    const visPart =
+      visKm != null && visKm < 4
+        ? ` — ${visKm.toFixed(1)} km visibility`
+        : "";
     label =
       remaining != null && remaining > 0
-        ? `Red Flag — ${Math.ceil(remaining)}s`
-        : "Red Flag";
+        ? `Red Flag${visPart} — ${Math.ceil(remaining)}s`
+        : `Red Flag${visPart}`;
     raceControlBanner.classList.add("race-control-banner--red");
   } else if (showFcy) {
     label = "Full Course Yellow";
@@ -1646,6 +1729,7 @@ function updateFromTick(
   raceControls.setPreGreenFlag(raceTime < 0.5);
   updateWeather(raceControl, raceTime);
   updateRaceControlBanner(raceControl);
+  eventLog.updateRaceControl(raceControl);
   raceDirectorDev.updateRaceControl(raceControl);
   raceDirectorDev.updateEntries(normalized);
   const teamSnapshots = normalized.filter((s) => managedEntryIds.includes(s.entryId));
@@ -1818,6 +1902,15 @@ const client = new ViewerClient({
   },
   onEngineerAdvice: (payload) => engineerPanel.showAdvice(payload),
   onEngineerHint: (payload) => {
+    if (!engineerHintsEnabled) {
+      client.dismissEngineerHint(payload.hintId);
+      if (payload.autoPaused) {
+        client.setTimeScale(payload.timeScale);
+        syncTimeScale(payload.timeScale);
+        syncPlaybackPaused(false);
+      }
+      return;
+    }
     if (payload.autoPaused) {
       syncPlaybackPaused(true);
     }
@@ -1862,8 +1955,26 @@ const client = new ViewerClient({
     statusEl.className = "status status-error";
   },
   onError: (message) => {
+    if (
+      pendingNegotiation?.kind === "driver" &&
+      message.includes("already have an open negotiation")
+    ) {
+      const existing = findActiveDriverNegotiation(
+        latestMeta,
+        pendingNegotiation.subjectRef,
+      );
+      if (existing) {
+        resumeDriverNegotiation(pendingNegotiation.listing, existing);
+        return;
+      }
+    }
+
     statusEl.textContent = message;
     statusEl.className = "status status-error";
+    if (negotiationPanel.isOpen()) {
+      driverCenter.setStatus(message);
+      negotiationPanel.setErrorMessage(message);
+    }
     const live = latestSession?.raceActive && !latestSession.raceComplete;
     if (pendingRaceStart && !live) {
       pendingRaceStart = false;
@@ -1913,7 +2024,24 @@ const globalSettings = new GlobalSettingsMenu(
       statusEl.className = "status status-connecting";
       globalSettings.setIdentityVisible(false);
     },
+    onEngineerHintsChange: (enabled) => {
+      engineerHintsEnabled = enabled;
+      saveEngineerHintsEnabled(enabled);
+      if (!enabled && engineerHintModal.isVisible()) {
+        const hint = engineerHintModal.getActiveHint();
+        engineerHintModal.hide();
+        if (hint) {
+          client.dismissEngineerHint(hint.hintId);
+          if (hint.autoPaused) {
+            client.setTimeScale(hint.timeScale);
+            syncTimeScale(hint.timeScale);
+            syncPlaybackPaused(false);
+          }
+        }
+      }
+    },
   },
+  { engineerHintsEnabled },
 );
 globalSettings.setSessionActionsVisible(false);
 new AudioControls(globalSettings.audioMount, gameAudio);

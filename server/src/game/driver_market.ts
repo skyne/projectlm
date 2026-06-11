@@ -3,12 +3,20 @@ import {
   computeDriverPointCost,
   ensureCatalogDriverId,
   generateRandomDriver,
+  applyDriverGender,
   inferTier,
+  loadFreeAgentDrivers,
   loadLeMansDriverCatalog,
+  loadWecDriverGenderMap,
+  seedAdaptabilityForTier,
   type DriverProfilePayload,
 } from "./driver_catalog";
 
-export type DriverMarketSource = "wec_active" | "wec_retired" | "prospect";
+export type DriverMarketSource =
+  | "wec_active"
+  | "wec_retired"
+  | "free_agent"
+  | "prospect";
 
 export interface DriverMarketListing {
   id: string;
@@ -22,10 +30,33 @@ export interface DriverMarketListing {
 }
 
 export const DRIVER_MARKET_REFRESH_COST = 50_000;
-export const MAX_DRIVER_ROSTER = 12;
+
+/** Le Mans entries allow up to four race drivers per car. */
+export const MAX_DRIVERS_PER_CAR = 4;
+
+/** Extra roster slots per car for reserves / unassigned bench drivers. */
+export const RESERVE_DRIVER_SLOTS_PER_CAR = 1;
+
+export const MIN_DRIVER_ROSTER_CAP = 6;
+
+/** Team roster cap scales with fleet size (race drivers + reserves per entry). */
+export function maxDriverRosterForFleet(fleetCarCount: number): number {
+  const cars = Math.max(1, Math.floor(fleetCarCount));
+  return Math.max(
+    MIN_DRIVER_ROSTER_CAP,
+    cars * (MAX_DRIVERS_PER_CAR + RESERVE_DRIVER_SLOTS_PER_CAR),
+  );
+}
+
+export function driverRosterCapMessage(fleetCarCount: number, cap?: number): string {
+  const limit = cap ?? maxDriverRosterForFleet(fleetCarCount);
+  const cars = Math.max(1, Math.floor(fleetCarCount));
+  return `${limit} drivers maximum for ${cars} car${cars === 1 ? "" : "s"} (up to ${MAX_DRIVERS_PER_CAR} per car plus reserves)`;
+}
 const MARKET_WEC_SLOTS = 14;
 const MARKET_RETIRED_SLOTS = 6;
-const MARKET_PROSPECT_SLOTS = 6;
+const MARKET_FREE_AGENT_SLOTS = 18;
+const MARKET_PROSPECT_SLOTS = 4;
 
 interface RetiredLegend {
   driver: DriverProfilePayload;
@@ -195,6 +226,8 @@ function sourceMultiplier(source: DriverMarketSource): number {
       return 1.75;
     case "wec_retired":
       return 1.25;
+    case "free_agent":
+      return 0.85;
     default:
       return 0.7;
   }
@@ -213,10 +246,28 @@ export function computeDriverSigningFee(
   return { signingFee, salaryPerRace };
 }
 
-function normalizeDriver(driver: DriverProfilePayload): DriverProfilePayload {
+function normalizeDriver(
+  driver: DriverProfilePayload,
+  options?: {
+    genderMap?: Map<string, import("./driver_catalog").DriverGender>;
+    catalogSigned?: boolean;
+  },
+): DriverProfilePayload {
+  const tier = driver.tier?.trim() || inferTier(driver);
+  const adaptability =
+    typeof driver.adaptability === "number" &&
+    driver.adaptability >= 45 &&
+    driver.adaptability <= 94
+      ? driver.adaptability
+      : seedAdaptabilityForTier(tier, `${driver.name}|${driver.nationality}`);
+  const withGender = options?.genderMap
+    ? applyDriverGender(driver, options.genderMap)
+    : driver;
   return ensureCatalogDriverId({
-    ...driver,
-    tier: inferTier(driver),
+    ...withGender,
+    tier,
+    adaptability,
+    ...(options?.catalogSigned ? { origin: "signed" as const } : {}),
   });
 }
 
@@ -272,6 +323,7 @@ export function buildDriverMarket(
   const takenIds = rosterIdSet(options.existingRoster ?? []);
   const listings: DriverMarketListing[] = [];
 
+  const genderMap = loadWecDriverGenderMap(repoRoot);
   const lemans = loadLeMansDriverCatalog(repoRoot);
   const wecPool: Array<{ team: string; driver: DriverProfilePayload }> = [];
   for (const [key, roster] of lemans) {
@@ -281,7 +333,10 @@ export function buildDriverMarket(
       continue;
     }
     for (const driver of roster) {
-      const normalized = normalizeDriver(driver);
+      const normalized = normalizeDriver(driver, {
+        genderMap,
+        catalogSigned: true,
+      });
       const driverId = normalized.id!;
       if (takenIds.has(driverId)) continue;
       const holder = contracts.get(driverId);
@@ -305,7 +360,7 @@ export function buildDriverMarket(
   }
 
   for (const legend of shuffle(RETIRED_WEC_LEGENDS, rnd).slice(0, MARKET_RETIRED_SLOTS)) {
-    const driver = normalizeDriver({ ...legend.driver });
+    const driver = normalizeDriver({ ...legend.driver }, { catalogSigned: true });
     const driverId = driver.id!;
     if (takenIds.has(driverId)) continue;
     const holder = contracts.get(driverId);
@@ -326,12 +381,56 @@ export function buildDriverMarket(
     takenIds.add(driverId);
   }
 
+  const freeAgentPool = loadFreeAgentDrivers(repoRoot).filter((entry) => {
+    const driverId = ensureCatalogDriverId(entry.driver).id!;
+    return !takenIds.has(driverId);
+  });
+  const femaleFreeAgents = shuffle(
+    freeAgentPool.filter(
+      (e) => applyDriverGender(e.driver, genderMap).gender === "female",
+    ),
+    rnd,
+  );
+  const maleFreeAgents = shuffle(
+    freeAgentPool.filter(
+      (e) => applyDriverGender(e.driver, genderMap).gender !== "female",
+    ),
+    rnd,
+  );
+  for (const entry of [...femaleFreeAgents, ...maleFreeAgents].slice(
+    0,
+    MARKET_FREE_AGENT_SLOTS,
+  )) {
+    const driver = normalizeDriver(entry.driver, {
+      genderMap,
+      catalogSigned: false,
+    });
+    const driverId = driver.id!;
+    if (takenIds.has(driverId)) continue;
+    const holder = contracts.get(driverId);
+    if (
+      holder &&
+      holder.toLowerCase() !== options.playerTeamName.trim().toLowerCase()
+    ) {
+      continue;
+    }
+    const fees = computeDriverSigningFee(driver, "free_agent");
+    listings.push({
+      id: `free-${slugId(driver.name)}-${slugId(entry.series)}`,
+      source: "free_agent",
+      driver,
+      ...fees,
+      tagline: entry.tagline,
+    });
+    takenIds.add(driverId);
+  }
+
   for (let i = 0; i < MARKET_PROSPECT_SLOTS; i++) {
     const seed = (options.seed + i * 7919) >>> 0;
-    let driver = normalizeDriver(generateRandomDriver(seed));
+    let driver = normalizeDriver(generateRandomDriver(repoRoot, seed));
     let attempts = 0;
     while (takenIds.has(driver.id!) && attempts < 8) {
-      driver = normalizeDriver(generateRandomDriver(seed + attempts * 997));
+      driver = normalizeDriver(generateRandomDriver(repoRoot, seed + attempts * 997));
       attempts++;
     }
     if (takenIds.has(driver.id!)) continue;
@@ -390,6 +489,8 @@ export function sourceLabel(source: DriverMarketSource): string {
       return "WEC grid";
     case "wec_retired":
       return "Retired legend";
+    case "free_agent":
+      return "Free agent";
     default:
       return "Prospect";
   }

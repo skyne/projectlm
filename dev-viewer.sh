@@ -38,6 +38,7 @@ Options:
 Environment:
   PORT          WebSocket server port (default: 9785)
   PROJECTLM_WS_PORT  Same as PORT (takes precedence)
+  DEV_HTTP_PORT Dev session-log API port (default: PORT + 1)
   VIEWER_PORT   Vite dev server port (default: 5173)
   PROJECTLM_ROOT  Repo root (set automatically)
 EOF
@@ -230,7 +231,10 @@ if port_in_use "$SERVER_PORT" && [[ "$FORCE_PORTS" != true ]]; then
   fi
 fi
 
+HTTP_PORT="${DEV_HTTP_PORT:-$((SERVER_PORT + 1))}"
+
 require_port "$SERVER_PORT" "WS server" "PORT"
+require_port "$HTTP_PORT" "dev session log API" "DEV_HTTP_PORT"
 require_port "$VIEWER_PORT" "Vite viewer" "VIEWER_PORT"
 
 SERVER_PID=""
@@ -247,7 +251,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "==> Starting WS server on ws://localhost:${SERVER_PORT}..."
-PROJECTLM_WS_PORT="$SERVER_PORT" PORT="$SERVER_PORT" npm run start --prefix "$ROOT/server" &
+PROJECTLM_WS_PORT="$SERVER_PORT" PORT="$SERVER_PORT" DEV_HTTP_PORT="$HTTP_PORT" npm run start --prefix "$ROOT/server" &
 SERVER_PID=$!
 echo "$SERVER_PID" > "$PID_FILE"
 

@@ -293,7 +293,7 @@ void ApplyPartDamageHit(PartDamageState &state, DamagePart part, double amount,
 
 void ApplyCollisionDamage(PartDamageState &state, const CarDamageProfiles &profiles,
                           double impact, CollisionSide side, bool hasHybrid) {
-  if (impact <= 0.0)
+  if (impact < kRubbingImpactThreshold)
     return;
 
   const auto hit = [&](DamagePart part, double amt) {
@@ -312,7 +312,7 @@ void ApplyCollisionDamage(PartDamageState &state, const CarDamageProfiles &profi
 
   const auto hitAxle = [&](const int *wheels, DamagePart aeroPart, bool frontAxle) {
     if (impact < 7.0) {
-      hit(BodyPartForWheel(wheels[0]), (3.0 + impact * 0.55) * scale);
+      hit(BodyPartForWheel(wheels[0]), (1.2 + impact * 0.22) * scale);
       return;
     }
     if (impact < 10.0) {
@@ -352,13 +352,13 @@ void ApplyCollisionDamage(PartDamageState &state, const CarDamageProfiles &profi
       return;
     }
     const int w = side == CollisionSide::Left ? 0 : 1;
-    hit(BodyPartForWheel(w), (3.0 + impact * 0.55) * scale);
+    hit(BodyPartForWheel(w), (1.2 + impact * 0.22) * scale);
     return;
   }
 
   if (impact < 10.0) {
     if (side == CollisionSide::Unknown) {
-      hit(DamagePart::BodyFL, (4.0 + impact * 0.55) * scale);
+      hit(DamagePart::BodyFL, (2.0 + impact * 0.28) * scale);
       hit(SuspPartForWheel(0), (2.0 + impact * 0.3) * scale);
       if (impact > 8.0)
         hit(DamagePart::AeroFront, impact * 0.25 * scale);

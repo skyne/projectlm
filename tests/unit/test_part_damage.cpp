@@ -6,6 +6,19 @@
 #include "track.hpp"
 #include "../helpers/paths.hpp"
 
+TEST_CASE("Light rubbing below impact threshold does not damage parts",
+          "[unit][damage]") {
+  PartDamageState state;
+  InitPartDamageState(state);
+  CarConfig car;
+  static const PartCatalog catalog{};
+  CarDamageProfiles profiles;
+  BuildCarDamageProfiles(car, catalog, profiles);
+
+  ApplyCollisionDamage(state, profiles, 3.5, CollisionSide::Left, false);
+  REQUIRE(PartHealth(state, DamagePart::BodyFL) == 100.0);
+}
+
 TEST_CASE("Part damage collision routes to side", "[unit][damage]") {
   PartDamageState state;
   InitPartDamageState(state);

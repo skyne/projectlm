@@ -228,11 +228,24 @@ export interface TrackSurfaceDefaults {
   kerbWidthM?: number;
 }
 
+export type PitLanePointRole = "entry" | "box" | "exit" | "waypoint";
+
+export interface PitLanePointGeometry {
+  x: number;
+  z: number;
+  role: PitLanePointRole;
+}
+
 export interface TrackPitLaneGeometry {
   widthM?: number;
   offsetM?: number;
   mergeLateralOffset?: number;
   mergeBlendM?: number;
+  entryT?: number;
+  exitT?: number;
+  boxDistanceM?: number;
+  speedLimitMs?: number;
+  polyline?: PitLanePointGeometry[];
 }
 
 export interface TrackGeometryPayload {
@@ -371,11 +384,19 @@ export interface DriverSnapshotPayload {
   active: boolean;
 }
 
+export type DriverGenderPayload = "female" | "male";
+
+export type DriverOriginPayload = "custom" | "signed";
+
 export interface DriverProfilePayload {
   /** Stable roster identity for player team drivers. */
   id?: string;
+  /** Player-built bronze driver vs signed WEC/market driver. */
+  origin?: DriverOriginPayload;
   name: string;
   nationality: string;
+  /** Affects sponsor appeal bonuses only — not on-track pace. */
+  gender?: DriverGenderPayload;
   tier: string;
   dryPace: number;
   wetPace: number;
@@ -393,7 +414,50 @@ export interface DriverProfilePayload {
   rainRadar: number;
   stamina: number;
   maxStintHours: number;
+  adaptability?: number;
+  statBaseline?: Record<string, number>;
   progressionXp?: number;
+}
+
+export type PartProjectFocusPayload = "performance" | "reliability" | "understanding";
+
+export interface PartInstancePayload {
+  id: string;
+  catalogId: string;
+  slot: string;
+  category: string;
+  source: "inhouse" | "shelved" | "licensed";
+  performanceMaturity: number;
+  reliabilityMaturity: number;
+  partUnderstanding: number;
+  contextFamiliarity?: Record<string, Record<string, number>>;
+}
+
+export interface FacilityStatePayload {
+  id: string;
+  tier: number;
+}
+
+export interface GlossaryEntryPayload {
+  key: string;
+  label: string;
+  short: string;
+  long: string;
+}
+
+export interface OffWeekTrainingPayload {
+  action: "driver_sim" | "pit_drills" | "data_review" | "strategy_tabletop";
+  driverId?: string;
+  staffId?: string;
+}
+
+export interface StartPartProjectPayload {
+  partInstanceId: string;
+  focus: PartProjectFocusPayload;
+}
+
+export interface UpgradeFacilityPayload {
+  facilityId: string;
 }
 
 export interface DriverStatDefPayload {
@@ -406,7 +470,11 @@ export interface DriverStatDefPayload {
   costPerPoint: number;
 }
 
-export type DriverMarketSource = "wec_active" | "wec_retired" | "prospect";
+export type DriverMarketSource =
+  | "wec_active"
+  | "wec_retired"
+  | "free_agent"
+  | "prospect";
 
 export interface DriverMarketListingPayload {
   id: string;
@@ -599,10 +667,22 @@ export interface StaffMarketListingPayload {
   tagline: string;
 }
 
+export interface FireStaffPayload {
+  carId: string;
+  role: StaffRole;
+}
+
+export interface ReassignStaffPayload {
+  fromCarId: string;
+  toCarId: string;
+  role: StaffRole;
+}
+
 export interface StaffMemberPayload {
   id?: string;
   role: string;
   name: string;
+  gender?: DriverGenderPayload;
   skill: number;
   experience?: number;
   salaryPerRace?: number;
@@ -965,6 +1045,9 @@ export interface MetaStatePayload {
   seasonComplete?: boolean;
   seasonSummary?: SeasonSummaryPayload;
   seasonStartSnapshot?: SeasonStartSnapshotPayload;
+  partInstances?: PartInstancePayload[];
+  facilities?: FacilityStatePayload[];
+  offWeekTrainingUsed?: number;
 }
 
 export interface SeasonStandingEntryPayload {
@@ -1075,6 +1158,12 @@ export interface StaffCandidatePayload {
   salary: number;
 }
 
+export interface DriverRosterRulesPayload {
+  maxDriversPerCar: number;
+  reserveSlotsPerCar: number;
+  minRosterCap: number;
+}
+
 export interface GameCatalogPayload {
   classes: ClassInfoPayload[];
   partsBySlot: Record<string, PartOptionPayload[]>;
@@ -1083,12 +1172,17 @@ export interface GameCatalogPayload {
   ruleChangeProposals?: RuleChangeProposalPayload[];
   carPlatforms: CarPlatformPayload[];
   fleetRules: FleetRulesPayload;
+  driverRosterRules?: DriverRosterRulesPayload;
   driverStatDefs?: DriverStatDefPayload[];
   driverPointPool?: number;
+  customDriverTemplate?: DriverProfilePayload;
+  wecCatalogDriverIds?: string[];
+  wecDriverGenders?: Record<string, DriverGenderPayload>;
   lemansDriverCount?: number;
   driverMarketPreview?: DriverMarketListingPayload[];
   defaultEngines?: Record<string, EngineBuildPayload>;
   assemblyRules?: AssemblyRulePayload[];
+  glossary?: GlossaryEntryPayload[];
 }
 
 export interface AssemblyRequiresAnyRulePayload {
@@ -1172,6 +1266,7 @@ export interface RaceControlPayload {
   whiteFlagActive: boolean;
   redFlagActive?: boolean;
   redFlagSecondsRemaining?: number;
+  redFlagReason?: string;
   surfaceHazards: SurfaceHazardSummaryPayload[];
   trackWetness: number;
   ambientTempC: number;
@@ -1419,6 +1514,8 @@ export type ClientMessageType =
   | "sign_driver_contract"
   | "refresh_staff_market"
   | "sign_staff_contract"
+  | "fire_staff"
+  | "reassign_staff"
   | "start_negotiation"
   | "submit_negotiation_offer"
   | "accept_negotiation"
@@ -1439,7 +1536,10 @@ export type ClientMessageType =
   | "restart_season"
   | "finalize_season"
   | "update_car_briefing"
-  | "debug_race_control";
+  | "debug_race_control"
+  | "off_week_training"
+  | "start_part_project"
+  | "upgrade_facility";
 
 export interface ServerMessage<T = unknown> {
   protocol: typeof PROTOCOL_VERSION;

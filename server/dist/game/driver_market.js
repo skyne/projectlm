@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MAX_DRIVER_ROSTER = exports.DRIVER_MARKET_REFRESH_COST = void 0;
+exports.MIN_DRIVER_ROSTER_CAP = exports.RESERVE_DRIVER_SLOTS_PER_CAR = exports.MAX_DRIVERS_PER_CAR = exports.DRIVER_MARKET_REFRESH_COST = void 0;
+exports.maxDriverRosterForFleet = maxDriverRosterForFleet;
+exports.driverRosterCapMessage = driverRosterCapMessage;
 exports.computeDriverSigningFee = computeDriverSigningFee;
 exports.validateDriverMarketSigning = validateDriverMarketSigning;
 exports.buildDriverMarket = buildDriverMarket;
@@ -10,10 +12,25 @@ exports.findMarketListing = findMarketListing;
 exports.sourceLabel = sourceLabel;
 const driver_catalog_1 = require("./driver_catalog");
 exports.DRIVER_MARKET_REFRESH_COST = 50000;
-exports.MAX_DRIVER_ROSTER = 12;
+/** Le Mans entries allow up to four race drivers per car. */
+exports.MAX_DRIVERS_PER_CAR = 4;
+/** Extra roster slots per car for reserves / unassigned bench drivers. */
+exports.RESERVE_DRIVER_SLOTS_PER_CAR = 1;
+exports.MIN_DRIVER_ROSTER_CAP = 6;
+/** Team roster cap scales with fleet size (race drivers + reserves per entry). */
+function maxDriverRosterForFleet(fleetCarCount) {
+    const cars = Math.max(1, Math.floor(fleetCarCount));
+    return Math.max(exports.MIN_DRIVER_ROSTER_CAP, cars * (exports.MAX_DRIVERS_PER_CAR + exports.RESERVE_DRIVER_SLOTS_PER_CAR));
+}
+function driverRosterCapMessage(fleetCarCount, cap) {
+    const limit = cap ?? maxDriverRosterForFleet(fleetCarCount);
+    const cars = Math.max(1, Math.floor(fleetCarCount));
+    return `${limit} drivers maximum for ${cars} car${cars === 1 ? "" : "s"} (up to ${exports.MAX_DRIVERS_PER_CAR} per car plus reserves)`;
+}
 const MARKET_WEC_SLOTS = 14;
 const MARKET_RETIRED_SLOTS = 6;
-const MARKET_PROSPECT_SLOTS = 6;
+const MARKET_FREE_AGENT_SLOTS = 18;
+const MARKET_PROSPECT_SLOTS = 4;
 const RETIRED_WEC_LEGENDS = [
     {
         tagline: "9× Le Mans winner · WEC legend",
@@ -172,6 +189,8 @@ function sourceMultiplier(source) {
             return 1.75;
         case "wec_retired":
             return 1.25;
+        case "free_agent":
+            return 0.85;
         default:
             return 0.7;
     }
@@ -183,10 +202,21 @@ function computeDriverSigningFee(driver, source) {
     const salaryPerRace = Math.round(signingFee * 0.06);
     return { signingFee, salaryPerRace };
 }
-function normalizeDriver(driver) {
+function normalizeDriver(driver, options) {
+    const tier = driver.tier?.trim() || (0, driver_catalog_1.inferTier)(driver);
+    const adaptability = typeof driver.adaptability === "number" &&
+        driver.adaptability >= 45 &&
+        driver.adaptability <= 94
+        ? driver.adaptability
+        : (0, driver_catalog_1.seedAdaptabilityForTier)(tier, `${driver.name}|${driver.nationality}`);
+    const withGender = options?.genderMap
+        ? (0, driver_catalog_1.applyDriverGender)(driver, options.genderMap)
+        : driver;
     return (0, driver_catalog_1.ensureCatalogDriverId)({
-        ...driver,
-        tier: (0, driver_catalog_1.inferTier)(driver),
+        ...withGender,
+        tier,
+        adaptability,
+        ...(options?.catalogSigned ? { origin: "signed" } : {}),
     });
 }
 function rosterIdSet(roster) {
@@ -223,6 +253,7 @@ function buildDriverMarket(repoRoot, options) {
     });
     const takenIds = rosterIdSet(options.existingRoster ?? []);
     const listings = [];
+    const genderMap = (0, driver_catalog_1.loadWecDriverGenderMap)(repoRoot);
     const lemans = (0, driver_catalog_1.loadLeMansDriverCatalog)(repoRoot);
     const wecPool = [];
     for (const [key, roster] of lemans) {
@@ -232,7 +263,10 @@ function buildDriverMarket(repoRoot, options) {
             continue;
         }
         for (const driver of roster) {
-            const normalized = normalizeDriver(driver);
+            const normalized = normalizeDriver(driver, {
+                genderMap,
+                catalogSigned: true,
+            });
             const driverId = normalized.id;
             if (takenIds.has(driverId))
                 continue;
@@ -256,7 +290,7 @@ function buildDriverMarket(repoRoot, options) {
         takenIds.add(entry.driver.id);
     }
     for (const legend of shuffle(RETIRED_WEC_LEGENDS, rnd).slice(0, MARKET_RETIRED_SLOTS)) {
-        const driver = normalizeDriver({ ...legend.driver });
+        const driver = normalizeDriver({ ...legend.driver }, { catalogSigned: true });
         const driverId = driver.id;
         if (takenIds.has(driverId))
             continue;
@@ -275,12 +309,41 @@ function buildDriverMarket(repoRoot, options) {
         });
         takenIds.add(driverId);
     }
+    const freeAgentPool = (0, driver_catalog_1.loadFreeAgentDrivers)(repoRoot).filter((entry) => {
+        const driverId = (0, driver_catalog_1.ensureCatalogDriverId)(entry.driver).id;
+        return !takenIds.has(driverId);
+    });
+    const femaleFreeAgents = shuffle(freeAgentPool.filter((e) => (0, driver_catalog_1.applyDriverGender)(e.driver, genderMap).gender === "female"), rnd);
+    const maleFreeAgents = shuffle(freeAgentPool.filter((e) => (0, driver_catalog_1.applyDriverGender)(e.driver, genderMap).gender !== "female"), rnd);
+    for (const entry of [...femaleFreeAgents, ...maleFreeAgents].slice(0, MARKET_FREE_AGENT_SLOTS)) {
+        const driver = normalizeDriver(entry.driver, {
+            genderMap,
+            catalogSigned: false,
+        });
+        const driverId = driver.id;
+        if (takenIds.has(driverId))
+            continue;
+        const holder = contracts.get(driverId);
+        if (holder &&
+            holder.toLowerCase() !== options.playerTeamName.trim().toLowerCase()) {
+            continue;
+        }
+        const fees = computeDriverSigningFee(driver, "free_agent");
+        listings.push({
+            id: `free-${slugId(driver.name)}-${slugId(entry.series)}`,
+            source: "free_agent",
+            driver,
+            ...fees,
+            tagline: entry.tagline,
+        });
+        takenIds.add(driverId);
+    }
     for (let i = 0; i < MARKET_PROSPECT_SLOTS; i++) {
         const seed = (options.seed + i * 7919) >>> 0;
-        let driver = normalizeDriver((0, driver_catalog_1.generateRandomDriver)(seed));
+        let driver = normalizeDriver((0, driver_catalog_1.generateRandomDriver)(repoRoot, seed));
         let attempts = 0;
         while (takenIds.has(driver.id) && attempts < 8) {
-            driver = normalizeDriver((0, driver_catalog_1.generateRandomDriver)(seed + attempts * 997));
+            driver = normalizeDriver((0, driver_catalog_1.generateRandomDriver)(repoRoot, seed + attempts * 997));
             attempts++;
         }
         if (takenIds.has(driver.id))
@@ -326,6 +389,8 @@ function sourceLabel(source) {
             return "WEC grid";
         case "wec_retired":
             return "Retired legend";
+        case "free_agent":
+            return "Free agent";
         default:
             return "Prospect";
     }

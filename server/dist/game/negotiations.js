@@ -56,7 +56,7 @@ function driverOpeningOfferForNegotiation(anchor, listing, ctx) {
     }
     const mood = listing.driver.tier === "Platinum"
         ? "neutral"
-        : listing.source === "prospect"
+        : listing.source === "prospect" || listing.source === "free_agent"
             ? "keen"
             : "neutral";
     return {
@@ -182,6 +182,8 @@ function sourcePatiencePenalty(listing) {
             return 22;
         case "wec_retired":
             return 18;
+        case "free_agent":
+            return 14;
         default:
             return 12;
     }
@@ -211,6 +213,8 @@ function scoreDriverOffer(offer, anchor, ctx) {
         score -= 0.05;
     if (listingSource(ctx.listing) === "prospect")
         score += 0.06;
+    if (listingSource(ctx.listing) === "free_agent")
+        score += 0.04;
     return score;
 }
 function listingSource(listing) {
@@ -308,8 +312,31 @@ function evaluateDriverOffer(session, offer, ctx) {
     };
 }
 function acceptCounterOffer(session, ctx) {
+    if (session.status !== "open" && session.status !== "countered") {
+        return { session, accepted: false, note: "Negotiation is closed" };
+    }
     const terms = session.lastCounterOffer ?? session.anchorTerms;
-    return evaluateDriverOffer(session, terms, ctx);
+    const next = {
+        ...session,
+        status: "accepted",
+        counterpartyMood: "keen",
+        currentOffer: { ...terms },
+        lastCounterOffer: { ...terms },
+        history: [
+            ...session.history,
+            {
+                round: ctx.currentRound,
+                from: "player",
+                terms: { ...terms },
+                note: "Accepted their terms",
+            },
+        ],
+    };
+    return {
+        session: next,
+        accepted: true,
+        note: `${ctx.listing.driver.name} deal agreed`,
+    };
 }
 function withdrawNegotiation(session) {
     return { ...session, status: "withdrawn", counterpartyMood: "neutral" };
@@ -346,8 +373,11 @@ function applyDriverDeal(session, listing, input) {
     const salaryPerRace = terms.salaryPerRace ?? listing.salaryPerRace;
     const buyout = terms.buyoutToTeam ?? 0;
     const totalCost = signingFee + buyout;
-    if (input.roster.length >= driver_market_1.MAX_DRIVER_ROSTER) {
-        return { error: `Roster full (${driver_market_1.MAX_DRIVER_ROSTER} drivers maximum)` };
+    const rosterCap = (0, driver_market_1.maxDriverRosterForFleet)(input.fleetCarCount ?? 1);
+    if (input.roster.length >= rosterCap) {
+        return {
+            error: `Roster full (${(0, driver_market_1.driverRosterCapMessage)(input.fleetCarCount ?? 1, rosterCap)})`,
+        };
     }
     const contractErr = (0, driver_market_1.validateDriverMarketSigning)(listing, input.teamName, input.roster, input.repoRoot, input.rosterOverrides);
     if (contractErr && listing.source !== "wec_active") {
@@ -362,7 +392,7 @@ function applyDriverDeal(session, listing, input) {
     const driverId = signed.id;
     const roster = [
         ...input.roster,
-        { ...signed, tier: (0, driver_catalog_1.inferTier)(signed) },
+        { ...signed, tier: (0, driver_catalog_1.inferTier)(signed), origin: "signed" },
     ];
     const contract = {
         entityId: driverId,

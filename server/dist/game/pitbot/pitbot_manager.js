@@ -14,6 +14,17 @@ class PitBotManager {
         this.opponentEntryIds = [];
         this.gridSetupDone = false;
     }
+    exportState() {
+        return {
+            carState: [...this.carState.entries()],
+            gridSetupDone: this.gridSetupDone,
+        };
+    }
+    importState(data) {
+        this.carState = new Map(data.carState);
+        this.opponentEntryIds = data.carState.map(([id]) => id);
+        this.gridSetupDone = data.gridSetupDone;
+    }
     opponentIds(snapshots, managedEntryIds) {
         return snapshots
             .filter((s) => !managedEntryIds.has(s.entryId) && !s.retired)

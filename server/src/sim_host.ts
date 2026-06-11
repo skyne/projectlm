@@ -37,6 +37,13 @@ import { AiStintGuide } from "./llm/ai_stint_guide";
 import { rivalModifiersForTeam } from "./game/ai_rival_season";
 import { MockSimSession } from "./mock_session";
 import { SessionLogWriter } from "./session_log";
+import {
+  DEV_CHECKPOINT_VERSION,
+  type DevCheckpointFile,
+  type DevCheckpointHostOverlay,
+  readDevCheckpointFile,
+  writeDevCheckpoint,
+} from "./dev_checkpoint";
 import type { CarBuildPayload, CarSnapshot, CreateTeamPayload, EntrySessionBriefing, MetaStatePayload, RaceCompletePayload, RaceControlPayload, SessionInitPayload, SessionKind, SimEvent, StartPrivateTestPayload, StartRoundPayload, TeamCreationDraftPayload, TrackGeometryPayload, UpdateCarBriefingPayload, WeekendSessionType } from "./ws_protocol";
 import type { ProgressionSummary } from "./game/progression";
 import { collectQualifyingResults } from "./game/weekend_sessions";
@@ -54,6 +61,8 @@ export interface SimSessionLike {
   getRaceControl?(): RaceControlPayload;
   submitCommand?(entryId: string, command: string): boolean;
   debugRaceControl?(payload: import("./ws_protocol").DebugRaceControlPayload): string | null;
+  exportCheckpoint?(): Record<string, unknown>;
+  importCheckpoint?(payload: Record<string, unknown>): boolean;
 }
 
 export interface SimHostOptions {
@@ -625,6 +634,35 @@ export class SimHost {
     return this.meta.investRd(partId, points);
   }
 
+  applySessionProgression(
+    sessionType: WeekendSessionType,
+    options: { lapsCompleted?: number; classified?: boolean } = {},
+  ): { meta: MetaStatePayload; summary: import("./game/progression").ProgressionSummary } {
+    return this.meta.applySessionProgression(sessionType, options);
+  }
+
+  runOffWeekTraining(
+    payload: import("./ws_protocol").OffWeekTrainingPayload,
+  ): {
+    meta: MetaStatePayload;
+    summary?: import("./game/progression").ProgressionSummary;
+    error?: string;
+  } {
+    return this.meta.runOffWeekTraining(payload);
+  }
+
+  startPartProject(
+    payload: import("./ws_protocol").StartPartProjectPayload,
+  ): { meta: MetaStatePayload; error?: string } {
+    return this.meta.startPartProject(payload);
+  }
+
+  upgradeFacility(
+    payload: import("./ws_protocol").UpgradeFacilityPayload,
+  ): { meta: MetaStatePayload; error?: string } {
+    return this.meta.upgradeFacility(payload);
+  }
+
   completeRound(
     position: number,
     classId: string,
@@ -737,6 +775,21 @@ export class SimHost {
     return this.meta.signStaffContract(listingId, carId);
   }
 
+  fireStaff(
+    carId: string,
+    role: string,
+  ): MetaStatePayload | { error: string } {
+    return this.meta.fireStaff(carId, role);
+  }
+
+  reassignStaff(
+    fromCarId: string,
+    toCarId: string,
+    role: string,
+  ): MetaStatePayload | { error: string } {
+    return this.meta.reassignStaff(fromCarId, toCarId, role);
+  }
+
   startNegotiation(
     kind: import("./ws_protocol").NegotiationKind,
     subjectRef: string,
@@ -793,12 +846,22 @@ export class SimHost {
 
   newGame(): MetaStatePayload {
     const meta = this.meta.resetNewGame();
+    this.raceConfigPath = path.join(this.repoRoot, DEFAULT_RACE_CONFIG);
+    this.inRaceSession = false;
+    this.sessionKind = "weekend";
+    this.privateTestPayload = null;
+    this.lastRaceComplete = null;
+    this.sessionExtra = {
+      targetDurationSeconds: 0,
+      raceFormat: "",
+      roundNumber: 0,
+    };
+
     const prevCwd = process.cwd();
     process.chdir(this.repoRoot);
     this.session.initFromRaceConfig(this.configPathForSim());
     process.chdir(prevCwd);
 
-    this.inRaceSession = false;
     this.parsedConfig = parseRaceConfig(this.repoRoot, this.raceConfigPath);
     this.refreshEntriesFromConfig();
     this.raceTime = 0;
@@ -825,6 +888,128 @@ export class SimHost {
 
   getFleetEntryMap(): Map<string, string> {
     return new Map(this.fleetEntryMap);
+  }
+
+  private buildHostOverlay(): DevCheckpointHostOverlay {
+    return {
+      inRaceSession: this.inRaceSession,
+      paused: this.paused,
+      timeScale: this.timeScale,
+      raceConfigPath: this.raceConfigPath,
+      sessionExtra: { ...this.sessionExtra },
+      entries: this.entries.map((entry) => ({ ...entry })),
+      fleetEntryMap: [...this.fleetEntryMap.entries()],
+      runtimePlayerEntryId: this.runtimePlayerEntryId,
+      runtimeManagedEntryIds: [...this.runtimeManagedEntryIds],
+      activeRoundNumber: this.activeRoundNumber,
+      sessionKind: this.sessionKind,
+      privateTestPayload: this.privateTestPayload
+        ? structuredClone(this.privateTestPayload)
+        : null,
+      sessionEntryRosters: structuredClone(this.sessionEntryRosters),
+      pitBot: this.pitBot.exportState(),
+      stintGuide: this.stintGuide.exportState(),
+      sessionBriefings: this.sessionBriefings.exportState(),
+      sessionLog: this.sessionLog.exportActiveState(),
+    };
+  }
+
+  private applyHostOverlay(host: DevCheckpointHostOverlay): void {
+    this.inRaceSession = host.inRaceSession;
+    this.paused = host.paused;
+    this.timeScale = host.timeScale;
+    this.raceConfigPath = host.raceConfigPath;
+    this.sessionExtra = { ...host.sessionExtra };
+    this.entries = host.entries.map((entry) => ({ ...entry }));
+    this.fleetEntryMap = new Map(host.fleetEntryMap);
+    this.runtimePlayerEntryId = host.runtimePlayerEntryId;
+    this.runtimeManagedEntryIds = [...host.runtimeManagedEntryIds];
+    this.activeRoundNumber = host.activeRoundNumber;
+    this.sessionKind = host.sessionKind;
+    this.privateTestPayload = host.privateTestPayload
+      ? structuredClone(host.privateTestPayload)
+      : null;
+    this.sessionEntryRosters = structuredClone(host.sessionEntryRosters);
+    this.pitBot.importState(host.pitBot);
+    this.stintGuide.importState(host.stintGuide);
+    this.sessionBriefings.importState(host.sessionBriefings);
+    this.sessionLog.importActiveState(host.sessionLog);
+    this.parsedConfig = parseRaceConfig(this.repoRoot, this.raceConfigPath);
+    this.simTimestep = this.parsedConfig.simTimestep;
+    this.trackName = loadTrackName(
+      this.repoRoot,
+      this.parsedConfig.trackConfigPath,
+    );
+  }
+
+  saveDevCheckpoint(): { path: string } | { error: string } {
+    if (!this.inRaceSession) {
+      return { error: "No active session to save" };
+    }
+    if (!this.session.exportCheckpoint) {
+      return { error: "Checkpoint export unavailable for this sim backend" };
+    }
+    this.pause();
+    const sim = this.session.exportCheckpoint();
+    const payload: DevCheckpointFile = {
+      version: DEV_CHECKPOINT_VERSION,
+      savedAt: new Date().toISOString(),
+      bindingSource: this.bindingSource,
+      sim,
+      host: this.buildHostOverlay(),
+    };
+    try {
+      const filePath = writeDevCheckpoint(this.repoRoot, payload);
+      console.log(`[sim_host] Dev checkpoint saved → ${filePath}`);
+      return { path: filePath };
+    } catch (err) {
+      return { error: (err as Error).message };
+    }
+  }
+
+  restoreDevCheckpoint(filePath?: string): string | null {
+    const abs =
+      filePath ??
+      path.join(this.repoRoot, "server/data/dev_checkpoint.json");
+    const payload = readDevCheckpointFile(abs);
+    if (!payload) {
+      return `Checkpoint not found or invalid: ${abs}`;
+    }
+    if (payload.version !== DEV_CHECKPOINT_VERSION) {
+      return `Unsupported checkpoint version ${payload.version}`;
+    }
+    if (!this.session.importCheckpoint) {
+      return "Checkpoint import unavailable for this sim backend";
+    }
+
+    const configForSim = path.isAbsolute(payload.host.raceConfigPath)
+      ? path.relative(this.repoRoot, payload.host.raceConfigPath)
+      : payload.host.raceConfigPath;
+    const prevCwd = process.cwd();
+    process.chdir(this.repoRoot);
+    const initOk = this.session.initFromRaceConfig(
+      configForSim.startsWith("..") ? payload.host.raceConfigPath : configForSim,
+    );
+    process.chdir(prevCwd);
+    if (!initOk) {
+      return "Failed to init race config from checkpoint";
+    }
+
+    try {
+      if (!this.session.importCheckpoint(payload.sim)) {
+        return "Native checkpoint import failed";
+      }
+    } catch (err) {
+      return (err as Error).message;
+    }
+
+    this.applyHostOverlay(payload.host);
+    this.lastRaceComplete = null;
+    this.ensureTickLoop();
+    console.log(
+      `[sim_host] Dev checkpoint restored ← ${abs} (raceTime=${this.getRaceTime().toFixed(1)}s)`,
+    );
+    return null;
   }
 
   getSnapshots(): CarSnapshot[] {

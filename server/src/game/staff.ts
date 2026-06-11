@@ -235,6 +235,71 @@ export function staffForCar(staff: StaffMember[], carId: string): StaffMember[] 
   return staff.filter((member) => member.assignedCarId === carId);
 }
 
+export function releaseStaffSlot(
+  staff: StaffMember[],
+  carId: string,
+  role: StaffRole,
+): StaffMember[] | { error: string } {
+  const idx = staff.findIndex(
+    (s) => s.role === role && s.assignedCarId === carId,
+  );
+  if (idx < 0) return { error: "Staff slot not found" };
+  const member = staff[idx]!;
+  if (!isStaffSlotFilled(member)) {
+    return { error: "That slot is already vacant" };
+  }
+  const next = [...staff];
+  next[idx] = createJuniorPlaceholder(role, carId);
+  return next;
+}
+
+export function moveStaffBetweenCars(
+  staff: StaffMember[],
+  fromCarId: string,
+  toCarId: string,
+  role: StaffRole,
+): StaffMember[] | { error: string } {
+  if (fromCarId === toCarId) {
+    return { error: "Choose a different car" };
+  }
+
+  const fromIdx = staff.findIndex(
+    (s) => s.role === role && s.assignedCarId === fromCarId,
+  );
+  const toIdx = staff.findIndex(
+    (s) => s.role === role && s.assignedCarId === toCarId,
+  );
+  if (fromIdx < 0 || toIdx < 0) return { error: "Staff slot not found" };
+
+  const fromMember = staff[fromIdx]!;
+  const toMember = staff[toIdx]!;
+  if (!isStaffSlotFilled(fromMember)) {
+    return { error: "No crew member to move from that slot" };
+  }
+
+  const next = [...staff];
+  if (!isStaffSlotFilled(toMember)) {
+    next[fromIdx] = createJuniorPlaceholder(role, fromCarId);
+    next[toIdx] = {
+      ...fromMember,
+      id: staffId(role, toCarId),
+      assignedCarId: toCarId,
+    };
+  } else {
+    next[fromIdx] = {
+      ...toMember,
+      id: staffId(role, fromCarId),
+      assignedCarId: fromCarId,
+    };
+    next[toIdx] = {
+      ...fromMember,
+      id: staffId(role, toCarId),
+      assignedCarId: toCarId,
+    };
+  }
+  return next;
+}
+
 export function estimateWeeklySalaries(staff: StaffMember[]): number {
   return staff.reduce((sum, member) => sum + member.salaryPerRace, 0);
 }

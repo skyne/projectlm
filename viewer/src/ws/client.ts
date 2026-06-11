@@ -384,6 +384,18 @@ export class ViewerClient {
     this.send(clientMessage("sign_staff_contract", { listingId, carId }));
   }
 
+  fireStaff(carId: string, role: import("./protocol").StaffRole): void {
+    this.send(clientMessage("fire_staff", { carId, role }));
+  }
+
+  reassignStaff(
+    fromCarId: string,
+    toCarId: string,
+    role: import("./protocol").StaffRole,
+  ): void {
+    this.send(clientMessage("reassign_staff", { fromCarId, toCarId, role }));
+  }
+
   refreshDriverMarket(): void {
     this.send(clientMessage("refresh_driver_market", {}));
   }
@@ -440,6 +452,21 @@ export class ViewerClient {
 
   saveTrackSetup(trackId: string, preset: import("./protocol").TrackSetupPresetPayload): void {
     this.send(clientMessage("save_track_setup", { trackId, preset }));
+  }
+
+  offWeekTraining(payload: import("./protocol").OffWeekTrainingPayload): void {
+    this.send(clientMessage("off_week_training", payload));
+  }
+
+  upgradeFacility(facilityId: string): void {
+    this.send(clientMessage("upgrade_facility", { facilityId }));
+  }
+
+  startPartProject(
+    partInstanceId: string,
+    focus: import("./protocol").PartProjectFocusPayload,
+  ): void {
+    this.send(clientMessage("start_part_project", { partInstanceId, focus }));
   }
 
   getTrackPreview(trackId: string): void {

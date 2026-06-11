@@ -50,6 +50,20 @@ const char *TrackStatusName(TrackStatus status) {
   }
 }
 
+TrackStatus ParseTrackStatus(const std::string &name) {
+  if (name == "stalled")
+    return TrackStatus::Stalled;
+  if (name == "stranded")
+    return TrackStatus::Stranded;
+  if (name == "recovering")
+    return TrackStatus::Recovering;
+  if (name == "returning_to_garage")
+    return TrackStatus::ReturningToGarage;
+  if (name == "cleared")
+    return TrackStatus::Cleared;
+  return TrackStatus::Racing;
+}
+
 const char *PendingPenaltyName(PendingPenalty penalty) {
   switch (penalty) {
   case PendingPenalty::DriveThrough:
@@ -62,6 +76,16 @@ const char *PendingPenaltyName(PendingPenalty penalty) {
   default:
     return "none";
   }
+}
+
+PendingPenalty ParsePendingPenalty(const std::string &name) {
+  if (name == "drive_through")
+    return PendingPenalty::DriveThrough;
+  if (name == "stop_go")
+    return PendingPenalty::StopGo;
+  if (name == "black")
+    return PendingPenalty::Black;
+  return PendingPenalty::None;
 }
 
 HazardKind ParseHazardKind(const std::string &name) {

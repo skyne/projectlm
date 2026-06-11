@@ -57,6 +57,21 @@ export function trackGeometryEqual(
     }
   }
   if (a.defaultWidthM !== b.defaultWidthM) return false;
+  const aWidth = a.widthProfile ?? [];
+  const bWidth = b.widthProfile ?? [];
+  if (aWidth.length !== bWidth.length) return false;
+  for (let i = 0; i < aWidth.length; i++) {
+    const wa = aWidth[i];
+    const wb = bWidth[i];
+    if (
+      wa.startT !== wb.startT ||
+      wa.endT !== wb.endT ||
+      wa.widthM !== wb.widthM ||
+      wa.name !== wb.name
+    ) {
+      return false;
+    }
+  }
   if (a.surfaceDefaults?.vergeWidthM !== b.surfaceDefaults?.vergeWidthM) return false;
   const aSurf = a.surfaceProfile ?? [];
   const bSurf = b.surfaceProfile ?? [];

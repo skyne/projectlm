@@ -1,0 +1,39 @@
+# Free agents from 2025 Le Mans grid, ELMS, and IMSA — not on the 2026 WEC entry list.
+# Deduplicated at load time against lemans2026_drivers.txt via stable catalog id.
+# Format: driver=name|nat|tier|series|tagline|dry|wet|consistency|overtaking|defending|traffic|rolling|standing|setup|tire|fuel|composure|night|rain|stamina|adaptability|max_stint_hours
+# series: lemans2025 | elms | imsa
+
+# —— Female drivers (ELMS / IMSA / Iron Dames) ——
+driver=Sarah Bovy|BE|Gold|elms|Iron Dames · ELMS & IMSA GT regular|86|82|84|80|78|82|80|78|76|82|78|84|80|76|82|78|3
+driver=Michelle Gatting|DK|Gold|elms|Iron Dames · 2025 ELMS LMGT3 front-runner|84|80|84|78|76|80|78|76|74|84|80|82|78|74|84|76|3
+driver=Rahel Frey|CH|Gold|imsa|Iron Dames · IMSA GTD Pro veteran|85|80|84|80|78|82|80|78|76|82|78|84|80|76|84|77|3
+driver=Célia Martin|FR|Silver|elms|Iron Dames · ELMS endurance specialist|78|74|78|72|70|74|72|70|68|76|72|76|72|68|78|68|2.5
+driver=Tatiana Calderón|CO|Gold|imsa|Acura GTD · former W Series podium finisher|84|82|82|78|76|80|78|76|74|80|76|82|78|80|80|75|2.5
+driver=Sheena Monk|US|Bronze|imsa|Porsche Carrera Cup · IMSA Michelin Pilot Challenge|72|68|72|66|64|68|66|64|62|70|66|72|66|64|72|58|2
+driver=Karen Gaillard|FR|Bronze|imsa|Iron Dames · IMSA Michelin Pilot Challenge|70|66|70|64|62|66|64|62|60|68|64|70|64|62|70|56|2
+
+# —— ELMS ——
+driver=James Roe|GB|Gold|elms|2024 ELMS LMP2 champion · United Autosports|87|82|86|82|80|84|82|80|78|84|80|86|82|78|84|80|3
+driver=Ayhancan Güven|TR|Gold|elms|TF Sport · ELMS LMGT3 front-runner|85|80|82|80|78|82|80|78|76|82|78|82|78|74|82|76|3
+driver=Jonathan Aberdein|ZA|Silver|elms|United Autosports · ELMS LMP3 regular|78|72|76|74|72|74|72|70|68|74|70|74|70|66|76|67|2.5
+driver=Ben Hanley|GB|Gold|elms|Nielsen Racing · ELMS LMP2 regular|86|80|84|80|78|82|80|78|76|82|78|82|78|74|82|77|3
+
+# —— IMSA ——
+driver=Filipe Albuquerque|PT|Platinum|imsa|Cadillac WTR · two-time IMSA prototype champion|93|88|92|88|86|90|88|86|84|88|86|92|88|86|88|88|3.5
+driver=Ricky Taylor|US|Platinum|imsa|Acura ARX-06 · prototype ace|92|86|90|86|84|88|86|84|82|86|84|90|86|82|86|87|3
+driver=Joey Hand|US|Gold|imsa|BMW M Team RLL · Daytona 24 winner|86|82|84|82|80|84|82|80|78|84|80|84|80|76|84|78|3
+driver=Aaron Telitz|US|Gold|imsa|Wayne Taylor Racing · wet-weather GTP specialist|85|88|84|80|78|82|80|78|76|82|78|82|80|84|82|76|3
+driver=Tom Blomqvist|GB|Gold|imsa|BMW M Team RLL · DTM & IMSA crossover|86|82|84|82|80|84|82|80|78|84|80|84|80|76|84|79|3
+driver=Pato O'Ward|MX|Gold|imsa|Arrow McLaren · IndyCar star at Daytona|88|80|84|86|82|84|82|84|78|80|76|82|78|72|80|74|2.5
+driver=Till Bechtolsheimer|US|Bronze|imsa|Ave Motorsports · IMSA Bronze-rated driver|70|66|70|64|62|66|64|62|60|68|64|70|64|60|70|57|2
+driver=Simon Pagenaud|FR|Gold|imsa|Cadillac WTR · Indy 500 winner|87|84|86|84|82|86|84|82|80|84|82|86|84|82|84|80|3
+driver=James Hinchcliffe|CA|Gold|imsa|Wayne Taylor Racing · versatile sports-car racer|85|82|84|80|78|82|80|78|76|82|78|82|78|76|82|75|2.5
+
+# —— 2025 Le Mans one-offs & guest entries ——
+driver=Reshad de Gerus|FR|Silver|lemans2025|DKR Engineering · 2025 Le Mans LMP2|78|74|76|74|72|74|72|70|68|74|70|74|70|66|76|66|2.5
+driver=Harry King|GB|Silver|lemans2025|Proton Competition · IMSA GTD Pro → Le Mans debut|80|74|78|76|74|76|74|72|70|78|74|76|74|68|78|70|2.5
+driver=Tristan Vautier|FR|Gold|lemans2025|RD Limited · 2025 Le Mans LMP2|86|82|84|82|80|84|82|80|78|84|80|84|80|76|82|77|3
+driver=Kevin Estre|FR|Platinum|lemans2025|TDS Racing · Porsche factory at 2025 Le Mans|91|88|90|86|84|88|86|84|82|86|84|90|86|84|86|86|3
+driver=Tobias Lutke|CA|Silver|lemans2025|TDS Racing · IMSA LMP2 rookie at Le Mans|76|72|74|72|70|72|70|68|66|74|70|72|70|66|74|64|2.5
+driver=Mathias Beche|CH|Gold|lemans2025|TDS Racing · TDS endurance veteran|85|80|84|80|78|82|80|78|76|84|80|82|78|74|82|76|3
+driver=Edward Pearson|GB|Silver|lemans2025|Nielsen Racing · 2025 Le Mans LMP2|77|72|76|72|70|74|72|70|68|74|70|74|70|66|76|65|2.5

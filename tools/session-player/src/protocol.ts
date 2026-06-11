@@ -268,6 +268,13 @@ export interface MetaStatePayload {
     eventName: string;
     completed: boolean;
   }>;
+  partInstances?: Array<{
+    id: string;
+    catalogId: string;
+    slot: string;
+    category: string;
+    source: string;
+  }>;
 }
 
 export interface TickPayload {
@@ -298,6 +305,10 @@ export interface RaceCompletePayload {
   nextJointTestSessionIndex?: number | null;
   jointTestSessionCount?: number;
   championshipPoints?: number;
+  progressionSummary?: {
+    drivers: Array<{ id: string; name: string; xpGained: number }>;
+    staff: Array<{ id: string; name: string; xpGained: number }>;
+  };
 }
 
 export interface StaffMemberPayload {
@@ -368,6 +379,8 @@ export interface GameCatalogPayload {
   carPlatforms: CarPlatformPayload[];
   fleetRules: { startingBudget: number };
   driverPointPool: number;
+  driverStatDefs?: Array<{ key: string; label: string }>;
+  glossary?: Array<{ key: string; label: string; short: string; long: string }>;
 }
 
 export type EngineerHintCategory =

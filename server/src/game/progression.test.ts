@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  applyOffWeekTraining,
   applyPrivateTestProgression,
+  applyWeekendProgression,
+  collectWeekendParticipants,
   driverXpForPrivateTest,
+  driverXpForWeekendSession,
   progressionLevel,
   staffXpForPrivateTest,
+  staffXpForWeekendSession,
   xpIntoCurrentLevel,
 } from "./progression";
+import { defaultFacilities } from "./facilities";
 import type { DriverProfilePayload } from "../ws_protocol";
 import type { StaffMember } from "./staff";
 
@@ -30,6 +36,7 @@ const baseDriver = (id: string, name: string): DriverProfilePayload => ({
   nightPace: 74,
   rainRadar: 70,
   stamina: 78,
+  adaptability: 70,
   maxStintHours: 2.5,
 });
 
@@ -70,7 +77,8 @@ describe("progression", () => {
     );
     assert.equal(summary.drivers[0]?.xpGained, 32);
     assert.equal(next[0].progressionXp, 112);
-    assert.ok((next[0].dryPace ?? 0) > 80);
+    // Level 2 rotates to stamina (after dryPace at level 1).
+    assert.ok((next[0].stamina ?? 0) > 78);
   });
 
   it("scales private test xp with joint-testing multiplier", () => {
@@ -98,6 +106,52 @@ describe("progression", () => {
     );
     assert.equal(summary.staff[0]?.xpGained, 20);
     assert.equal(next[0].progressionXp, 105);
-    assert.equal(next[0].skill, 73);
+    // Engineer level 2 awards morale (odd levels = skill).
+    assert.equal(next[0].morale, 81);
+  });
+
+  it("awards weekend session xp by type", () => {
+    assert.ok(driverXpForWeekendSession("race") > driverXpForWeekendSession("practice"));
+    assert.ok(staffXpForWeekendSession("race") >= staffXpForWeekendSession("qualifying"));
+  });
+
+  it("applies weekend progression to assigned roster", () => {
+    const drivers = [baseDriver("d1", "Marco")];
+    const staff = [baseStaff("s1")];
+    const { summary } = applyWeekendProgression(
+      drivers,
+      staff,
+      ["d1"],
+      ["s1"],
+      "qualifying",
+    );
+    assert.equal(summary.drivers[0]?.xpGained, driverXpForWeekendSession("qualifying"));
+    assert.equal(summary.staff[0]?.xpGained, staffXpForWeekendSession("qualifying"));
+  });
+
+  it("collects weekend participants from fleet assignments", () => {
+    const drivers = [baseDriver("d1", "Marco")];
+    const staff = [baseStaff("s1")];
+    const { driverIds, staffIds } = collectWeekendParticipants(
+      ["car-1"],
+      drivers,
+      staff,
+      { "car-1": ["d1"] },
+    );
+    assert.deepEqual(driverIds, ["d1"]);
+    assert.deepEqual(staffIds, ["s1"]);
+  });
+
+  it("runs off-week driver simulator training", () => {
+    const drivers = [baseDriver("d1", "Marco")];
+    const result = applyOffWeekTraining(
+      drivers,
+      [],
+      "driver_sim",
+      { driverId: "d1" },
+      defaultFacilities(),
+    );
+    assert.equal(result.error, undefined);
+    assert.ok(result.summary.drivers[0]?.xpGained > 0);
   });
 });

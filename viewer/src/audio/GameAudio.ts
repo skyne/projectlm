@@ -1,4 +1,4 @@
-import { AUDIO_ASSETS, type MusicTrackId, type SfxId } from "./assets";
+import { AUDIO_ASSETS, MUSIC_PLAYLISTS, type MusicTrackId, type SfxId } from "./assets";
 import {
   cloneAudioSettings,
   loadAudioSettings,
@@ -32,6 +32,9 @@ export class GameAudio {
   private settings: AudioSettings;
   private unlocked = false;
   private currentMusic: MusicTrackId | null = null;
+  private musicPlaylistOrder: number[] = [];
+  private musicPlaylistIndex = 0;
+  private currentMusicSrc: string | null = null;
   private musicEl: HTMLAudioElement | null = null;
   private greenFlagPlayed = false;
   private raceTime = 0;
@@ -87,6 +90,9 @@ export class GameAudio {
   setMusicTrack(track: MusicTrackId | null): void {
     if (track === this.currentMusic) return;
     this.currentMusic = track;
+    this.currentMusicSrc = null;
+    this.musicPlaylistOrder = [];
+    this.musicPlaylistIndex = 0;
     this.refreshMusic();
   }
 
@@ -190,23 +196,66 @@ export class GameAudio {
       return;
     }
 
-    const src = AUDIO_ASSETS.music[this.currentMusic];
     if (!this.musicEl) {
       this.musicEl = new Audio();
-      this.musicEl.loop = true;
+      this.musicEl.loop = false;
+      this.musicEl.addEventListener("ended", () => this.onMusicEnded());
     }
-    if (this.musicEl.src.endsWith(src)) {
+
+    if (!this.currentMusicSrc) {
+      this.startMusicPlaylist(this.currentMusic);
+      return;
+    }
+
+    void this.musicEl.play().catch(() => undefined);
+    this.applyMusicVolume();
+  }
+
+  private startMusicPlaylist(track: MusicTrackId): void {
+    const playlist = MUSIC_PLAYLISTS[track];
+    this.musicPlaylistOrder = shufflePlaylist(playlist.length);
+    this.musicPlaylistIndex = 0;
+    this.playMusicFromPlaylist(track);
+  }
+
+  private playMusicFromPlaylist(track: MusicTrackId): void {
+    if (!this.musicEl) return;
+
+    const playlist = MUSIC_PLAYLISTS[track];
+    const orderIndex = this.musicPlaylistOrder[this.musicPlaylistIndex] ?? 0;
+    const src = playlist[orderIndex]!;
+    if (this.currentMusicSrc === src) {
       void this.musicEl.play().catch(() => undefined);
       this.applyMusicVolume();
       return;
     }
 
+    this.currentMusicSrc = src;
     this.musicEl.src = src;
     this.applyMusicVolume();
     void this.musicEl.play().catch(() => undefined);
   }
 
+  private onMusicEnded(): void {
+    if (!this.currentMusic || !this.settings.enabled || !this.unlocked) return;
+
+    const playlist = MUSIC_PLAYLISTS[this.currentMusic];
+    const previousOrderIndex =
+      this.musicPlaylistOrder[this.musicPlaylistIndex] ?? 0;
+    this.musicPlaylistIndex = (this.musicPlaylistIndex + 1) % playlist.length;
+    if (this.musicPlaylistIndex === 0) {
+      this.musicPlaylistOrder = shufflePlaylist(
+        playlist.length,
+        previousOrderIndex,
+      );
+    }
+    this.playMusicFromPlaylist(this.currentMusic);
+  }
+
   private stopMusic(): void {
+    this.currentMusicSrc = null;
+    this.musicPlaylistOrder = [];
+    this.musicPlaylistIndex = 0;
     if (!this.musicEl) return;
     this.musicEl.pause();
     this.musicEl.removeAttribute("src");
@@ -279,4 +328,20 @@ export class GameAudio {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function shufflePlaylist(length: number, avoidFirst?: number): number[] {
+  const order = Array.from({ length }, (_, index) => index);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j]!, order[i]!];
+  }
+  if (
+    avoidFirst !== undefined &&
+    length > 1 &&
+    order[0] === avoidFirst
+  ) {
+    [order[0], order[1]] = [order[1]!, order[0]!];
+  }
+  return order;
 }

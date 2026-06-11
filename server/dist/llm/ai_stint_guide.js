@@ -19,6 +19,20 @@ class AiStintGuide {
         this.queue = [];
         this.raceStarted = false;
     }
+    exportState() {
+        return {
+            plans: [...this.plans.entries()],
+            pitCounts: [...this.pitCounts.entries()],
+            raceStarted: this.raceStarted,
+        };
+    }
+    importState(data) {
+        this.plans = new Map(data.plans);
+        this.pitCounts = new Map(data.pitCounts);
+        this.planning.clear();
+        this.queue = [];
+        this.raceStarted = data.raceStarted;
+    }
     getPlan(entryId) {
         return this.plans.get(entryId);
     }

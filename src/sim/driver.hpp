@@ -36,6 +36,8 @@ struct DriverProfile {
 
   // Technical / endurance
   double setupFeedback = 70.0;
+  /** Wider setup comfort band before pace penalty (distinct from setupFeedback). */
+  double adaptability = 70.0;
   double tireManagement = 72.0;
   double fuelSaving = 70.0;
   double rainRadar = 68.0;
@@ -66,6 +68,9 @@ struct DriverState {
   double paceFactor(double trackWetness, bool isNight,
                     double visibilityKm = 10.0,
                     double windSpeedMs = 0.0) const;
+  /** 0.93..1.0 — high adaptability tolerates larger wing/brake deltas. */
+  double setupComfortFactor(double wingDelta,
+                            double brakeDeltaFromStart) const;
   double consistencyFactor() const;
   double overtakingFactor() const;
   double defendingFactor() const;

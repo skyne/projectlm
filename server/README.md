@@ -20,6 +20,22 @@ cd server
 npm run dev
 ```
 
+### Dev checkpoint (save / restore mid-session)
+
+While a race session is active:
+
+```bash
+curl -X POST http://127.0.0.1:9786/dev/checkpoint/save
+```
+
+After rebuilding native or server:
+
+```bash
+cd server && npm run start -- --restore
+```
+
+Or use `./scripts/dev-reload.sh` to save, rebuild, and restart in one step. See `.cursor/skills/dev-checkpoint-reload/SKILL.md`.
+
 Environment variables:
 
 | Variable | Default | Purpose |

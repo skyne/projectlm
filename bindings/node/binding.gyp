@@ -23,6 +23,7 @@
         "../../src/sim/race_control.cpp",
         "../../src/sim/race_control_common.cpp",
         "../../src/sim/sim_bridge.cpp",
+        "../../src/sim/sim_checkpoint.cpp",
         "../../src/sim/driver.cpp",
         "../../src/sim/commands.cpp",
         "../../src/sim/pit_stop.cpp",

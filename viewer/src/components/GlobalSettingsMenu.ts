@@ -2,6 +2,11 @@ export interface GlobalSettingsHandlers {
   onRestartRace: () => void;
   onEndSession: () => void;
   onChangeIdentity: () => void;
+  onEngineerHintsChange?: (enabled: boolean) => void;
+}
+
+export interface GlobalSettingsOptions {
+  engineerHintsEnabled?: boolean;
 }
 
 const SETTINGS_ICON = `<svg class="global-settings-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -17,9 +22,14 @@ export class GlobalSettingsMenu {
   private endBtn: HTMLButtonElement;
   private identityBtn: HTMLButtonElement;
   private identitySection: HTMLElement;
+  private engineerHintsToggle: HTMLInputElement;
   private docListener: ((ev: MouseEvent) => void) | null = null;
 
-  constructor(container: HTMLElement, handlers: GlobalSettingsHandlers) {
+  constructor(
+    container: HTMLElement,
+    handlers: GlobalSettingsHandlers,
+    options: GlobalSettingsOptions = {},
+  ) {
     this.root = document.createElement("div");
     this.root.className = "global-settings";
     this.root.innerHTML = `
@@ -48,6 +58,13 @@ export class GlobalSettingsMenu {
             </button>
           </div>
         </div>
+        <div class="global-settings-gameplay">
+          <p class="global-settings-heading">Gameplay</p>
+          <label class="audio-toggle-row">
+            <input type="checkbox" class="engineer-hints-toggle" checked />
+            <span>Engineer radio hints</span>
+          </label>
+        </div>
         <p class="global-settings-heading">Audio</p>
         <div class="global-settings-audio"></div>
         <div class="global-settings-identity hidden">
@@ -67,6 +84,8 @@ export class GlobalSettingsMenu {
     this.endBtn = this.root.querySelector('[data-action="end"]')!;
     this.identityBtn = this.root.querySelector('[data-action="identity"]')!;
     this.identitySection = this.root.querySelector(".global-settings-identity")!;
+    this.engineerHintsToggle = this.root.querySelector(".engineer-hints-toggle")!;
+    this.engineerHintsToggle.checked = options.engineerHintsEnabled ?? true;
 
     this.btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -87,6 +106,14 @@ export class GlobalSettingsMenu {
       this.closeMenu();
       handlers.onChangeIdentity();
     });
+
+    this.engineerHintsToggle.addEventListener("change", () => {
+      handlers.onEngineerHintsChange?.(this.engineerHintsToggle.checked);
+    });
+  }
+
+  setEngineerHintsEnabled(enabled: boolean): void {
+    this.engineerHintsToggle.checked = enabled;
   }
 
   setIdentityVisible(visible: boolean): void {

@@ -225,6 +225,44 @@ describe("negotiations", () => {
     assert.ok(countered.session.lastCounterOffer);
     const accepted = acceptCounterOffer(countered.session, ctx);
     assert.equal(accepted.accepted, true);
+    assert.equal(accepted.session.status, "accepted");
+  });
+
+  it("accepts explicit counter-offer even when buyout is below negotiation minimum", () => {
+    const listing = prospectListing({
+      source: "wec_active",
+      contractedTeam: "Peugeot",
+      signingFee: 500_000,
+      salaryPerRace: 30_000,
+    });
+    const created = createDriverNegotiation(listing, {
+      playerTeamName: "Sky Racing",
+      currentRound: 3,
+      seasonYear: 2026,
+      prestigeScore: 0.6,
+    });
+    assert.ok(!("error" in created));
+    if ("error" in created) return;
+
+    const ctx = buildDriverNegotiationContext(listing, {
+      playerTeamName: "Sky Racing",
+      currentRound: 3,
+      seasonYear: 2026,
+      prestigeScore: 0.6,
+    });
+    const countered = evaluateDriverOffer(created, {
+      signingFee: 200_000,
+      salaryPerRace: 10_000,
+      contractSeasons: 1,
+      seatGuarantee: "reserve",
+      buyoutToTeam: 0,
+    }, ctx);
+    const counterBuyout = countered.session.lastCounterOffer?.buyoutToTeam ?? 0;
+    assert.ok(counterBuyout < computeMinBuyout(listing));
+
+    const accepted = acceptCounterOffer(countered.session, ctx);
+    assert.equal(accepted.accepted, true);
+    assert.equal(accepted.session.status, "accepted");
   });
 
   it("expires open negotiations after deadline round", () => {

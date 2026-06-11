@@ -6,6 +6,7 @@
 import { SessionPlayer } from "./client.js";
 import { runE2E } from "./e2e.js";
 import { runReconnectE2E } from "./reconnect_e2e.js";
+import { runMetaFeaturesE2E } from "./meta_features_e2e.js";
 import { defaultWsUrl } from "./ws_url.js";
 
 export interface CiSuiteResult {
@@ -57,6 +58,20 @@ export async function runCiSuite(): Promise<CiSuiteResult> {
           watchSeconds: WATCH_SEC,
           timeScale: TIME_SCALE,
           reset: true,
+        });
+      } finally {
+        player.close();
+      }
+    }),
+  );
+
+  suites.push(
+    await runWithRetry("meta_features", async () => {
+      const player = new SessionPlayer();
+      try {
+        await player.connect({ url: WS_URL, timeoutMs: 15000 });
+        return await runMetaFeaturesE2E(player, {
+          timeScale: Number(process.env.META_FEATURES_TIME_SCALE ?? 80),
         });
       } finally {
         player.close();

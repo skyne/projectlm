@@ -50,6 +50,7 @@ const ai_stint_guide_1 = require("./llm/ai_stint_guide");
 const ai_rival_season_1 = require("./game/ai_rival_season");
 const mock_session_1 = require("./mock_session");
 const session_log_1 = require("./session_log");
+const dev_checkpoint_1 = require("./dev_checkpoint");
 const weekend_sessions_1 = require("./game/weekend_sessions");
 const DEFAULT_RACE_CONFIG = "configs/race_config_web.txt";
 function resolveRepoRoot(explicit) {
@@ -458,6 +459,18 @@ class SimHost {
     investRd(partId, points) {
         return this.meta.investRd(partId, points);
     }
+    applySessionProgression(sessionType, options = {}) {
+        return this.meta.applySessionProgression(sessionType, options);
+    }
+    runOffWeekTraining(payload) {
+        return this.meta.runOffWeekTraining(payload);
+    }
+    startPartProject(payload) {
+        return this.meta.startPartProject(payload);
+    }
+    upgradeFacility(payload) {
+        return this.meta.upgradeFacility(payload);
+    }
     completeRound(position, classId, raceResults) {
         this.persistFleetCarConditions("race");
         return this.meta.completeRound(position, classId, raceResults, this.sessionEntryRosters);
@@ -532,6 +545,12 @@ class SimHost {
     signStaffContract(listingId, carId) {
         return this.meta.signStaffContract(listingId, carId);
     }
+    fireStaff(carId, role) {
+        return this.meta.fireStaff(carId, role);
+    }
+    reassignStaff(fromCarId, toCarId, role) {
+        return this.meta.reassignStaff(fromCarId, toCarId, role);
+    }
     startNegotiation(kind, subjectRef) {
         return this.meta.startNegotiation(kind, subjectRef);
     }
@@ -558,11 +577,20 @@ class SimHost {
     }
     newGame() {
         const meta = this.meta.resetNewGame();
+        this.raceConfigPath = path.join(this.repoRoot, DEFAULT_RACE_CONFIG);
+        this.inRaceSession = false;
+        this.sessionKind = "weekend";
+        this.privateTestPayload = null;
+        this.lastRaceComplete = null;
+        this.sessionExtra = {
+            targetDurationSeconds: 0,
+            raceFormat: "",
+            roundNumber: 0,
+        };
         const prevCwd = process.cwd();
         process.chdir(this.repoRoot);
         this.session.initFromRaceConfig(this.configPathForSim());
         process.chdir(prevCwd);
-        this.inRaceSession = false;
         this.parsedConfig = (0, config_parser_1.parseRaceConfig)(this.repoRoot, this.raceConfigPath);
         this.refreshEntriesFromConfig();
         this.raceTime = 0;
@@ -586,6 +614,115 @@ class SimHost {
     }
     getFleetEntryMap() {
         return new Map(this.fleetEntryMap);
+    }
+    buildHostOverlay() {
+        return {
+            inRaceSession: this.inRaceSession,
+            paused: this.paused,
+            timeScale: this.timeScale,
+            raceConfigPath: this.raceConfigPath,
+            sessionExtra: { ...this.sessionExtra },
+            entries: this.entries.map((entry) => ({ ...entry })),
+            fleetEntryMap: [...this.fleetEntryMap.entries()],
+            runtimePlayerEntryId: this.runtimePlayerEntryId,
+            runtimeManagedEntryIds: [...this.runtimeManagedEntryIds],
+            activeRoundNumber: this.activeRoundNumber,
+            sessionKind: this.sessionKind,
+            privateTestPayload: this.privateTestPayload
+                ? structuredClone(this.privateTestPayload)
+                : null,
+            sessionEntryRosters: structuredClone(this.sessionEntryRosters),
+            pitBot: this.pitBot.exportState(),
+            stintGuide: this.stintGuide.exportState(),
+            sessionBriefings: this.sessionBriefings.exportState(),
+            sessionLog: this.sessionLog.exportActiveState(),
+        };
+    }
+    applyHostOverlay(host) {
+        this.inRaceSession = host.inRaceSession;
+        this.paused = host.paused;
+        this.timeScale = host.timeScale;
+        this.raceConfigPath = host.raceConfigPath;
+        this.sessionExtra = { ...host.sessionExtra };
+        this.entries = host.entries.map((entry) => ({ ...entry }));
+        this.fleetEntryMap = new Map(host.fleetEntryMap);
+        this.runtimePlayerEntryId = host.runtimePlayerEntryId;
+        this.runtimeManagedEntryIds = [...host.runtimeManagedEntryIds];
+        this.activeRoundNumber = host.activeRoundNumber;
+        this.sessionKind = host.sessionKind;
+        this.privateTestPayload = host.privateTestPayload
+            ? structuredClone(host.privateTestPayload)
+            : null;
+        this.sessionEntryRosters = structuredClone(host.sessionEntryRosters);
+        this.pitBot.importState(host.pitBot);
+        this.stintGuide.importState(host.stintGuide);
+        this.sessionBriefings.importState(host.sessionBriefings);
+        this.sessionLog.importActiveState(host.sessionLog);
+        this.parsedConfig = (0, config_parser_1.parseRaceConfig)(this.repoRoot, this.raceConfigPath);
+        this.simTimestep = this.parsedConfig.simTimestep;
+        this.trackName = (0, config_parser_1.loadTrackName)(this.repoRoot, this.parsedConfig.trackConfigPath);
+    }
+    saveDevCheckpoint() {
+        if (!this.inRaceSession) {
+            return { error: "No active session to save" };
+        }
+        if (!this.session.exportCheckpoint) {
+            return { error: "Checkpoint export unavailable for this sim backend" };
+        }
+        this.pause();
+        const sim = this.session.exportCheckpoint();
+        const payload = {
+            version: dev_checkpoint_1.DEV_CHECKPOINT_VERSION,
+            savedAt: new Date().toISOString(),
+            bindingSource: this.bindingSource,
+            sim,
+            host: this.buildHostOverlay(),
+        };
+        try {
+            const filePath = (0, dev_checkpoint_1.writeDevCheckpoint)(this.repoRoot, payload);
+            console.log(`[sim_host] Dev checkpoint saved → ${filePath}`);
+            return { path: filePath };
+        }
+        catch (err) {
+            return { error: err.message };
+        }
+    }
+    restoreDevCheckpoint(filePath) {
+        const abs = filePath ??
+            path.join(this.repoRoot, "server/data/dev_checkpoint.json");
+        const payload = (0, dev_checkpoint_1.readDevCheckpointFile)(abs);
+        if (!payload) {
+            return `Checkpoint not found or invalid: ${abs}`;
+        }
+        if (payload.version !== dev_checkpoint_1.DEV_CHECKPOINT_VERSION) {
+            return `Unsupported checkpoint version ${payload.version}`;
+        }
+        if (!this.session.importCheckpoint) {
+            return "Checkpoint import unavailable for this sim backend";
+        }
+        const configForSim = path.isAbsolute(payload.host.raceConfigPath)
+            ? path.relative(this.repoRoot, payload.host.raceConfigPath)
+            : payload.host.raceConfigPath;
+        const prevCwd = process.cwd();
+        process.chdir(this.repoRoot);
+        const initOk = this.session.initFromRaceConfig(configForSim.startsWith("..") ? payload.host.raceConfigPath : configForSim);
+        process.chdir(prevCwd);
+        if (!initOk) {
+            return "Failed to init race config from checkpoint";
+        }
+        try {
+            if (!this.session.importCheckpoint(payload.sim)) {
+                return "Native checkpoint import failed";
+            }
+        }
+        catch (err) {
+            return err.message;
+        }
+        this.applyHostOverlay(payload.host);
+        this.lastRaceComplete = null;
+        this.ensureTickLoop();
+        console.log(`[sim_host] Dev checkpoint restored ← ${abs} (raceTime=${this.getRaceTime().toFixed(1)}s)`);
+        return null;
     }
     getSnapshots() {
         return this.enrichSnapshots(this.session.getSnapshots());

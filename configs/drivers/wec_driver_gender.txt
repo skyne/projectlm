@@ -1,0 +1,15 @@
+# WEC / Le Mans driver gender — name|NAT|female|male
+# Default is male when not listed. Sources: 2026 Le Mans entry list, FIA WEC.
+# 2026 Le Mans has two female race drivers (24h-lemans.com).
+
+Doriane Pin|FR|female
+Lilou Wadoux|FR|female
+
+# Free agents — ELMS / IMSA / Iron Dames (2025 grids)
+Sarah Bovy|BE|female
+Michelle Gatting|DK|female
+Rahel Frey|CH|female
+Célia Martin|FR|female
+Tatiana Calderón|CO|female
+Sheena Monk|US|female
+Karen Gaillard|FR|female

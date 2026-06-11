@@ -34,7 +34,14 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DRIVER_STAT_DEFS = exports.DRIVER_POINT_POOL = void 0;
+exports.seedAdaptabilityForTier = seedAdaptabilityForTier;
+exports.loadWecDriverGenderMap = loadWecDriverGenderMap;
+exports.applyDriverGender = applyDriverGender;
 exports.loadLeMansDriverCatalog = loadLeMansDriverCatalog;
+exports.buildWecCatalogDriverIndex = buildWecCatalogDriverIndex;
+exports.listWecCatalogDriverIds = listWecCatalogDriverIds;
+exports.loadFreeAgentDrivers = loadFreeAgentDrivers;
+exports.lookupWecCatalogDriver = lookupWecCatalogDriver;
 exports.generateDriverId = generateDriverId;
 exports.stableCatalogDriverId = stableCatalogDriverId;
 exports.ensureCatalogDriverId = ensureCatalogDriverId;
@@ -45,6 +52,7 @@ exports.filterRosterByContract = filterRosterByContract;
 exports.ensureDriverIds = ensureDriverIds;
 exports.driverStandingKey = driverStandingKey;
 exports.sanitizeAssignedDriverIds = sanitizeAssignedDriverIds;
+exports.validateMaxDriversPerCar = validateMaxDriversPerCar;
 exports.validateExclusiveDriverAssignments = validateExclusiveDriverAssignments;
 exports.defaultDriverAssignments = defaultDriverAssignments;
 exports.assignUnassignedDriversToCars = assignUnassignedDriversToCars;
@@ -54,15 +62,26 @@ exports.sessionEntryKey = sessionEntryKey;
 exports.buildSessionEntryRosters = buildSessionEntryRosters;
 exports.rostersForCompetingEntries = rostersForCompetingEntries;
 exports.exportRuntimeDrivers = exportRuntimeDrivers;
+exports.withDriverStatDefaults = withDriverStatDefaults;
+exports.isSignedDriver = isSignedDriver;
+exports.extractDriverStatBaseline = extractDriverStatBaseline;
+exports.normalizePlayerRosterDriver = normalizePlayerRosterDriver;
+exports.isCustomDriver = isCustomDriver;
+exports.listUniqueBronzeCatalogDrivers = listUniqueBronzeCatalogDrivers;
+exports.computeBronzeDriverPointPool = computeBronzeDriverPointPool;
+exports.computeBronzeDriverTemplate = computeBronzeDriverTemplate;
+exports.createCustomBronzeDriver = createCustomBronzeDriver;
 exports.computeDriverPointCost = computeDriverPointCost;
 exports.inferTier = inferTier;
 exports.validateDriverStats = validateDriverStats;
 exports.validateCustomDriver = validateCustomDriver;
+exports.validateCustomDriverWithBaseline = validateCustomDriverWithBaseline;
 exports.generateRandomDriver = generateRandomDriver;
 exports.defaultPlayerRoster = defaultPlayerRoster;
 const crypto_1 = require("crypto");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+/** Legacy fallback — use computeBronzeDriverPointPool for custom drivers. */
 exports.DRIVER_POINT_POOL = 750;
 exports.DRIVER_STAT_DEFS = [
     { key: "dryPace", label: "Dry Pace", short: "DRY", description: "Single-lap and race pace on a dry track.", min: 55, max: 98, costPerPoint: 2 },
@@ -80,17 +99,57 @@ exports.DRIVER_STAT_DEFS = [
     { key: "nightPace", label: "Night Pace", short: "NGT", description: "Performance through the dark hours at La Sarthe.", min: 50, max: 94, costPerPoint: 1 },
     { key: "rainRadar", label: "Rain Radar", short: "RNM", description: "Anticipating weather and adapting before rivals.", min: 45, max: 90, costPerPoint: 1 },
     { key: "stamina", label: "Stamina", short: "STM", description: "Fatigue resistance deep into a stint.", min: 50, max: 96, costPerPoint: 1.5 },
+    {
+        key: "adaptability",
+        label: "Adaptability",
+        short: "ADP",
+        description: "Tolerance for compromise setups — wider comfort band before pace drops.",
+        min: 45,
+        max: 94,
+        costPerPoint: 1.5,
+    },
 ];
 const BASELINE = {
     dryPace: 68, wetPace: 64, consistency: 68, overtaking: 66, defending: 66,
     trafficManagement: 66, rollingStart: 64, standingStart: 64, setupFeedback: 60,
     tireManagement: 66, fuelSaving: 64, composure: 68, nightPace: 64, rainRadar: 60, stamina: 68,
+    adaptability: 66,
 };
 const FIRST_NAMES = ["Alex", "Marco", "Elena", "Luca", "Sofia", "Kai", "Nina", "Oliver", "Yuki", "Ines", "Ravi", "Clara", "Finn", "Marta", "Noah"];
 const LAST_NAMES = ["Voss", "Reeves", "Okonkwo", "Bianchi", "Kowalski", "Santos", "Chen", "Müller", "Dupont", "Alvarez", "Nakamura", "Petrov", "Garcia", "Webb", "Tanaka"];
 const NATIONS = ["GB", "FR", "DE", "IT", "US", "BR", "JP", "ES", "NL", "AU", "CH", "SE", "DK", "PT", "PL"];
 function trim(s) {
     return s.trim();
+}
+const ADAPTABILITY_BY_LICENSE_TIER = {
+    platinum: { mean: 88, spread: 6 },
+    gold: { mean: 78, spread: 7 },
+    silver: { mean: 68, spread: 6 },
+    bronze: { mean: 58, spread: 5 },
+};
+function hashDriverVarianceKey(...parts) {
+    let h = 2166136261 >>> 0;
+    for (const part of parts) {
+        for (const c of part) {
+            h ^= c.charCodeAt(0);
+            h = Math.imul(h, 16777619) >>> 0;
+        }
+    }
+    return h;
+}
+/** FIA license tier ballpark + deterministic per-driver variance (45–94). */
+function seedAdaptabilityForTier(tier, varianceKey, min = 45, max = 94) {
+    const band = ADAPTABILITY_BY_LICENSE_TIER[tier.trim().toLowerCase()] ?? {
+        mean: 66,
+        spread: 6,
+    };
+    const h = hashDriverVarianceKey(varianceKey);
+    const unit = (h % 10000) / 10000;
+    const delta = (unit - 0.5) * 2 * band.spread;
+    return Math.round(Math.min(max, Math.max(min, band.mean + delta)));
+}
+function isValidAdaptability(value) {
+    return value >= 45 && value <= 94;
 }
 function parseDriverLine(value) {
     const parts = value.split("|").map(trim);
@@ -99,10 +158,26 @@ function parseDriverLine(value) {
     const nums = parts.slice(3).map((p) => Number(p));
     if (nums.some((n) => Number.isNaN(n)))
         return null;
+    const name = parts[0];
+    const nationality = parts[1];
+    const tier = parts[2];
+    let adaptability;
+    let maxStintHours;
+    if (nums.length >= 17) {
+        adaptability = nums[15];
+        maxStintHours = nums[16];
+    }
+    else {
+        maxStintHours = nums[15] ?? 2.5;
+    }
+    if (adaptability === undefined ||
+        !isValidAdaptability(adaptability)) {
+        adaptability = seedAdaptabilityForTier(tier, `${name}|${nationality}`);
+    }
     return {
-        name: parts[0],
-        nationality: parts[1],
-        tier: parts[2],
+        name,
+        nationality,
+        tier,
         dryPace: nums[0],
         wetPace: nums[1],
         consistency: nums[2],
@@ -118,14 +193,46 @@ function parseDriverLine(value) {
         nightPace: nums[12],
         rainRadar: nums[13],
         stamina: nums[14],
-        maxStintHours: nums[15] ?? 2.5,
+        adaptability,
+        maxStintHours,
     };
+}
+function driverGenderKey(name, nationality) {
+    return `${name.trim().toLowerCase()}|${nationality.trim().toUpperCase()}`;
+}
+/** Optional gender overrides — default male when absent. */
+function loadWecDriverGenderMap(repoRoot) {
+    const file = path.join(repoRoot, "configs/drivers/wec_driver_gender.txt");
+    const map = new Map();
+    if (!fs.existsSync(file))
+        return map;
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+        const trimmed = trim(line);
+        if (!trimmed || trimmed.startsWith("#"))
+            continue;
+        const [name, nat, gender] = trimmed.split("|").map(trim);
+        if (!name || !nat)
+            continue;
+        if (gender === "female" || gender === "male") {
+            map.set(driverGenderKey(name, nat), gender);
+        }
+    }
+    return map;
+}
+function applyDriverGender(driver, genderMap) {
+    const mapped = genderMap.get(driverGenderKey(driver.name, driver.nationality));
+    if (mapped)
+        return { ...driver, gender: mapped };
+    if (driver.gender === "female" || driver.gender === "male")
+        return driver;
+    return { ...driver, gender: "male" };
 }
 function loadLeMansDriverCatalog(repoRoot) {
     const file = path.join(repoRoot, "configs/drivers/lemans2026_drivers.txt");
     const map = new Map();
     if (!fs.existsSync(file))
         return map;
+    const genderMap = loadWecDriverGenderMap(repoRoot);
     let key = "";
     for (const line of fs.readFileSync(file, "utf8").split("\n")) {
         const trimmed = trim(line);
@@ -143,11 +250,112 @@ function loadLeMansDriverCatalog(repoRoot) {
         }
         else if (k === "driver" && key) {
             const d = parseDriverLine(v);
-            if (d)
-                map.get(key).push(ensureCatalogDriverId(d));
+            if (d) {
+                const withGender = applyDriverGender(d, genderMap);
+                map.get(key).push(ensureCatalogDriverId({ ...withGender, origin: "signed" }));
+            }
         }
     }
     return map;
+}
+/** Best (highest point-cost) line per unique WEC catalog driver. */
+function buildWecCatalogDriverIndex(repoRoot) {
+    const index = new Map();
+    for (const roster of loadLeMansDriverCatalog(repoRoot).values()) {
+        for (const driver of roster) {
+            const id = driver.id;
+            const existing = index.get(id);
+            if (!existing ||
+                computeDriverPointCost(driver) > computeDriverPointCost(existing)) {
+                index.set(id, { ...driver, origin: "signed" });
+            }
+        }
+    }
+    return index;
+}
+function listWecCatalogDriverIds(repoRoot) {
+    return [...buildWecCatalogDriverIndex(repoRoot).keys()].sort();
+}
+function parseFreeAgentLine(value) {
+    const parts = value.split("|").map(trim);
+    if (parts.length < 22)
+        return null;
+    const name = parts[0];
+    const nationality = parts[1];
+    const tier = parts[2];
+    const series = parts[3];
+    const tagline = parts[4];
+    const nums = parts.slice(5).map((p) => Number(p));
+    if (nums.some((n) => Number.isNaN(n)))
+        return null;
+    let adaptability;
+    let maxStintHours;
+    if (nums.length >= 17) {
+        adaptability = nums[15];
+        maxStintHours = nums[16];
+    }
+    else {
+        maxStintHours = nums[15] ?? 2.5;
+    }
+    if (adaptability === undefined || !isValidAdaptability(adaptability)) {
+        adaptability = seedAdaptabilityForTier(tier, `${name}|${nationality}`);
+    }
+    const driver = {
+        name,
+        nationality,
+        tier,
+        dryPace: nums[0],
+        wetPace: nums[1],
+        consistency: nums[2],
+        overtaking: nums[3],
+        defending: nums[4],
+        trafficManagement: nums[5],
+        rollingStart: nums[6],
+        standingStart: nums[7],
+        setupFeedback: nums[8],
+        tireManagement: nums[9],
+        fuelSaving: nums[10],
+        composure: nums[11],
+        nightPace: nums[12],
+        rainRadar: nums[13],
+        stamina: nums[14],
+        adaptability,
+        maxStintHours,
+    };
+    return { driver, series, tagline };
+}
+/** 2025 Le Mans / ELMS / IMSA pool — excludes anyone already on the 2026 WEC catalog. */
+function loadFreeAgentDrivers(repoRoot) {
+    const file = path.join(repoRoot, "configs/drivers/free_agents_2025.txt");
+    const catalogIds = new Set(listWecCatalogDriverIds(repoRoot));
+    const genderMap = loadWecDriverGenderMap(repoRoot);
+    const out = [];
+    const seenIds = new Set();
+    if (!fs.existsSync(file))
+        return out;
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+        const trimmed = trim(line);
+        if (!trimmed || trimmed.startsWith("#"))
+            continue;
+        const eq = trimmed.indexOf("=");
+        if (eq < 0 || trim(trimmed.slice(0, eq)) !== "driver")
+            continue;
+        const parsed = parseFreeAgentLine(trim(trimmed.slice(eq + 1)));
+        if (!parsed)
+            continue;
+        const withGender = applyDriverGender(parsed.driver, genderMap);
+        const driver = ensureCatalogDriverId(withGender);
+        const id = driver.id;
+        if (catalogIds.has(id) || seenIds.has(id))
+            continue;
+        seenIds.add(id);
+        out.push({ driver, series: parsed.series, tagline: parsed.tagline });
+    }
+    return out;
+}
+function lookupWecCatalogDriver(driver, index) {
+    const stableId = stableCatalogDriverId(driver.name, driver.nationality);
+    return index.get(stableId) ?? index.get(driver.id?.trim() ?? "") ?? null;
 }
 function driverToLine(d) {
     return `driver=${[
@@ -155,7 +363,7 @@ function driverToLine(d) {
         d.dryPace, d.wetPace, d.consistency, d.overtaking, d.defending,
         d.trafficManagement, d.rollingStart, d.standingStart, d.setupFeedback,
         d.tireManagement, d.fuelSaving, d.composure, d.nightPace, d.rainRadar,
-        d.stamina, d.maxStintHours,
+        d.stamina, d.adaptability ?? 66, d.maxStintHours,
     ].join("|")}`;
 }
 function generateDriverId() {
@@ -255,6 +463,18 @@ function sanitizeAssignedDriverIds(driverIds, roster) {
         out.push(trimmed);
     }
     return out;
+}
+/** At most `maxPerCar` drivers may be assigned to one entry. */
+function validateMaxDriversPerCar(fleet, roster, maxPerCar) {
+    if (!fleet.length || maxPerCar < 1)
+        return null;
+    for (const car of fleet) {
+        const ids = sanitizeAssignedDriverIds(car.assignedDriverIds, roster);
+        if (ids.length > maxPerCar) {
+            return `Car #${car.carNumber} cannot have more than ${maxPerCar} assigned drivers`;
+        }
+    }
+    return null;
 }
 /** Each driver id may appear on at most one car; each car needs ≥1 when fleet non-empty. */
 function validateExclusiveDriverAssignments(fleet, roster) {
@@ -432,6 +652,176 @@ function exportRuntimeDrivers(repoRoot, options, prebuiltRosters, relPath = "con
     fs.writeFileSync(abs, lines.join("\n"));
     return rel;
 }
+function withDriverStatDefaults(driver) {
+    const adaptability = driver.adaptability;
+    const validAdaptability = typeof adaptability === "number" &&
+        adaptability >= 45 &&
+        adaptability <= 94
+        ? adaptability
+        : (BASELINE.adaptability ?? 66);
+    const stint = driver.maxStintHours;
+    const validStint = typeof stint === "number" && stint >= 1 && stint <= 5 ? stint : 2.5;
+    return {
+        ...driver,
+        adaptability: validAdaptability,
+        maxStintHours: validStint,
+    };
+}
+function isSignedDriver(driver, catalogIds) {
+    if (driver.origin === "custom")
+        return false;
+    if (driver.origin === "signed")
+        return true;
+    const id = driver.id?.trim() ?? "";
+    if (id.startsWith("catalog-"))
+        return true;
+    if (catalogIds?.size) {
+        const stableId = stableCatalogDriverId(driver.name, driver.nationality);
+        if (catalogIds.has(stableId) || catalogIds.has(id))
+            return true;
+    }
+    return false;
+}
+function extractDriverStatBaseline(driver) {
+    const out = {};
+    for (const def of exports.DRIVER_STAT_DEFS) {
+        out[def.key] = driver[def.key];
+    }
+    return out;
+}
+/** Lock signed WEC stats; stamp custom baselines on save. */
+function normalizePlayerRosterDriver(driver, catalogIndex, catalogIds, customPointPool) {
+    if (isSignedDriver(driver, catalogIds)) {
+        const canon = lookupWecCatalogDriver(driver, catalogIndex);
+        if (!canon) {
+            const statErr = validateDriverStats(withDriverStatDefaults(driver));
+            if (statErr)
+                return { error: `Unknown signed driver: ${driver.name}` };
+            return {
+                ...withDriverStatDefaults(driver),
+                id: stableCatalogDriverId(driver.name, driver.nationality),
+                origin: "signed",
+            };
+        }
+        return {
+            ...canon,
+            id: stableCatalogDriverId(driver.name, driver.nationality),
+            origin: "signed",
+        };
+    }
+    const err = validateCustomDriverWithBaseline(driver, customPointPool);
+    if (err)
+        return { error: err };
+    const normalized = withDriverStatDefaults({
+        ...driver,
+        tier: "Bronze",
+        origin: "custom",
+    });
+    return {
+        ...normalized,
+        statBaseline: extractDriverStatBaseline(normalized),
+    };
+}
+function isCustomDriver(driver, catalogIds) {
+    return !isSignedDriver(driver, catalogIds);
+}
+function listUniqueBronzeCatalogDrivers(repoRoot) {
+    const seen = new Set();
+    const out = [];
+    for (const roster of loadLeMansDriverCatalog(repoRoot).values()) {
+        for (const raw of roster) {
+            if (raw.tier.toLowerCase() !== "bronze")
+                continue;
+            const driver = withDriverStatDefaults(ensureCatalogDriverId(raw));
+            if (seen.has(driver.id))
+                continue;
+            seen.add(driver.id);
+            out.push(driver);
+        }
+    }
+    return out;
+}
+function fallbackBronzeTemplate() {
+    return withDriverStatDefaults({
+        name: "Bronze Template",
+        nationality: "GB",
+        tier: "Bronze",
+        dryPace: 70,
+        wetPace: 64,
+        consistency: 68,
+        overtaking: 66,
+        defending: 64,
+        trafficManagement: 66,
+        rollingStart: 64,
+        standingStart: 62,
+        setupFeedback: 58,
+        tireManagement: 64,
+        fuelSaving: 62,
+        composure: 66,
+        nightPace: 62,
+        rainRadar: 58,
+        stamina: 70,
+        maxStintHours: 2.5,
+    });
+}
+/** Average point cost of unique Bronze drivers in the WEC roster preset. */
+function computeBronzeDriverPointPool(repoRoot) {
+    const bronze = listUniqueBronzeCatalogDrivers(repoRoot);
+    if (!bronze.length) {
+        return computeDriverPointCost(withDriverStatDefaults({ ...fallbackBronzeTemplate(), tier: "Bronze" }));
+    }
+    const costs = bronze.map((d) => computeDriverPointCost({ ...d, tier: "Bronze" }));
+    return Math.round(costs.reduce((sum, c) => sum + c, 0) / costs.length);
+}
+/** Mean stat line across unique Bronze WEC preset drivers — custom driver baseline. */
+function computeBronzeDriverTemplate(repoRoot) {
+    const bronze = listUniqueBronzeCatalogDrivers(repoRoot);
+    const source = bronze.length ? bronze : [fallbackBronzeTemplate()];
+    const n = source.length;
+    const averaged = {
+        name: "Bronze Template",
+        nationality: "GB",
+        tier: "Bronze",
+        dryPace: 0,
+        wetPace: 0,
+        consistency: 0,
+        overtaking: 0,
+        defending: 0,
+        trafficManagement: 0,
+        rollingStart: 0,
+        standingStart: 0,
+        setupFeedback: 0,
+        tireManagement: 0,
+        fuelSaving: 0,
+        composure: 0,
+        nightPace: 0,
+        rainRadar: 0,
+        stamina: 0,
+        maxStintHours: 0,
+    };
+    for (const def of exports.DRIVER_STAT_DEFS) {
+        const key = def.key;
+        const sum = source.reduce((acc, d) => acc + d[key], 0);
+        averaged[key] = Math.round(sum / n);
+    }
+    averaged.maxStintHours =
+        Math.round((source.reduce((acc, d) => acc + d.maxStintHours, 0) / n) * 10) / 10;
+    return withDriverStatDefaults(averaged);
+}
+function createCustomBronzeDriver(repoRoot, options) {
+    const template = computeBronzeDriverTemplate(repoRoot);
+    const rnd = options?.seed != null ? seeded(options.seed) : () => Math.random();
+    const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
+    return {
+        ...template,
+        id: generateDriverId(),
+        origin: "custom",
+        tier: "Bronze",
+        name: options?.name ?? `${pick(FIRST_NAMES)} ${pick(LAST_NAMES)}`,
+        nationality: options?.nationality ?? pick(NATIONS),
+        gender: options?.gender ?? (rnd() < 0.28 ? "female" : "male"),
+    };
+}
 function computeDriverPointCost(driver) {
     let cost = 0;
     for (const def of exports.DRIVER_STAT_DEFS) {
@@ -463,13 +853,35 @@ function validateDriverStats(driver) {
     }
     return null;
 }
-function validateCustomDriver(driver) {
-    const err = validateDriverStats(driver);
+function validateCustomDriver(driver, pointPool, catalogIds) {
+    const normalized = withDriverStatDefaults(driver);
+    if (isSignedDriver(driver, catalogIds)) {
+        return validateDriverStats(normalized);
+    }
+    return validateCustomDriverWithBaseline(driver, pointPool ?? exports.DRIVER_POINT_POOL);
+}
+function validateCustomDriverWithBaseline(driver, pointPool) {
+    const normalized = withDriverStatDefaults(driver);
+    const err = validateDriverStats(normalized);
     if (err)
         return err;
-    const cost = computeDriverPointCost(driver);
-    if (cost > exports.DRIVER_POINT_POOL)
-        return `Exceeds point pool (${cost}/${exports.DRIVER_POINT_POOL})`;
+    if (driver.tier !== "Bronze") {
+        return "Custom drivers must stay Bronze tier";
+    }
+    const pool = pointPool;
+    const cost = computeDriverPointCost({ ...normalized, tier: "Bronze" });
+    if (cost > pool)
+        return `Exceeds point pool (${cost}/${pool})`;
+    const baseline = driver.statBaseline;
+    if (!baseline)
+        return null;
+    for (const def of exports.DRIVER_STAT_DEFS) {
+        const v = normalized[def.key];
+        const floor = baseline[def.key];
+        if (typeof floor === "number" && v < floor) {
+            return `${def.label} cannot decrease below saved value (${floor})`;
+        }
+    }
     return null;
 }
 function seeded(seed) {
@@ -479,56 +891,26 @@ function seeded(seed) {
         return s / 0xffffffff;
     };
 }
-function generateRandomDriver(seed = Date.now()) {
+function generateRandomDriver(repoRoot, seed = Date.now()) {
     const rnd = seeded(seed);
     const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
-    const jitter = (base, spread) => Math.round(Math.min(96, Math.max(55, base + (rnd() - 0.5) * spread)));
-    const driver = {
-        id: generateDriverId(),
-        name: `${pick(FIRST_NAMES)} ${pick(LAST_NAMES)}`,
+    return createCustomBronzeDriver(repoRoot, {
+        seed,
+        gender: rnd() < 0.28 ? "female" : "male",
         nationality: pick(NATIONS),
-        tier: "Silver",
-        dryPace: jitter(76, 18),
-        wetPace: jitter(72, 16),
-        consistency: jitter(74, 16),
-        overtaking: jitter(72, 14),
-        defending: jitter(70, 14),
-        trafficManagement: jitter(72, 12),
-        rollingStart: jitter(70, 12),
-        standingStart: jitter(70, 12),
-        setupFeedback: jitter(66, 14),
-        tireManagement: jitter(72, 12),
-        fuelSaving: jitter(68, 12),
-        composure: jitter(72, 16),
-        nightPace: jitter(70, 12),
-        rainRadar: jitter(66, 12),
-        stamina: jitter(74, 14),
-        maxStintHours: rnd() > 0.7 ? 3.0 : 2.5,
-    };
-    driver.tier = inferTier(driver);
-    return driver;
+    });
 }
-function defaultPlayerRoster(teamName) {
+function defaultPlayerRoster(repoRoot, teamName) {
     return [
-        {
-            id: generateDriverId(),
+        createCustomBronzeDriver(repoRoot, {
             name: `${teamName} Ace`,
             nationality: "GB",
-            tier: "Gold",
-            dryPace: 84, wetPace: 78, consistency: 82, overtaking: 80, defending: 78,
-            trafficManagement: 80, rollingStart: 78, standingStart: 76, setupFeedback: 74,
-            tireManagement: 80, fuelSaving: 76, composure: 82, nightPace: 78, rainRadar: 72,
-            stamina: 80, maxStintHours: 3.0,
-        },
-        {
-            id: generateDriverId(),
+            gender: "female",
+        }),
+        createCustomBronzeDriver(repoRoot, {
             name: `${teamName} Endurance`,
             nationality: "FR",
-            tier: "Silver",
-            dryPace: 78, wetPace: 74, consistency: 80, overtaking: 72, defending: 76,
-            trafficManagement: 78, rollingStart: 74, standingStart: 72, setupFeedback: 70,
-            tireManagement: 82, fuelSaving: 80, composure: 78, nightPace: 76, rainRadar: 70,
-            stamina: 84, maxStintHours: 3.5,
-        },
+            gender: "male",
+        }),
     ];
 }

@@ -17,23 +17,23 @@ PitStopState QueuedPit() {
 TEST_CASE("ShouldEnterPitLane only at start-finish or lap end", "[unit][pit_stop]") {
   const PitStopState pit = QueuedPit();
 
-  REQUIRE_FALSE(ShouldEnterPitLane(pit, 0.5, false, 5, false));
-  REQUIRE(ShouldEnterPitLane(pit, 0.99, false, 5, false));
-  REQUIRE(ShouldEnterPitLane(pit, 0.01, false, 5, false));
-  REQUIRE(ShouldEnterPitLane(pit, 0.5, true, 5, false));
+  REQUIRE_FALSE(ShouldEnterPitLane(pit, 0.5, false, 5, 0.985, false));
+  REQUIRE(ShouldEnterPitLane(pit, 0.99, false, 5, 0.985, false));
+  REQUIRE(ShouldEnterPitLane(pit, 0.01, false, 5, 0.985, false));
+  REQUIRE(ShouldEnterPitLane(pit, 0.5, true, 5, 0.985, false));
 }
 
 TEST_CASE("ShouldEnterPitLane blocks opening-lap mid-track entry", "[unit][pit_stop]") {
   const PitStopState pit = QueuedPit();
-  REQUIRE_FALSE(ShouldEnterPitLane(pit, 0.99, false, 1, false));
-  REQUIRE(ShouldEnterPitLane(pit, 0.0, true, 1, false));
+  REQUIRE_FALSE(ShouldEnterPitLane(pit, 0.99, false, 1, 0.985, false));
+  REQUIRE(ShouldEnterPitLane(pit, 0.0, true, 1, 0.985, false));
 }
 
 TEST_CASE("ShouldEnterPitLane blocks mid-track entry under red flag",
           "[unit][pit_stop]") {
   const PitStopState pit = QueuedPit();
-  REQUIRE_FALSE(ShouldEnterPitLane(pit, 0.5, false, 5, true));
-  REQUIRE(ShouldEnterPitLane(pit, 0.99, false, 5, true));
+  REQUIRE_FALSE(ShouldEnterPitLane(pit, 0.5, false, 5, 0.985, true));
+  REQUIRE(ShouldEnterPitLane(pit, 0.99, false, 5, 0.985, true));
 }
 
 TEST_CASE("SanitizeRedFlagEmergencyPlan keeps deflated tyre only",

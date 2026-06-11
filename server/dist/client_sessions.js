@@ -32,6 +32,8 @@ const HOST_PERMISSIONS = [
     "sign_driver_contract",
     "refresh_staff_market",
     "sign_staff_contract",
+    "fire_staff",
+    "reassign_staff",
     "start_negotiation",
     "submit_negotiation_offer",
     "accept_negotiation",
@@ -52,6 +54,9 @@ const HOST_PERMISSIONS = [
     "get_track_preview",
     "update_car_briefing",
     "debug_race_control",
+    "off_week_training",
+    "start_part_project",
+    "upgrade_facility",
 ];
 const PLAYER_PERMISSIONS = [
     "set_time_scale",

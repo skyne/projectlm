@@ -10,6 +10,7 @@ const engineer_service_1 = require("./llm/engineer_service");
 const garage_engineer_service_1 = require("./llm/garage_engineer_service");
 const sim_host_1 = require("./sim_host");
 const ws_protocol_1 = require("./ws_protocol");
+const dev_checkpoint_1 = require("./dev_checkpoint");
 const session_log_1 = require("./session_log");
 /** Default 9785 — 8765 is commonly used by other local tools (e.g. clipboard sync). */
 const PORT = Number(process.env.PROJECTLM_WS_PORT ?? process.env.PORT ?? 9785);
@@ -33,14 +34,56 @@ function sendForbidden(ws) {
         code: "forbidden",
     })));
 }
-function startDevSessionLogApi(repoRoot, port) {
-    (0, http_1.createServer)((req, res) => {
+function parseRestorePath(argv) {
+    for (let i = 2; i < argv.length; i++) {
+        if (argv[i] === "--restore") {
+            const next = argv[i + 1];
+            if (next && !next.startsWith("-"))
+                return next;
+            return null;
+        }
+        if (argv[i].startsWith("--restore=")) {
+            const value = argv[i].slice("--restore=".length);
+            return value || null;
+        }
+    }
+    return undefined;
+}
+function startDevHttpApi(repoRoot, port, host) {
+    const server = (0, http_1.createServer)((req, res) => {
         res.setHeader("Access-Control-Allow-Origin", "*");
-        res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         res.setHeader("Access-Control-Allow-Headers", "Content-Type");
         if (req.method === "OPTIONS") {
             res.writeHead(204);
             res.end();
+            return;
+        }
+        const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
+        if (url.pathname === "/dev/checkpoint/save" && req.method === "POST") {
+            const result = host.saveDevCheckpoint();
+            if ("error" in result) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ ok: false, error: result.error }));
+                return;
+            }
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+                ok: true,
+                path: result.path,
+                raceTime: host.getRaceTime(),
+                raceActive: host.getSessionInit().raceActive,
+            }));
+            return;
+        }
+        if (url.pathname === "/dev/checkpoint" && req.method === "GET") {
+            const checkpointPath = (0, dev_checkpoint_1.devCheckpointPath)(repoRoot);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+                path: checkpointPath,
+                raceActive: host.getSessionInit().raceActive,
+                raceTime: host.getRaceTime(),
+            }));
             return;
         }
         if (req.method !== "GET") {
@@ -48,7 +91,6 @@ function startDevSessionLogApi(repoRoot, port) {
             res.end(JSON.stringify({ error: "method not allowed" }));
             return;
         }
-        const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
         if (url.pathname === "/dev/session-logs") {
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ logs: (0, session_log_1.listSessionLogs)(repoRoot) }));
@@ -68,12 +110,27 @@ function startDevSessionLogApi(repoRoot, port) {
         }
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "not found" }));
-    }).listen(port, () => {
-        console.log(`[server] Dev session log API http://127.0.0.1:${port}/dev/session-logs`);
+    });
+    server.on("error", (err) => {
+        if (err.code === "EADDRINUSE") {
+            console.warn(`[server] Dev HTTP API port ${port} in use — dev tools HTTP disabled`);
+            return;
+        }
+        console.error("[server] Dev HTTP API error:", err);
+    });
+    server.listen(port, () => {
+        console.log(`[server] Dev HTTP API http://127.0.0.1:${port}/dev/session-logs · POST /dev/checkpoint/save`);
     });
 }
 function main() {
+    const restorePath = parseRestorePath(process.argv);
     const host = new sim_host_1.SimHost();
+    if (restorePath !== undefined) {
+        const restoreError = host.restoreDevCheckpoint(restorePath ?? undefined);
+        if (restoreError) {
+            console.warn(`[server] Dev checkpoint restore failed: ${restoreError}`);
+        }
+    }
     const engineer = new engineer_service_1.EngineerService();
     const garageEngineer = new garage_engineer_service_1.GarageEngineerService();
     const sessions = new client_sessions_1.ClientSessionManager();
@@ -510,6 +567,28 @@ function main() {
                     console.log("[server] Staff contract signed");
                 }
             }
+            else if (msg.type === "fire_staff") {
+                const payload = msg.payload;
+                const result = host.fireStaff(payload.carId ?? "", payload.role ?? "");
+                if ("error" in result) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
+                    console.log("[server] Staff released");
+                }
+            }
+            else if (msg.type === "reassign_staff") {
+                const payload = msg.payload;
+                const result = host.reassignStaff(payload.fromCarId ?? "", payload.toCarId ?? "", payload.role ?? "");
+                if ("error" in result) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result));
+                    console.log("[server] Staff reassigned");
+                }
+            }
             else if (msg.type === "start_negotiation") {
                 const payload = msg.payload;
                 const result = host.startNegotiation(payload.kind ?? "driver_employment", payload.subjectRef ?? "");
@@ -738,6 +817,36 @@ function main() {
                     }
                 }
             }
+            else if (msg.type === "off_week_training") {
+                const payload = msg.payload;
+                const result = host.runOffWeekTraining(payload);
+                if (result.error) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result.meta));
+                }
+            }
+            else if (msg.type === "start_part_project") {
+                const payload = msg.payload;
+                const result = host.startPartProject(payload);
+                if (result.error) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result.meta));
+                }
+            }
+            else if (msg.type === "upgrade_facility") {
+                const payload = msg.payload;
+                const result = host.upgradeFacility(payload);
+                if (result.error) {
+                    ws.send(JSON.stringify((0, ws_protocol_1.serverMessage)("error", { message: result.error })));
+                }
+                else {
+                    broadcast(clients, (0, ws_protocol_1.serverMessage)("meta_state", result.meta));
+                }
+            }
         });
         ws.on("close", () => {
             const session = sessions.detach(ws);
@@ -824,6 +933,22 @@ function main() {
         else if (!isRaceSession) {
             updatedMeta = host.completeWeekendSession(weekendSessionType, results);
         }
+        if (sessionKind === "weekend") {
+            const snaps = host.getSnapshots();
+            const playerSnap = playerCarId
+                ? snaps.find((s) => entryFleetMap.get(s.entryId) === playerCarId)
+                : undefined;
+            const classified = primaryResult != null ? !primaryResult.retired : true;
+            const progression = host.applySessionProgression(weekendSessionType, {
+                lapsCompleted: playerSnap?.lap ?? 0,
+                classified,
+            });
+            if (progression.summary.drivers.length > 0 ||
+                progression.summary.staff.length > 0) {
+                progressionSummary = progression.summary;
+            }
+            updatedMeta = progression.meta;
+        }
         const completedSessions = updatedMeta.weekendProgress?.round === updatedMeta.currentRound
             ? updatedMeta.weekendProgress.completedSessions
             : isRaceSession
@@ -867,7 +992,7 @@ function main() {
         broadcast(clients, (0, ws_protocol_1.serverMessage)("engineer_hint", hint));
     });
     if (process.env.DEV_TOOLS !== "0") {
-        startDevSessionLogApi(host.repoRoot, Number(process.env.DEV_HTTP_PORT ?? PORT + 1));
+        startDevHttpApi(host.repoRoot, Number(process.env.DEV_HTTP_PORT ?? PORT + 1), host);
     }
     process.on("SIGINT", () => {
         host.stop();

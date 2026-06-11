@@ -29,6 +29,30 @@ export class AiStintGuide {
     this.raceStarted = false;
   }
 
+  exportState(): {
+    plans: [string, AiStintPlan][];
+    pitCounts: [string, number][];
+    raceStarted: boolean;
+  } {
+    return {
+      plans: [...this.plans.entries()],
+      pitCounts: [...this.pitCounts.entries()],
+      raceStarted: this.raceStarted,
+    };
+  }
+
+  importState(data: {
+    plans: [string, AiStintPlan][];
+    pitCounts: [string, number][];
+    raceStarted: boolean;
+  }): void {
+    this.plans = new Map(data.plans);
+    this.pitCounts = new Map(data.pitCounts);
+    this.planning.clear();
+    this.queue = [];
+    this.raceStarted = data.raceStarted;
+  }
+
   getPlan(entryId: string): AiStintPlan | undefined {
     return this.plans.get(entryId);
   }

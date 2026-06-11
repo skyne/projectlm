@@ -1,313 +1,313 @@
 # 2026 24 Hours of Le Mans — driver roster with simulation stats
-# Format: driver=name|nat|tier|dry|wet|consistency|overtaking|defending|traffic|rolling|standing|setup|tire|fuel|composure|night|rain|stamina|max_stint_hours
+# Format: driver=name|nat|tier|dry|wet|consistency|overtaking|defending|traffic|rolling|standing|setup|tire|fuel|composure|night|rain|stamina|adaptability|max_stint_hours
 # Sources: 24h-lemans.com, FIA WEC, manufacturer announcements (June 2026)
 
 entry=007 Aston Martin Thor Team,007
-driver=Marco Sørensen|DK|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Nicki Thiim|DK|Gold|86|80|84|82|84|82|80|78|76|80|76|82|78|74|82|3
-driver=Roman De Angelis|CA|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Marco Sørensen|DK|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=Nicki Thiim|DK|Gold|86|80|84|82|84|82|80|78|76|80|76|82|78|74|82|85|3
+driver=Roman De Angelis|CA|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|71|2.5
 
 entry=009 Aston Martin Thor Team,009
-driver=Fernando Costa|BR|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Harry Tincknell|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Tom Gamble|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Fernando Costa|BR|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|64|2.5
+driver=Harry Tincknell|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|78|3
+driver=Tom Gamble|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|69|2.5
 
 entry=Toyota Racing,7
-driver=Sébastien Buemi|CH|Platinum|93|92|94|89|86|88|88|86|85|87|82|94|86|84|88|3.5
-driver=Brendon Hartley|NZ|Platinum|93|93|91|89|86|88|88|86|85|87|82|90|90|84|88|3.5
-driver=Ryo Hirakawa|JP|Gold|86|80|84|82|80|82|80|78|76|85|80|82|78|74|82|3
+driver=Sébastien Buemi|CH|Platinum|93|92|94|89|86|88|88|86|85|87|82|94|86|84|88|85|3.5
+driver=Brendon Hartley|NZ|Platinum|93|93|91|89|86|88|88|86|85|87|82|90|90|84|88|85|3.5
+driver=Ryo Hirakawa|JP|Gold|86|80|84|82|80|82|80|78|76|85|80|82|78|74|82|74|3
 
 entry=Toyota Racing,8
-driver=Kamui Kobayashi|JP|Platinum|93|90|91|93|86|88|88|86|85|87|82|90|86|84|88|3.5
-driver=Nyck de Vries|NL|Gold|90|80|84|82|80|82|80|83|76|80|76|82|78|74|82|3
-driver=José María López|AR|Gold|86|80|87|82|85|82|80|78|76|80|76|82|78|74|82|3
+driver=Kamui Kobayashi|JP|Platinum|93|90|91|93|86|88|88|86|85|87|82|90|86|84|88|84|3.5
+driver=Nyck de Vries|NL|Gold|90|80|84|82|80|82|80|83|76|80|76|82|78|74|82|80|3
+driver=José María López|AR|Gold|86|80|87|82|85|82|80|78|76|80|76|82|78|74|82|81|3
 
 entry=Cadillac Hertz Team JOTA,12
-driver=Will Stevens|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Norman Nato|FR|Gold|86|80|84|85|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Alex Lynn|GB|Gold|86|84|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Will Stevens|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=Norman Nato|FR|Gold|86|80|84|85|80|82|80|78|76|80|76|82|78|74|82|77|3
+driver=Alex Lynn|GB|Gold|86|84|84|82|80|82|80|78|76|80|76|82|78|74|82|75|3
 
 entry=BMW M Team WRT,15
-driver=Kevin Magnussen|DK|Platinum|93|87|91|94|90|88|88|92|85|87|82|90|86|84|88|3.5
-driver=Philipp Eng|AT|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Sheldon van der Linde|ZA|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Kevin Magnussen|DK|Platinum|93|87|91|94|90|88|88|92|85|87|82|90|86|84|88|87|3.5
+driver=Philipp Eng|AT|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|73|3
+driver=Sheldon van der Linde|ZA|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|79|3
 
 entry=Genesis Magma Racing,17
-driver=André Lotterer|DE|Platinum|93|87|91|89|86|88|88|86|85|87|82|95|91|84|88|0.5
-driver=Luis Felipe Derani|BR|Gold|86|84|84|85|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Mathys Jaubert|FR|Silver|82|72|76|74|72|74|72|75|68|72|70|74|70|66|76|2.5
+driver=André Lotterer|DE|Platinum|93|87|91|89|86|88|88|86|85|87|82|95|91|84|88|92|0.5
+driver=Luis Felipe Derani|BR|Gold|86|84|84|85|80|82|80|78|76|80|76|82|78|74|82|72|3
+driver=Mathys Jaubert|FR|Silver|82|72|76|74|72|74|72|75|68|72|70|74|70|66|76|73|2.5
 
 entry=Genesis Magma Racing,19
-driver=Paul-Loup Chatin|FR|Gold|86|80|84|82|80|82|80|78|76|84|79|82|78|74|82|3
-driver=Mathieu Jaminet|FR|Gold|86|80|87|82|84|82|80|78|76|80|76|82|78|74|82|3
-driver=Daniel Juncadella|ES|Gold|86|83|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Paul-Loup Chatin|FR|Gold|86|80|84|82|80|82|80|78|76|84|79|82|78|74|82|76|3
+driver=Mathieu Jaminet|FR|Gold|86|80|87|82|84|82|80|78|76|80|76|82|78|74|82|76|3
+driver=Daniel Juncadella|ES|Gold|86|83|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
 
 entry=BMW M Team WRT,20
-driver=Robin Frijns|NL|Gold|86|80|84|82|80|82|80|78|76|85|76|82|78|74|82|3
-driver=Marco Wittmann|DE|Gold|90|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Raffaele Marciello|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Robin Frijns|NL|Gold|86|80|84|82|80|82|80|78|76|85|76|82|78|74|82|83|3
+driver=Marco Wittmann|DE|Gold|90|80|84|82|80|82|80|78|76|80|76|82|78|74|82|79|3
+driver=Raffaele Marciello|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|75|3
 
 entry=Alpine Endurance Team,35
-driver=Jules Gounon|FR|Platinum|93|87|91|89|91|92|88|86|85|87|82|90|86|84|88|3.5
-driver=Victor Martins|FR|Gold|91|80|84|82|80|82|80|82|76|80|76|82|78|74|82|3
-driver=Mick Schumacher|DE|Gold|86|80|84|86|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Jules Gounon|FR|Platinum|93|87|91|89|91|92|88|86|85|87|82|90|86|84|88|91|3.5
+driver=Victor Martins|FR|Gold|91|80|84|82|80|82|80|82|76|80|76|82|78|74|82|83|3
+driver=Mick Schumacher|DE|Gold|86|80|84|86|80|82|80|78|76|80|76|82|78|74|82|73|3
 
 entry=Alpine Endurance Team,36
-driver=Paul Aron|EE|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Nelson Piquet Jr.|BR|Gold|86|83|84|82|80|82|80|78|76|80|76|82|81|74|82|3
-driver=François Perrodo|FR|Silver|78|72|76|74|72|74|72|70|68|76|75|74|70|66|76|2.5
+driver=Paul Aron|EE|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|78|3
+driver=Nelson Piquet Jr.|BR|Gold|86|83|84|82|80|82|80|78|76|80|76|82|81|74|82|73|3
+driver=François Perrodo|FR|Silver|78|72|76|74|72|74|72|70|68|76|75|74|70|66|76|74|2.5
 
 entry=Cadillac Hertz Team JOTA,38
-driver=Sébastien Bourdais|FR|Platinum|93|87|94|89|86|88|88|86|90|87|82|90|86|84|88|3.5
-driver=Earl Bamber|NZ|Platinum|93|91|91|89|86|88|88|86|85|87|82|94|86|84|88|3.5
-driver=Richard Westbrook|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Sébastien Bourdais|FR|Platinum|93|87|94|89|86|88|88|86|90|87|82|90|86|84|88|86|3.5
+driver=Earl Bamber|NZ|Platinum|93|91|91|89|86|88|88|86|85|87|82|94|86|84|88|94|3.5
+driver=Richard Westbrook|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|85|3
 
 entry=Ferrari AF Corse,50
-driver=Antonio Fuoco|IT|Platinum|97|87|91|92|86|88|88|86|85|87|82|90|86|84|88|3.5
-driver=Antonio Giovinazzi|IT|Gold|86|80|84|82|80|82|80|83|76|80|76|82|78|74|82|3
-driver=James Calado|GB|Gold|86|80|84|82|80|82|80|78|80|84|76|82|78|74|82|3
+driver=Antonio Fuoco|IT|Platinum|97|87|91|92|86|88|88|86|85|87|82|90|86|84|88|91|3.5
+driver=Antonio Giovinazzi|IT|Gold|86|80|84|82|80|82|80|83|76|80|76|82|78|74|82|75|3
+driver=James Calado|GB|Gold|86|80|84|82|80|82|80|78|80|84|76|82|78|74|82|80|3
 
 entry=Ferrari AF Corse,51
-driver=Robert Kubica|PL|Platinum|93|92|91|89|86|88|88|86|85|87|82|95|86|84|88|3.5
-driver=Alessandro Pier Guidi|IT|Gold|86|80|84|82|85|82|80|78|76|80|76|82|78|74|82|0.3
-driver=Davide Rigon|IT|Gold|86|80|84|82|80|82|80|78|80|80|76|82|78|74|82|3
+driver=Robert Kubica|PL|Platinum|93|92|91|89|86|88|88|86|85|87|82|95|86|84|88|83|3.5
+driver=Alessandro Pier Guidi|IT|Gold|86|80|84|82|85|82|80|78|76|80|76|82|78|74|82|74|0.3
+driver=Davide Rigon|IT|Gold|86|80|84|82|80|82|80|78|80|80|76|82|78|74|82|83|3
 
 entry=AF Corse,83
-driver=Daniel Serra|BR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Pierguidi Jr.|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Amato Canepa|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Daniel Serra|BR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|72|3
+driver=Pierguidi Jr.|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|71|2.5
+driver=Amato Canepa|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|64|2.5
 
 entry=Peugeot TotalEnergies,93
-driver=Jean-Éric Vergne|FR|Platinum|97|87|91|89|86|88|88|86|85|87|86|90|86|84|88|3.5
-driver=Paul di Resta|GB|Gold|86|84|84|82|80|82|80|78|76|80|76|82|81|74|82|3
-driver=Théo Pourchaire|FR|Gold|91|80|84|82|80|82|80|83|76|80|76|82|78|74|82|3
+driver=Jean-Éric Vergne|FR|Platinum|97|87|91|89|86|88|88|86|85|87|86|90|86|84|88|86|3.5
+driver=Paul di Resta|GB|Gold|86|84|84|82|80|82|80|78|76|80|76|82|81|74|82|71|3
+driver=Théo Pourchaire|FR|Gold|91|80|84|82|80|82|80|83|76|80|76|82|78|74|82|83|3
 
 entry=Peugeot TotalEnergies,94
-driver=Loïc Duval|FR|Platinum|93|91|91|89|86|88|88|86|85|87|82|90|86|84|88|0.2
-driver=Stoffel Vandoorne|BE|Gold|90|80|84|85|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Nico Müller|CH|Gold|86|80|84|82|80|82|80|78|76|84|76|82|78|74|82|3
+driver=Loïc Duval|FR|Platinum|93|91|91|89|86|88|88|86|85|87|82|90|86|84|88|86|0.2
+driver=Stoffel Vandoorne|BE|Gold|90|80|84|85|80|82|80|78|76|80|76|82|78|74|82|74|3
+driver=Nico Müller|CH|Gold|86|80|84|82|80|82|80|78|76|84|76|82|78|74|82|83|3
 
 entry=Cadillac WTR,101
-driver=Jordan Taylor|US|Platinum|93|87|91|89|89|88|88|86|85|87|82|94|86|84|88|3.5
-driver=Renger van der Zande|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|82|74|82|3
-driver=Pipo Derani|BR|Gold|86|80|84|86|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Jordan Taylor|US|Platinum|93|87|91|89|89|88|88|86|85|87|82|94|86|84|88|82|3.5
+driver=Renger van der Zande|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|82|74|82|76|3
+driver=Pipo Derani|BR|Gold|86|80|84|86|80|82|80|78|76|80|76|82|78|74|82|73|3
 
 entry=DKR Engineering,3
-driver=Grégoire Saucy|CH|Gold|90|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Mikkel Jensen|DK|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Fabio Scherer|CH|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Grégoire Saucy|CH|Gold|90|80|84|82|80|82|80|78|76|80|76|82|78|74|82|77|3
+driver=Mikkel Jensen|DK|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|81|3
+driver=Fabio Scherer|CH|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|72|2.5
 
 entry=Crowdstrike Racing by APR,4
-driver=Colin Braun|US|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=George Russell|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=James Allen|US|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Colin Braun|US|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|77|3
+driver=George Russell|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|63|2.5
+driver=James Allen|US|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|69|2.5
 
 entry=Proton Competition,9
-driver=Logan Sargeant|US|Gold|90|80|84|82|80|82|80|82|76|80|76|82|78|74|82|3
-driver=Julien Andlauer|FR|Gold|86|83|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Zacharie Robichon|CA|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Logan Sargeant|US|Gold|90|80|84|82|80|82|80|82|76|80|76|82|78|74|82|79|3
+driver=Julien Andlauer|FR|Gold|86|83|84|82|80|82|80|78|76|80|76|82|78|74|82|81|3
+driver=Zacharie Robichon|CA|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|74|2.5
 
 entry=TDS Racing,14
-driver=Kévin Estre|FR|Platinum|98|87|91|94|86|88|88|86|85|87|82|90|90|84|88|3.5
-driver=Richard Verschoor|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Patrick Pilet|FR|Gold|86|80|84|82|80|82|80|78|76|80|76|86|78|74|82|0.3
+driver=Kévin Estre|FR|Platinum|98|87|91|94|86|88|88|86|85|87|82|90|90|84|88|93|3.5
+driver=Richard Verschoor|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|75|3
+driver=Patrick Pilet|FR|Gold|86|80|84|82|80|82|80|78|76|80|76|86|78|74|82|79|0.3
 
 entry=United Autosports,22
-driver=Oliver Jarvis|GB|Gold|86|83|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Guy Smith|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Paul di Resta|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Oliver Jarvis|GB|Gold|86|83|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=Guy Smith|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|78|3
+driver=Paul di Resta|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|71|3
 
 entry=Nielsen Racing,24
-driver=Jack Doohan|AU|Gold|91|80|84|82|80|82|80|83|76|80|76|82|78|74|82|3
-driver=Ben Barnicoat|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Matt Campbell|AU|Gold|86|80|84|82|80|82|80|78|76|83|76|82|78|74|82|3
+driver=Jack Doohan|AU|Gold|91|80|84|82|80|82|80|83|76|80|76|82|78|74|82|85|3
+driver=Ben Barnicoat|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=Matt Campbell|AU|Gold|86|80|84|82|80|82|80|78|76|83|76|82|78|74|82|80|3
 
 entry=Algarve Pro Racing,25
-driver=Enzo Trulli|IT|Silver|82|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Matteo Cressoni|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=James Kell|GB|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
+driver=Enzo Trulli|IT|Silver|82|72|76|74|72|74|72|70|68|72|70|74|70|66|76|62|2.5
+driver=Matteo Cressoni|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|64|2.5
+driver=James Kell|GB|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|62|2
 
 entry=Vector Sport,26
-driver=Ryan Cullen|IE|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Patrick Byrne|IE|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=John Farano|CA|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
+driver=Ryan Cullen|IE|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|70|2.5
+driver=Patrick Byrne|IE|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|66|2.5
+driver=John Farano|CA|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|61|2
 
 entry=IDEC Sport,28
-driver=Paul-Loup Chatin|FR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Philippe Gache|FR|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Paul Petit|FR|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Paul-Loup Chatin|FR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=Philippe Gache|FR|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|72|2.5
+driver=Paul Petit|FR|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|71|2.5
 
 entry=Forestier Racing by Panis,29
-driver=Nico Müller|CH|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=James Allen|US|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Tin Han|CN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
+driver=Nico Müller|CH|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|83|3
+driver=James Allen|US|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|69|2.5
+driver=Tin Han|CN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|56|2
 
 entry=Duqueine Team,30
-driver=Doriane Pin|FR|Gold|92|80|84|87|80|82|80|84|76|80|76|82|78|74|82|3
-driver=Richard Verschoor|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Axel Gorse|FR|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Doriane Pin|FR|Gold|92|80|84|87|80|82|80|84|76|80|76|82|78|74|82|81|3
+driver=Richard Verschoor|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|75|3
+driver=Axel Gorse|FR|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|73|2.5
 
 entry=CLX Motorsport,37
-driver=Alex Quinn|GB|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=David Heinemeier Hansson|DK|Gold|86|80|84|82|80|82|80|78|76|84|81|82|78|74|82|3
-driver=Renger van der Zande|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Alex Quinn|GB|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=David Heinemeier Hansson|DK|Gold|86|80|84|82|80|82|80|78|76|84|81|82|78|74|82|79|3
+driver=Renger van der Zande|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
 
 entry=Inter Europol Competition,43
-driver=Nico Müller|CH|Gold|86|80|88|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Fabio Scherer|CH|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Jakub Śmiechowski|PL|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Nico Müller|CH|Gold|86|80|88|82|80|82|80|78|76|80|76|82|78|74|82|83|3
+driver=Fabio Scherer|CH|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|72|2.5
+driver=Jakub Śmiechowski|PL|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|69|2.5
 
 entry=Proton Competition,44
-driver=Pietro Fittipaldi|BR|Gold|86|83|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Neel Jani|CH|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Gianmarco Fassio|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Pietro Fittipaldi|BR|Gold|86|83|84|82|80|82|80|78|76|80|76|82|78|74|82|71|3
+driver=Neel Jani|CH|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|74|3
+driver=Gianmarco Fassio|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|63|2.5
 
 entry=RD Limited,48
-driver=Romain Dumas|FR|Platinum|93|93|91|89|86|88|88|86|85|87|82|95|91|84|88|3.5
-driver=Kévin Estre|FR|Platinum|93|87|91|89|86|88|88|86|85|87|82|90|86|84|88|3.5
-driver=Matteo Malucelli|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Romain Dumas|FR|Platinum|93|93|91|89|86|88|88|86|85|87|82|95|91|84|88|87|3.5
+driver=Kévin Estre|FR|Platinum|93|87|91|89|86|88|88|86|85|87|82|90|86|84|88|93|3.5
+driver=Matteo Malucelli|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|67|2.5
 
 entry=AO by TF,99
-driver=Louis Delétraz|CH|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Patrick Byrne|IE|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Salman Khan|IN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
+driver=Louis Delétraz|CH|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|83|3
+driver=Patrick Byrne|IE|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|66|2.5
+driver=Salman Khan|IN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|59|2
 
 entry=AF Corse,183
-driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Thomas Flohr|CH|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|-0.5
-driver=Davide Rigon|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|63|2.5
+driver=Thomas Flohr|CH|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|59|-0.5
+driver=Davide Rigon|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|83|3
 
 entry=United Autosports,222
-driver=Guy Smith|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=James Allen|US|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Renger van der Zande|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Guy Smith|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|78|3
+driver=James Allen|US|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|69|2.5
+driver=Renger van der Zande|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
 
 entry=Inter Europol Competition,343
-driver=Fabio Scherer|CH|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Jakub Śmiechowski|PL|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Clément Nauleau|FR|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Fabio Scherer|CH|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|72|2.5
+driver=Jakub Śmiechowski|PL|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|69|2.5
+driver=Clément Nauleau|FR|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|68|2.5
 
 entry=TF Sport,2
-driver=Tom Gamble|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Salman Khan|IN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
-driver=Rui Andrade|PT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Tom Gamble|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|79|3
+driver=Salman Khan|IN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|59|2
+driver=Rui Andrade|PT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|67|2.5
 
 entry=Garage 59,10
-driver=Ben Barnicoat|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Jenson Button|GB|Platinum|93|91|91|89|86|88|88|86|85|87|82|94|86|84|88|3.5
-driver=James Kell|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Ben Barnicoat|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=Jenson Button|GB|Platinum|93|91|91|89|86|88|88|86|85|87|82|94|86|84|88|82|3.5
+driver=James Kell|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|73|2.5
 
 entry=13 Autosport,13
-driver=Tommy Milner|US|Gold|86|80|84|82|84|82|80|78|76|80|76|82|78|74|82|3
-driver=Jordan Taylor|US|Platinum|93|87|91|89|86|88|88|86|85|87|82|90|86|84|88|3.5
-driver=Paul Stanton|US|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Tommy Milner|US|Gold|86|80|84|82|84|82|80|78|76|80|76|82|78|74|82|81|3
+driver=Jordan Taylor|US|Platinum|93|87|91|89|86|88|88|86|85|87|82|90|86|84|88|82|3.5
+driver=Paul Stanton|US|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|63|2.5
 
 entry=Vista AF Corse,21
-driver=Daniel Serra|BR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Thomas Flohr|CH|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
+driver=Daniel Serra|BR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|72|3
+driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|63|2.5
+driver=Thomas Flohr|CH|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|59|2
 
 entry=Heart of Racing Team,23
-driver=Eduardo Barrichello|BR|Silver|81|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Ian James|US|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
-driver=Ross Gunn|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Eduardo Barrichello|BR|Silver|81|72|76|74|72|74|72|70|68|72|70|74|70|66|76|64|2.5
+driver=Ian James|US|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|60|2
+driver=Ross Gunn|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|72|3
 
 entry=Heart of Racing Team,27
-driver=Marco Sørensen|DK|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Ross Gunn|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Salman Khan|IN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
+driver=Marco Sørensen|DK|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=Ross Gunn|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|72|3
+driver=Salman Khan|IN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|59|2
 
 entry=Team WRT,32
-driver=Sheldon van der Linde|ZA|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Robin Frijns|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Dries Vanthoor|BE|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Sheldon van der Linde|ZA|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|79|3
+driver=Robin Frijns|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|83|3
+driver=Dries Vanthoor|BE|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|75|3
 
 entry=TF Sport,33
-driver=Tom Gamble|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Salman Khan|IN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
-driver=Rui Andrade|PT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Tom Gamble|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|79|3
+driver=Salman Khan|IN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|59|2
+driver=Rui Andrade|PT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|67|2.5
 
 entry=Racing Team Turkey by TF,34
-driver=Salman Khan|IN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
-driver=Rui Andrade|PT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Tom Gamble|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Salman Khan|IN|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|59|2
+driver=Rui Andrade|PT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|67|2.5
+driver=Tom Gamble|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|79|3
 
 entry=Vista AF Corse,54
-driver=Daniel Serra|BR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Thomas Flohr|CH|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
+driver=Daniel Serra|BR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|72|3
+driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|63|2.5
+driver=Thomas Flohr|CH|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|59|2
 
 entry=Kessel Racing,57
-driver=Lorenzo Patrese|IT|Silver|82|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Daniel Serra|BR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Lorenzo Patrese|IT|Silver|82|72|76|74|72|74|72|70|68|72|70|74|70|66|76|64|2.5
+driver=Daniel Serra|BR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|72|3
+driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|63|2.5
 
 entry=Garage 59,58
-driver=Ben Barnicoat|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=James Kell|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Jenson Button|GB|Platinum|93|87|91|89|86|88|88|86|85|87|82|90|86|84|88|3.5
+driver=Ben Barnicoat|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=James Kell|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|73|2.5
+driver=Jenson Button|GB|Platinum|93|87|91|89|86|88|88|86|85|87|82|90|86|84|88|82|3.5
 
 entry=Racing Spirit of Leman,59
-driver=Marco Sørensen|DK|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Nicki Thiim|DK|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Roman De Angelis|CA|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Marco Sørensen|DK|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=Nicki Thiim|DK|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|85|3
+driver=Roman De Angelis|CA|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|71|2.5
 
 entry=Iron Lynx,61
-driver=Dries Vanthoor|BE|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Mirko Bortolotti|IT|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Andrea Caldarelli|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Dries Vanthoor|BE|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|75|3
+driver=Mirko Bortolotti|IT|Gold|89|80|84|82|80|82|80|78|76|80|76|82|78|74|82|75|3
+driver=Andrea Caldarelli|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|82|3
 
 entry=Team Qatar by Iron Lynx,62
-driver=Giuliano Alesi|FR|Silver|81|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Mirko Bortolotti|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Andrea Caldarelli|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Giuliano Alesi|FR|Silver|81|72|76|74|72|74|72|70|68|72|70|74|70|66|76|68|2.5
+driver=Mirko Bortolotti|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|75|3
+driver=Andrea Caldarelli|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|82|3
 
 entry=Team WRT,69
-driver=Sheldon van der Linde|ZA|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Robin Frijns|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Dries Vanthoor|BE|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Sheldon van der Linde|ZA|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|79|3
+driver=Robin Frijns|NL|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|83|3
+driver=Dries Vanthoor|BE|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|75|3
 
 entry=Kessel Racing,74
-driver=Lorenzo Patrese|IT|Silver|82|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Daniel Serra|BR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Lorenzo Patrese|IT|Silver|82|72|76|74|72|74|72|70|68|72|70|74|70|66|76|64|2.5
+driver=Daniel Serra|BR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|72|3
+driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|63|2.5
 
 entry=Proton Competition,77
-driver=Logan Sargeant|US|Gold|90|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Zacharie Robichon|CA|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Julien Andlauer|FR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Logan Sargeant|US|Gold|90|80|84|82|80|82|80|78|76|80|76|82|78|74|82|79|3
+driver=Zacharie Robichon|CA|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|74|2.5
+driver=Julien Andlauer|FR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|81|3
 
 entry=Akkodis ASP Team,78
-driver=José María López|AR|Platinum|93|87|91|89|91|88|88|86|85|91|82|90|86|84|88|3.5
-driver=Ben Barnicoat|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=James Kell|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=José María López|AR|Platinum|93|87|91|89|91|88|88|86|85|91|82|90|86|84|88|91|3.5
+driver=Ben Barnicoat|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=James Kell|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|73|2.5
 
 entry=Iron Lynx,79
-driver=Mirko Bortolotti|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Andrea Caldarelli|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Dries Vanthoor|BE|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
+driver=Mirko Bortolotti|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|75|3
+driver=Andrea Caldarelli|IT|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|82|3
+driver=Dries Vanthoor|BE|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|75|3
 
 entry=Akkodis ASP Team,87
-driver=José María López|AR|Platinum|93|87|91|89|91|88|88|86|85|91|82|90|86|84|88|3.5
-driver=Ben Barnicoat|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=James Kell|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=José María López|AR|Platinum|93|87|91|89|91|88|88|86|85|91|82|90|86|84|88|91|3.5
+driver=Ben Barnicoat|GB|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=James Kell|GB|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|73|2.5
 
 entry=Proton Competition,88
-driver=Logan Sargeant|US|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Julien Andlauer|FR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Zacharie Robichon|CA|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
+driver=Logan Sargeant|US|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|79|3
+driver=Julien Andlauer|FR|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|81|3
+driver=Zacharie Robichon|CA|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|74|2.5
 
 entry=Manthey DK Engineering,91
-driver=Richard Lietz|AT|Platinum|93|87|91|89|86|88|88|86|85|91|82|94|86|84|88|0.5
-driver=Kévin Estre|FR|Platinum|93|87|91|89|86|88|88|86|85|87|82|90|86|84|88|3.5
-driver=Michael Christensen|DK|Gold|86|80|84|82|80|82|80|78|80|80|76|82|78|74|82|3
+driver=Richard Lietz|AT|Platinum|93|87|91|89|86|88|88|86|85|91|82|94|86|84|88|91|0.5
+driver=Kévin Estre|FR|Platinum|93|87|91|89|86|88|88|86|85|87|82|90|86|84|88|93|3.5
+driver=Michael Christensen|DK|Gold|86|80|84|82|80|82|80|78|80|80|76|82|78|74|82|72|3
 
 entry=The Bend Manthey,92
-driver=Richard Lietz|AT|Platinum|93|87|91|89|86|88|88|86|85|87|82|90|86|84|88|0.5
-driver=Matt Campbell|AU|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Jörg Bergmeister|DE|Gold|86|80|84|82|80|82|80|78|76|80|76|85|82|74|82|3
+driver=Richard Lietz|AT|Platinum|93|87|91|89|86|88|88|86|85|87|82|90|86|84|88|91|0.5
+driver=Matt Campbell|AU|Gold|86|80|84|82|80|82|80|78|76|80|76|82|78|74|82|80|3
+driver=Jörg Bergmeister|DE|Gold|86|80|84|82|80|82|80|78|76|80|76|85|82|74|82|73|3
 
 entry=Richard Mille AF Corse,150
-driver=Lilou Wadoux|FR|Gold|90|80|87|86|80|82|80|78|76|80|76|82|78|74|82|3
-driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|2.5
-driver=Thomas Flohr|CH|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|2
+driver=Lilou Wadoux|FR|Gold|90|80|87|86|80|82|80|78|76|80|76|82|78|74|82|76|3
+driver=Francesco Castellacci|IT|Silver|78|72|76|74|72|74|72|70|68|72|70|74|70|66|76|63|2.5
+driver=Thomas Flohr|CH|Bronze|70|64|68|66|64|66|64|62|58|64|62|66|62|58|70|59|2

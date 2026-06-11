@@ -479,6 +479,10 @@ body.race-live .track-map-canvas-host .track-svg .cars-layer {
   font-size: 0.72rem;
 }
 
+.global-settings-gameplay {
+  margin-bottom: 0.35rem;
+}
+
 .global-settings-audio .audio-controls-embedded {
   display: flex;
   flex-direction: column;
@@ -832,6 +836,18 @@ body.race-live .session-roster-mode {
 
 .sidebar-log-settings-toggles {
   grid-template-columns: 1fr;
+}
+
+.sidebar-log-status {
+  margin: 0 0.65rem 0.45rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #fff;
+  background: rgba(220, 38, 38, 0.22);
+  border: 1px solid rgba(248, 113, 113, 0.45);
 }
 
 .sidebar-log-list {
@@ -2617,10 +2633,56 @@ body.race-live .session-roster-mode {
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hq-crew-role-card.filled {
+  cursor: grab;
+}
+
+.hq-crew-role-card.filled:active {
+  cursor: grabbing;
+}
+
+.hq-crew-role-card.drag-over {
+  border-color: rgba(251, 191, 36, 0.55);
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.25);
+}
+
+.hq-crew-role-card.hq-crew-dragging {
+  opacity: 0.55;
 }
 
 .hq-crew-role-card.vacant {
   opacity: 0.65;
+}
+
+.hq-crew-drag-grip {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  line-height: 1.2;
+  cursor: grab;
+  user-select: none;
+}
+
+.hq-crew-fire-btn {
+  flex-shrink: 0;
+  align-self: flex-start;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hq-crew-fire-btn:hover {
+  background: rgba(239, 68, 68, 0.22);
 }
 
 .hq-crew-role-icon {
@@ -3530,6 +3592,19 @@ body.race-live .track-map-stage,
   color: #c4b5fd;
 }
 
+.track-wec-tel-cell--visibility-moderate .track-wec-tel-value {
+  color: #fbbf24;
+}
+
+.track-wec-tel-cell--visibility-poor .track-wec-tel-value,
+.track-wec-tel-cell--visibility-critical .track-wec-tel-value {
+  color: #f87171;
+}
+
+.track-wec-tel-cell--visibility-critical .track-wec-tel-value {
+  text-shadow: 0 0 10px rgba(248, 113, 113, 0.45);
+}
+
 .track-wec-tel-spacer {
   flex: 1 1 auto;
 }
@@ -3942,14 +4017,32 @@ body.race-live .track-map-stage,
 }
 
 .sidebar-weather-stack {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .sidebar-weather-stack .weather-radar,
 .sidebar-weather-stack .weather-forecast {
   min-width: 0;
+  width: 100%;
+}
+
+.sidebar-weather-stack .weather-radar .radar-wrap {
+  max-width: 11rem;
+  margin-inline: auto;
+}
+
+.sidebar-weather-stack .weather-forecast .forecast-list {
+  max-height: 14.5rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+
+.sidebar-weather-stack .weather-forecast h2 {
+  font-size: 0.72rem;
+  margin-bottom: 0.35rem;
 }
 
 .sidebar-weather-stack .radar-wrap canvas {
@@ -3983,11 +4076,6 @@ body.race-live .track-map-stage,
   max-height: none;
 }
 
-@media (max-width: 1100px) {
-  .sidebar-weather-stack {
-    grid-template-columns: 1fr;
-  }
-}
 
 
 /* Experimental (EXP) non-championship entries */

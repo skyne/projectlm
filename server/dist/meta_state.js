@@ -46,6 +46,9 @@ const car_builder_1 = require("./game/car_builder");
 const weekend_setup_1 = require("./game/weekend_setup");
 const weekend_sessions_1 = require("./game/weekend_sessions");
 const progression_1 = require("./game/progression");
+const facilities_1 = require("./game/facilities");
+const part_instance_seed_1 = require("./game/part_instance_seed");
+const part_projects_1 = require("./game/part_projects");
 const private_test_1 = require("./game/private_test");
 const driver_catalog_1 = require("./game/driver_catalog");
 const driver_market_1 = require("./game/driver_market");
@@ -353,6 +356,13 @@ class MetaStateManager {
         syncLegacyFields(this.state);
         if (this.ensureSeasonFinalized()) {
             this.store.save(this.state);
+        }
+        if (this.state.setupComplete && (this.state.fleet?.length ?? 0) > 0) {
+            const before = (this.state.partInstances ?? []).length;
+            this.syncPartInstancesFromFleet();
+            if ((this.state.partInstances ?? []).length > before) {
+                this.store.save(this.state);
+            }
         }
     }
     getState() {
@@ -713,6 +723,48 @@ class MetaStateManager {
     getStaffForCar(carId) {
         return (0, staff_1.staffForCar)((this.state.staff ?? []), carId);
     }
+    fireStaff(carId, role) {
+        if (!this.state.setupComplete) {
+            return { error: "Found your team before managing crew" };
+        }
+        const fleetIds = (this.state.fleet ?? []).map((c) => c.id);
+        if (!fleetIds.includes(carId)) {
+            return { error: "Unknown car" };
+        }
+        const staffRole = role;
+        const staff = (this.state.staff ?? []);
+        const member = staff.find((s) => s.role === staffRole && s.assignedCarId === carId);
+        if (!(0, staff_1.isStaffSlotFilled)(member)) {
+            return { error: "That slot is already vacant" };
+        }
+        const severance = (0, economy_1.staffSeveranceCost)(member);
+        if (this.state.budget < severance) {
+            return {
+                error: `Insufficient budget (need $${severance.toLocaleString()} severance)`,
+            };
+        }
+        const result = (0, staff_1.releaseStaffSlot)(staff, carId, staffRole);
+        if ("error" in result)
+            return result;
+        this.state.budget -= severance;
+        this.state.staff = result;
+        return this.persist();
+    }
+    reassignStaff(fromCarId, toCarId, role) {
+        if (!this.state.setupComplete) {
+            return { error: "Found your team before managing crew" };
+        }
+        const fleetIds = (this.state.fleet ?? []).map((c) => c.id);
+        if (!fleetIds.includes(fromCarId) || !fleetIds.includes(toCarId)) {
+            return { error: "Unknown car" };
+        }
+        const staffRole = role;
+        const result = (0, staff_1.moveStaffBetweenCars)((this.state.staff ?? []), fromCarId, toCarId, staffRole);
+        if ("error" in result)
+            return result;
+        this.state.staff = result;
+        return this.persist();
+    }
     investRd(partId, points) {
         const cost = points * 10000;
         if (this.state.rdPoints < points || this.state.budget < cost) {
@@ -724,6 +776,85 @@ class MetaStateManager {
             this.state.unlockedParts.push(partId);
         }
         return this.persist();
+    }
+    ensureFacilities() {
+        if (!this.state.facilities?.length) {
+            this.state.facilities = (0, facilities_1.defaultFacilities)();
+        }
+        return this.state.facilities;
+    }
+    fleetAssignments() {
+        const out = {};
+        for (const car of this.state.fleet ?? []) {
+            out[car.id] = car.assignedDriverIds ?? [];
+        }
+        return out;
+    }
+    syncPartInstancesFromFleet(fleet) {
+        const cars = fleet ?? this.state.fleet ?? [];
+        if (!cars.length)
+            return;
+        this.state.partInstances = (0, part_instance_seed_1.mergePartInstancesFromFleet)((this.state.partInstances ?? []), cars);
+    }
+    applySessionProgression(sessionType, options = {}) {
+        const fleetIds = (this.state.fleet ?? []).map((c) => c.id);
+        const { driverIds, staffIds } = (0, progression_1.collectWeekendParticipants)(fleetIds, this.state.driverRoster ?? [], (this.state.staff ?? []), this.fleetAssignments());
+        const progression = (0, progression_1.applyWeekendProgression)(this.state.driverRoster ?? [], (this.state.staff ?? []), driverIds, staffIds, sessionType, options);
+        this.state.driverRoster = progression.drivers;
+        this.state.staff = progression.staff;
+        return { meta: this.persist(), summary: progression.summary };
+    }
+    runOffWeekTraining(payload) {
+        const used = this.state.offWeekTrainingUsed ?? 0;
+        if (used >= progression_1.MAX_OFF_WEEK_TRAINING_SLOTS) {
+            return { meta: this.getState(), error: "No off-week training slots left" };
+        }
+        if (this.state.budget < progression_1.OFF_WEEK_TRAINING_COST) {
+            return { meta: this.getState(), error: "Insufficient budget" };
+        }
+        const facilities = this.ensureFacilities();
+        const result = (0, progression_1.applyOffWeekTraining)(this.state.driverRoster ?? [], (this.state.staff ?? []), payload.action, { driverId: payload.driverId, staffId: payload.staffId }, facilities);
+        if (result.error)
+            return { meta: this.getState(), error: result.error };
+        this.state.driverRoster = result.drivers;
+        this.state.staff = result.staff;
+        this.state.budget -= progression_1.OFF_WEEK_TRAINING_COST;
+        this.state.offWeekTrainingUsed = used + 1;
+        return { meta: this.persist(), summary: result.summary };
+    }
+    startPartProject(payload) {
+        const instances = (this.state.partInstances ?? []);
+        const part = instances.find((p) => p.id === payload.partInstanceId);
+        const facilities = this.ensureFacilities();
+        const engineer = (this.state.staff ?? []).find((s) => s.role === "engineer");
+        const err = (0, part_projects_1.validatePartProject)(part, facilities, this.state.rdPoints, this.state.budget, payload.focus);
+        if (err)
+            return { meta: this.getState(), error: err };
+        const idx = instances.findIndex((p) => p.id === payload.partInstanceId);
+        instances[idx] = (0, part_projects_1.applyPartProject)(part, payload.focus, engineer?.skill ?? 75);
+        this.state.partInstances = instances;
+        this.state.rdPoints -= part_projects_1.PART_PROJECT_RD_COST;
+        this.state.budget -= part_projects_1.PART_PROJECT_BUDGET_COST;
+        return { meta: this.persist() };
+    }
+    upgradeFacility(payload) {
+        const id = payload.facilityId;
+        const def = facilities_1.FACILITY_DEFS[id];
+        if (!def)
+            return { meta: this.getState(), error: "Unknown facility" };
+        const facilities = this.ensureFacilities();
+        const row = facilities.find((f) => f.id === id);
+        if (!row)
+            return { meta: this.getState(), error: "Facility not found" };
+        if (row.tier >= 1)
+            return { meta: this.getState(), error: "Already built" };
+        if (this.state.budget < def.buildCost) {
+            return { meta: this.getState(), error: "Insufficient budget" };
+        }
+        row.tier = 1;
+        this.state.facilities = facilities;
+        this.state.budget -= def.buildCost;
+        return { meta: this.persist() };
     }
     clearLastCompletedRound() {
         this.lastCompletedRound = null;
@@ -982,6 +1113,7 @@ class MetaStateManager {
         this.state.budget += finances.netEarnings;
         this.state.rdPoints += finances.rdPointsEarned;
         this.state.weekendProgress = undefined;
+        this.state.offWeekTrainingUsed = 0;
         const nextRound = (0, track_catalog_1.nextCalendarRound)(this.state.calendar, completingRound);
         if (nextRound !== null) {
             this.state.currentRound = nextRound;
@@ -1055,8 +1187,10 @@ class MetaStateManager {
         if (!payload.driverRoster || payload.driverRoster.length < 1) {
             return { error: "Add at least one driver to your line-up" };
         }
+        const driverPool = (0, driver_catalog_1.computeBronzeDriverPointPool)(this.repoRoot);
+        const catalogIds = new Set((0, driver_catalog_1.listWecCatalogDriverIds)(this.repoRoot));
         for (const driver of payload.driverRoster) {
-            const err = (0, driver_catalog_1.validateCustomDriver)(driver);
+            const err = (0, driver_catalog_1.validateCustomDriver)(driver, driverPool, catalogIds);
             if (err) {
                 const label = driver.name.trim() || "A driver";
                 return { error: `${label}: ${err}` };
@@ -1136,6 +1270,7 @@ class MetaStateManager {
         this.regenerateDriverMarket();
         this.regenerateStaffMarket();
         this.captureSeasonStartSnapshot();
+        this.syncPartInstancesFromFleet(firstCars);
         return this.persist();
     }
     saveTeamCreationDraft(draft) {
@@ -1157,8 +1292,10 @@ class MetaStateManager {
         if (draft.logoDataUrl && !(0, team_livery_1.isValidLogoDataUrl)(draft.logoDataUrl)) {
             return { error: "Team logo is invalid or too large" };
         }
+        const driverPool = (0, driver_catalog_1.computeBronzeDriverPointPool)(this.repoRoot);
+        const catalogIds = new Set((0, driver_catalog_1.listWecCatalogDriverIds)(this.repoRoot));
         for (const driver of draft.driverRoster ?? []) {
-            const err = (0, driver_catalog_1.validateCustomDriver)(driver);
+            const err = (0, driver_catalog_1.validateCustomDriver)(driver, driverPool, catalogIds);
             if (err)
                 return { error: err };
         }
@@ -1215,6 +1352,7 @@ class MetaStateManager {
         }
         const migratedStaff = (0, staff_1.migrateStaffToPerCar)((this.state.staff ?? []), (this.state.fleet ?? []).map((c) => c.id));
         this.state.staff = migratedStaff.staff;
+        this.syncPartInstancesFromFleet(cars);
         return this.persist();
     }
     removeCar(carId) {
@@ -1275,6 +1413,7 @@ class MetaStateManager {
             (0, car_builder_1.writeFleetCarConfig)(this.repoRoot, this.state.teamName, car, car.platformId ? templates.get(car.platformId) : undefined);
         }
         (0, car_builder_1.writePlayerCarConfig)(this.repoRoot, this.state);
+        this.syncPartInstancesFromFleet(this.state.fleet);
         return this.persist();
     }
     saveTeamColors(colors) {
@@ -1300,12 +1439,24 @@ class MetaStateManager {
         if (roster.length < 1) {
             return { error: "Roster must have at least one driver" };
         }
-        for (const d of roster) {
-            const err = (0, driver_catalog_1.validateCustomDriver)(d);
-            if (err)
-                return { error: err };
+        const fleetCount = this.state.fleet?.length ?? 1;
+        const rosterCap = (0, driver_market_1.maxDriverRosterForFleet)(fleetCount);
+        if (roster.length > rosterCap) {
+            return {
+                error: `Roster cannot exceed ${(0, driver_market_1.driverRosterCapMessage)(fleetCount, rosterCap)}`,
+            };
         }
-        this.state.driverRoster = (0, driver_catalog_1.ensureDriverIds)(roster.map((d) => ({ ...d })));
+        const driverPool = (0, driver_catalog_1.computeBronzeDriverPointPool)(this.repoRoot);
+        const catalogIds = new Set((0, driver_catalog_1.listWecCatalogDriverIds)(this.repoRoot));
+        const catalogIndex = (0, driver_catalog_1.buildWecCatalogDriverIndex)(this.repoRoot);
+        const normalized = [];
+        for (const d of roster) {
+            const result = (0, driver_catalog_1.normalizePlayerRosterDriver)(d, catalogIndex, catalogIds, driverPool);
+            if ("error" in result)
+                return { error: result.error };
+            normalized.push(result);
+        }
+        this.state.driverRoster = (0, driver_catalog_1.ensureDriverIds)(normalized);
         if (assignments && this.state.fleet?.length) {
             for (const car of this.state.fleet) {
                 if (!(car.id in assignments))
@@ -1321,6 +1472,9 @@ class MetaStateManager {
             const exclusiveErr = (0, driver_catalog_1.validateExclusiveDriverAssignments)(this.state.fleet, this.state.driverRoster);
             if (exclusiveErr)
                 return { error: exclusiveErr };
+            const perCarErr = (0, driver_catalog_1.validateMaxDriversPerCar)(this.state.fleet, this.state.driverRoster, driver_market_1.MAX_DRIVERS_PER_CAR);
+            if (perCarErr)
+                return { error: perCarErr };
         }
         else if (this.state.fleet?.length) {
             for (const car of this.state.fleet) {
@@ -1333,6 +1487,9 @@ class MetaStateManager {
                     car.assignedDriverIds = defaults[car.id] ?? car.assignedDriverIds ?? [];
                 }
             }
+            const perCarErr = (0, driver_catalog_1.validateMaxDriversPerCar)(this.state.fleet, this.state.driverRoster, driver_market_1.MAX_DRIVERS_PER_CAR);
+            if (perCarErr)
+                return { error: perCarErr };
         }
         this.regenerateDriverMarket();
         return this.persist();
@@ -1467,6 +1624,7 @@ class MetaStateManager {
             driverMarket: this.state.driverMarket ?? [],
             rosterOverrides: this.state.aiRivalSeason?.rosterOverrides,
             employmentContracts: this.state.employmentContracts ?? [],
+            fleetCarCount: this.state.fleet?.length ?? 1,
         });
         if ("error" in applied)
             return applied;
@@ -1561,10 +1719,10 @@ class MetaStateManager {
                 prestigeScore: this.playerPrestigeScore(),
                 offer,
             });
-            this.replaceNegotiation(evaluated.session);
             if (evaluated.accepted) {
                 return this.finalizeSponsorNegotiation(evaluated.session, offer.id);
             }
+            this.replaceNegotiation(evaluated.session);
             return this.persist();
         }
         if (session.kind === "inter_team_agreement") {
@@ -1599,10 +1757,10 @@ class MetaStateManager {
             return { error: "Listing no longer available" };
         const ctx = this.driverNegotiationContext(listing);
         const evaluated = (0, negotiations_1.evaluateDriverOffer)(session, payload, ctx);
-        this.replaceNegotiation(evaluated.session);
         if (evaluated.accepted) {
             return this.finalizeDriverNegotiation(evaluated.session, listing);
         }
+        this.replaceNegotiation(evaluated.session);
         return this.persist();
     }
     acceptNegotiation(negotiationId) {
@@ -1621,7 +1779,6 @@ class MetaStateManager {
                 prestigeScore: this.playerPrestigeScore(),
                 offer,
             });
-            this.replaceNegotiation(evaluated.session);
             if (!evaluated.accepted) {
                 return { error: "Could not finalize at counter-offer terms" };
             }
@@ -1637,9 +1794,8 @@ class MetaStateManager {
             return { error: "Listing no longer available" };
         const ctx = this.driverNegotiationContext(listing);
         const evaluated = (0, negotiations_1.acceptCounterOffer)(session, ctx);
-        this.replaceNegotiation(evaluated.session);
         if (!evaluated.accepted) {
-            return { error: "Could not finalize at counter-offer terms" };
+            return { error: evaluated.note || "Could not finalize at counter-offer terms" };
         }
         return this.finalizeDriverNegotiation(evaluated.session, listing);
     }

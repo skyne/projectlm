@@ -57,6 +57,12 @@ type StaffMarketFilter = "all" | StaffRole | StaffMarketSource;
 export interface TeamHQHandlers {
   onRefreshStaffMarket?: () => void;
   onSignStaffContract?: (listingId: string, carId?: string) => void;
+  onFireStaff?: (carId: string, role: StaffRole) => void;
+  onReassignStaff?: (
+    fromCarId: string,
+    toCarId: string,
+    role: StaffRole,
+  ) => void;
   onRdInvest: (partId: string, points: number) => void;
   onSignSponsor?: (offerId: string) => void;
   onNegotiateSponsor?: (offerId: string) => void;
@@ -75,6 +81,12 @@ export interface TeamHQHandlers {
   onRemoveCar?: (carId: string) => void;
   onSaveTeamLivery?: (livery: TeamLiveryPayload) => void;
   onNewGame?: () => void;
+  onOffWeekTraining?: (payload: import("../ws/protocol").OffWeekTrainingPayload) => void;
+  onUpgradeFacility?: (facilityId: string) => void;
+  onStartPartProject?: (
+    partInstanceId: string,
+    focus: import("../ws/protocol").PartProjectFocusPayload,
+  ) => void;
   onRepairCarCondition?: (
     carId: string,
     options?: { rebuild?: boolean; reveal?: boolean },
@@ -239,7 +251,7 @@ export class TeamHQ {
             <button type="button" class="hq-crew-tab-btn" data-crew-tab="market">Staff market</button>
           </div>
           <div class="hq-crew-roster-panel">
-            <p class="wizard-hint">Each car needs a race engineer, chief mechanic, and strategist.</p>
+            <p class="wizard-hint">Each car needs a race engineer, chief mechanic, and strategist. Drag crew between cars to reassign the same role, or release them to open a vacant slot.</p>
             <div id="team-staff" class="hq-crew-grid"></div>
           </div>
           <div class="hq-crew-market-panel hidden">
@@ -261,6 +273,13 @@ export class TeamHQ {
             <span class="hq-panel-meta" id="rd-points-meta"></span>
           </div>
           <div class="hq-rd-unlocks"></div>
+          <h4 class="hq-subsection-title">Facilities</h4>
+          <div class="hq-facilities-grid"></div>
+          <h4 class="hq-subsection-title">Off-week training</h4>
+          <p class="wizard-hint hq-training-meta"></p>
+          <div class="hq-training-actions"></div>
+          <h4 class="hq-subsection-title">Owned part projects</h4>
+          <div class="hq-part-projects"></div>
           <h4 class="hq-subsection-title">Unlocked technology</h4>
           <ul id="team-parts" class="hq-unlocked-list"></ul>
         </section>
@@ -313,6 +332,7 @@ export class TeamHQ {
       this.handlers.onRefreshStaffMarket?.();
       this.setCrewStatus("Refreshing staff market…");
     });
+    this.bindCrewInteractions();
     this.root.querySelector("#open-garage")!.addEventListener("click", () => {
       this.handlers.onOpenGarage?.();
     });
@@ -501,8 +521,137 @@ export class TeamHQ {
     this.renderSponsors(meta);
     this.renderPartnerships(meta);
     this.renderRd(meta);
+    this.renderFacilities(meta);
+    this.renderOffWeekTraining(meta);
+    this.renderPartProjects(meta);
     this.renderCalendar(meta);
     this.updateRdUnlockStates(meta);
+  }
+
+  private static readonly FACILITY_LABELS: Record<string, { label: string; cost: number }> = {
+    wind_tunnel: { label: "Wind tunnel", cost: 2_500_000 },
+    carbon_fab: { label: "Carbon fabrication", cost: 3_000_000 },
+    design_studio: { label: "Design studio", cost: 1_500_000 },
+    dyno_cell: { label: "Dyno / test cell", cost: 2_000_000 },
+    composite_shop: { label: "Composite shop", cost: 1_200_000 },
+  };
+
+  private renderFacilities(meta: MetaStatePayload): void {
+    const grid = this.root.querySelector(".hq-facilities-grid");
+    if (!grid) return;
+    grid.replaceChildren();
+    for (const fac of meta.facilities ?? []) {
+      const def = TeamHQ.FACILITY_LABELS[fac.id] ?? { label: fac.id, cost: 0 };
+      const card = document.createElement("article");
+      card.className = "hq-facility-card";
+      const built = fac.tier >= 1;
+      card.innerHTML = `
+        <span class="hq-facility-name">${def.label}</span>
+        <span class="hq-facility-status">${built ? "Operational" : "Not built"}</span>
+      `;
+      if (!built) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "secondary-btn";
+        btn.textContent = `Build ($${def.cost.toLocaleString()})`;
+        btn.disabled = meta.budget < def.cost;
+        btn.addEventListener("click", () => {
+          this.handlers.onUpgradeFacility?.(fac.id);
+        });
+        card.appendChild(btn);
+      }
+      grid.appendChild(card);
+    }
+  }
+
+  private renderOffWeekTraining(meta: MetaStatePayload): void {
+    const metaEl = this.root.querySelector(".hq-training-meta");
+    const actions = this.root.querySelector(".hq-training-actions");
+    if (!metaEl || !actions) return;
+    const used = meta.offWeekTrainingUsed ?? 0;
+    const max = 2;
+    metaEl.textContent = `${used}/${max} training slots used this off-week · $45,000 per session`;
+    actions.replaceChildren();
+    if (used >= max) return;
+
+    const driver = meta.driverRoster?.[0];
+    const engineer = meta.staff?.find((s) => s.role === "engineer");
+    const mechanic = meta.staff?.find((s) => s.role === "mechanic");
+    const strategist = meta.staff?.find((s) => s.role === "strategist");
+
+    const addBtn = (label: string, payload: import("../ws/protocol").OffWeekTrainingPayload) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "secondary-btn";
+      btn.textContent = label;
+      btn.disabled = meta.budget < 45_000;
+      btn.addEventListener("click", () => this.handlers.onOffWeekTraining?.(payload));
+      actions.appendChild(btn);
+    };
+
+    if (driver?.id) {
+      addBtn(`Driver simulator — ${driver.name}`, {
+        action: "driver_sim",
+        driverId: driver.id,
+      });
+    }
+    if (engineer?.id) {
+      addBtn(`Data review — ${engineer.name}`, {
+        action: "data_review",
+        staffId: engineer.id,
+      });
+    }
+    if (mechanic?.id) {
+      addBtn(`Pit drills — ${mechanic.name}`, {
+        action: "pit_drills",
+        staffId: mechanic.id,
+      });
+    }
+    if (strategist?.id) {
+      addBtn(`Strategy tabletop — ${strategist.name}`, {
+        action: "strategy_tabletop",
+        staffId: strategist.id,
+      });
+    }
+  }
+
+  private renderPartProjects(meta: MetaStatePayload): void {
+    const host = this.root.querySelector(".hq-part-projects");
+    if (!host) return;
+    host.replaceChildren();
+    const instances = meta.partInstances ?? [];
+    if (!instances.length) {
+      host.innerHTML = `<p class="wizard-hint">No owned part instances yet — build or buy in-house parts to develop them here.</p>`;
+      return;
+    }
+    for (const part of instances) {
+      const card = document.createElement("article");
+      card.className = "hq-part-project-card";
+      card.innerHTML = `
+        <div class="hq-part-project-head">
+          <strong>${part.catalogId}</strong>
+          <span class="hq-part-project-slot">${part.slot} · ${part.category}</span>
+        </div>
+        <div class="hq-part-project-meters">
+          <span>Perf ${Math.round(part.performanceMaturity * 100)}%</span>
+          <span>Rel ${Math.round(part.reliabilityMaturity * 100)}%</span>
+          <span>Know ${Math.round(part.partUnderstanding * 100)}%</span>
+        </div>
+        <div class="hq-part-project-actions"></div>
+      `;
+      const actions = card.querySelector(".hq-part-project-actions")!;
+      for (const focus of ["performance", "reliability", "understanding"] as const) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "secondary-btn";
+        btn.textContent = focus;
+        btn.addEventListener("click", () => {
+          this.handlers.onStartPartProject?.(part.id, focus);
+        });
+        actions.appendChild(btn);
+      }
+      host.appendChild(card);
+    }
   }
 
   private renderFleet(meta: MetaStatePayload, fleet: typeof meta.fleet): void {
@@ -766,6 +915,100 @@ export class TeamHQ {
     return this.staffMarket.filter((l) => l.source === this.staffMarketFilter);
   }
 
+  private bindCrewInteractions(): void {
+    this.staffEl.addEventListener("click", (e) => {
+      const btn = (e.target as HTMLElement).closest(
+        ".hq-crew-fire-btn",
+      ) as HTMLButtonElement | null;
+      if (!btn) return;
+      e.stopPropagation();
+      const card = btn.closest(".hq-crew-role-card") as HTMLElement | null;
+      if (!card) return;
+      const carId = card.dataset.carId ?? "";
+      const role = card.dataset.role as StaffRole | undefined;
+      if (!carId || !role) return;
+      const member = this.staffForCar(this.meta!, carId, role);
+      if (!isStaffSlotFilled(member) || !member) return;
+      const severance = staffSeveranceCost(member);
+      const ok = window.confirm(
+        `Release ${member.name}? Severance: $${severance.toLocaleString()} (two races' salary).`,
+      );
+      if (!ok) return;
+      this.handlers.onFireStaff?.(carId, role);
+      this.setCrewStatus(`Releasing ${member.name}…`);
+    });
+
+    this.staffEl.addEventListener("dragstart", (e) => {
+      if ((e.target as HTMLElement).closest(".hq-crew-fire-btn")) {
+        e.preventDefault();
+        return;
+      }
+      const card = (e.target as HTMLElement).closest(
+        ".hq-crew-role-card",
+      ) as HTMLElement | null;
+      if (!card || card.dataset.draggable !== "true") {
+        e.preventDefault();
+        return;
+      }
+      const carId = card.dataset.carId ?? "";
+      const role = card.dataset.role ?? "";
+      if (!carId || !role) {
+        e.preventDefault();
+        return;
+      }
+      e.dataTransfer?.setData(DRAG_STAFF_ROLE_MIME, role);
+      e.dataTransfer?.setData(DRAG_STAFF_CAR_MIME, carId);
+      e.dataTransfer!.effectAllowed = "move";
+      card.classList.add("hq-crew-dragging");
+    });
+
+    this.staffEl.addEventListener("dragend", () => {
+      this.staffEl
+        .querySelectorAll(".hq-crew-dragging, .drag-over")
+        .forEach((node) => {
+          node.classList.remove("hq-crew-dragging", "drag-over");
+        });
+    });
+
+    this.staffEl.addEventListener("dragover", (e) => {
+      const card = (e.target as HTMLElement).closest(
+        ".hq-crew-role-card",
+      ) as HTMLElement | null;
+      if (!card) return;
+      const payload = readStaffDragPayload(e);
+      if (!payload || payload.role !== card.dataset.role) return;
+      if (payload.carId === card.dataset.carId) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      card.classList.add("drag-over");
+    });
+
+    this.staffEl.addEventListener("dragleave", (e) => {
+      const card = (e.target as HTMLElement).closest(
+        ".hq-crew-role-card",
+      ) as HTMLElement | null;
+      if (card && !card.contains(e.relatedTarget as Node)) {
+        card.classList.remove("drag-over");
+      }
+    });
+
+    this.staffEl.addEventListener("drop", (e) => {
+      const card = (e.target as HTMLElement).closest(
+        ".hq-crew-role-card",
+      ) as HTMLElement | null;
+      if (!card) return;
+      e.preventDefault();
+      card.classList.remove("drag-over");
+      const payload = readStaffDragPayload(e);
+      const toCarId = card.dataset.carId ?? "";
+      const role = card.dataset.role as StaffRole | undefined;
+      if (!payload || !toCarId || !role || payload.role !== role) return;
+      if (payload.carId === toCarId) return;
+      this.handlers.onReassignStaff?.(payload.carId, toCarId, role);
+      this.setCrewStatus("Reassigning crew…");
+    });
+  }
+
   private renderCrew(meta: MetaStatePayload, fleet: NonNullable<MetaStatePayload["fleet"]>): void {
     const STAFF_ROLES: StaffRole[] = ["engineer", "mechanic", "strategist"];
     const ROLE_LABELS: Record<StaffRole, string> = {
@@ -808,7 +1051,13 @@ export class TeamHQ {
         const filled = isStaffSlotFilled(member);
         const status = member?.status ?? "active";
         const roleCard = document.createElement("div");
-        roleCard.className = `hq-crew-role-card${filled ? "" : " vacant"}`;
+        roleCard.className = `hq-crew-role-card${filled ? " filled" : " vacant"}`;
+        roleCard.dataset.carId = car.id;
+        roleCard.dataset.role = role;
+        if (filled) {
+          roleCard.draggable = true;
+          roleCard.dataset.draggable = "true";
+        }
         const statsLine = filled && member
           ? `Skill ${member.skill}${member.experience != null ? ` · ${member.experience} yrs` : ""} · ${formatProgressionLine(member.progressionXp)}${member.morale != null ? ` · Morale ${member.morale}` : ""}${member.salaryPerRace ? ` · $${member.salaryPerRace.toLocaleString()}/race` : ""}`
           : "";
@@ -816,6 +1065,7 @@ export class TeamHQ {
           ? member.traits.join(" · ")
           : "";
         roleCard.innerHTML = `
+          ${filled ? `<span class="hq-crew-drag-grip" aria-hidden="true" title="Drag to another car">⠿</span>` : ""}
           <span class="hq-crew-role-icon" aria-hidden="true">${ROLE_ICONS[role]}</span>
           <div class="hq-crew-role-body">
             <span class="hq-crew-role-label">${ROLE_LABELS[role]}</span>
@@ -826,6 +1076,7 @@ export class TeamHQ {
             ${traitsLine ? `<span class="hq-crew-role-traits">${escapeHtml(traitsLine)}</span>` : ""}
             ${filled && member && status !== "active" ? `<span class="staff-status staff-status-${status}">${STATUS_LABELS[status as Exclude<StaffStatus, "active">]}</span>` : ""}
           </div>
+          ${filled && member ? `<button type="button" class="hq-crew-fire-btn" title="Release ($${staffSeveranceCost(member).toLocaleString()} severance)">×</button>` : ""}
         `;
         rolesEl.appendChild(roleCard);
       }
@@ -1616,6 +1867,20 @@ export class TeamHQ {
     if (carId !== firstCarId) return null;
     return meta.staff?.find((s) => s.role === role && !s.assignedCarId) ?? null;
   }
+}
+
+const DRAG_STAFF_ROLE_MIME = "application/x-projectlm-staff-role";
+const DRAG_STAFF_CAR_MIME = "application/x-projectlm-staff-car";
+
+function readStaffDragPayload(
+  e: DragEvent,
+): { carId: string; role: StaffRole } | null {
+  const role = e.dataTransfer?.getData(DRAG_STAFF_ROLE_MIME)?.trim() as
+    | StaffRole
+    | undefined;
+  const carId = e.dataTransfer?.getData(DRAG_STAFF_CAR_MIME)?.trim();
+  if (!role || !carId) return null;
+  return { carId, role };
 }
 
 const JUNIOR_STAFF_NAMES: Record<StaffRole, string> = {

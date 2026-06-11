@@ -87,6 +87,20 @@ describe("raceLog", () => {
     assert.doesNotMatch(html, /Team WRT/);
   });
 
+  it("shows red flag deploy reason in sidebar feed", () => {
+    const maps = { teamNameByEntry: new Map(), carNumberByEntry: new Map() };
+    const html = formatSidebarLogHtml(
+      {
+        type: "RedFlagDeploy",
+        timestamp: 90,
+        message: "Race control: Red flag — visibility too low (1.0 km)",
+      },
+      maps,
+    );
+    assert.match(html, /visibility too low/);
+    assert.match(html, /1\.0 km/);
+  });
+
   it("formats compact sidebar lines with car numbers only", () => {
     const maps = {
       teamNameByEntry: new Map([["e1", "Acme Racing"], ["e2", "Beta Motors"]]),

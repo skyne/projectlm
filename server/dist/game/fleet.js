@@ -32,6 +32,7 @@ const catalog_1 = require("./catalog");
 const driver_catalog_1 = require("./driver_catalog");
 const chassis_setup_1 = require("./chassis_setup");
 const economy_1 = require("./economy");
+const facilities_1 = require("./facilities");
 const experimental_entry_1 = require("./experimental_entry");
 exports.MAX_CARS_PER_PURCHASE = 6;
 function normalizeQuantity(quantity) {
@@ -419,7 +420,13 @@ function createFleetCar(repoRoot, teamName, payload, fleet) {
     };
 }
 function migrateLegacyMeta(state) {
-    const withSponsors = { ...state, sponsors: state.sponsors ?? [] };
+    const withSponsors = {
+        ...state,
+        sponsors: state.sponsors ?? [],
+        facilities: state.facilities ?? (0, facilities_1.defaultFacilities)(),
+        partInstances: state.partInstances ?? [],
+        offWeekTrainingUsed: state.offWeekTrainingUsed ?? 0,
+    };
     const roster = withSponsors.driverRoster ?? [];
     if (withSponsors.fleet && withSponsors.fleet.length > 0) {
         const { roster: migratedRoster, fleet } = (0, driver_catalog_1.migrateDriverAssignments)(roster, withSponsors.fleet);

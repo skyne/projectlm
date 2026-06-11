@@ -168,6 +168,8 @@ constexpr double kGarageRebuildOverheadSec = 300.0;
 
 double ComputeGarageRebuildDurationSec(double assessedRepairSec,
                                        bool damageRebuild = true);
+/** Below this impact, wheel-to-wheel rubs do not chip bodywork. */
+constexpr double kRubbingImpactThreshold = 4.0;
 /** Collision impact at/above this stresses the safety cell. */
 constexpr double kMonocoqueStressImpact = 10.0;
 /** Severe impacts that can breach the tub or ignite a fire. */

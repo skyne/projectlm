@@ -34,6 +34,25 @@ export class PitBotManager {
     this.gridSetupDone = false;
   }
 
+  exportState(): {
+    carState: [string, CarPitState][];
+    gridSetupDone: boolean;
+  } {
+    return {
+      carState: [...this.carState.entries()],
+      gridSetupDone: this.gridSetupDone,
+    };
+  }
+
+  importState(data: {
+    carState: [string, CarPitState][];
+    gridSetupDone: boolean;
+  }): void {
+    this.carState = new Map(data.carState);
+    this.opponentEntryIds = data.carState.map(([id]) => id);
+    this.gridSetupDone = data.gridSetupDone;
+  }
+
   private opponentIds(
     snapshots: CarSnapshot[],
     managedEntryIds: Set<string>,

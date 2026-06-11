@@ -1,5 +1,6 @@
 import type { RaceControlPayload } from "../ws/protocol";
 import { formatTrackWetnessRadar } from "../utils/trackWetnessDisplay";
+import { formatVisibilityKm, shouldHighlightVisibility } from "../utils/visibilityDisplay";
 
 interface RainCell {
   angle: number;
@@ -107,7 +108,12 @@ export class WeatherRadar {
     this.ctx.stroke();
 
     const phase = rc.weatherPhase ?? "Dry";
-    this.label.textContent = `${phase} · echo intensity ${Math.round(rain * 100)}% · ${formatTrackWetnessRadar(wet)}`;
+    const visKm = rc.visibilityKm ?? 10;
+    const visPart = shouldHighlightVisibility(visKm)
+      ? ` · ${formatVisibilityKm(visKm)} vis`
+      : "";
+    this.label.textContent =
+      `${phase} · echo intensity ${Math.round(rain * 100)}% · ${formatTrackWetnessRadar(wet)}${visPart}`;
   }
 
   private ensureCells(rain: number, wet: number, raceTime: number): void {

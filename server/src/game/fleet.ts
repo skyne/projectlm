@@ -26,6 +26,7 @@ import {
 import { normalizeCarBuild } from "./chassis_setup";
 import type { CarPlatform } from "./car_marketplace";
 import { STARTING_BUDGET } from "./economy";
+import { defaultFacilities } from "./facilities";
 import {
   EXP_COPY_UNIT_MULTIPLIER,
   EXP_MANUFACTURER_UNIT_MULTIPLIER,
@@ -528,7 +529,13 @@ export function createFleetCar(
 }
 
 export function migrateLegacyMeta(state: MetaStatePayload): MetaStatePayload {
-  const withSponsors = { ...state, sponsors: state.sponsors ?? [] };
+  const withSponsors = {
+    ...state,
+    sponsors: state.sponsors ?? [],
+    facilities: state.facilities ?? defaultFacilities(),
+    partInstances: state.partInstances ?? [],
+    offWeekTrainingUsed: state.offWeekTrainingUsed ?? 0,
+  };
   const roster = withSponsors.driverRoster ?? [];
 
   if (withSponsors.fleet && withSponsors.fleet.length > 0) {

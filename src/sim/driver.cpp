@@ -85,6 +85,20 @@ double DriverState::paceFactor(double trackWetness, bool isNight,
                     0.78, 1.06);
 }
 
+double DriverState::setupComfortFactor(double wingDelta,
+                                       double brakeDeltaFromStart) const {
+  const DriverProfile &d = active();
+  const double adapt =
+      std::clamp(d.adaptability > 0.0 ? d.adaptability / 100.0 : 0.70, 0.45, 0.94);
+  const double wingBand = 0.06 + adapt * 0.07;
+  const double brakeBand = 0.03 + adapt * 0.04;
+  const double wingPen =
+      std::max(0.0, std::abs(wingDelta) - wingBand) * (0.28 - adapt * 0.12);
+  const double brakePen =
+      std::max(0.0, std::abs(brakeDeltaFromStart) - brakeBand) * 0.18;
+  return std::clamp(1.0 - wingPen - brakePen, 0.93, 1.0);
+}
+
 double DriverState::consistencyFactor() const {
   const DriverProfile &d = active();
   const double base = 0.80 + d.consistency / 100.0 * 0.18;
@@ -279,6 +293,7 @@ DriverState MakeDefaultDrivers(const std::string &teamName, int count,
     d.rollingStart = 68.0 + i * 2.0;
     d.standingStart = 69.0 + i * 2.0;
     d.setupFeedback = 65.0 + i * 4.0;
+    d.adaptability = 66.0 + i * 4.0;
     d.tireManagement = 70.0 + i * 2.0;
     d.fuelSaving = 68.0 + i * 2.0;
     d.composure = 70.0 + i * 3.0;

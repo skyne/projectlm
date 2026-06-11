@@ -43,6 +43,21 @@ describe("trackGeometryEqual", () => {
     assert.equal(trackGeometryEqual(base, other), false);
   });
 
+  it("detects width profile changes", () => {
+    const other = {
+      ...base,
+      widthProfile: [{ startT: 0, endT: 0.5, widthM: 12 }],
+    };
+    assert.equal(trackGeometryEqual(base, other), false);
+    assert.equal(
+      trackGeometryEqual(other, {
+        ...other,
+        widthProfile: [{ startT: 0, endT: 0.5, widthM: 15 }],
+      }),
+      false,
+    );
+  });
+
   it("treats missing map labels the same as an empty list", () => {
     const { mapLabels: _a, ...noLabelsA } = base;
     const { mapLabels: _b, ...noLabelsB } = base;

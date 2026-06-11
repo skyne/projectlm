@@ -315,42 +315,198 @@ static void ResolveSectorDistances(TrackDefinition &track, double lapLength) {
   }
 }
 
+static void SkipWs(const std::string &s, size_t &i);
+static bool ParseString(const std::string &s, size_t &i, std::string &out);
+static bool ParseNumber(const std::string &s, size_t &i, double &out);
+static bool SkipJsonValue(const std::string &s, size_t &i);
+static bool Expect(const std::string &s, size_t &i, char c);
+
 TrackPose PitLaneDefinition::poseAtDistance(double distance) const {
   return spline.poseAtDistance(distance);
 }
 
-static void BuildDefaultPitLane(TrackDefinition &track) {
+static PitLanePointRole ParsePitLanePointRole(const std::string &token) {
+  if (token == "entry")
+    return PitLanePointRole::Entry;
+  if (token == "box")
+    return PitLanePointRole::Box;
+  if (token == "exit")
+    return PitLanePointRole::Exit;
+  return PitLanePointRole::Waypoint;
+}
+
+static bool ParsePitLanePointObject(const std::string &s, size_t &i,
+                                    PitLanePoint &point) {
+  if (!Expect(s, i, '{'))
+    return false;
+  while (true) {
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == '}')
+      return ++i, true;
+    std::string key;
+    if (!ParseString(s, i, key) || !Expect(s, i, ':'))
+      return false;
+    if (key == "x") {
+      if (!ParseNumber(s, i, point.position.x))
+        return false;
+    } else if (key == "y") {
+      if (!ParseNumber(s, i, point.position.y))
+        return false;
+    } else if (key == "z") {
+      if (!ParseNumber(s, i, point.position.z))
+        return false;
+    } else if (key == "role") {
+      std::string roleToken;
+      if (!ParseString(s, i, roleToken))
+        return false;
+      point.role = ParsePitLanePointRole(roleToken);
+    } else {
+      if (!SkipJsonValue(s, i))
+        return false;
+    }
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == ',') {
+      ++i;
+      continue;
+    }
+  }
+}
+
+static bool ParsePitLanePolylineArray(const std::string &s, size_t &i,
+                                      std::vector<PitLanePoint> &polyline) {
+  if (!Expect(s, i, '['))
+    return false;
+  while (true) {
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == ']')
+      return ++i, true;
+    PitLanePoint point;
+    if (!ParsePitLanePointObject(s, i, point))
+      return false;
+    polyline.push_back(point);
+    SkipWs(s, i);
+    if (i < s.size() && s[i] == ',') {
+      ++i;
+      continue;
+    }
+  }
+}
+
+static double ChordLengthBetween(const Vec3 &a, const Vec3 &b) {
+  const double dx = b.x - a.x;
+  const double dy = b.y - a.y;
+  const double dz = b.z - a.z;
+  return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+static double PitBoxDistanceFromPolyline(
+    const std::vector<PitLanePoint> &polyline, double totalLength) {
+  if (polyline.size() < 2 || totalLength <= 0.0)
+    return 0.0;
+
+  size_t boxIdx = polyline.size();
+  for (size_t i = 0; i < polyline.size(); ++i) {
+    if (polyline[i].role == PitLanePointRole::Box) {
+      boxIdx = i;
+      break;
+    }
+  }
+  if (boxIdx >= polyline.size())
+    return totalLength * 0.48;
+
+  double accum = 0.0;
+  double chordTotal = 0.0;
+  for (size_t i = 1; i < polyline.size(); ++i) {
+    const double seg =
+        ChordLengthBetween(polyline[i - 1].position, polyline[i].position);
+    chordTotal += seg;
+    if (i <= boxIdx)
+      accum = chordTotal;
+  }
+  if (chordTotal < 1e-6)
+    return totalLength * 0.48;
+  return (accum / chordTotal) * totalLength;
+}
+
+static PitLaneGeometry GenerateDefaultPitLaneGeometry(
+    const TrackDefinition &track, const PitLaneGeometry &hints) {
+  PitLaneGeometry geom = hints;
+  geom.entryT = geom.entryT > 0.0 ? geom.entryT : 0.985;
+  geom.exitT = geom.exitT > 0.0 ? geom.exitT : 0.06;
+  if (geom.speedLimitMs <= 0.0)
+    geom.speedLimitMs = 60.0 / 3.6;
+
   const double lapLen = track.lapLength();
   if (lapLen <= 0.0)
-    return;
+    return geom;
 
-  constexpr double kLaneFraction = 0.06;
   constexpr double kSampleStepM = 12.0;
   const double kLateralOffsetM =
-      track.corridor.pitLane.offsetM > 0.0 ? track.corridor.pitLane.offsetM : 10.0;
+      geom.offsetM > 0.0 ? geom.offsetM : 10.0;
 
-  const double segLen = lapLen * kLaneFraction;
-  std::vector<Vec3> points;
-  for (double d = 0.0; d <= segLen + 1e-6; d += kSampleStepM) {
-    const double sampleD = std::min(d, segLen);
-    const TrackPose pose = track.spline.poseAtDistance(sampleD);
+  const double entryDist = geom.entryT * lapLen;
+  const double exitDist = geom.exitT * lapLen;
+  double pitSpan = 0.0;
+  if (track.spline.isClosed()) {
+    pitSpan = exitDist >= entryDist ? exitDist - entryDist
+                                    : (lapLen - entryDist) + exitDist;
+  } else {
+    pitSpan = exitDist >= entryDist ? exitDist - entryDist
+                                    : std::max(0.0, lapLen - entryDist);
+  }
+
+  geom.polyline.clear();
+  for (double d = 0.0; d <= pitSpan + 1e-6; d += kSampleStepM) {
+    const double along = std::min(d, pitSpan);
+    const TrackPose pose = track.spline.poseAtDistance(entryDist + along);
     Vec3 perp = {-pose.tangent.z, 0.0, pose.tangent.x};
     perp = VecNormalize(perp);
-    points.push_back(VecAdd(pose.position, VecScale(perp, kLateralOffsetM)));
-    if (sampleD >= segLen - 1e-6)
+    PitLanePoint point;
+    point.position = VecAdd(pose.position, VecScale(perp, kLateralOffsetM));
+    point.role = PitLanePointRole::Waypoint;
+    geom.polyline.push_back(point);
+    if (along >= pitSpan - 1e-6)
       break;
   }
-  if (points.size() < 2)
+  if (geom.polyline.size() >= 2) {
+    geom.polyline.front().role = PitLanePointRole::Entry;
+    geom.polyline.back().role = PitLanePointRole::Exit;
+    const size_t boxIdx =
+        static_cast<size_t>(std::round((geom.polyline.size() - 1) * 0.48));
+    geom.polyline[boxIdx].role = PitLanePointRole::Box;
+  }
+  geom.boxDistanceM = -1.0;
+  return geom;
+}
+
+static void ApplyPitLaneFromGeometry(TrackDefinition &track,
+                                     const PitLaneGeometry &geom) {
+  if (geom.polyline.size() < 2)
     return;
+
+  std::vector<Vec3> points;
+  points.reserve(geom.polyline.size());
+  for (const PitLanePoint &point : geom.polyline)
+    points.push_back(point.position);
 
   track.pitLane.spline.setControlPoints(points, false);
   track.pitLane.spline.setLinear(true);
   track.pitLane.spline.build(2.0);
-  if (segLen > 0.0)
-    track.pitLane.spline.setTargetLength(segLen);
-  track.pitLane.speedLimitMs = 60.0 / 3.6;
-  track.pitLane.boxDistance = track.pitLane.totalLength() * 0.48;
-  track.pitLane.mergeTrackDistance = segLen;
+
+  const double lapLen = track.lapLength();
+  const double exitT = geom.exitT > 0.0 ? geom.exitT : 0.06;
+  track.pitLane.speedLimitMs =
+      geom.speedLimitMs > 0.0 ? geom.speedLimitMs : 60.0 / 3.6;
+  track.pitLane.entryT = geom.entryT > 0.0 ? geom.entryT : 0.985;
+  track.pitLane.exitT = exitT;
+  track.pitLane.mergeLateralOffset =
+      geom.mergeLateralOffset > 0.0 ? geom.mergeLateralOffset : 0.58;
+  track.pitLane.mergeTrackDistance = exitT * lapLen;
+  track.pitLane.boxDistance =
+      geom.boxDistanceM >= 0.0
+          ? geom.boxDistanceM
+          : PitBoxDistanceFromPolyline(geom.polyline,
+                                       track.pitLane.totalLength());
 }
 
 static std::vector<Vec3> DefaultCircuitControlPoints() {
@@ -399,7 +555,8 @@ static bool LoadLegacyTrackCsv(const std::string &filename,
   track.spline.build(2.0);
   track.spline.setTargetLength(nominalLength);
   ResolveSectorDistances(track, nominalLength);
-  BuildDefaultPitLane(track);
+  PitLaneGeometry pitGeom = GenerateDefaultPitLaneGeometry(track, {});
+  ApplyPitLaneFromGeometry(track, pitGeom);
   return true;
 }
 
@@ -816,7 +973,7 @@ static bool ParseWidthProfileArray(const std::string &s, size_t &i,
 }
 
 static bool ParsePitLaneObject(const std::string &s, size_t &i,
-                             PitLaneGeometry &geometry) {
+                               PitLaneGeometry &geometry) {
   if (!Expect(s, i, '{'))
     return false;
   while (true) {
@@ -828,6 +985,30 @@ static bool ParsePitLaneObject(const std::string &s, size_t &i,
       return false;
     if (key == "offset_m") {
       if (!ParseNumber(s, i, geometry.offsetM))
+        return false;
+    } else if (key == "width_m") {
+      if (!ParseNumber(s, i, geometry.widthM))
+        return false;
+    } else if (key == "merge_lateral_offset") {
+      if (!ParseNumber(s, i, geometry.mergeLateralOffset))
+        return false;
+    } else if (key == "merge_blend_m") {
+      if (!ParseNumber(s, i, geometry.mergeBlendM))
+        return false;
+    } else if (key == "entry_t") {
+      if (!ParseNumber(s, i, geometry.entryT))
+        return false;
+    } else if (key == "exit_t") {
+      if (!ParseNumber(s, i, geometry.exitT))
+        return false;
+    } else if (key == "box_distance_m") {
+      if (!ParseNumber(s, i, geometry.boxDistanceM))
+        return false;
+    } else if (key == "speed_limit_ms") {
+      if (!ParseNumber(s, i, geometry.speedLimitMs))
+        return false;
+    } else if (key == "polyline") {
+      if (!ParsePitLanePolylineArray(s, i, geometry.polyline))
         return false;
     } else {
       if (!SkipJsonValue(s, i))
@@ -958,7 +1139,11 @@ static bool LoadTrackJson(const std::string &filename, TrackDefinition &track) {
   if (targetLength > 0.0)
     track.spline.setTargetLength(targetLength);
   ResolveSectorDistances(track, track.spline.totalLength());
-  BuildDefaultPitLane(track);
+  PitLaneGeometry pitGeom = pitLaneGeometry;
+  if (pitGeom.polyline.size() < 2)
+    pitGeom = GenerateDefaultPitLaneGeometry(track, pitLaneGeometry);
+  track.corridor.pitLane = pitGeom;
+  ApplyPitLaneFromGeometry(track, pitGeom);
   return true;
 }
 

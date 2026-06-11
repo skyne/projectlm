@@ -448,7 +448,9 @@ function resolveAiDriverMarketBids(repoRoot, season, market, seed, protectedList
         playerTeamName: playerTeam,
         rosterOverrides: season.rosterOverrides,
     });
-    const candidates = market.filter((l) => l.source === "wec_active" || l.source === "prospect");
+    const candidates = market.filter((l) => l.source === "wec_active" ||
+        l.source === "prospect" ||
+        l.source === "free_agent");
     for (const team of teamsByBudget.slice(0, 8)) {
         if (signedIds.length >= 3)
             break;
@@ -463,7 +465,7 @@ function resolveAiDriverMarketBids(repoRoot, season, market, seed, protectedList
                 return false;
             const driverId = (0, driver_catalog_1.ensureCatalogDriverId)(l.driver).id;
             const holder = contracts.get(driverId);
-            if (l.source === "prospect") {
+            if (l.source === "prospect" || l.source === "free_agent") {
                 if (team.budget <= 15000000)
                     return false;
                 return (!holder || holder.toLowerCase() === team.teamName.toLowerCase());

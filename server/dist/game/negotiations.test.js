@@ -196,6 +196,42 @@ function prospectListing(overrides) {
         strict_1.default.ok(countered.session.lastCounterOffer);
         const accepted = (0, negotiations_1.acceptCounterOffer)(countered.session, ctx);
         strict_1.default.equal(accepted.accepted, true);
+        strict_1.default.equal(accepted.session.status, "accepted");
+    });
+    (0, node_test_1.it)("accepts explicit counter-offer even when buyout is below negotiation minimum", () => {
+        const listing = prospectListing({
+            source: "wec_active",
+            contractedTeam: "Peugeot",
+            signingFee: 500000,
+            salaryPerRace: 30000,
+        });
+        const created = (0, negotiations_1.createDriverNegotiation)(listing, {
+            playerTeamName: "Sky Racing",
+            currentRound: 3,
+            seasonYear: 2026,
+            prestigeScore: 0.6,
+        });
+        strict_1.default.ok(!("error" in created));
+        if ("error" in created)
+            return;
+        const ctx = (0, negotiations_1.buildDriverNegotiationContext)(listing, {
+            playerTeamName: "Sky Racing",
+            currentRound: 3,
+            seasonYear: 2026,
+            prestigeScore: 0.6,
+        });
+        const countered = (0, negotiations_1.evaluateDriverOffer)(created, {
+            signingFee: 200000,
+            salaryPerRace: 10000,
+            contractSeasons: 1,
+            seatGuarantee: "reserve",
+            buyoutToTeam: 0,
+        }, ctx);
+        const counterBuyout = countered.session.lastCounterOffer?.buyoutToTeam ?? 0;
+        strict_1.default.ok(counterBuyout < (0, negotiations_1.computeMinBuyout)(listing));
+        const accepted = (0, negotiations_1.acceptCounterOffer)(countered.session, ctx);
+        strict_1.default.equal(accepted.accepted, true);
+        strict_1.default.equal(accepted.session.status, "accepted");
     });
     (0, node_test_1.it)("expires open negotiations after deadline round", () => {
         const listing = prospectListing();

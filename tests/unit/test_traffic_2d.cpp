@@ -48,7 +48,7 @@ TEST_CASE("Collision requires lateral overlap in same corridor",
   REQUIRE_FALSE(mods[0].collision);
 }
 
-TEST_CASE("Collision triggers when cars overlap laterally at closing speed",
+TEST_CASE("Proximity without overlap or closing speed avoids damage",
           "[unit][traffic][2d]") {
   RaceSession session = MakeMinimalRaceSession();
   AddTestCar(session, "a", "Team A");
@@ -60,6 +60,29 @@ TEST_CASE("Collision triggers when cars overlap laterally at closing speed",
   b.state().currentLap = 1;
   a.state().currentDistance = 200.0;
   b.state().currentDistance = 206.0;
+  a.state().currentSpeed = 70.0;
+  b.state().currentSpeed = 65.0;
+  a.setLateralOffset(0.0);
+  b.setLateralOffset(0.05);
+
+  std::vector<TrafficModifiers> mods;
+  RunTraffic(session, mods);
+  REQUIRE(mods[0].collisionDamage == 0.0);
+  REQUIRE_FALSE(mods[0].collision);
+}
+
+TEST_CASE("Collision triggers when cars overlap laterally at closing speed",
+          "[unit][traffic][2d]") {
+  RaceSession session = MakeMinimalRaceSession();
+  AddTestCar(session, "a", "Team A");
+  AddTestCar(session, "b", "Team B");
+  Car &a = FindCar(session, "a");
+  Car &b = FindCar(session, "b");
+
+  a.state().currentLap = 1;
+  b.state().currentLap = 1;
+  a.state().currentDistance = 200.0;
+  b.state().currentDistance = 204.0;
   a.state().currentSpeed = 70.0;
   b.state().currentSpeed = 40.0;
   a.setLateralOffset(0.0);

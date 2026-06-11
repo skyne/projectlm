@@ -9,6 +9,7 @@ import { formatCarNumber } from "../entryNumbers";
 import { sessionMapMetaPrefix } from "../utils/weekendSessions";
 import { trackDisplayName, trackIconSvg } from "../utils/trackIcons";
 import { formatTrackWetnessConditions } from "../utils/trackWetnessDisplay";
+import { formatVisibilityKm, visibilityLevel } from "../utils/visibilityDisplay";
 import { applyTrackTimePhase } from "../utils/trackWeatherVisual";
 import { formatSectorFlagBanner } from "../utils/sectorFlags";
 import { resolveTrackTheme, type TrackTheme } from "../utils/trackThemes";
@@ -48,6 +49,8 @@ export class TrackMapPanel {
   private telTrackTempEl!: HTMLElement;
   private telAirTempEl!: HTMLElement;
   private telWindEl!: HTMLElement;
+  private telVisibilityEl!: HTMLElement;
+  private telVisibilityCellEl!: HTMLElement;
   private onResetView: (() => void) | null = null;
   private onLeaveFollow: (() => void) | null = null;
   private followChipEl!: HTMLElement;
@@ -121,6 +124,10 @@ export class TrackMapPanel {
             <span class="track-wec-tel-label">Wind</span>
             <strong class="track-wec-tel-value" id="tel-wind">—</strong>
           </div>
+          <div class="track-wec-tel-cell track-wec-tel-cell--visibility hidden" id="tel-visibility-cell">
+            <span class="track-wec-tel-label">Visibility</span>
+            <strong class="track-wec-tel-value" id="tel-visibility">—</strong>
+          </div>
           <div class="track-wec-tel-spacer"></div>
           <div class="track-map-toolbar track-wec-toolbar">
             <button type="button" class="track-map-btn" data-action="reset" title="Reset zoom">⌖</button>
@@ -143,6 +150,8 @@ export class TrackMapPanel {
     this.telTrackTempEl = shell.querySelector("#tel-track-temp")!;
     this.telAirTempEl = shell.querySelector("#tel-air-temp")!;
     this.telWindEl = shell.querySelector("#tel-wind")!;
+    this.telVisibilityEl = shell.querySelector("#tel-visibility")!;
+    this.telVisibilityCellEl = shell.querySelector("#tel-visibility-cell")!;
     this.followChipEl = shell.querySelector("#track-follow-chip")!;
     this.followLabelEl = shell.querySelector(".track-follow-label")!;
 
@@ -268,10 +277,27 @@ export class TrackMapPanel {
       this.telAirTempEl.textContent = `${raceControl.ambientTempC.toFixed(1)}°C`;
       const windKmh = (raceControl.windSpeedMs ?? 0) * 3.6;
       this.telWindEl.textContent = windKmh > 0.3 ? `${windKmh.toFixed(1)} km/h` : "Calm";
+      const visKm = raceControl.visibilityKm ?? 10;
+      const showVis =
+        visKm < 8 ||
+        raceControl.redFlagActive === true ||
+        (raceControl.rainIntensity ?? 0) > 0.35;
+      this.telVisibilityCellEl.classList.toggle("hidden", !showVis);
+      this.telVisibilityEl.textContent = formatVisibilityKm(visKm);
+      this.telVisibilityCellEl.classList.remove(
+        "track-wec-tel-cell--visibility-moderate",
+        "track-wec-tel-cell--visibility-poor",
+        "track-wec-tel-cell--visibility-critical",
+      );
+      const visLevel = visibilityLevel(visKm);
+      if (visLevel !== "good") {
+        this.telVisibilityCellEl.classList.add(`track-wec-tel-cell--visibility-${visLevel}`);
+      }
     } else {
       this.telTrackTempEl.textContent = "—";
       this.telAirTempEl.textContent = "—";
       this.telWindEl.textContent = "—";
+      this.telVisibilityCellEl.classList.add("hidden");
     }
   }
 

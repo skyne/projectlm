@@ -72,6 +72,8 @@ struct SessionRaceControl {
   double redFlagReviewAt = -1.0;
   int redFlagExtensions = 0;
   bool redFlagWeatherCause = false;
+  /** Human-readable deploy reason — echoed on extensions and UI. */
+  std::string redFlagReason;
   /** Race order snapshot when red flag deploys — SC pit release uses this. */
   std::vector<std::string> redFlagPitOrder;
   std::vector<std::string> scPitReleaseQueue;
@@ -123,7 +125,9 @@ struct CarRaceControlState {
 const char *FlagPhaseName(FlagPhase phase);
 FlagPhase ParseFlagPhase(const std::string &name);
 const char *TrackStatusName(TrackStatus status);
+TrackStatus ParseTrackStatus(const std::string &name);
 const char *PendingPenaltyName(PendingPenalty penalty);
+PendingPenalty ParsePendingPenalty(const std::string &name);
 const char *HazardKindName(HazardKind kind);
 HazardKind ParseHazardKind(const std::string &name);
 

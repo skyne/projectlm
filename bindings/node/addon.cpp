@@ -1,4 +1,6 @@
 #include "sim_bridge.hpp"
+#include "sim_checkpoint.hpp"
+#include "race_control_common.hpp"
 #include <napi.h>
 
 namespace {
@@ -187,6 +189,7 @@ Napi::Object SnapshotToObject(Napi::Env env, const CarSnapshot &snapshot) {
     row.Set("overtaking", d.overtaking);
     row.Set("defending", d.defending);
     row.Set("setupFeedback", d.setupFeedback);
+    row.Set("adaptability", d.adaptability);
     row.Set("stamina", d.stamina);
     row.Set("composure", d.composure);
     row.Set("active", d.active);
@@ -481,6 +484,8 @@ Napi::Object RaceControlToObject(Napi::Env env, const RaceControlState &rc) {
   obj.Set("whiteFlagActive", rc.whiteFlagActive);
   obj.Set("redFlagActive", rc.redFlagActive);
   obj.Set("redFlagSecondsRemaining", rc.redFlagSecondsRemaining);
+  if (!rc.redFlagReason.empty())
+    obj.Set("redFlagReason", rc.redFlagReason);
   if (!rc.activeIncidentEntryId.empty())
     obj.Set("activeIncidentEntryId", rc.activeIncidentEntryId);
 
@@ -580,6 +585,452 @@ Napi::Value GetTeamConfig(const Napi::CallbackInfo &info) {
   return TeamConfigToObject(env);
 }
 
+WeatherPhase ParseWeatherPhaseLocal(const std::string &name) {
+  if (name == "Cloudy")
+    return WeatherPhase::Cloudy;
+  if (name == "LightRain")
+    return WeatherPhase::LightRain;
+  if (name == "HeavyRain")
+    return WeatherPhase::HeavyRain;
+  if (name == "Drying")
+    return WeatherPhase::Drying;
+  return WeatherPhase::Dry;
+}
+
+Napi::Object WeatherStateToCheckpointObject(Napi::Env env,
+                                            const WeatherState &w) {
+  Napi::Object obj = Napi::Object::New(env);
+  obj.Set("trackWetness", w.trackWetness);
+  obj.Set("ambientTempC", w.ambientTempC);
+  obj.Set("trackTempC", w.trackTempC);
+  obj.Set("rainIntensity", w.rainIntensity);
+  obj.Set("trackGripEvolution", w.trackGripEvolution);
+  obj.Set("windSpeedMs", w.windSpeedMs);
+  obj.Set("windDirectionDeg", w.windDirectionDeg);
+  obj.Set("visibilityKm", w.visibilityKm);
+  obj.Set("phase", WeatherPhaseName(w.phase));
+  obj.Set("forecastRainInSeconds", w.forecastRainInSeconds);
+  obj.Set("rainEpisodeEndTime", w.rainEpisodeEndTime);
+  obj.Set("profileId", w.profileId);
+  return obj;
+}
+
+WeatherState WeatherStateFromCheckpointObject(const Napi::Object &obj) {
+  WeatherState w;
+  if (obj.Has("trackWetness"))
+    w.trackWetness = obj.Get("trackWetness").As<Napi::Number>().DoubleValue();
+  if (obj.Has("ambientTempC"))
+    w.ambientTempC = obj.Get("ambientTempC").As<Napi::Number>().DoubleValue();
+  if (obj.Has("trackTempC"))
+    w.trackTempC = obj.Get("trackTempC").As<Napi::Number>().DoubleValue();
+  if (obj.Has("rainIntensity"))
+    w.rainIntensity = obj.Get("rainIntensity").As<Napi::Number>().DoubleValue();
+  if (obj.Has("trackGripEvolution"))
+    w.trackGripEvolution =
+        obj.Get("trackGripEvolution").As<Napi::Number>().DoubleValue();
+  if (obj.Has("windSpeedMs"))
+    w.windSpeedMs = obj.Get("windSpeedMs").As<Napi::Number>().DoubleValue();
+  if (obj.Has("windDirectionDeg"))
+    w.windDirectionDeg =
+        obj.Get("windDirectionDeg").As<Napi::Number>().DoubleValue();
+  if (obj.Has("visibilityKm"))
+    w.visibilityKm = obj.Get("visibilityKm").As<Napi::Number>().DoubleValue();
+  if (obj.Has("phase"))
+    w.phase = ParseWeatherPhaseLocal(
+        obj.Get("phase").As<Napi::String>().Utf8Value());
+  if (obj.Has("forecastRainInSeconds"))
+    w.forecastRainInSeconds =
+        obj.Get("forecastRainInSeconds").As<Napi::Number>().DoubleValue();
+  if (obj.Has("rainEpisodeEndTime"))
+    w.rainEpisodeEndTime =
+        obj.Get("rainEpisodeEndTime").As<Napi::Number>().DoubleValue();
+  if (obj.Has("profileId"))
+    w.profileId = obj.Get("profileId").As<Napi::String>().Utf8Value();
+  return w;
+}
+
+Napi::Object SessionRaceControlToCheckpointObject(Napi::Env env,
+                                                  const SessionRaceControl &rc) {
+  Napi::Object obj = Napi::Object::New(env);
+  obj.Set("flagPhase", FlagPhaseName(rc.flagPhase));
+  obj.Set("fcyActive", rc.fcyActive);
+  obj.Set("scActive", rc.scActive);
+  obj.Set("fcyHoldUntil", rc.fcyHoldUntil);
+  obj.Set("scDeployedAt", rc.scDeployedAt);
+  obj.Set("scDeployedAtLap", rc.scDeployedAtLap);
+  obj.Set("scLapsRemaining", rc.scLapsRemaining);
+  obj.Set("scReferenceEntryId", rc.scReferenceEntryId);
+  obj.Set("activeIncidentEntryId", rc.activeIncidentEntryId);
+  obj.Set("slowZoneHoldUntil", rc.slowZoneHoldUntil);
+  obj.Set("scRestartUntil", rc.scRestartUntil);
+  obj.Set("scAwaitingLeaderSfCross", rc.scAwaitingLeaderSfCross);
+  obj.Set("whiteFlagActive", rc.whiteFlagActive);
+  obj.Set("redFlagActive", rc.redFlagActive);
+  obj.Set("redFlagUntil", rc.redFlagUntil);
+  obj.Set("redFlagReviewAt", rc.redFlagReviewAt);
+  obj.Set("redFlagExtensions", rc.redFlagExtensions);
+  obj.Set("redFlagWeatherCause", rc.redFlagWeatherCause);
+  obj.Set("redFlagReason", rc.redFlagReason);
+  obj.Set("scFormationRestore", rc.scFormationRestore);
+  obj.Set("scPitReleaseNextAt", rc.scPitReleaseNextAt);
+  Napi::Array sectorFlags = Napi::Array::New(env, rc.sectorFlags.size());
+  for (size_t i = 0; i < rc.sectorFlags.size(); ++i)
+    sectorFlags.Set(static_cast<uint32_t>(i), rc.sectorFlags[i]);
+  obj.Set("sectorFlags", sectorFlags);
+  auto stringArray = [&](const std::vector<std::string> &values) {
+    Napi::Array arr = Napi::Array::New(env, values.size());
+    for (size_t i = 0; i < values.size(); ++i)
+      arr.Set(static_cast<uint32_t>(i), values[i]);
+    return arr;
+  };
+  obj.Set("redFlagPitOrder", stringArray(rc.redFlagPitOrder));
+  obj.Set("scPitReleaseQueue", stringArray(rc.scPitReleaseQueue));
+  obj.Set("scFormationOrder", stringArray(rc.scFormationOrder));
+  return obj;
+}
+
+SessionRaceControl SessionRaceControlFromCheckpointObject(const Napi::Object &obj) {
+  SessionRaceControl rc;
+  if (obj.Has("flagPhase"))
+    rc.flagPhase =
+        ParseFlagPhase(obj.Get("flagPhase").As<Napi::String>().Utf8Value());
+  if (obj.Has("fcyActive"))
+    rc.fcyActive = obj.Get("fcyActive").As<Napi::Boolean>().Value();
+  if (obj.Has("scActive"))
+    rc.scActive = obj.Get("scActive").As<Napi::Boolean>().Value();
+  if (obj.Has("fcyHoldUntil"))
+    rc.fcyHoldUntil = obj.Get("fcyHoldUntil").As<Napi::Number>().DoubleValue();
+  if (obj.Has("scDeployedAt"))
+    rc.scDeployedAt = obj.Get("scDeployedAt").As<Napi::Number>().DoubleValue();
+  if (obj.Has("scDeployedAtLap"))
+    rc.scDeployedAtLap =
+        obj.Get("scDeployedAtLap").As<Napi::Number>().Int32Value();
+  if (obj.Has("scLapsRemaining"))
+    rc.scLapsRemaining =
+        obj.Get("scLapsRemaining").As<Napi::Number>().Int32Value();
+  if (obj.Has("scReferenceEntryId"))
+    rc.scReferenceEntryId =
+        obj.Get("scReferenceEntryId").As<Napi::String>().Utf8Value();
+  if (obj.Has("activeIncidentEntryId"))
+    rc.activeIncidentEntryId =
+        obj.Get("activeIncidentEntryId").As<Napi::String>().Utf8Value();
+  if (obj.Has("slowZoneHoldUntil"))
+    rc.slowZoneHoldUntil =
+        obj.Get("slowZoneHoldUntil").As<Napi::Number>().DoubleValue();
+  if (obj.Has("scRestartUntil"))
+    rc.scRestartUntil = obj.Get("scRestartUntil").As<Napi::Number>().DoubleValue();
+  if (obj.Has("scAwaitingLeaderSfCross"))
+    rc.scAwaitingLeaderSfCross =
+        obj.Get("scAwaitingLeaderSfCross").As<Napi::Boolean>().Value();
+  if (obj.Has("whiteFlagActive"))
+    rc.whiteFlagActive = obj.Get("whiteFlagActive").As<Napi::Boolean>().Value();
+  if (obj.Has("redFlagActive"))
+    rc.redFlagActive = obj.Get("redFlagActive").As<Napi::Boolean>().Value();
+  if (obj.Has("redFlagUntil"))
+    rc.redFlagUntil = obj.Get("redFlagUntil").As<Napi::Number>().DoubleValue();
+  if (obj.Has("redFlagReviewAt"))
+    rc.redFlagReviewAt =
+        obj.Get("redFlagReviewAt").As<Napi::Number>().DoubleValue();
+  if (obj.Has("redFlagExtensions"))
+    rc.redFlagExtensions =
+        obj.Get("redFlagExtensions").As<Napi::Number>().Int32Value();
+  if (obj.Has("redFlagWeatherCause"))
+    rc.redFlagWeatherCause =
+        obj.Get("redFlagWeatherCause").As<Napi::Boolean>().Value();
+  if (obj.Has("redFlagReason"))
+    rc.redFlagReason = obj.Get("redFlagReason").As<Napi::String>().Utf8Value();
+  if (obj.Has("scFormationRestore"))
+    rc.scFormationRestore =
+        obj.Get("scFormationRestore").As<Napi::Boolean>().Value();
+  if (obj.Has("scPitReleaseNextAt"))
+    rc.scPitReleaseNextAt =
+        obj.Get("scPitReleaseNextAt").As<Napi::Number>().DoubleValue();
+  if (obj.Has("sectorFlags") && obj.Get("sectorFlags").IsArray()) {
+    const Napi::Array arr = obj.Get("sectorFlags").As<Napi::Array>();
+    rc.sectorFlags.resize(arr.Length());
+    for (uint32_t i = 0; i < arr.Length(); ++i)
+      rc.sectorFlags[i] = arr.Get(i).As<Napi::Number>().Int32Value();
+  }
+  return rc;
+}
+
+CarSnapshot SnapshotFromObject(const Napi::Object &obj) {
+  CarSnapshot snap;
+  if (obj.Has("entryId"))
+    snap.entryId = obj.Get("entryId").As<Napi::String>().Utf8Value();
+  if (obj.Has("teamName"))
+    snap.teamName = obj.Get("teamName").As<Napi::String>().Utf8Value();
+  if (obj.Has("carNumber"))
+    snap.carNumber = obj.Get("carNumber").As<Napi::String>().Utf8Value();
+  if (obj.Has("classId"))
+    snap.classId = obj.Get("classId").As<Napi::String>().Utf8Value();
+  if (obj.Has("lap"))
+    snap.lap = obj.Get("lap").As<Napi::Number>().Int32Value();
+  if (obj.Has("distance"))
+    snap.distance = obj.Get("distance").As<Napi::Number>().DoubleValue();
+  if (obj.Has("normalizedT"))
+    snap.normalizedT = obj.Get("normalizedT").As<Napi::Number>().DoubleValue();
+  if (obj.Has("speed"))
+    snap.speed = obj.Get("speed").As<Napi::Number>().DoubleValue();
+  if (obj.Has("rpm"))
+    snap.rpm = obj.Get("rpm").As<Napi::Number>().DoubleValue();
+  if (obj.Has("fuel"))
+    snap.fuel = obj.Get("fuel").As<Napi::Number>().DoubleValue();
+  if (obj.Has("tireWear"))
+    snap.tireWear = obj.Get("tireWear").As<Napi::Number>().DoubleValue();
+  if (obj.Has("tireWearFL"))
+    snap.tireWearFL = obj.Get("tireWearFL").As<Napi::Number>().DoubleValue();
+  if (obj.Has("tireWearFR"))
+    snap.tireWearFR = obj.Get("tireWearFR").As<Napi::Number>().DoubleValue();
+  if (obj.Has("tireWearRL"))
+    snap.tireWearRL = obj.Get("tireWearRL").As<Napi::Number>().DoubleValue();
+  if (obj.Has("tireWearRR"))
+    snap.tireWearRR = obj.Get("tireWearRR").As<Napi::Number>().DoubleValue();
+  if (obj.Has("tireTempC"))
+    snap.tireTempC = obj.Get("tireTempC").As<Napi::Number>().DoubleValue();
+  if (obj.Has("tireTempFL"))
+    snap.tireTempFL = obj.Get("tireTempFL").As<Napi::Number>().DoubleValue();
+  if (obj.Has("tireTempFR"))
+    snap.tireTempFR = obj.Get("tireTempFR").As<Napi::Number>().DoubleValue();
+  if (obj.Has("tireTempRL"))
+    snap.tireTempRL = obj.Get("tireTempRL").As<Napi::Number>().DoubleValue();
+  if (obj.Has("tireTempRR"))
+    snap.tireTempRR = obj.Get("tireTempRR").As<Napi::Number>().DoubleValue();
+  if (obj.Has("coolantTempC"))
+    snap.coolantTempC = obj.Get("coolantTempC").As<Napi::Number>().DoubleValue();
+  if (obj.Has("hybridDeployMJ"))
+    snap.hybridDeployMJ = obj.Get("hybridDeployMJ").As<Napi::Number>().DoubleValue();
+  if (obj.Has("engineHealth"))
+    snap.engineHealth = obj.Get("engineHealth").As<Napi::Number>().DoubleValue();
+  if (obj.Has("sectorIndex"))
+    snap.sectorIndex = obj.Get("sectorIndex").As<Napi::Number>().Int32Value();
+  if (obj.Has("racePosition"))
+    snap.racePosition = obj.Get("racePosition").As<Napi::Number>().Int32Value();
+  if (obj.Has("inGarage"))
+    snap.inGarage = obj.Get("inGarage").As<Napi::Boolean>().Value();
+  if (obj.Has("inPit"))
+    snap.inPit = obj.Get("inPit").As<Napi::Boolean>().Value();
+  if (obj.Has("pitQueued"))
+    snap.pitQueued = obj.Get("pitQueued").As<Napi::Boolean>().Value();
+  if (obj.Has("retired"))
+    snap.retired = obj.Get("retired").As<Napi::Boolean>().Value();
+  if (obj.Has("retireReason"))
+    snap.retireReason = obj.Get("retireReason").As<Napi::String>().Utf8Value();
+  if (obj.Has("currentLapTime"))
+    snap.currentLapTime =
+        obj.Get("currentLapTime").As<Napi::Number>().DoubleValue();
+  if (obj.Has("currentSectorTime"))
+    snap.currentSectorTime =
+        obj.Get("currentSectorTime").As<Napi::Number>().DoubleValue();
+  if (obj.Has("bestLapTime"))
+    snap.bestLapTime = obj.Get("bestLapTime").As<Napi::Number>().DoubleValue();
+  if (obj.Has("lateralOffset"))
+    snap.lateralOffset = obj.Get("lateralOffset").As<Napi::Number>().DoubleValue();
+  if (obj.Has("lateralOffsetM"))
+    snap.lateralOffsetM =
+        obj.Get("lateralOffsetM").As<Napi::Number>().DoubleValue();
+  if (obj.Has("headingError"))
+    snap.headingError = obj.Get("headingError").As<Napi::Number>().DoubleValue();
+  if (obj.Has("driverMode"))
+    snap.driverMode = obj.Get("driverMode").As<Napi::String>().Utf8Value();
+  if (obj.Has("driverStamina"))
+    snap.driverStamina = obj.Get("driverStamina").As<Napi::Number>().DoubleValue();
+  if (obj.Has("driverPressure"))
+    snap.driverPressure =
+        obj.Get("driverPressure").As<Napi::Number>().DoubleValue();
+  if (obj.Has("activeDriverIndex"))
+    snap.activeDriverIndex =
+        obj.Get("activeDriverIndex").As<Napi::Number>().Int32Value();
+  if (obj.Has("overtaking"))
+    snap.overtaking = obj.Get("overtaking").As<Napi::Boolean>().Value();
+  if (obj.Has("blocked"))
+    snap.blocked = obj.Get("blocked").As<Napi::Boolean>().Value();
+  if (obj.Has("pitRemainingSec"))
+    snap.pitRemainingSec =
+        obj.Get("pitRemainingSec").As<Napi::Number>().DoubleValue();
+  if (obj.Has("pitLaneDistance"))
+    snap.pitLaneDistance =
+        obj.Get("pitLaneDistance").As<Napi::Number>().DoubleValue();
+  if (obj.Has("wingAngle"))
+    snap.wingAngle = obj.Get("wingAngle").As<Napi::Number>().DoubleValue();
+  if (obj.Has("brakeBias"))
+    snap.brakeBias = obj.Get("brakeBias").As<Napi::Number>().DoubleValue();
+  if (obj.Has("pitCount"))
+    snap.pitCount = obj.Get("pitCount").As<Napi::Number>().Int32Value();
+  if (obj.Has("totalPitSeconds"))
+    snap.totalPitSeconds =
+        obj.Get("totalPitSeconds").As<Napi::Number>().DoubleValue();
+  if (obj.Has("driverStintSeconds"))
+    snap.driverStintSeconds =
+        obj.Get("driverStintSeconds").As<Napi::Number>().DoubleValue();
+  if (obj.Has("maxDriverStintSeconds"))
+    snap.maxDriverStintSeconds =
+        obj.Get("maxDriverStintSeconds").As<Napi::Number>().DoubleValue();
+  if (obj.Has("garageRebuildActive"))
+    snap.garageRebuildActive =
+        obj.Get("garageRebuildActive").As<Napi::Boolean>().Value();
+  if (obj.Has("onFire"))
+    snap.onFire = obj.Get("onFire").As<Napi::Boolean>().Value();
+  if (obj.Has("trackStatus"))
+    snap.trackStatus = obj.Get("trackStatus").As<Napi::String>().Utf8Value();
+  if (obj.Has("blueFlag"))
+    snap.blueFlag = obj.Get("blueFlag").As<Napi::Boolean>().Value();
+  if (obj.Has("blueFlagStrikes"))
+    snap.blueFlagStrikes =
+        obj.Get("blueFlagStrikes").As<Napi::Number>().Int32Value();
+  if (obj.Has("pendingPenalty"))
+    snap.pendingPenalty =
+        obj.Get("pendingPenalty").As<Napi::String>().Utf8Value();
+  if (obj.Has("penaltyReason"))
+    snap.penaltyReason = obj.Get("penaltyReason").As<Napi::String>().Utf8Value();
+  if (obj.Has("lapsToComply"))
+    snap.lapsToComply = obj.Get("lapsToComply").As<Napi::Number>().Int32Value();
+  if (obj.Has("meatballFlag"))
+    snap.meatballFlag = obj.Get("meatballFlag").As<Napi::Boolean>().Value();
+  if (obj.Has("collisionWarnings"))
+    snap.collisionWarnings =
+        obj.Get("collisionWarnings").As<Napi::Number>().Int32Value();
+  if (obj.Has("penaltyStopSeconds"))
+    snap.penaltyStopSeconds =
+        obj.Get("penaltyStopSeconds").As<Napi::Number>().DoubleValue();
+  if (obj.Has("recoveryProgress"))
+    snap.recoveryProgress =
+        obj.Get("recoveryProgress").As<Napi::Number>().DoubleValue();
+  if (obj.Has("unstableOnTrack"))
+    snap.unstableOnTrack = obj.Get("unstableOnTrack").As<Napi::Boolean>().Value();
+  if (obj.Has("riskyRejoinSec"))
+    snap.riskyRejoinSec =
+        obj.Get("riskyRejoinSec").As<Napi::Number>().DoubleValue();
+  if (obj.Has("lastContactSeverity"))
+    snap.lastContactSeverity =
+        obj.Get("lastContactSeverity").As<Napi::Number>().DoubleValue();
+  if (obj.Has("lastMistakeRemainingSec"))
+    snap.lastMistakeRemainingSec =
+        obj.Get("lastMistakeRemainingSec").As<Napi::Number>().DoubleValue();
+  if (obj.Has("lastMistakeWearPct"))
+    snap.lastMistakeWearPct =
+        obj.Get("lastMistakeWearPct").As<Napi::Number>().DoubleValue();
+  if (obj.Has("wearBoostRemainingSec"))
+    snap.wearBoostRemainingSec =
+        obj.Get("wearBoostRemainingSec").As<Napi::Number>().DoubleValue();
+  if (obj.Has("wearBoostMultiplier"))
+    snap.wearBoostMultiplier =
+        obj.Get("wearBoostMultiplier").As<Napi::Number>().DoubleValue();
+  return snap;
+}
+
+SimCheckpointV1 CheckpointFromObject(const Napi::Object &obj) {
+  SimCheckpointV1 cp;
+  if (obj.Has("version"))
+    cp.version = obj.Get("version").As<Napi::Number>().Int32Value();
+  if (obj.Has("raceConfigPath"))
+    cp.raceConfigPath = obj.Get("raceConfigPath").As<Napi::String>().Utf8Value();
+  if (obj.Has("elapsedRaceTime"))
+    cp.elapsedRaceTime =
+        obj.Get("elapsedRaceTime").As<Napi::Number>().DoubleValue();
+  if (obj.Has("rngSeed"))
+    cp.rngSeed = obj.Get("rngSeed").As<Napi::Number>().Uint32Value();
+  if (obj.Has("sessionMode")) {
+    const std::string mode =
+        obj.Get("sessionMode").As<Napi::String>().Utf8Value();
+    if (mode == "practice")
+      cp.sessionMode = SessionMode::Practice;
+    else if (mode == "qualifying")
+      cp.sessionMode = SessionMode::Qualifying;
+    else
+      cp.sessionMode = SessionMode::Race;
+  }
+  if (obj.Has("targetLaps"))
+    cp.targetLaps = obj.Get("targetLaps").As<Napi::Number>().Int32Value();
+  if (obj.Has("targetDurationSeconds"))
+    cp.targetDurationSeconds =
+        obj.Get("targetDurationSeconds").As<Napi::Number>().DoubleValue();
+  if (obj.Has("trackWetness"))
+    cp.trackWetness = obj.Get("trackWetness").As<Napi::Number>().DoubleValue();
+  if (obj.Has("weather") && obj.Get("weather").IsObject())
+    cp.weather = WeatherStateFromCheckpointObject(obj.Get("weather").As<Napi::Object>());
+  if (obj.Has("weatherProfileId"))
+    cp.weatherProfileId =
+        obj.Get("weatherProfileId").As<Napi::String>().Utf8Value();
+  if (obj.Has("weatherLabel"))
+    cp.weatherLabel = obj.Get("weatherLabel").As<Napi::String>().Utf8Value();
+  if (obj.Has("weatherBiome"))
+    cp.weatherBiome = obj.Get("weatherBiome").As<Napi::String>().Utf8Value();
+  if (obj.Has("bridgeRngSeed"))
+    cp.bridgeRngSeed = obj.Get("bridgeRngSeed").As<Napi::Number>().Uint32Value();
+  if (obj.Has("initialTrackWetness"))
+    cp.initialTrackWetness =
+        obj.Get("initialTrackWetness").As<Napi::Number>().DoubleValue();
+  if (obj.Has("initialAmbientTempC"))
+    cp.initialAmbientTempC =
+        obj.Get("initialAmbientTempC").As<Napi::Number>().DoubleValue();
+  if (obj.Has("raceControl") && obj.Get("raceControl").IsObject())
+    cp.raceControl = SessionRaceControlFromCheckpointObject(
+        obj.Get("raceControl").As<Napi::Object>());
+  if (obj.Has("raceCompleteEmitted"))
+    cp.raceCompleteEmitted =
+        obj.Get("raceCompleteEmitted").As<Napi::Boolean>().Value();
+  if (obj.Has("cars") && obj.Get("cars").IsArray()) {
+    const Napi::Array arr = obj.Get("cars").As<Napi::Array>();
+    cp.cars.reserve(arr.Length());
+    for (uint32_t i = 0; i < arr.Length(); ++i)
+      cp.cars.push_back(SnapshotFromObject(arr.Get(i).As<Napi::Object>()));
+  }
+  return cp;
+}
+
+Napi::Object CheckpointToObject(Napi::Env env, const SimCheckpointV1 &cp) {
+  Napi::Object obj = Napi::Object::New(env);
+  obj.Set("version", cp.version);
+  obj.Set("raceConfigPath", cp.raceConfigPath);
+  obj.Set("elapsedRaceTime", cp.elapsedRaceTime);
+  obj.Set("rngSeed", cp.rngSeed);
+  obj.Set("sessionMode",
+          cp.sessionMode == SessionMode::Practice
+              ? "practice"
+              : cp.sessionMode == SessionMode::Qualifying ? "qualifying"
+                                                            : "race");
+  obj.Set("targetLaps", cp.targetLaps);
+  obj.Set("targetDurationSeconds", cp.targetDurationSeconds);
+  obj.Set("trackWetness", cp.trackWetness);
+  obj.Set("weather", WeatherStateToCheckpointObject(env, cp.weather));
+  obj.Set("weatherProfileId", cp.weatherProfileId);
+  obj.Set("weatherLabel", cp.weatherLabel);
+  obj.Set("weatherBiome", cp.weatherBiome);
+  obj.Set("bridgeRngSeed", cp.bridgeRngSeed);
+  obj.Set("initialTrackWetness", cp.initialTrackWetness);
+  obj.Set("initialAmbientTempC", cp.initialAmbientTempC);
+  obj.Set("raceControl", SessionRaceControlToCheckpointObject(env, cp.raceControl));
+  obj.Set("raceCompleteEmitted", cp.raceCompleteEmitted);
+  Napi::Array cars = Napi::Array::New(env, cp.cars.size());
+  for (size_t i = 0; i < cp.cars.size(); ++i)
+    cars.Set(static_cast<uint32_t>(i), SnapshotToObject(env, cp.cars[i]));
+  obj.Set("cars", cars);
+  return obj;
+}
+
+Napi::Value ExportCheckpoint(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  return CheckpointToObject(env, g_bridge.captureCheckpoint());
+}
+
+Napi::Value ImportCheckpoint(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 1 || !info[0].IsObject()) {
+    Napi::TypeError::New(env, "Expected checkpoint object")
+        .ThrowAsJavaScriptException();
+    return Napi::Boolean::New(env, false);
+  }
+  std::string error;
+  if (!g_bridge.restoreCheckpoint(
+          CheckpointFromObject(info[0].As<Napi::Object>()), &error)) {
+    Napi::Error::New(env, error.empty() ? "import failed" : error)
+        .ThrowAsJavaScriptException();
+    return Napi::Boolean::New(env, false);
+  }
+  return Napi::Boolean::New(env, true);
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("initFromRaceConfig",
               Napi::Function::New(env, InitFromRaceConfig));
@@ -596,6 +1047,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("getRaceControl", Napi::Function::New(env, GetRaceControl));
   exports.Set("debugRaceControl", Napi::Function::New(env, DebugRaceControl));
   exports.Set("getTeamConfig", Napi::Function::New(env, GetTeamConfig));
+  exports.Set("exportCheckpoint", Napi::Function::New(env, ExportCheckpoint));
+  exports.Set("importCheckpoint", Napi::Function::New(env, ImportCheckpoint));
   return exports;
 }
 

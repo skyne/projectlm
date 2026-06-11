@@ -29,8 +29,25 @@ struct TrackWidthSegment {
   double widthM = 12.0;
 };
 
+enum class PitLanePointRole { Waypoint, Entry, Box, Exit };
+
+struct PitLanePoint {
+  Vec3 position;
+  PitLanePointRole role = PitLanePointRole::Waypoint;
+};
+
 struct PitLaneGeometry {
   double offsetM = 10.0;
+  double widthM = 12.0;
+  double mergeLateralOffset = 0.58;
+  double mergeBlendM = 80.0;
+  /** Racing-line t where cars may turn into the pit (typically ~1.0 / start-finish). */
+  double entryT = 0.985;
+  /** Racing-line t where pit exits merge back (typically ~0.0). */
+  double exitT = 0.06;
+  double boxDistanceM = -1.0;
+  double speedLimitMs = 60.0 / 3.6;
+  std::vector<PitLanePoint> polyline;
 };
 
 enum class TrackSurfaceKind {
@@ -127,6 +144,9 @@ struct PitLaneDefinition {
   double speedLimitMs = 60.0 / 3.6;
   double boxDistance = 0.0;
   double mergeTrackDistance = 0.0;
+  double entryT = 0.985;
+  double exitT = 0.06;
+  double mergeLateralOffset = 0.58;
 
   double totalLength() const { return spline.totalLength(); }
   bool valid() const { return totalLength() > 1.0; }

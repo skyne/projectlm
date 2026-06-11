@@ -33,6 +33,36 @@ export class SessionBriefingStore {
     this.staff = [];
   }
 
+  exportState(): {
+    byEntryId: Record<string, EntrySessionBriefing>;
+    sessionType: WeekendSessionType;
+    classByEntry: [string, string][];
+    fleetCarByEntry: [string, string][];
+    staff: StaffMemberPayload[];
+  } {
+    return {
+      byEntryId: Object.fromEntries(this.byEntryId.entries()),
+      sessionType: this.sessionType,
+      classByEntry: [...this.classByEntry.entries()],
+      fleetCarByEntry: [...this.fleetCarByEntry.entries()],
+      staff: this.staff,
+    };
+  }
+
+  importState(data: {
+    byEntryId: Record<string, EntrySessionBriefing>;
+    sessionType: WeekendSessionType;
+    classByEntry: [string, string][];
+    fleetCarByEntry: [string, string][];
+    staff: StaffMemberPayload[];
+  }): void {
+    this.byEntryId = new Map(Object.entries(data.byEntryId));
+    this.sessionType = data.sessionType;
+    this.classByEntry = new Map(data.classByEntry);
+    this.fleetCarByEntry = new Map(data.fleetCarByEntry);
+    this.staff = data.staff ?? [];
+  }
+
   load(
     sessionType: WeekendSessionType,
     entries: SessionBriefingEntry[],

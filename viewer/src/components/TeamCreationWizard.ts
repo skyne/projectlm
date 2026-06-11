@@ -34,6 +34,14 @@ import {
   randomLiveryPattern,
   type LiveryPattern,
 } from "../utils/teamLivery";
+import {
+  createCustomBronzeDriver,
+  customDriverPointPool,
+  isCustomDriver,
+  isSignedDriver,
+  stableCatalogDriverId,
+  wecCatalogIdSet,
+} from "../utils/driverOrigin";
 
 export interface TeamCreationHandlers {
   onComplete: (payload: CreateTeamPayload) => void;
@@ -56,17 +64,7 @@ const DRIVER_BASELINE: Record<string, number> = {
   tireManagement: 66, fuelSaving: 64, composure: 68, nightPace: 64, rainRadar: 60, stamina: 68,
 };
 
-const DRIVER_FIRST = ["Alex", "Marco", "Elena", "Luca", "Sofia", "Kai", "Nina", "Oliver", "Yuki", "Ines"];
-const DRIVER_LAST = ["Voss", "Reeves", "Okonkwo", "Bianchi", "Kowalski", "Santos", "Chen", "Müller", "Dupont"];
 const DRIVER_NATS = ["GB", "FR", "DE", "IT", "US", "BR", "JP", "ES", "NL", "AU"];
-
-function inferDriverTier(d: DriverProfilePayload): string {
-  const avg = (d.dryPace + d.wetPace + d.consistency) / 3;
-  if (avg >= 90) return "Platinum";
-  if (avg >= 82) return "Gold";
-  if (avg >= 74) return "Silver";
-  return "Bronze";
-}
 
 function driverPointCost(d: DriverProfilePayload, defs: DriverStatDefPayload[]): number {
   let cost = 0;
@@ -79,43 +77,17 @@ function driverPointCost(d: DriverProfilePayload, defs: DriverStatDefPayload[]):
   return Math.round(cost + tierBonus);
 }
 
-function randomWizardDriver(): DriverProfilePayload {
-  const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
-  const j = (b: number, s: number) => Math.round(Math.min(96, Math.max(55, b + (Math.random() - 0.5) * s)));
-  const d: DriverProfilePayload = {
-    id: crypto.randomUUID(),
-    name: `${pick(DRIVER_FIRST)} ${pick(DRIVER_LAST)}`,
-    nationality: pick(DRIVER_NATS),
-    tier: "Silver",
-    dryPace: j(76, 18), wetPace: j(72, 16), consistency: j(74, 16),
-    overtaking: j(72, 14), defending: j(70, 14), trafficManagement: j(72, 12),
-    rollingStart: j(70, 12), standingStart: j(70, 12), setupFeedback: j(66, 14),
-    tireManagement: j(72, 12), fuelSaving: j(68, 12), composure: j(72, 16),
-    nightPace: j(70, 12), rainRadar: j(66, 12), stamina: j(74, 14),
-    maxStintHours: Math.random() > 0.7 ? 3 : 2.5,
-  };
-  d.tier = inferDriverTier(d);
-  return d;
+function randomWizardDriver(catalog: GameCatalogPayload | null): DriverProfilePayload {
+  return createCustomBronzeDriver(catalog);
 }
 
-function defaultWizardRoster(team: string): DriverProfilePayload[] {
+function defaultWizardRoster(
+  team: string,
+  catalog: GameCatalogPayload | null,
+): DriverProfilePayload[] {
   return [
-    {
-      id: crypto.randomUUID(),
-      name: `${team} Ace`, nationality: "GB", tier: "Gold",
-      dryPace: 84, wetPace: 78, consistency: 82, overtaking: 80, defending: 78,
-      trafficManagement: 80, rollingStart: 78, standingStart: 76, setupFeedback: 74,
-      tireManagement: 80, fuelSaving: 76, composure: 82, nightPace: 78, rainRadar: 72,
-      stamina: 80, maxStintHours: 3,
-    },
-    {
-      id: crypto.randomUUID(),
-      name: `${team} Endurance`, nationality: "FR", tier: "Silver",
-      dryPace: 78, wetPace: 74, consistency: 80, overtaking: 72, defending: 76,
-      trafficManagement: 78, rollingStart: 74, standingStart: 72, setupFeedback: 70,
-      tireManagement: 82, fuelSaving: 80, composure: 78, nightPace: 76, rainRadar: 70,
-      stamina: 84, maxStintHours: 3.5,
-    },
+    createCustomBronzeDriver(catalog, { name: `${team} Ace`, nationality: "GB" }),
+    createCustomBronzeDriver(catalog, { name: `${team} Endurance`, nationality: "FR" }),
   ];
 }
 
@@ -522,13 +494,14 @@ export class TeamCreationWizard {
       return "Add at least one driver to your line-up.";
     }
 
-    const pool = this.catalog?.driverPointPool ?? 750;
+    const pool = customDriverPointPool(this.catalog);
     const defs = this.catalog?.driverStatDefs ?? [];
     for (const driver of this.driverRoster) {
       if (!driver.name.trim()) {
         return "Every driver needs a name.";
       }
-      const cost = driverPointCost(driver, defs);
+      if (!isCustomDriver(driver, this.catalog)) continue;
+      const cost = driverPointCost({ ...driver, tier: "Bronze" }, defs);
       if (cost > pool) {
         const label = driver.name.trim() || "A driver";
         return `${label} exceeds the ${pool}-point budget (${cost} pts).`;
@@ -556,7 +529,7 @@ export class TeamCreationWizard {
   private ensureDriverRoster(): void {
     if (this.driverRoster.length === 0) {
       const name = this.teamName.trim() || "Your Team";
-      this.driverRoster = defaultWizardRoster(name);
+      this.driverRoster = defaultWizardRoster(name, this.catalog);
     }
   }
 
@@ -627,10 +600,11 @@ export class TeamCreationWizard {
       logoDataUrl: this.logoDataUrl,
       staff,
       firstCar: this.firstCarPayload(),
-      driverRoster: this.driverRoster.map((d) => ({
-        ...d,
-        tier: inferDriverTier(d),
-      })),
+      driverRoster: this.driverRoster.map((d) =>
+        isCustomDriver(d, this.catalog)
+          ? { ...d, tier: "Bronze", origin: "custom" as const }
+          : d,
+      ),
     });
   }
 
@@ -1117,7 +1091,7 @@ export class TeamCreationWizard {
 
   private renderDrivers(): void {
     const defs = this.catalog?.driverStatDefs ?? [];
-    const pool = this.catalog?.driverPointPool ?? 750;
+    const pool = customDriverPointPool(this.catalog);
     const selected = this.driverRoster[this.selectedDriver];
     const rosterErr = this.driverRosterError();
     const singleDriver = this.driverRoster.length === 1;
@@ -1147,15 +1121,20 @@ export class TeamCreationWizard {
     listEl.replaceChildren();
     for (let i = 0; i < this.driverRoster.length; i++) {
       const d = this.driverRoster[i];
-      const driverCost = driverPointCost(d, defs);
-      const driverInvalid = !d.name.trim() || driverCost > pool;
+      const custom = isCustomDriver(d, this.catalog);
+      const driverCost = driverPointCost(custom ? { ...d, tier: "Bronze" } : d, defs);
+      const driverInvalid = !d.name.trim() || (custom && driverCost > pool);
       const li = document.createElement("li");
       li.className = `wizard-driver-item${i === this.selectedDriver ? " active" : ""}${driverInvalid ? " wizard-driver-invalid" : ""}`;
       li.innerHTML = `
         <button type="button" class="wizard-driver-select">
           <span class="driver-tier tier-${escapeHtml(d.tier.toLowerCase())}">${escapeHtml(d.tier)}</span>
           <strong>${escapeHtml(d.name.trim() || "Unnamed driver")}</strong>
-          <span class="wizard-driver-meta">${escapeHtml(d.nationality)} · DRY ${d.dryPace} · ${driverCost}/${pool} pts</span>
+          <span class="wizard-driver-meta">${escapeHtml(d.nationality)} · DRY ${d.dryPace} · ${
+            isSignedDriver(d, wecCatalogIdSet(this.catalog))
+              ? "Signed"
+              : `${driverCost}/${pool} pts`
+          }</span>
         </button>
         ${this.driverRoster.length > 1 ? `<button type="button" class="wizard-driver-remove" title="Remove">✕</button>` : ""}
       `;
@@ -1173,18 +1152,20 @@ export class TeamCreationWizard {
 
     const editorEl = this.bodyEl.querySelector(".wizard-drivers-editor")!;
     if (selected) {
-      const cost = driverPointCost(selected, defs);
+      const customSelected = isCustomDriver(selected, this.catalog);
+      const cost = driverPointCost(customSelected ? { ...selected, tier: "Bronze" } : selected, defs);
       const nameMissing = !selected.name.trim();
-      const overPool = cost > pool;
+      const overPool = customSelected && cost > pool;
+      const readOnly = isSignedDriver(selected, wecCatalogIdSet(this.catalog));
       editorEl.innerHTML = `
-        <h4 class="staff-role-title">Edit driver</h4>
+        <h4 class="staff-role-title">${readOnly ? "Signed driver" : "Edit driver"}</h4>
         <label class="wizard-field">
           <span>Name</span>
-          <input type="text" class="wizard-input wizard-driver-name${nameMissing ? " wizard-input-invalid" : ""}" maxlength="48" value="${escapeHtml(selected.name)}" />
+          <input type="text" class="wizard-input wizard-driver-name${nameMissing ? " wizard-input-invalid" : ""}" maxlength="48" value="${escapeHtml(selected.name)}" ${readOnly ? "disabled" : ""} />
         </label>
         <label class="wizard-field">
           <span>Nationality</span>
-          <select class="wizard-input wizard-driver-nat">
+          <select class="wizard-input wizard-driver-nat" ${readOnly ? "disabled" : ""}>
             ${DRIVER_NATS.map((n) => `<option value="${n}"${n === selected.nationality ? " selected" : ""}>${n}</option>`).join("")}
           </select>
         </label>
@@ -1197,24 +1178,26 @@ export class TeamCreationWizard {
         ${overPool ? `<p class="wizard-hint fleet-rule-warning">This driver exceeds the ${pool}-point budget — randomize or lower stats in Driver Center later.</p>` : ""}
       `;
 
-      editorEl.querySelector<HTMLInputElement>(".wizard-driver-name")!.addEventListener("input", (ev) => {
-        selected.name = (ev.target as HTMLInputElement).value;
-        this.updateNavState();
-      });
-      editorEl.querySelector<HTMLSelectElement>(".wizard-driver-nat")!.addEventListener("change", (ev) => {
-        selected.nationality = (ev.target as HTMLSelectElement).value;
-      });
+      if (!readOnly) {
+        editorEl.querySelector<HTMLInputElement>(".wizard-driver-name")!.addEventListener("input", (ev) => {
+          selected.name = (ev.target as HTMLInputElement).value;
+          this.updateNavState();
+        });
+        editorEl.querySelector<HTMLSelectElement>(".wizard-driver-nat")!.addEventListener("change", (ev) => {
+          selected.nationality = (ev.target as HTMLSelectElement).value;
+        });
+      }
     }
 
     const addBtn = this.bodyEl.querySelector<HTMLButtonElement>(".wizard-driver-add")!;
     addBtn.addEventListener("click", () => {
-      this.driverRoster.push(randomWizardDriver());
+      this.driverRoster.push(randomWizardDriver(this.catalog));
       this.selectedDriver = this.driverRoster.length - 1;
       this.renderDrivers();
     });
     this.bodyEl.querySelector(".wizard-driver-random")!.addEventListener("click", () => {
       const count = Math.max(2, this.driverRoster.length || 2);
-      this.driverRoster = Array.from({ length: count }, () => randomWizardDriver());
+      this.driverRoster = Array.from({ length: count }, () => randomWizardDriver(this.catalog));
       this.selectedDriver = 0;
       this.renderDrivers();
     });
@@ -1250,7 +1233,11 @@ export class TeamCreationWizard {
           const existing = this.driverRoster.findIndex(
             (r) => driverNameKey(r.name) === driverNameKey(d.name),
           );
-          const copy = { ...d, tier: inferDriverTier(d) };
+          const copy = {
+            ...d,
+            id: stableCatalogDriverId(d.name, d.nationality),
+            origin: "signed" as const,
+          };
           if (existing >= 0) {
             this.driverRoster[existing] = copy;
             this.selectedDriver = existing;

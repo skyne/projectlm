@@ -131,6 +131,19 @@ class SessionLogWriter {
     getActiveEvents() {
         return [...this.events];
     }
+    exportActiveState() {
+        return {
+            activeId: this.activeId,
+            events: [...this.events],
+        };
+    }
+    importActiveState(data) {
+        this.activeId = data.activeId;
+        this.events = [...data.events];
+        if (data.meta) {
+            this.meta = { ...data.meta };
+        }
+    }
 }
 exports.SessionLogWriter = SessionLogWriter;
 function listSessionLogs(repoRoot) {

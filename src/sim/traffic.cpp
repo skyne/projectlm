@@ -11,7 +11,17 @@
 #include <unordered_map>
 
 namespace {
+
 constexpr double kCollisionEventCooldownSec = 5.0;
+/** Closing speed (m/s) before wheel-to-wheel contact can damage parts. */
+constexpr double kMinCollisionClosingSpeedMs = 14.0;
+/** Longitudinal gap (car-lengths) for damage vs proximity-only blocking. */
+constexpr double kDamageEnvelopeAheadMul = 0.72;
+constexpr double kDamageEnvelopeBehindMul = 0.55;
+/** Lateral separation must be within this fraction of body overlap for damage. */
+constexpr double kDamageLateralOverlapFrac = 0.72;
+/** Effective severity below this is proximity only — no parts damage. */
+constexpr double kMinCollisionDamageSeverity = 3.5;
 constexpr double kMinTrafficSpeedMs = 22.0;
 
 bool CooldownReady(std::unordered_map<std::string, double> &cooldowns,
@@ -148,7 +158,7 @@ double LateralNMetres(const Car &car, const TrafficLateralContext &lateral) {
 }
 
 double ComputeBaseImpact(double relativeSpeed) {
-  return std::min(10.0, (relativeSpeed - 6.5) * 0.75);
+  return std::min(10.0, (relativeSpeed - 10.0) * 0.75);
 }
 
 double ComputeObliqueFactor(CollisionSide side, double lateralSep,
@@ -532,21 +542,27 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
         if (gap < combinedLength * 1.25)
           continue;
       }
-      const bool inContactEnvelope =
+      const bool inProximityEnvelope =
           otherAheadM > 0.0
               ? otherAheadM < combinedLength * 0.85
               : (-otherAheadM) < combinedLength * 0.65;
-      if (inContactEnvelope &&
+      const bool inDamageEnvelope =
+          otherAheadM > 0.0
+              ? otherAheadM < combinedLength * kDamageEnvelopeAheadMul
+              : (-otherAheadM) < combinedLength * kDamageEnvelopeBehindMul;
+      const double damageLateralLimit = widthOverlap * kDamageLateralOverlapFrac;
+      if (inProximityEnvelope &&
           lateralSep < widthOverlap) {
         TrafficModifiers &otherModMut = modifiersOut[j];
         const bool negotiatedPass =
             otherAheadM > 0.0 && selfMod.overtaking && otherModMut.yielding;
-        if (relativeSpeed > 8.5) {
+        if (inDamageEnvelope && lateralSep < damageLateralLimit &&
+            relativeSpeed > kMinCollisionClosingSpeedMs) {
           const double baseImpact = ComputeBaseImpact(relativeSpeed);
           if (negotiatedPass && otherMod.blueFlag && otherMod.yielding &&
-              baseImpact < 4.0 && lateralSep > widthOverlap * 0.5)
+              baseImpact < 5.0 && lateralSep > damageLateralLimit * 0.65)
             continue;
-          if (negotiatedPass && !otherMod.blueFlag && baseImpact < 5.0)
+          if (negotiatedPass && !otherMod.blueFlag && baseImpact < 6.0)
             continue;
 
           const double selfN = LateralNMetres(self, lateral);
@@ -555,7 +571,7 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
               CollisionContactSide(gap, combinedLength, selfN, otherN);
           const CollisionSide otherSide = MirrorCollisionSide(selfSide);
           const double overlapFactor =
-              std::clamp(1.0 - lateralSep / std::max(0.5, widthOverlap), 0.35,
+              std::clamp(1.0 - lateralSep / std::max(0.5, damageLateralLimit), 0.35,
                          1.0);
           const double sSelf = self.state().currentDistance;
           const double selfMass = self.config().calculatedTotalMass;
@@ -566,10 +582,15 @@ void ResolveTraffic(const std::vector<Car> &cars, double lapLength,
               lateral.weatherGripScale);
           const double victimSeverity = effectiveSeverity * overlapFactor;
 
-          ApplyCollisionModifier(selfMod, effectiveSeverity, baseImpact, selfSide,
-                               overlapFactor);
-          ApplyCollisionModifier(otherModMut, victimSeverity, baseImpact, otherSide,
-                               overlapFactor);
+          if (effectiveSeverity >= kMinCollisionDamageSeverity) {
+            ApplyCollisionModifier(selfMod, effectiveSeverity, baseImpact, selfSide,
+                                 overlapFactor);
+            ApplyCollisionModifier(otherModMut, victimSeverity, baseImpact, otherSide,
+                                 overlapFactor);
+          }
+          if (!selfMod.collision && !otherModMut.collision)
+            continue;
+
           ApplyContactImpulse(selfMod, otherModMut, selfSide, effectiveSeverity,
                               selfMass, otherMass);
 

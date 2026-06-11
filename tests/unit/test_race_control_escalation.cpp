@@ -229,7 +229,7 @@ TEST_CASE("Catastrophic same-side tow delivers car to garage rebuild",
 TEST_CASE("Low visibility deploys red flag", "[unit][race_control][escalation]") {
   RaceSession session = MakeMinimalRaceSession();
   AddTestCar(session);
-  session.weather.visibilityKm = 1.0;
+  session.weather.visibilityKm = 0.45;
 
   UpdateRaceControl(session, {});
 
@@ -279,9 +279,11 @@ TEST_CASE("Red flag extends when conditions remain unsafe at review",
           "[unit][race_control][escalation]") {
   RaceSession session = MakeMinimalRaceSession();
   AddTestCar(session);
-  session.weather.visibilityKm = 1.0;
+  session.weather.visibilityKm = 0.45;
   UpdateRaceControl(session, {});
   REQUIRE(session.raceControl.flagPhase == FlagPhase::RedFlag);
+  REQUIRE(session.raceControl.redFlagReason.find("visibility") !=
+          std::string::npos);
 
   const double reviewAt = session.raceControl.redFlagReviewAt;
   session.elapsedRaceTime = reviewAt + 0.1;
@@ -290,6 +292,7 @@ TEST_CASE("Red flag extends when conditions remain unsafe at review",
   REQUIRE(session.raceControl.flagPhase == FlagPhase::RedFlag);
   REQUIRE(session.raceControl.redFlagExtensions == 1);
   REQUIRE(session.raceControl.redFlagUntil > reviewAt);
+  REQUIRE(session.raceControl.redFlagUntil - session.elapsedRaceTime >= 170.0);
 }
 
 TEST_CASE("Red flag clears to SC when racing conditions met at review",
@@ -297,7 +300,7 @@ TEST_CASE("Red flag clears to SC when racing conditions met at review",
   RaceSession session = MakeMinimalRaceSession();
   AddMinimalPitLane(session);
   Car &car = AddTestCar(session);
-  session.weather.visibilityKm = 1.0;
+  session.weather.visibilityKm = 0.45;
   UpdateRaceControl(session, {});
   REQUIRE(session.raceControl.flagPhase == FlagPhase::RedFlag);
 
@@ -326,7 +329,7 @@ TEST_CASE("Red flag clears to SC when track safe but car still on track",
   Car &second = FindCar(session, "entry-2");
   leader.state().currentDistance = 500.0;
   second.state().currentDistance = 300.0;
-  session.weather.visibilityKm = 1.0;
+  session.weather.visibilityKm = 0.45;
   UpdateRaceControl(session, {});
   REQUIRE(session.raceControl.flagPhase == FlagPhase::RedFlag);
 
@@ -898,7 +901,7 @@ TEST_CASE("Red flag queued pit plan does not service or rejoin track",
   car.state().currentLap = 2;
 
   UpdateRedFlagPitProcedure(session);
-  car.processPitEntry(0.99, false, true);
+  car.processPitEntry(session.track, 0.99, false, true);
 
   for (int i = 0; i < 200 && car.pit().phase != PitPhase::AtBox; ++i)
     car.processPitLaneTick(session.track, 0.1, session.staff, 3600.0, true);
@@ -1047,7 +1050,7 @@ TEST_CASE("Red flag on track car drives to pits without teleport",
   const double distanceBefore = car.state().currentDistance;
   const TrackPose pose =
       session.track.poseAtRaceDistance(car.state().currentDistance);
-  REQUIRE_FALSE(car.processPitEntry(pose.normalizedT, false, true));
+  REQUIRE_FALSE(car.processPitEntry(session.track, pose.normalizedT, false, true));
   REQUIRE(car.state().currentDistance == distanceBefore);
 }
 
@@ -1220,7 +1223,7 @@ TEST_CASE("Red flag extension schedules another review before period ends",
           "[unit][race_control][escalation]") {
   RaceSession session = MakeMinimalRaceSession();
   AddTestCar(session);
-  session.weather.visibilityKm = 1.0;
+  session.weather.visibilityKm = 0.45;
   UpdateRaceControl(session, {});
   REQUIRE(session.raceControl.flagPhase == FlagPhase::RedFlag);
 

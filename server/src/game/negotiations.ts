@@ -5,7 +5,11 @@ import {
   type DriverProfilePayload,
 } from "./driver_catalog";
 import type { DriverMarketListing } from "./driver_market";
-import { MAX_DRIVER_ROSTER, validateDriverMarketSigning } from "./driver_market";
+import {
+  driverRosterCapMessage,
+  maxDriverRosterForFleet,
+  validateDriverMarketSigning,
+} from "./driver_market";
 
 export type NegotiationKind =
   | "driver_employment"
@@ -192,6 +196,7 @@ export interface ApplyDriverDealInput {
   driverMarket: DriverMarketListingPayload[];
   rosterOverrides?: Record<string, DriverProfilePayload[]>;
   employmentContracts: EmploymentContract[];
+  fleetCarCount?: number;
 }
 
 export interface ApplyDriverDealResult {
@@ -266,7 +271,7 @@ export function driverOpeningOfferForNegotiation(
   const mood: NegotiationSession["counterpartyMood"] =
     listing.driver.tier === "Platinum"
       ? "neutral"
-      : listing.source === "prospect"
+      : listing.source === "prospect" || listing.source === "free_agent"
         ? "keen"
         : "neutral";
   return {
@@ -441,6 +446,8 @@ function sourcePatiencePenalty(
       return 22;
     case "wec_retired":
       return 18;
+    case "free_agent":
+      return 14;
     default:
       return 12;
   }
@@ -475,6 +482,7 @@ function scoreDriverOffer(
   const driver = ctx.listing.driver;
   if (driver.tier === "Platinum") score -= 0.05;
   if (listingSource(ctx.listing) === "prospect") score += 0.06;
+  if (listingSource(ctx.listing) === "free_agent") score += 0.04;
 
   return score;
 }
@@ -614,8 +622,32 @@ export function acceptCounterOffer(
   session: NegotiationSession,
   ctx: DriverNegotiationContext,
 ): EvaluateOfferResult {
+  if (session.status !== "open" && session.status !== "countered") {
+    return { session, accepted: false, note: "Negotiation is closed" };
+  }
+
   const terms = session.lastCounterOffer ?? session.anchorTerms;
-  return evaluateDriverOffer(session, terms, ctx);
+  const next: NegotiationSession = {
+    ...session,
+    status: "accepted",
+    counterpartyMood: "keen",
+    currentOffer: { ...terms },
+    lastCounterOffer: { ...terms },
+    history: [
+      ...session.history,
+      {
+        round: ctx.currentRound,
+        from: "player",
+        terms: { ...terms },
+        note: "Accepted their terms",
+      },
+    ],
+  };
+  return {
+    session: next,
+    accepted: true,
+    note: `${ctx.listing.driver.name} deal agreed`,
+  };
 }
 
 export function withdrawNegotiation(session: NegotiationSession): NegotiationSession {
@@ -670,8 +702,11 @@ export function applyDriverDeal(
   const buyout = terms.buyoutToTeam ?? 0;
   const totalCost = signingFee + buyout;
 
-  if (input.roster.length >= MAX_DRIVER_ROSTER) {
-    return { error: `Roster full (${MAX_DRIVER_ROSTER} drivers maximum)` };
+  const rosterCap = maxDriverRosterForFleet(input.fleetCarCount ?? 1);
+  if (input.roster.length >= rosterCap) {
+    return {
+      error: `Roster full (${driverRosterCapMessage(input.fleetCarCount ?? 1, rosterCap)})`,
+    };
   }
 
   const contractErr = validateDriverMarketSigning(
@@ -695,7 +730,7 @@ export function applyDriverDeal(
   const driverId = signed.id!;
   const roster = [
     ...input.roster,
-    { ...signed, tier: inferTier(signed) },
+    { ...signed, tier: inferTier(signed), origin: "signed" as const },
   ];
 
   const contract: EmploymentContract = {

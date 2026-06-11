@@ -166,7 +166,23 @@ function applyPitSuccess(s, st, wet, plan) {
     if (plan?.services.tyres)
         st.tyreTread = (0, tyre_grip_1.desiredTyreTread)(wet);
 }
-function trySubmit(submitCommand, entryId, command) {
+function trySubmit(submitCommand, entryId, command, debugCtx) {
+    if ((0, pit_planner_1.isRedFlagPhase)(debugCtx?.flagPhase)) {
+        // #region agent log
+        fetch("http://127.0.0.1:7359/ingest/317d99f6-3f96-46df-b08d-299e1b20c234", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "067494" },
+            body: JSON.stringify({
+                sessionId: "067494",
+                hypothesisId: "C",
+                location: "pit_wall.ts:trySubmit",
+                message: "pitbot_command_during_red_flag",
+                data: { entryId, command, flagPhase: debugCtx?.flagPhase },
+                timestamp: Date.now(),
+            }),
+        }).catch(() => { });
+        // #endregion
+    }
     return submitCommand(entryId, command);
 }
 function penaltyDisplayName(penalty) {
@@ -236,7 +252,7 @@ function releaseFromGarage(snapshots, entryIds, carState, ctx, submitCommand) {
             raceTime < supportDelay) {
             continue;
         }
-        if (trySubmit(submitCommand, entryId, "release")) {
+        if (trySubmit(submitCommand, entryId, "release", ctx)) {
             st.released = true;
             return;
         }
@@ -302,7 +318,7 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
             !s.inGarage &&
             (0, pit_planner_1.shouldServeDeferrablePenaltyNow)(s, sincePit, st.fuelAtLastPit)) {
             const cmd = penaltyServeCommand(s);
-            if (trySubmit(submitCommand, entryId, cmd)) {
+            if (trySubmit(submitCommand, entryId, cmd, ctx)) {
                 actions.push({
                     entryId,
                     command: cmd,
@@ -333,8 +349,8 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
             if (!redFlag) {
                 const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase, tactics);
                 if (hybrid)
-                    trySubmit(submitCommand, entryId, hybrid);
-                trySubmit(submitCommand, entryId, driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill));
+                    trySubmit(submitCommand, entryId, hybrid, ctx);
+                trySubmit(submitCommand, entryId, driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill), ctx);
             }
             continue;
         }
@@ -343,7 +359,7 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
                 const rfPlan = (0, pit_planner_1.planRedFlagEmergencyPit)(s, { wet: ctx.wet });
                 if (rfPlan?.pitNow) {
                     const cmd = `pit|${rfPlan.parts.join("|")}`;
-                    if (trySubmit(submitCommand, entryId, cmd)) {
+                    if (trySubmit(submitCommand, entryId, cmd, ctx)) {
                         actions.push({ entryId, command: cmd, label: rfPlan.label });
                     }
                 }
@@ -359,8 +375,8 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
             })) {
             const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase, tactics);
             if (hybrid)
-                trySubmit(submitCommand, entryId, hybrid);
-            trySubmit(submitCommand, entryId, driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill));
+                trySubmit(submitCommand, entryId, hybrid, ctx);
+            trySubmit(submitCommand, entryId, driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill), ctx);
             continue;
         }
         const plan = (0, pit_planner_1.planPitStop)(s, {
@@ -377,7 +393,7 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
         }, st.fuelAtLastPit);
         if (plan?.pitNow) {
             const cmd = `pit|${plan.parts.join("|")}`;
-            if (trySubmit(submitCommand, entryId, cmd)) {
+            if (trySubmit(submitCommand, entryId, cmd, ctx)) {
                 applyPitSuccess(s, st, ctx.wet, plan);
                 const label = (0, pit_planner_1.mustServePenalty)(s) &&
                     !(0, pit_planner_1.shouldServeDeferrablePenaltyNow)(s, sincePit, st.fuelAtLastPit)
@@ -389,8 +405,8 @@ function tickPitBot(snapshots, entryIds, carState, ctx, submitCommand) {
         }
         const hybrid = hybridStrategy(s, ctx.wet, st.tyreTread, ctx.phase, tactics);
         if (hybrid)
-            trySubmit(submitCommand, entryId, hybrid);
-        trySubmit(submitCommand, entryId, driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill));
+            trySubmit(submitCommand, entryId, hybrid, ctx);
+        trySubmit(submitCommand, entryId, driverMode(s, snapshots, ctx.wet, st.tyreTread, stintPlan, tactics, skill), ctx);
     }
     return actions;
 }

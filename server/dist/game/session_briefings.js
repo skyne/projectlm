@@ -17,6 +17,22 @@ class SessionBriefingStore {
         this.sessionType = "race";
         this.staff = [];
     }
+    exportState() {
+        return {
+            byEntryId: Object.fromEntries(this.byEntryId.entries()),
+            sessionType: this.sessionType,
+            classByEntry: [...this.classByEntry.entries()],
+            fleetCarByEntry: [...this.fleetCarByEntry.entries()],
+            staff: this.staff,
+        };
+    }
+    importState(data) {
+        this.byEntryId = new Map(Object.entries(data.byEntryId));
+        this.sessionType = data.sessionType;
+        this.classByEntry = new Map(data.classByEntry);
+        this.fleetCarByEntry = new Map(data.fleetCarByEntry);
+        this.staff = data.staff ?? [];
+    }
     load(sessionType, entries, managedEntryIds, carBriefings, staff, rivalPitAggression) {
         this.reset();
         this.sessionType = sessionType;

@@ -1,7 +1,9 @@
 #include "car_entity.hpp"
 #include "part_damage.hpp"
+#include "race_control_common.hpp"
 
 namespace {
+
 void MaybeRollHiddenFault(PartDamageState &damage, double impact, uint32_t salt) {
   // Target: <5% of stock grid cars develop a hidden fault per 24h race.
   if (impact < 11.0) return;
@@ -328,10 +330,10 @@ void Car::clearRedFlagHold() {
   redFlagHold_ = false;
 }
 
-bool Car::processPitEntry(double normalizedT, bool lapJustCompleted,
-                          bool redFlagActive) {
+bool Car::processPitEntry(const TrackDefinition &track, double normalizedT,
+                          bool lapJustCompleted, bool redFlagActive) {
   if (!ShouldEnterPitLane(pit_, normalizedT, lapJustCompleted, state_.currentLap,
-                          redFlagActive))
+                          track.pitLane.entryT, redFlagActive))
     return false;
   pit_.inPit = true;
   pit_.pendingEnter = false;
@@ -556,7 +558,7 @@ bool Car::processPitLaneTick(const TrackDefinition &track, double deltaTime,
     state_.currentDistance = lane.mergeTrackDistance;
     state_.currentSpeed = speedLimit * 0.85;
     SyncGearForSpeed(config_, state_);
-    lateralOffset_ = 0.58;
+    lateralOffset_ = track.pitLane.mergeLateralOffset;
     beginRejoinYield();
     pit_.inPit = false;
     pit_.phase = PitPhase::None;
@@ -624,6 +626,8 @@ CarTickResult Car::tick(const TrackDefinition &track,
   mods.skillFactor = driver_.paceFactor(weather.trackWetness, isNight,
                                         weather.visibilityKm,
                                         weather.windSpeedMs);
+  mods.skillFactor *= driver_.setupComfortFactor(
+      wingAngleDelta_, brakeBias_ - config_.startingBrakeBias);
   if (config_.hybridDeployPowerKW > 0.0) {
     HybridStrategyModifiers(driver_.hybridStrategy, mods.hybridDeployScale,
                             mods.hybridRegenScale);
@@ -697,7 +701,7 @@ CarTickResult Car::tick(const TrackDefinition &track,
     if (traffic->impulseLateralMps != 0.0)
       state_.lateralVelocity += traffic->impulseLateralMps;
 
-    if (traffic->collisionDamage > 0.0) {
+    if (traffic->collisionDamage >= kRubbingImpactThreshold) {
       if (collisionCooldown_ <= 0.0) {
         static const PartCatalog kCatalog{};
         CarDamageProfiles profiles;
@@ -1086,6 +1090,96 @@ void Car::markRetired(const std::string &reason) {
   rc_.fireStartedAt = -1.0;
 }
 
+void Car::restoreFromSnapshot(const CarSnapshot &snapshot) {
+  state_.currentDistance = snapshot.distance;
+  state_.currentSpeed = snapshot.speed;
+  state_.currentRPM = snapshot.rpm;
+  state_.currentLap = snapshot.lap;
+  state_.currentLapTime = snapshot.currentLapTime;
+  state_.currentSectorTime = snapshot.currentSectorTime;
+  state_.currentTrackNodeIndex =
+      static_cast<size_t>(std::max(0, snapshot.sectorIndex));
+  state_.lateralOffsetM = snapshot.lateralOffsetM;
+  state_.headingError = snapshot.headingError;
+  state_.engineHealth = snapshot.engineHealth;
+  state_.currentThermalLoad = snapshot.coolantTempC;
+  state_.tireWear[0] = snapshot.tireWearFL;
+  state_.tireWear[1] = snapshot.tireWearFR;
+  state_.tireWear[2] = snapshot.tireWearRL;
+  state_.tireWear[3] = snapshot.tireWearRR;
+  state_.tireTempC[0] = snapshot.tireTempFL;
+  state_.tireTempC[1] = snapshot.tireTempFR;
+  state_.tireTempC[2] = snapshot.tireTempRL;
+  state_.tireTempC[3] = snapshot.tireTempRR;
+  if (IsBatteryPrimaryEv(config_)) {
+    state_.batteryChargeMJ = snapshot.fuel;
+    state_.hybridDeployRemainingMJ = snapshot.hybridDeployMJ;
+  } else {
+    state_.fuelRemaining = snapshot.fuel;
+    state_.hybridDeployRemainingMJ = snapshot.hybridDeployMJ;
+  }
+
+  retired_ = snapshot.retired;
+  retireReason_ = snapshot.retireReason;
+  garageHold_ = snapshot.inGarage;
+  garageRebuildActive_ = snapshot.garageRebuildActive;
+  onFire_ = snapshot.onFire;
+  bestLapTime_ = snapshot.bestLapTime;
+  pitCount_ = snapshot.pitCount;
+  totalPitSeconds_ = snapshot.totalPitSeconds;
+  lateralOffset_ = snapshot.lateralOffset;
+  wingAngleDelta_ = snapshot.wingAngle;
+  brakeBias_ = snapshot.brakeBias;
+  overtakingVisual_ = snapshot.overtaking;
+  blockedVisual_ = snapshot.blocked;
+  lastContactSeverity_ = snapshot.lastContactSeverity;
+  maxDriverStintSeconds_ = snapshot.maxDriverStintSeconds;
+  driver_.stintTimeSeconds = snapshot.driverStintSeconds;
+  driver_.fatigue = std::clamp(1.0 - snapshot.driverStamina / 100.0, 0.0, 1.0);
+  driver_.pressure = snapshot.driverPressure / 100.0;
+  driver_.activeIndex = snapshot.activeDriverIndex;
+  if (snapshot.driverMode == "push")
+    driver_.mode = DriverMode::Push;
+  else if (snapshot.driverMode == "conserve")
+    driver_.mode = DriverMode::Conserve;
+  else
+    driver_.mode = DriverMode::Normal;
+
+  pit_.inPit = snapshot.inPit;
+  pit_.pendingEnter = snapshot.pitQueued;
+  pit_.pitLaneDistance = snapshot.pitLaneDistance;
+  if (snapshot.inPit && snapshot.pitRemainingSec > 0.0) {
+    pit_.phase = PitPhase::AtBox;
+    pit_.pitDuration = snapshot.pitRemainingSec;
+    pit_.pitElapsed = 0.0;
+  } else if (snapshot.inPit) {
+    pit_.phase = PitPhase::DrivingIn;
+  } else {
+    pit_.phase = PitPhase::None;
+    pit_.pitElapsed = 0.0;
+    pit_.pitDuration = 0.0;
+  }
+
+  rc_.trackStatus = ParseTrackStatus(snapshot.trackStatus);
+  rc_.blueFlagActive = snapshot.blueFlag;
+  rc_.blueFlagStrikes = snapshot.blueFlagStrikes;
+  rc_.pendingPenalty = ParsePendingPenalty(snapshot.pendingPenalty);
+  rc_.penaltyReason = snapshot.penaltyReason;
+  rc_.lapsToComply = snapshot.lapsToComply;
+  rc_.meatballActive = snapshot.meatballFlag;
+  rc_.collisionWarnings = snapshot.collisionWarnings;
+  rc_.penaltyStopSeconds = snapshot.penaltyStopSeconds;
+  rc_.recoveryProgress = snapshot.recoveryProgress;
+  rc_.unstableOnTrack = snapshot.unstableOnTrack;
+  rc_.riskyRejoinSec = snapshot.riskyRejoinSec;
+
+  lastMistakeTimer_ = snapshot.lastMistakeRemainingSec;
+  lastMistakeWearAdded_ = snapshot.lastMistakeWearPct / 100.0;
+  lastMistakeWheel_ = snapshot.lastMistakeWheel;
+  mistakeWearBoostTimer_ = snapshot.wearBoostRemainingSec;
+  mistakeWearBoostMultiplier_ = snapshot.wearBoostMultiplier;
+}
+
 void Car::igniteFire() {
   if (retired_)
     return;
@@ -1461,6 +1555,7 @@ CarSnapshot Car::snapshot(const TrackDefinition &track, int racePosition,
     ds.overtaking = d.overtaking;
     ds.defending = d.defending;
     ds.setupFeedback = d.setupFeedback;
+    ds.adaptability = d.adaptability;
     ds.stamina = d.stamina;
     ds.composure = d.composure;
     ds.active = static_cast<int>(i) == driver_.activeIndex;

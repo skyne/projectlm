@@ -1,4 +1,5 @@
-import type { SimEvent } from "../ws/protocol";
+import type { RaceControlPayload, SimEvent } from "../ws/protocol";
+import { deriveRedFlagReason } from "../utils/redFlagReason";
 import {
   formatRaceTimeCompact,
   formatSidebarLogHtml,
@@ -21,6 +22,7 @@ export type EventLogFilterState = SidebarLogFilters;
 export class EventLog {
   readonly root: HTMLElement;
   private list: HTMLUListElement;
+  private statusEl: HTMLElement;
   private settingsBtn: HTMLButtonElement;
   private settingsMenu: HTMLElement;
   private settingsDocListener: ((ev: MouseEvent) => void) | null = null;
@@ -78,9 +80,11 @@ export class EventLog {
           </div>
         </div>
       </header>
+      <p class="sidebar-log-status hidden" role="status" aria-live="polite"></p>
       <ul class="sidebar-log-list" aria-live="polite"></ul>
     `;
     this.list = this.root.querySelector(".sidebar-log-list")!;
+    this.statusEl = this.root.querySelector(".sidebar-log-status")!;
     this.settingsBtn = this.root.querySelector(".sidebar-log-settings-btn")!;
     this.settingsMenu = this.root.querySelector(".sidebar-log-settings-menu")!;
     container.appendChild(this.root);
@@ -159,13 +163,28 @@ export class EventLog {
 
   /** Replace sidebar log from server catch-up (page refresh / reconnect). */
   restore(events: SimEvent[]): void {
-    this.allEvents = events.slice(-MAX_EVENTS);
+    this.allEvents = events.slice(-MAX_RETAINED);
     this.render();
   }
 
   clear(): void {
     this.allEvents = [];
     this.list.replaceChildren();
+    this.updateRaceControl(undefined);
+  }
+
+  updateRaceControl(rc: RaceControlPayload | undefined): void {
+    const reason = deriveRedFlagReason(rc);
+    if (!reason) {
+      this.statusEl.classList.add("hidden");
+      this.statusEl.textContent = "";
+      return;
+    }
+    const remaining = rc?.redFlagSecondsRemaining;
+    const timer =
+      remaining != null && remaining > 0 ? ` · ${Math.ceil(remaining)}s` : "";
+    this.statusEl.textContent = `RED FLAG — ${reason}${timer}`;
+    this.statusEl.classList.remove("hidden");
   }
 
   private toggleSettingsMenu(): void {

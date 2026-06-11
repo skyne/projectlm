@@ -43,13 +43,17 @@ constexpr double kCollisionFuelImpact = 5.0;
 constexpr double kRedFlagWeatherPeriodSec = 120.0;
 constexpr double kRedFlagObstructionPeriodSec = 60.0;
 constexpr double kRedFlagExtendWeatherSec = 90.0;
+constexpr double kRedFlagExtendWeatherStableSec = 180.0;
+constexpr double kRedFlagExtendWeatherHeavyRainSec = 150.0;
 constexpr double kRedFlagExtendObstructionSec = 45.0;
+constexpr double kRedFlagExtendObstructionStableSec = 120.0;
 constexpr double kRedFlagReviewLeadMinSec = 15.0;
 constexpr double kRedFlagReviewLeadMaxSec = 30.0;
-constexpr double kRedFlagDeployVisibilityKm = 1.5;
-constexpr double kRedFlagDeployHeavyRainVisibilityKm = 2.5;
-constexpr double kRedFlagResumeVisibilityKm = 2.0;
-constexpr double kRedFlagResumeHeavyRainVisibilityKm = 3.0;
+/** Meteorological visibility (km), not per-car spray distance. Heavy rain in the
+ *  weather model typically sits ~0.7–0.8 km (wet profile); red flag only below
+ *  that band. FIA/WEC leave the call to race control — no fixed km in regs. */
+constexpr double kRedFlagDeployVisibilityKm = 0.5;
+constexpr double kRedFlagResumeVisibilityKm = 0.65;
 constexpr double kScPitReleaseGapSec = 2.0;
 /** Target gap from train leader to the SC (~realistic SC train spacing). */
 constexpr double kScLeadGapM = 75.0;
@@ -81,12 +85,7 @@ struct RedFlagTrigger {
 };
 
 bool ShouldRedFlagForWeather(const WeatherState &weather) {
-  if (weather.visibilityKm < kRedFlagDeployVisibilityKm)
-    return true;
-  if (weather.phase == WeatherPhase::HeavyRain &&
-      weather.visibilityKm < kRedFlagDeployHeavyRainVisibilityKm)
-    return true;
-  return false;
+  return weather.visibilityKm < kRedFlagDeployVisibilityKm;
 }
 
 int ObstructionRedFlagThreshold(double lapLengthM) {
@@ -1242,12 +1241,66 @@ bool SectorFlagsAllGreen(const SessionRaceControl &rc) {
 }
 
 bool WeatherSafeForRacing(const WeatherState &weather) {
-  if (weather.visibilityKm < kRedFlagResumeVisibilityKm)
-    return false;
-  if (weather.phase == WeatherPhase::HeavyRain &&
-      weather.visibilityKm < kRedFlagResumeHeavyRainVisibilityKm)
-    return false;
-  return true;
+  return weather.visibilityKm >= kRedFlagResumeVisibilityKm;
+}
+
+std::string FormatVisibilityKm(double km) {
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(1) << km << " km";
+  return oss.str();
+}
+
+std::string StripRaceControlPrefix(const std::string &msg) {
+  const std::string prefix = "Race control: ";
+  if (msg.size() >= prefix.size() &&
+      msg.compare(0, prefix.size(), prefix) == 0)
+    return msg.substr(prefix.size());
+  return msg;
+}
+
+std::string WithRaceControlPrefix(const std::string &msg) {
+  if (msg.rfind("Race control:", 0) == 0)
+    return msg;
+  return "Race control: " + msg;
+}
+
+double RedFlagExtensionPeriodSec(const RaceSession &session) {
+  const SessionRaceControl &rc = session.raceControl;
+  if (rc.redFlagWeatherCause) {
+    const WeatherState &w = session.weather;
+    if (w.visibilityKm < kRedFlagDeployVisibilityKm)
+      return kRedFlagExtendWeatherStableSec;
+    if (w.phase == WeatherPhase::HeavyRain)
+      return kRedFlagExtendWeatherHeavyRainSec;
+    if (!WeatherSafeForRacing(w))
+      return kRedFlagExtendWeatherSec;
+    return kRedFlagExtendWeatherSec;
+  }
+  if (ShouldRedFlagForFire(session) || ShouldRedFlagForObstructions(session))
+    return kRedFlagExtendObstructionStableSec;
+  return kRedFlagExtendObstructionSec;
+}
+
+std::string BuildRedFlagExtendMessage(const RaceSession &session) {
+  const SessionRaceControl &rc = session.raceControl;
+  std::ostringstream oss;
+  if (!rc.redFlagReason.empty())
+    oss << rc.redFlagReason;
+  else
+    oss << "Red flag held";
+  oss << " — conditions unchanged";
+  if (rc.redFlagWeatherCause) {
+    oss << " (" << FormatVisibilityKm(session.weather.visibilityKm)
+        << " visibility)";
+  } else {
+    const int obs = CountTrackObstructions(session);
+    if (obs > 0)
+      oss << " (" << obs << " obstruction" << (obs == 1 ? "" : "s")
+          << " on track)";
+    else if (CountBurningCarsOnTrack(session) > 0)
+      oss << " (car fire on track)";
+  }
+  return WithRaceControlPrefix(oss.str());
 }
 
 bool AllNonRetiredCarsInPit(const RaceSession &session) {
@@ -1266,10 +1319,8 @@ RedFlagTrigger EvaluateRedFlagTrigger(const RaceSession &session) {
   if (ShouldRedFlagForWeather(weather)) {
     trigger.deploy = true;
     trigger.weatherCause = true;
-    if (weather.visibilityKm < kRedFlagDeployVisibilityKm)
-      trigger.reason = "Race control: Red flag — visibility too low";
-    else
-      trigger.reason = "Race control: Red flag — heavy rain";
+    trigger.reason = "Race control: Red flag — visibility too low (" +
+                     FormatVisibilityKm(weather.visibilityKm) + ")";
     return trigger;
   }
   if (ShouldRedFlagForFire(session)) {
@@ -1325,6 +1376,7 @@ void DeployRedFlag(RaceSession &session, const RedFlagTrigger &trigger) {
   const double period = trigger.weatherCause ? kRedFlagWeatherPeriodSec
                                              : kRedFlagObstructionPeriodSec;
   SetRedFlagPeriod(rc, session.elapsedRaceTime, period, trigger.weatherCause);
+  rc.redFlagReason = StripRaceControlPrefix(trigger.reason);
   rc.redFlagExtensions = 0;
   rc.redFlagReviewAt = rc.redFlagUntil - RedFlagReviewLeadSec(period);
   rc.redFlagPitOrder.clear();
@@ -1338,18 +1390,17 @@ void DeployRedFlag(RaceSession &session, const RedFlagTrigger &trigger) {
 void ExtendRedFlag(RaceSession &session) {
   SessionRaceControl &rc = session.raceControl;
   rc.redFlagExtensions++;
-  const double period = rc.redFlagWeatherCause ? kRedFlagExtendWeatherSec
-                                               : kRedFlagExtendObstructionSec;
+  const double period = RedFlagExtensionPeriodSec(session);
   SetRedFlagPeriod(rc, session.elapsedRaceTime, period, rc.redFlagWeatherCause);
   EmitControlEvent(SimEventType::RedFlagExtended, session.elapsedRaceTime,
-                   "Race control: Red flag extended (" +
-                       std::to_string(rc.redFlagExtensions) + ")");
+                   BuildRedFlagExtendMessage(session));
 }
 
 void TransitionRedFlagToSc(RaceSession &session) {
   SessionRaceControl &rc = session.raceControl;
   rc.flagPhase = FlagPhase::SC;
   rc.redFlagReviewAt = -1.0;
+  rc.redFlagReason.clear();
   SyncRaceControlFlags(rc);
   EmitControlEvent(SimEventType::RedFlagEnd, session.elapsedRaceTime,
                    "Race control: Red flag ended — safety car deployed");

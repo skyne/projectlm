@@ -667,7 +667,10 @@ export function resolveAiDriverMarketBids(
   });
 
   const candidates = market.filter(
-    (l) => l.source === "wec_active" || l.source === "prospect",
+    (l) =>
+      l.source === "wec_active" ||
+      l.source === "prospect" ||
+      l.source === "free_agent",
   );
 
   for (const team of teamsByBudget.slice(0, 8)) {
@@ -680,7 +683,7 @@ export function resolveAiDriverMarketBids(
       if (protectedListingIds.has(l.id)) return false;
       const driverId = ensureCatalogDriverId(l.driver).id!;
       const holder = contracts.get(driverId);
-      if (l.source === "prospect") {
+      if (l.source === "prospect" || l.source === "free_agent") {
         if (team.budget <= 15_000_000) return false;
         return (
           !holder || holder.toLowerCase() === team.teamName.toLowerCase()

@@ -239,7 +239,8 @@ void TickRace(RaceSession &session, double deltaTime) {
     const TrackPose pose =
         session.track.poseAtRaceDistance(car.state().currentDistance);
 
-    if (car.processPitEntry(pose.normalizedT, false, redFlagActive)) {
+    if (car.processPitEntry(session.track, pose.normalizedT, false,
+                            redFlagActive)) {
       EmitRaceEvent(SimEventType::PitEnter, car, car.state().currentLap,
                     static_cast<int>(car.state().currentTrackNodeIndex),
                     session.elapsedRaceTime,
@@ -300,7 +301,7 @@ void TickRace(RaceSession &session, double deltaTime) {
         remaining, redFlagActive);
 
     if (result.lapCompleted && car.pit().pendingEnter) {
-      if (car.processPitEntry(0.0, true, redFlagActive)) {
+      if (car.processPitEntry(session.track, 0.0, true, redFlagActive)) {
         EmitRaceEvent(SimEventType::PitEnter, car, car.state().currentLap,
                       static_cast<int>(car.state().currentTrackNodeIndex),
                       session.elapsedRaceTime,

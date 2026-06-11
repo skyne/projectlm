@@ -9,6 +9,7 @@ import type {
 } from "../ws/protocol";
 import { BriefingRolePicker } from "./BriefingRolePicker";
 import { SetupSuggestionChips } from "./SetupSuggestionChips";
+import { renderSetupWorkbench } from "./SetupWorkbench";
 import {
   applyChassisBiasChip,
   chassisBiasForBriefing,
@@ -87,6 +88,7 @@ export class PreSessionBriefing {
           <div class="pre-session-main">
             <div class="pre-session-briefing-host"></div>
             <p class="pre-session-track-notes"></p>
+            <div class="pre-session-workbench-host"></div>
             <div class="pre-session-sliders"></div>
           </div>
           <aside class="pre-session-stats">
@@ -240,8 +242,31 @@ export class PreSessionBriefing {
     this.root.querySelector(".pre-session-subtitle")!.textContent = `${calendarRoundLabel(round.round, round.eventType)} · ${sessionLabel(this.sessionType)} · ${fmt}`;
 
     this.renderCarTabs();
+    this.renderWorkbench();
     this.renderSliders();
     this.renderStats();
+  }
+
+  private renderWorkbench(): void {
+    const host = this.root.querySelector(".pre-session-workbench-host")!;
+    host.replaceChildren();
+    const car = this.activeCar();
+    const preset = this.carPresets.get(this.activeCarId);
+    if (!car || !preset || !this.meta) return;
+    const saved = resolveCarTrackPreset(car, this.trackId, this.meta);
+    const driverIds = car.assignedDriverIds ?? [];
+    const drivers = (this.meta.driverRoster ?? []).filter(
+      (d) => d.id && driverIds.includes(d.id),
+    );
+    host.appendChild(
+      renderSetupWorkbench({
+        catalog: this.catalog,
+        car,
+        current: presetFromSessionValues(this.trackId, preset),
+        previous: saved,
+        assignedDrivers: drivers,
+      }),
+    );
   }
 
   private renderCarTabs(): void {
@@ -264,6 +289,7 @@ export class PreSessionBriefing {
           briefing ? chassisBiasForBriefing(briefing.briefingId) : undefined,
         );
         this.renderCarTabs();
+        this.renderWorkbench();
         this.renderSliders();
         this.renderStats();
         const notes = this.carPresets.get(car.id)?.notes;
@@ -327,6 +353,7 @@ export class PreSessionBriefing {
           const updated = { ...current, [def.key]: next };
           this.carPresets.set(this.activeCarId, updated);
           wrap.querySelector(".engine-slider-value")!.textContent = def.format(next);
+          this.renderWorkbench();
           this.renderStats();
         });
         grid.appendChild(wrap);

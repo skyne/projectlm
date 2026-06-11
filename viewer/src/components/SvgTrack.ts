@@ -1,5 +1,6 @@
 import type {
   CarSnapshot,
+  PitLanePointGeometry,
   RaceControlPayload,
   SurfaceHazardSummaryPayload,
   TrackGeometryPayload,
@@ -19,7 +20,7 @@ import {
   applyTrackWeatherVisual,
   resolveTrackWeatherVisual,
 } from "../utils/trackWeatherVisual";
-import { PIT_LANE_FRACTION } from "../utils/pitCommands";
+import { PIT_LANE_FRACTION, PIT_LANE_SPEED_KMH } from "../utils/pitCommands";
 import { resolveTrackTheme, type TrackTheme } from "../utils/trackThemes";
 import type { TeamLiveryPayload } from "../ws/protocol";
 import { sectorFlagTooltip } from "../utils/sectorFlags";
@@ -304,13 +305,17 @@ interface FitTransform {
 export interface SvgTrackOptions {
   /** Enable scroll-to-zoom and drag-to-pan on the map. */
   zoomable?: boolean;
+  /** Track editor: extra fit padding and outfield pan room at every zoom level. */
+  generousPan?: boolean;
   /** Broadcast map: glow on all cars, stronger team/player halos. */
   broadcast?: boolean;
+  /** Max scroll zoom relative to fit (default 8). Editor passes higher values for node precision. */
+  maxZoom?: number;
 }
 
 /** 1 = fitted track bounds; values below 1 zoom out (~5 wheel steps at 0.55). */
 const MIN_ZOOM = 0.55;
-const MAX_ZOOM = 8;
+const DEFAULT_MAX_ZOOM = 8;
 const ZOOM_WHEEL_FACTOR = 1.12;
 const FIT_ZOOM_EPS = 1e-6;
 /** Extra outfield extent beyond min-zoom frame for drag exploration. */
@@ -329,6 +334,8 @@ export class SvgTrack {
   private labelsGroup: SVGGElement;
   private carsGroup: SVGGElement;
   private pitGroup: SVGGElement;
+  private referenceOverlayGroup: SVGGElement;
+  private editorOverlayGroup: SVGGElement;
   private hitLayer: SVGRectElement | null = null;
   private fit: FitTransform | null = null;
   private playerEntryId = "entry-1";
@@ -336,17 +343,36 @@ export class SvgTrack {
   private highlightedEntryIds = new Set<string>();
   private carPositions = new Map<string, { x: number; y: number }>();
   private zoomable: boolean;
+  private generousPan: boolean;
   private broadcast: boolean;
+  private maxZoom: number;
   private zoom = 1;
   private panX = 0;
   private panY = 0;
   private dragging = false;
   private lastDragClient: { x: number; y: number } | null = null;
+  private spacePanHeld = false;
+  private editorPanSuspended = false;
+  /** Track editor: union into fit bbox so pan/zoom scale stays stable while editing. */
+  private editorAuxWorldBounds: {
+    minX: number;
+    maxX: number;
+    minZ: number;
+    maxZ: number;
+  } | null = null;
+  private stickyWorldBounds: {
+    minX: number;
+    maxX: number;
+    minZ: number;
+    maxZ: number;
+  } | null = null;
   private boundWheel: ((e: WheelEvent) => void) | null = null;
   private boundPointerDown: ((e: PointerEvent) => void) | null = null;
   private boundPointerMove: ((e: PointerEvent) => void) | null = null;
   private boundPointerUp: ((e: PointerEvent) => void) | null = null;
   private boundDblClick: ((e: MouseEvent) => void) | null = null;
+  private boundKeyDown: ((e: KeyboardEvent) => void) | null = null;
+  private boundKeyUp: ((e: KeyboardEvent) => void) | null = null;
   private theme: TrackTheme = resolveTrackTheme();
   private layerVisibility: TrackLayerVisibility = {
     sectors: true,
@@ -378,6 +404,8 @@ export class SvgTrack {
 
   constructor(container: HTMLElement, options: SvgTrackOptions = {}) {
     this.zoomable = options.zoomable ?? false;
+    this.maxZoom = options.maxZoom ?? DEFAULT_MAX_ZOOM;
+    this.generousPan = options.generousPan ?? false;
     this.broadcast = options.broadcast ?? false;
     if (this.broadcast) {
       container.classList.add("track-map-canvas-host--broadcast");
@@ -398,10 +426,18 @@ export class SvgTrack {
     this.labelsGroup = this.createGroup("labels-layer");
     this.carsGroup = this.createGroup("cars-layer");
     this.pitGroup = this.createGroup("pit-layer");
+    this.referenceOverlayGroup = this.createGroup("reference-overlay-layer");
+    this.referenceOverlayGroup.setAttribute("class", "reference-overlay-layer");
+    this.referenceOverlayGroup.setAttribute("pointer-events", "none");
+
+    this.editorOverlayGroup = this.createGroup("editor-overlay");
+    this.editorOverlayGroup.setAttribute("class", "editor-overlay");
+    this.editorOverlayGroup.setAttribute("pointer-events", "none");
 
     this.root.append(
       this.defs,
       this.bgGroup,
+      this.referenceOverlayGroup,
       this.sectorsGroup,
       this.runoffGroup,
       this.trackGroup,
@@ -411,12 +447,74 @@ export class SvgTrack {
       this.pitGroup,
       this.labelsGroup,
       this.carsGroup,
+      this.editorOverlayGroup,
     );
     container.appendChild(this.root);
     if (this.zoomable) {
       container.classList.add("track-map-canvas-host--zoomable");
       this.installZoomPan();
     }
+  }
+
+  /** Track editor: include reference image (or other overlay) in the fit bbox. */
+  setEditorAuxWorldBounds(
+    bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null,
+  ): void {
+    this.editorAuxWorldBounds = bounds;
+  }
+
+  /** World metres → SVG user space (same transform as baked track geometry). */
+  getWorldTransform(): {
+    minX: number;
+    minZ: number;
+    scale: number;
+    offsetX: number;
+    offsetY: number;
+  } | null {
+    const f = this.fit;
+    if (!f) return null;
+    return {
+      minX: f.minX,
+      minZ: f.minZ,
+      scale: f.scale,
+      offsetX: f.offsetX,
+      offsetY: f.offsetY,
+    };
+  }
+
+  /** Track editor: block map pan while a handle drag is active. */
+  setEditorPanSuspended(suspended: boolean): void {
+    this.editorPanSuspended = suspended;
+    if (suspended && this.dragging) {
+      this.dragging = false;
+      this.lastDragClient = null;
+      this.root.classList.remove("track-svg-dragging");
+    }
+  }
+
+  private isTypingTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  }
+
+  private canStartPan(e: PointerEvent): boolean {
+    if (!this.fit || this.editorPanSuspended) return false;
+    if (e.target instanceof Element && e.target.closest(".te-handle")) return false;
+    if (e.target instanceof Element && e.target.closest(".te-ref-interactive")) return false;
+    if (this.generousPan) {
+      if (e.button === 1 || e.button === 2) return true;
+      return e.button === 0 && this.spacePanHeld;
+    }
+    if (e.button !== 0) return false;
+    if (this.isAtFitZoom()) return false;
+    return true;
+  }
+
+  private cancelPanDrag(): void {
+    this.dragging = false;
+    this.lastDragClient = null;
+    this.root.classList.remove("track-svg-dragging");
   }
 
   private installZoomPan(): void {
@@ -431,7 +529,7 @@ export class SvgTrack {
     };
 
     this.boundPointerDown = (e: PointerEvent) => {
-      if (!this.fit || e.button !== 0 || this.isAtFitZoom()) return;
+      if (!this.canStartPan(e)) return;
       e.preventDefault();
       this.dragging = true;
       this.lastDragClient = { x: e.clientX, y: e.clientY };
@@ -440,7 +538,8 @@ export class SvgTrack {
     };
 
     this.boundPointerMove = (e: PointerEvent) => {
-      if (!this.dragging || !this.lastDragClient || !this.fit || this.isAtFitZoom()) return;
+      if (!this.dragging || !this.lastDragClient || !this.fit || this.editorPanSuspended) return;
+      if (!this.generousPan && this.isAtFitZoom()) return;
       e.preventDefault();
       const prev = this.clientToSvg(this.lastDragClient.x, this.lastDragClient.y);
       const curr = this.clientToSvg(e.clientX, e.clientY);
@@ -453,15 +552,34 @@ export class SvgTrack {
 
     this.boundPointerUp = (e: PointerEvent) => {
       if (!this.dragging) return;
-      this.dragging = false;
-      this.lastDragClient = null;
-      this.root.releasePointerCapture(e.pointerId);
-      this.root.classList.remove("track-svg-dragging");
+      this.cancelPanDrag();
+      try {
+        this.root.releasePointerCapture(e.pointerId);
+      } catch {
+        /* already released */
+      }
     };
 
     this.boundDblClick = (e: MouseEvent) => {
       e.preventDefault();
       this.resetView();
+    };
+
+    this.boundKeyDown = (e: KeyboardEvent) => {
+      if (!this.generousPan || e.code !== "Space" || e.repeat) return;
+      if (this.isTypingTarget(e.target)) return;
+      e.preventDefault();
+      this.spacePanHeld = true;
+      this.root.classList.add("track-svg-space-pan");
+    };
+
+    this.boundKeyUp = (e: KeyboardEvent) => {
+      if (!this.generousPan || e.code !== "Space") return;
+      this.spacePanHeld = false;
+      this.root.classList.remove("track-svg-space-pan");
+      if (this.dragging) {
+        this.cancelPanDrag();
+      }
     };
 
     this.root.addEventListener("wheel", this.boundWheel, { passive: false });
@@ -470,6 +588,11 @@ export class SvgTrack {
     this.root.addEventListener("pointerup", this.boundPointerUp);
     this.root.addEventListener("pointercancel", this.boundPointerUp);
     this.root.addEventListener("dblclick", this.boundDblClick);
+    if (this.generousPan) {
+      window.addEventListener("keydown", this.boundKeyDown);
+      window.addEventListener("keyup", this.boundKeyUp);
+      this.root.addEventListener("contextmenu", (e) => e.preventDefault());
+    }
   }
 
   resetView(): void {
@@ -478,6 +601,46 @@ export class SvgTrack {
     this.panX = this.fit.viewMinX;
     this.panY = this.fit.viewMinY;
     this.applyViewBox();
+  }
+
+  /** Track editor: tracing reference under asphalt (world-locked when frozen). */
+  referenceMapLayer(): SVGGElement {
+    return this.referenceOverlayGroup;
+  }
+
+  /** Track editor: shared SVG layer for draggable handles (same user space as geometry). */
+  editorOverlay(): SVGGElement {
+    return this.editorOverlayGroup;
+  }
+
+  hasGeometry(): boolean {
+    return this.fit != null;
+  }
+
+  getWorldScale(): number | null {
+    return this.fit?.scale ?? null;
+  }
+
+  worldToSvgCoords(x: number, z: number): { x: number; y: number } | null {
+    const f = this.fit;
+    if (!f) return null;
+    return {
+      x: f.offsetX + (x - f.minX) * f.scale,
+      y: f.offsetY + (z - f.minZ) * f.scale,
+    };
+  }
+
+  svgCoordsToWorld(sx: number, sy: number): { x: number; z: number } | null {
+    const f = this.fit;
+    if (!f || f.scale <= 0) return null;
+    return {
+      x: f.minX + (sx - f.offsetX) / f.scale,
+      z: f.minZ + (sy - f.offsetY) / f.scale,
+    };
+  }
+
+  clientPointToSvg(clientX: number, clientY: number): { x: number; y: number } {
+    return this.clientToSvg(clientX, clientY);
   }
 
   private currentViewSize(): { viewWidth: number; viewHeight: number } {
@@ -500,7 +663,7 @@ export class SvgTrack {
 
   private zoomAtPoint(svgX: number, svgY: number, factor: number): void {
     if (!this.fit) return;
-    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoom * factor));
+    const nextZoom = Math.min(this.maxZoom, Math.max(MIN_ZOOM, this.zoom * factor));
     if (nextZoom === this.zoom) return;
 
     const { viewWidth: oldW, viewHeight: oldH } = this.currentViewSize();
@@ -524,17 +687,12 @@ export class SvgTrack {
     if (!this.fit) return;
     const { viewWidth, viewHeight } = this.currentViewSize();
 
-    if (this.isAtFitZoom()) {
-      this.panX = this.fit.viewMinX;
-      this.panY = this.fit.viewMinY;
-      return;
-    }
-
-    if (this.zoom < 1) {
-      const bx = this.zoomable ? this.fit.bgMinX : this.fit.viewMinX;
-      const by = this.zoomable ? this.fit.bgMinY : this.fit.viewMinY;
-      const bw = this.zoomable ? this.fit.bgWidth : this.fit.viewWidth;
-      const bh = this.zoomable ? this.fit.bgHeight : this.fit.viewHeight;
+    if (this.generousPan || this.zoom < 1) {
+      const slack = this.generousPan ? 0.62 : OUTFIELD_PAN_SLACK;
+      const bx = this.zoomable ? this.panBoundsMinX(slack) : this.fit.viewMinX;
+      const by = this.zoomable ? this.panBoundsMinY(slack) : this.fit.viewMinY;
+      const bw = this.zoomable ? this.panBoundsWidth(slack) : this.fit.viewWidth;
+      const bh = this.zoomable ? this.panBoundsHeight(slack) : this.fit.viewHeight;
       let minPanX = bx;
       let maxPanX = bx + bw - viewWidth;
       let minPanY = by;
@@ -552,10 +710,42 @@ export class SvgTrack {
       return;
     }
 
+    if (this.isAtFitZoom()) {
+      this.panX = this.fit.viewMinX;
+      this.panY = this.fit.viewMinY;
+      return;
+    }
+
     const maxX = this.fit.viewMinX + this.fit.viewWidth - viewWidth;
     const maxY = this.fit.viewMinY + this.fit.viewHeight - viewHeight;
     this.panX = Math.max(this.fit.viewMinX, Math.min(maxX, this.panX));
     this.panY = Math.max(this.fit.viewMinY, Math.min(maxY, this.panY));
+  }
+
+  private panBoundsMinX(slack: number): number {
+    const f = this.fit!;
+    const cover = (1 / MIN_ZOOM) * (1 + slack);
+    const bgW = f.viewWidth * cover;
+    return f.viewMinX + f.viewWidth / 2 - bgW / 2;
+  }
+
+  private panBoundsMinY(slack: number): number {
+    const f = this.fit!;
+    const cover = (1 / MIN_ZOOM) * (1 + slack);
+    const bgH = f.viewHeight * cover;
+    return f.viewMinY + f.viewHeight / 2 - bgH / 2;
+  }
+
+  private panBoundsWidth(slack: number): number {
+    const f = this.fit!;
+    const cover = (1 / MIN_ZOOM) * (1 + slack);
+    return f.viewWidth * cover;
+  }
+
+  private panBoundsHeight(slack: number): number {
+    const f = this.fit!;
+    const cover = (1 / MIN_ZOOM) * (1 + slack);
+    return f.viewHeight * cover;
   }
 
   private applyViewBox(): void {
@@ -606,7 +796,7 @@ export class SvgTrack {
 
     const zoomX = this.fit.viewWidth / spanX;
     const zoomY = this.fit.viewHeight / spanY;
-    this.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(zoomX, zoomY)));
+    this.zoom = Math.min(this.maxZoom, Math.max(MIN_ZOOM, Math.min(zoomX, zoomY)));
 
     const { viewWidth, viewHeight } = this.currentViewSize();
     this.panX = cx - viewWidth / 2;
@@ -951,6 +1141,12 @@ export class SvgTrack {
       return;
     }
 
+    const preserveView = this.generousPan && this.fit != null;
+    const savedView = preserveView
+      ? { panX: this.panX, panY: this.panY, zoom: this.zoom }
+      : null;
+    const savedSticky = preserveView ? this.stickyWorldBounds : null;
+
     this.wipeGeometry();
 
     let minX = Infinity;
@@ -964,11 +1160,52 @@ export class SvgTrack {
       minZ = Math.min(minZ, pt.z);
       maxZ = Math.max(maxZ, pt.z);
     }
+    if (this.generousPan && geometry.pitLane?.polyline?.length) {
+      for (const pt of geometry.pitLane.polyline) {
+        minX = Math.min(minX, pt.x);
+        maxX = Math.max(maxX, pt.x);
+        minZ = Math.min(minZ, pt.z);
+        maxZ = Math.max(maxZ, pt.z);
+      }
+    }
 
-    const worldW = maxX - minX || 1;
-    const worldH = maxZ - minZ || 1;
+    let worldW = maxX - minX || 1;
+    let worldH = maxZ - minZ || 1;
+    const aux = this.editorAuxWorldBounds;
+    if (aux) {
+      minX = Math.min(minX, aux.minX);
+      maxX = Math.max(maxX, aux.maxX);
+      minZ = Math.min(minZ, aux.minZ);
+      maxZ = Math.max(maxZ, aux.maxZ);
+      worldW = maxX - minX;
+      worldH = maxZ - minZ;
+    }
+
+    if (this.generousPan) {
+      const marginX = worldW * 0.08;
+      const marginZ = worldH * 0.08;
+      minX -= marginX;
+      maxX += marginX;
+      minZ -= marginZ;
+      maxZ += marginZ;
+      worldW = maxX - minX;
+      worldH = maxZ - minZ;
+
+      if (savedSticky) {
+        minX = Math.min(minX, savedSticky.minX);
+        maxX = Math.max(maxX, savedSticky.maxX);
+        minZ = Math.min(minZ, savedSticky.minZ);
+        maxZ = Math.max(maxZ, savedSticky.maxZ);
+        worldW = maxX - minX;
+        worldH = maxZ - minZ;
+      }
+      this.stickyWorldBounds = { minX, maxX, minZ, maxZ };
+    } else {
+      this.stickyWorldBounds = null;
+    }
+
     const target = 1000;
-    const pad = 40;
+    const pad = this.generousPan ? 52 : 40;
     const scale = (target - pad * 2) / Math.max(worldW, worldH);
     const drawW = worldW * scale;
     const drawH = worldH * scale;
@@ -996,7 +1233,7 @@ export class SvgTrack {
     }
 
     this.hasSurfaceProfile = (geometry.surfaceProfile?.length ?? 0) > 0;
-    const viewPad = 30;
+    const viewPad = this.generousPan ? 48 : 30;
     const viewWidth = viewMaxX - viewMinX + viewPad * 2;
     const viewHeight = viewMaxY - viewMinY + viewPad * 2;
     const viewBoxX = viewMinX - viewPad;
@@ -1025,9 +1262,17 @@ export class SvgTrack {
       "viewBox",
       `${viewBoxX} ${viewBoxY} ${viewWidth} ${viewHeight}`,
     );
-    this.panX = viewBoxX;
-    this.panY = viewBoxY;
-    this.zoom = 1;
+    if (savedView) {
+      this.panX = savedView.panX;
+      this.panY = savedView.panY;
+      this.zoom = savedView.zoom;
+      this.clampPan();
+      this.applyViewBox();
+    } else {
+      this.panX = viewBoxX;
+      this.panY = viewBoxY;
+      this.zoom = 1;
+    }
 
     if (this.zoomable) this.drawRasterBackground();
 
@@ -1102,7 +1347,8 @@ export class SvgTrack {
       hit.setAttribute("height", String(viewHeight));
       hit.setAttribute("fill", "transparent");
       hit.setAttribute("class", "track-hit-layer");
-      this.root.appendChild(hit);
+      // Keep editor handles above the pan hit target.
+      this.root.insertBefore(hit, this.editorOverlayGroup);
       this.hitLayer = hit;
     }
 
@@ -2265,6 +2511,12 @@ export class SvgTrack {
     cumulativeT: number[],
     totalLength: number,
   ): void {
+    const authored = this.buildAuthoredPitLanePath();
+    if (authored) {
+      this.drawAuthoredPitLane(authored);
+      return;
+    }
+
     const pitLen = totalLength * PIT_LANE_FRACTION;
     if (pitLen <= 0) return;
 
@@ -2336,6 +2588,14 @@ export class SvgTrack {
 
     const ribbonScale = layout.tarmacWidth / TRACK_ASPHALT_WIDTH;
     this.appendPitLaneRibbon(tarmacPath, pitLen, blendFraction, ribbonScale, layout);
+
+    this.appendPitSpeedLimitMarkings(
+      tarmacPath.points,
+      tarmacPath.cumulative,
+      pitLen * PIT_BOX_FRACTION,
+      pitLen,
+      layout,
+    );
 
     const parallelMarkingD = this.pathSegmentByDistance(
       tarmacPath.points,
@@ -2478,6 +2738,12 @@ export class SvgTrack {
     cumulativeT: number[],
     totalLength: number,
   ): void {
+    const authored = this.buildAuthoredPitLanePath();
+    if (authored) {
+      this.pitLanePath = authored;
+      return;
+    }
+
     const pitLen = totalLength * PIT_LANE_FRACTION;
     if (pitLen <= 0 || svgPoints.length < 2) {
       this.pitLanePath = null;
@@ -2594,7 +2860,7 @@ export class SvgTrack {
       return 0;
     }
 
-    const pitLenM = this.lapLengthM * PIT_LANE_FRACTION;
+    const pitLenM = path.totalLength > 0 ? path.totalLength : this.lapLengthM * PIT_LANE_FRACTION;
     if (
       snap.pitLaneDistance != null &&
       snap.pitLaneDistance >= 0 &&
@@ -2733,6 +2999,199 @@ export class SvgTrack {
     wall.setAttribute("opacity", className === "pit-wall-outer" ? "0.92" : "0.78");
     wall.setAttribute("class", className);
     parent.appendChild(wall);
+  }
+
+  private buildAuthoredPitLanePath(): {
+    points: SvgPoint[];
+    cumulative: number[];
+    totalLength: number;
+    boxDistance: number;
+    polyline: PitLanePointGeometry[];
+  } | null {
+    const polyline = this.renderedGeometry?.pitLane?.polyline;
+    if (!polyline || polyline.length < 2) return null;
+
+    const points = polyline.map((pt) => toSvg(pt.x, pt.z));
+    const cumulative: number[] = [0];
+    let total = 0;
+    for (let i = 1; i < points.length; i++) {
+      total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+      cumulative.push(total);
+    }
+    if (total <= 0) return null;
+
+    let boxIdx = polyline.findIndex((pt) => pt.role === "box");
+    if (boxIdx < 0) boxIdx = Math.round((polyline.length - 1) * PIT_BOX_FRACTION);
+    const boxDistance = cumulative[boxIdx] ?? total * PIT_BOX_FRACTION;
+
+    return { points, cumulative, totalLength: total, boxDistance, polyline };
+  }
+
+  private drawAuthoredPitLane(path: {
+    points: SvgPoint[];
+    cumulative: number[];
+    totalLength: number;
+    boxDistance: number;
+    polyline: PitLanePointGeometry[];
+  }): void {
+    const layout = this.pitLayoutMetrics();
+    const tw = TRACK_ASPHALT_WIDTH;
+    const pathD = this.pointsToSmoothPath(path.points, false);
+    if (!pathD) return;
+
+    const ribbonScale = layout.tarmacWidth / TRACK_ASPHALT_WIDTH;
+    if (this.broadcast) {
+      this.appendBroadcastRibbon(pathD, this.pitGroup, ribbonScale, {
+        layers: "core",
+        lineCap: "round",
+      });
+    } else {
+      this.appendClassicRibbon(pathD, this.pitGroup, ribbonScale, {
+        layers: "core",
+        lineCap: "round",
+      });
+    }
+
+    this.appendPitSpeedLimitMarkings(
+      path.points,
+      path.cumulative,
+      path.boxDistance,
+      path.totalLength,
+      layout,
+    );
+
+    const pitMarking = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    pitMarking.setAttribute("d", pathD);
+    pitMarking.setAttribute("fill", "none");
+    pitMarking.setAttribute("stroke", "rgba(255, 248, 230, 0.42)");
+    pitMarking.setAttribute("stroke-width", String(tw * 0.12));
+    pitMarking.setAttribute("stroke-dasharray", `${tw * 0.36} ${tw * 0.42}`);
+    pitMarking.setAttribute("stroke-linecap", "round");
+    pitMarking.setAttribute("class", "pit-lane");
+    this.pitGroup.appendChild(pitMarking);
+
+    const boxFrame = this.samplePathFrame(path.points, path.cumulative, path.boxDistance);
+    if (boxFrame) {
+      this.appendOrientedRect(this.pitGroup, boxFrame, {
+        width: tw * 0.72,
+        height: tw * 0.3,
+        normalOffset: 0,
+        fill: "rgba(255, 255, 255, 0.12)",
+        stroke: "rgba(255, 255, 255, 0.45)",
+        strokeWidth: 0.55,
+        className: "pit-box",
+        rx: 1,
+      });
+    }
+
+    const roleFill: Record<string, string> = {
+      entry: "#3ecf6e",
+      box: "#f0c040",
+      exit: "#e85d5d",
+      waypoint: "#c8a45a",
+    };
+    for (let i = 0; i < path.polyline.length; i++) {
+      const role = path.polyline[i].role;
+      if (role === "waypoint") continue;
+      const pt = path.points[i];
+      const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      dot.setAttribute("cx", String(pt.x));
+      dot.setAttribute("cy", String(pt.y));
+      dot.setAttribute("r", role === "box" ? "4.5" : "3.5");
+      dot.setAttribute("fill", roleFill[role] ?? roleFill.waypoint);
+      dot.setAttribute("stroke", "rgba(0,0,0,0.55)");
+      dot.setAttribute("stroke-width", "0.8");
+      dot.setAttribute("class", `pit-node pit-node--${role}`);
+      this.pitGroup.appendChild(dot);
+    }
+  }
+
+  private pitSpeedLimitKmh(): number {
+    const ms = this.renderedGeometry?.pitLane?.speedLimitMs;
+    return ms != null && ms > 0 ? Math.round(ms * 3.6) : PIT_LANE_SPEED_KMH;
+  }
+
+  /** Amber band + edge dashes for pit-lane speed-limited sections (entry→box, box→exit). */
+  private appendPitSpeedLimitMarkings(
+    points: SvgPoint[],
+    cumulative: number[],
+    boxDistance: number,
+    totalLength: number,
+    layout: ReturnType<SvgTrack["pitLayoutMetrics"]>,
+  ): void {
+    if (totalLength <= 0 || points.length < 2) return;
+
+    const tw = TRACK_ASPHALT_WIDTH;
+    const halfWidth = layout.tarmacWidth * 0.44;
+    const boxGap = tw * 0.4;
+    const sampleStep = Math.max(2.5, totalLength / 80);
+    const speedKmh = this.pitSpeedLimitKmh();
+
+    const zones: [number, number][] = [
+      [0, Math.max(0, boxDistance - boxGap)],
+      [Math.min(totalLength, boxDistance + boxGap), totalLength],
+    ].filter(([startD, endD]) => endD - startD > sampleStep);
+
+    const group = document.createElementNS(SVG_NS, "g");
+    group.setAttribute("class", "pit-speed-limit");
+
+    for (const [startD, endD] of zones) {
+      const centerD = this.pathSegmentByDistance(points, cumulative, startD, endD);
+      if (centerD) {
+        const band = document.createElementNS(SVG_NS, "path");
+        band.setAttribute("d", centerD);
+        band.setAttribute("fill", "none");
+        band.setAttribute("stroke", "rgba(255, 196, 48, 0.22)");
+        band.setAttribute("stroke-width", String(layout.tarmacWidth * 0.9));
+        band.setAttribute("stroke-linecap", "butt");
+        band.setAttribute("class", "pit-speed-limit-band");
+        group.appendChild(band);
+      }
+
+      for (const lateral of [-halfWidth, halfWidth]) {
+        const edgeD = this.offsetPathAlongPolyline(
+          points,
+          cumulative,
+          startD,
+          endD,
+          lateral,
+          sampleStep,
+        );
+        if (!edgeD) continue;
+        const edge = document.createElementNS(SVG_NS, "path");
+        edge.setAttribute("d", edgeD);
+        edge.setAttribute("fill", "none");
+        edge.setAttribute("stroke", "rgba(255, 196, 48, 0.82)");
+        edge.setAttribute("stroke-width", String(tw * 0.09));
+        edge.setAttribute("stroke-linecap", "round");
+        edge.setAttribute("class", "pit-speed-limit-edge");
+        group.appendChild(edge);
+      }
+    }
+
+    if (zones.length > 0) {
+      const [startD, endD] = zones[0];
+      const labelDist = startD + (endD - startD) * 0.5;
+      const frame = this.samplePathFrame(points, cumulative, labelDist);
+      if (frame) {
+        const label = document.createElementNS(SVG_NS, "text");
+        label.setAttribute("x", String(frame.x));
+        label.setAttribute("y", String(frame.y - tw * 0.35));
+        label.setAttribute(
+          "transform",
+          `rotate(${this.frameAngleDeg(frame)} ${frame.x} ${frame.y - tw * 0.35})`,
+        );
+        label.setAttribute("text-anchor", "middle");
+        label.setAttribute("class", "pit-speed-limit-label");
+        label.setAttribute("fill", "rgba(255, 210, 64, 0.95)");
+        label.setAttribute("font-size", String(tw * 0.38));
+        label.setAttribute("font-weight", "700");
+        label.textContent = `${speedKmh} km/h`;
+        group.appendChild(label);
+      }
+    }
+
+    this.pitGroup.appendChild(group);
   }
 
   /** Layer offsets from the race track centerline (SVG units, tied to asphalt width). */
@@ -3229,6 +3688,10 @@ export class SvgTrack {
     return innerM + bandW * boost;
   }
 
+  private segmentActiveAt(seg: TrackSurfaceSegment, t: number, padT: number): boolean {
+    return t >= seg.startT - padT && t <= seg.endT + padT;
+  }
+
   /** Painted outer edge of runoff / gravel / grass — matches drawn subgrade bands. */
   private visualSafetyZoneOuterMetersAt(
     segments: TrackSurfaceSegment[],
@@ -3237,11 +3700,12 @@ export class SvgTrack {
     side: "outboard" | "inboard",
   ): number {
     let best = this.subgradeBandInnerMeters(halfW);
+    const padT = RUNOFF_SAMPLE_PAD_T;
     const mergedDrawn = new Set<string>();
 
     for (const merged of this.buildMergedRunoffBands(segments)) {
       if (merged.side !== side) continue;
-      if (t < merged.startT - 1e-6 || t > merged.endT + 1e-6) continue;
+      if (t < merged.startT - padT || t > merged.endT + padT) continue;
       for (const seg of merged.segments) {
         mergedDrawn.add(`${seg.name}|${seg.startT}|${seg.endT}`);
       }
@@ -3255,10 +3719,43 @@ export class SvgTrack {
       if (seg.variant === "turf") continue;
       if (!barrierSideMatches(seg, side)) continue;
       if (mergedDrawn.has(`${seg.name}|${seg.startT}|${seg.endT}`)) continue;
-      if (t < seg.startT - 1e-6 || t > seg.endT + 1e-6) continue;
+      if (!this.segmentActiveAt(seg, t, padT)) continue;
       best = Math.max(best, this.subgradeBandOuterMeters(seg, t, halfW));
     }
     return best;
+  }
+
+  /** Local max along lap distance — no index wrap (wrap caused cross-lap radius bleed). */
+  private localMaxOuterProfile(profile: number[], radius = 3): number[] {
+    if (profile.length < 3 || radius <= 0) return profile;
+    const n = profile.length;
+    return profile.map((_, i) => {
+      let mx = profile[i];
+      for (let j = -radius; j <= radius; j++) {
+        const idx = i + j;
+        if (idx < 0 || idx >= n) continue;
+        mx = Math.max(mx, profile[idx]);
+      }
+      return mx;
+    });
+  }
+
+  /** Centroid inboard/outboard flips on tight corners — lock one sign per side for the lap. */
+  private resolveLockedLateralSign(
+    side: "outboard" | "inboard",
+    svgPoints: SvgPoint[],
+    cumulative: number[],
+    lap: number,
+  ): number {
+    let votes = 0;
+    for (let k = 0; k < 12; k++) {
+      const t = k / 12;
+      const d = this.distanceMToSvgAlong(t * lap);
+      const frame = this.sampleTrackFrame(svgPoints, cumulative, d, 0);
+      if (!frame) continue;
+      votes += this.lateralSignAt(frame, side) > 0 ? 1 : 0;
+    }
+    return votes >= 6 ? 1 : -1;
   }
 
   private barrierSegmentOuterMetersAt(
@@ -3369,40 +3866,32 @@ export class SvgTrack {
       180,
       Math.min(BARRIER_EDGE_SAMPLES, Math.round(this.fit.totalLength / 2.5)),
     );
-    const points: SvgPoint[] = [];
-    let lastOuterM: number | null = null;
-    let lastGoodT = -1;
-    const metersPerStep = lap / steps;
-    const maxOuterStepM = Math.max(0.85, metersPerStep * 2.8);
+    const outerProfile: number[] = [];
+    const stepMeta: Array<{ t: number; distanceM: number; d: number; halfW: number }> = [];
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const distanceM = t * lap;
       const d = this.distanceMToSvgAlong(distanceM);
       const halfW = this.halfWidthAtDistanceM(distanceM);
-      let outerM = this.barrierOuterMetersAt(segments, t, halfW, side);
-      if (outerM == null && lastOuterM != null && lastGoodT >= 0 && t - lastGoodT < 0.06) {
-        outerM = lastOuterM;
-      }
-      if (outerM == null) continue;
-      if (lastOuterM != null) {
-        const delta = outerM - lastOuterM;
-        if (Math.abs(delta) > maxOuterStepM) {
-          outerM = lastOuterM + Math.sign(delta) * maxOuterStepM;
-        }
-      }
-      lastOuterM = outerM;
-      lastGoodT = t;
+      stepMeta.push({ t, distanceM, d, halfW });
+      outerProfile.push(this.barrierOuterMetersAt(segments, t, halfW, side) ?? halfW + 8);
+    }
+    const smoothedOuter = this.localMaxOuterProfile(outerProfile, 4);
+    const lockedSign = this.resolveLockedLateralSign(side, svgPoints, cumulative, lap);
+    const points: SvgPoint[] = [];
+    for (let i = 0; i < stepMeta.length; i++) {
+      const { distanceM, d } = stepMeta[i];
+      const outerM = smoothedOuter[i];
       const frame = this.sampleTrackFrame(svgPoints, cumulative, d, 0);
       if (!frame) continue;
-      const sign = this.lateralSignAt(frame, side);
       const outerSvg = this.metersToLateralSvg(outerM, distanceM);
       points.push({
-        x: frame.x + sign * frame.nx * outerSvg,
-        y: frame.y + sign * frame.ny * outerSvg,
+        x: frame.x + lockedSign * frame.nx * outerSvg,
+        y: frame.y + lockedSign * frame.ny * outerSvg,
       });
     }
     if (points.length < 2) return [];
-    const pruned = this.prunePolylineSpikes(this.smoothPolylineLight(points), 6);
+    const pruned = this.prunePolylineSpikes(points, 8);
     if (pruned.length < 2) return pruned;
     const first = pruned[0];
     const last = pruned[pruned.length - 1];
@@ -3413,22 +3902,19 @@ export class SvgTrack {
   }
 
   private drawBarrierEdgePath(parent: SVGGElement, points: SvgPoint[]): void {
-    const runs = this.splitPolylineRuns(points, 42);
-    for (const run of runs) {
-      if (run.length < 2) continue;
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      path.setAttribute("d", this.pointsToPath(run, false));
-      path.setAttribute("fill", "none");
-      path.setAttribute(
-        "stroke",
-        this.broadcast ? "rgba(200, 90, 90, 0.72)" : "#1f5c34",
-      );
-      path.setAttribute("stroke-width", this.broadcast ? "1.35" : "1.4");
-      path.setAttribute("stroke-linejoin", "round");
-      path.setAttribute("stroke-linecap", "round");
-      path.setAttribute("class", "track-barrier-edge track-barrier-edge--loop");
-      parent.appendChild(path);
-    }
+    if (points.length < 2) return;
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", this.pointsToPath(points, false));
+    path.setAttribute("fill", "none");
+    path.setAttribute(
+      "stroke",
+      this.broadcast ? "rgba(200, 90, 90, 0.72)" : "#1f5c34",
+    );
+    path.setAttribute("stroke-width", this.broadcast ? "1.35" : "1.4");
+    path.setAttribute("stroke-linejoin", "round");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("class", "track-barrier-edge track-barrier-edge--loop");
+    parent.appendChild(path);
   }
 
   private drawSurfaceBands(
@@ -3740,11 +4226,12 @@ export class SvgTrack {
     }
   }
 
-  private metersToLateralSvg(lateralM: number, distanceM?: number): number {
-    const halfWidthM =
-      distanceM != null ? this.halfWidthAtDistanceM(distanceM) : this.defaultHalfWidthM;
-    if (halfWidthM <= 0) return 0;
-    return (lateralM / halfWidthM) * (TRACK_ASPHALT_WIDTH * 0.5);
+  /** Lateral world metres → SVG offset; scales vs default track width so width_profile shows in the ribbon. */
+  private metersToLateralSvg(lateralM: number, _distanceM?: number): number {
+    if (lateralM === 0) return 0;
+    const refHalfM =
+      this.defaultHalfWidthM > 0 ? this.defaultHalfWidthM : TRACK_ASPHALT_WIDTH / 2;
+    return (lateralM / refHalfM) * (TRACK_ASPHALT_WIDTH * 0.5);
   }
 
   private distanceMToSvgAlong(distanceM: number): number {

@@ -292,6 +292,8 @@ export interface SimSession {
   getRaceControl(): RaceControlPayload;
   submitCommand(entryId: string, command: string): boolean;
   debugRaceControl(payload: Record<string, unknown>): string | null;
+  exportCheckpoint(): Record<string, unknown>;
+  importCheckpoint(payload: Record<string, unknown>): boolean;
 }
 
 declare const sim: SimSession;

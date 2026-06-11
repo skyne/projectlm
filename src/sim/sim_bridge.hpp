@@ -11,6 +11,7 @@
 #include <vector>
 
 struct RaceConfig;
+struct SimCheckpointV1;
 
 struct RaceControlState {
   bool fcyActive = false;
@@ -23,6 +24,7 @@ struct RaceControlState {
   bool whiteFlagActive = false;
   bool redFlagActive = false;
   double redFlagSecondsRemaining = 0.0;
+  std::string redFlagReason;
   struct SurfaceHazardSummary {
     int sectorIndex = 0;
     std::string kind;
@@ -131,6 +133,10 @@ public:
   void applyCarConditions(const std::string &conditionsPath);
   const TeamConfig &teamConfig() const { return teamConfig_; }
 
+  SimCheckpointV1 captureCheckpoint() const;
+  bool restoreCheckpoint(const SimCheckpointV1 &checkpoint,
+                         std::string *errorOut = nullptr);
+
 private:
   RaceSession session_;
   TeamConfig teamConfig_;
@@ -158,6 +164,11 @@ private:
   void resetWeatherState();
   void processCommands();
   void loadTeamConfig(const std::string &staffConfigPath = "");
+
+  friend SimCheckpointV1 CaptureCheckpoint(const SimBridge &bridge);
+  friend bool RestoreCheckpoint(SimBridge &bridge,
+                               const SimCheckpointV1 &checkpoint,
+                               std::string *errorOut);
 };
 
 extern std::vector<SimEvent> *g_raceEventOut;

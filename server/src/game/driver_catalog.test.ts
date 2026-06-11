@@ -1,17 +1,30 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { FleetCarPayload } from "../ws_protocol";
+import path from "node:path";
 import {
   buildDriverContractMap,
+  computeBronzeDriverPointPool,
+  computeBronzeDriverTemplate,
+  computeDriverPointCost,
+  createCustomBronzeDriver,
+  seedAdaptabilityForTier,
   defaultDriverAssignments,
   ensureDriverIds,
   filterRosterByContract,
+  isCustomDriver,
+  isSignedDriver,
+  listWecCatalogDriverIds,
+  loadFreeAgentDrivers,
   migrateDriverAssignments,
   sanitizeAssignedDriverIds,
   stableCatalogDriverId,
+  validateCustomDriver,
   validateExclusiveDriverAssignments,
   type DriverProfilePayload,
 } from "./driver_catalog";
+
+const REPO_ROOT = path.resolve(__dirname, "../../..");
 
 function sampleDriver(name: string, id: string): DriverProfilePayload {
   return {
@@ -142,5 +155,120 @@ describe("driver_catalog contracts", () => {
     );
     assert.equal(filtered.length, 1);
     assert.equal(filtered[0]!.name, "Teammate");
+  });
+});
+
+describe("custom bronze drivers", () => {
+  it("derives point pool from WEC bronze preset average", () => {
+    const pool = computeBronzeDriverPointPool(REPO_ROOT);
+    assert.equal(pool, 7);
+  });
+
+  it("creates custom drivers at bronze baseline within pool", () => {
+    const pool = computeBronzeDriverPointPool(REPO_ROOT);
+    const driver = createCustomBronzeDriver(REPO_ROOT);
+    assert.equal(driver.tier, "Bronze");
+    assert.equal(driver.origin, "custom");
+    assert.ok(isCustomDriver(driver));
+    assert.equal(validateCustomDriver(driver, pool), null);
+    assert.equal(computeDriverPointCost({ ...driver, tier: "Bronze" }), pool);
+  });
+
+  it("template matches averaged bronze stats", () => {
+    const template = computeBronzeDriverTemplate(REPO_ROOT);
+    assert.equal(template.tier, "Bronze");
+    assert.equal(template.dryPace, 70);
+    assert.ok((template.adaptability ?? 0) >= 55);
+    assert.ok((template.adaptability ?? 0) <= 65);
+  });
+
+  it("seeds adaptability from FIA license tier with stable variance", () => {
+    const a = seedAdaptabilityForTier("Platinum", "Earl Bamber|NZ");
+    const b = seedAdaptabilityForTier("Platinum", "Earl Bamber|NZ");
+    const bronze = seedAdaptabilityForTier("Bronze", "James Kell|GB");
+    assert.equal(a, b);
+    assert.ok(a >= 82 && a <= 94);
+    assert.ok(bronze >= 53 && bronze <= 63);
+    assert.ok(a > bronze);
+  });
+
+  it("recognises WEC catalog drivers by stable id", () => {
+    const catalogIds = new Set(listWecCatalogDriverIds(REPO_ROOT));
+    const lopez: DriverProfilePayload = {
+      id: crypto.randomUUID(),
+      name: "José María López",
+      nationality: "AR",
+      tier: "Gold",
+      dryPace: 86,
+      wetPace: 80,
+      consistency: 87,
+      overtaking: 82,
+      defending: 85,
+      trafficManagement: 82,
+      rollingStart: 80,
+      standingStart: 78,
+      setupFeedback: 76,
+      tireManagement: 80,
+      fuelSaving: 76,
+      composure: 82,
+      nightPace: 78,
+      rainRadar: 74,
+      stamina: 82,
+      maxStintHours: 3,
+    };
+    assert.ok(isSignedDriver(lopez, catalogIds));
+    assert.ok(!isCustomDriver(lopez, catalogIds));
+  });
+
+  it("skips point pool for signed drivers", () => {
+    const signed: DriverProfilePayload = {
+      id: stableCatalogDriverId("Earl Bamber", "NZ"),
+      origin: "signed",
+      name: "Earl Bamber",
+      nationality: "NZ",
+      tier: "Platinum",
+      dryPace: 95,
+      wetPace: 90,
+      consistency: 92,
+      overtaking: 88,
+      defending: 86,
+      trafficManagement: 90,
+      rollingStart: 88,
+      standingStart: 86,
+      setupFeedback: 84,
+      tireManagement: 88,
+      fuelSaving: 86,
+      composure: 94,
+      nightPace: 90,
+      rainRadar: 86,
+      stamina: 88,
+      maxStintHours: 3,
+    };
+    assert.ok(isSignedDriver(signed));
+    assert.equal(validateCustomDriver(signed, 7), null);
+  });
+
+  it("loads free agents without duplicating 2026 WEC catalog drivers", () => {
+    const catalogIds = new Set(listWecCatalogDriverIds(REPO_ROOT));
+    const freeAgents = loadFreeAgentDrivers(REPO_ROOT);
+    assert.ok(freeAgents.length >= 20);
+    const ids = new Set<string>();
+    for (const entry of freeAgents) {
+      const id = entry.driver.id!;
+      assert.ok(!catalogIds.has(id), `${entry.driver.name} is on 2026 WEC grid`);
+      assert.ok(!ids.has(id), `duplicate free agent ${entry.driver.name}`);
+      ids.add(id);
+    }
+  });
+
+  it("includes female free agents from ELMS and IMSA", () => {
+    const females = loadFreeAgentDrivers(REPO_ROOT).filter(
+      (e) => e.driver.gender === "female",
+    );
+    const names = new Set(females.map((e) => e.driver.name));
+    assert.ok(names.has("Sarah Bovy"));
+    assert.ok(names.has("Michelle Gatting"));
+    assert.ok(names.has("Tatiana Calderón"));
+    assert.ok(females.length >= 7);
   });
 });

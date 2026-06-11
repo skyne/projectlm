@@ -7,6 +7,8 @@ exports.isStaffSlotFilled = isStaffSlotFilled;
 exports.findVacantCarsForRole = findVacantCarsForRole;
 exports.assignStaffToCar = assignStaffToCar;
 exports.staffForCar = staffForCar;
+exports.releaseStaffSlot = releaseStaffSlot;
+exports.moveStaffBetweenCars = moveStaffBetweenCars;
 exports.estimateWeeklySalaries = estimateWeeklySalaries;
 exports.ROLE_LABELS = {
     engineer: "Engineer",
@@ -164,6 +166,54 @@ function assignStaffToCar(staff, carId, listing) {
 }
 function staffForCar(staff, carId) {
     return staff.filter((member) => member.assignedCarId === carId);
+}
+function releaseStaffSlot(staff, carId, role) {
+    const idx = staff.findIndex((s) => s.role === role && s.assignedCarId === carId);
+    if (idx < 0)
+        return { error: "Staff slot not found" };
+    const member = staff[idx];
+    if (!isStaffSlotFilled(member)) {
+        return { error: "That slot is already vacant" };
+    }
+    const next = [...staff];
+    next[idx] = createJuniorPlaceholder(role, carId);
+    return next;
+}
+function moveStaffBetweenCars(staff, fromCarId, toCarId, role) {
+    if (fromCarId === toCarId) {
+        return { error: "Choose a different car" };
+    }
+    const fromIdx = staff.findIndex((s) => s.role === role && s.assignedCarId === fromCarId);
+    const toIdx = staff.findIndex((s) => s.role === role && s.assignedCarId === toCarId);
+    if (fromIdx < 0 || toIdx < 0)
+        return { error: "Staff slot not found" };
+    const fromMember = staff[fromIdx];
+    const toMember = staff[toIdx];
+    if (!isStaffSlotFilled(fromMember)) {
+        return { error: "No crew member to move from that slot" };
+    }
+    const next = [...staff];
+    if (!isStaffSlotFilled(toMember)) {
+        next[fromIdx] = createJuniorPlaceholder(role, fromCarId);
+        next[toIdx] = {
+            ...fromMember,
+            id: staffId(role, toCarId),
+            assignedCarId: toCarId,
+        };
+    }
+    else {
+        next[fromIdx] = {
+            ...toMember,
+            id: staffId(role, fromCarId),
+            assignedCarId: fromCarId,
+        };
+        next[toIdx] = {
+            ...fromMember,
+            id: staffId(role, toCarId),
+            assignedCarId: toCarId,
+        };
+    }
+    return next;
 }
 function estimateWeeklySalaries(staff) {
     return staff.reduce((sum, member) => sum + member.salaryPerRace, 0);

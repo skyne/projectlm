@@ -305,16 +305,20 @@ void SanitizeRedFlagEmergencyPlan(PitStopPlan &plan, const CarConfig &car,
 }
 
 bool ShouldEnterPitLane(const PitStopState &pit, double normalizedT,
-                        bool lapJustCompleted, int currentLap,
-                        bool redFlagActive) {
+                        bool lapJustCompleted, int currentLap, double entryT,
+                        bool redFlagActive, double entryWindow) {
   if (!pit.pendingEnter || pit.inPit)
     return false;
   if (lapJustCompleted)
     return true;
   (void)redFlagActive;
-  // Pit entry only at the start/finish straight — no mid-lap teleport. Cars that
-  // cannot reach the pits must stop on track and use marshal recovery instead.
+  // Pit entry only at the authored merge zone — no mid-lap teleport.
   if (currentLap <= 1)
     return false;
-  return normalizedT >= 0.985 || normalizedT <= 0.015;
+  const double t = std::clamp(entryT, 0.0, 1.0);
+  const double window = std::max(0.005, entryWindow);
+  if (t >= 0.5) {
+    return normalizedT >= t - window || normalizedT <= window;
+  }
+  return normalizedT >= t - window && normalizedT <= t + window;
 }

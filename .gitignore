@@ -74,6 +74,7 @@ Testing/
 # Node / web stack (Phase 3)
 node_modules/
 viewer/dist/
+tools/track-editor/dist/
 bindings/node/build/
 .dev-viewer.pid
 
@@ -92,6 +93,9 @@ scripts/generate_assets/__pycache__/
 tools/mm-extract/.venv/
 tools/mm-extract/.cache/
 tmp/mm-assets/
+
+# Track editor drafts (local authoring scratch)
+tracks/drafts/*.json
 
 # macOS
 .DS_Store

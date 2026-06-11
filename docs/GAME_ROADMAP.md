@@ -1,6 +1,6 @@
 # ProjectLM — Engineering / Manager Game Roadmap
 
-> **Vision:** Players build cars from modular parts (Lego-style assembly now; custom part designer later), then compete in multiclass endurance races while managing strategy — setup, stints, pit stops, reliability, and class rules — deeper than a typical motorsport manager. **The shipped game runs in Unreal Engine; this repo is the simulation core that UE consumes.**
+> **Vision:** Players build cars from modular parts (Lego-style assembly now; custom part designer later), then compete in multiclass endurance races while managing strategy — setup, stints, pit stops, reliability, and class rules — deeper than a typical motorsport manager. **This repo is the simulation core + browser manager (`viewer/`); a separate Unreal Engine game is optional future work (see end of doc).**
 
 This document is the living design plan. Sections marked **🔶 YOUR INPUT** are deliberate decision points — please comment with preferences before we lock implementation.
 
@@ -8,27 +8,26 @@ This document is the living design plan. Sections marked **🔶 YOUR INPUT** are
 
 | Topic | Choice |
 |-------|--------|
-| **Unreal scope at launch** | **B** — 3D race view + manager UI (pit wall, race director); garage Lego builder → Phase 9 UE-3/UE-4 |
-| **Track authorship** | **C** — shared `track.json` is single source of truth for sim and UE |
-| **Track geometry** | Real Catmull-Rom spline; sim progress = arc length; UE renders same control points |
+| **Ship target** | **Browser manager** (`viewer/` + `server/`) — primary dev and play surface |
+| **Track authorship** | **C** — shared `track.json` is single source of truth for sim (and any future 3D client) |
+| **Track geometry** | Real Catmull-Rom spline; sim progress = arc length |
 | **Phase 3 viewer stack** | **TypeScript + Vite** in `viewer/` |
 | **Phase 3 viewer scope** | **B** — SVG track, car dots, leaderboard, event log, time-scale, pause/resume |
 | **Phase 3 transport** | **Node native binding** → WebSocket in Node only; **no networking in C++ sim** |
 
 ---
 
-## Two-project architecture (sim core + Unreal game)
+## Architecture (sim core + browser manager)
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  UNREAL ENGINE GAME (separate repo / sibling project)            │
-│  — garage UI, Lego part meshes, race director, pit wall          │
-│  — track & car rendering, cameras, audio, menus, save UI          │
-│  — interpolates visuals between sim ticks                       │
+│  BROWSER MANAGER (viewer/ + server/) — primary UI               │
+│  — garage, Race Hub, pit wall, season/career, multiplayer       │
+│  — SVG track map, telemetry, engineer LLM                         │
 └───────────────────────────┬──────────────────────────────────────┘
-                            │  C++ API / events / serialized state
+                            │  WebSocket + Node N-API binding
 ┌───────────────────────────▼──────────────────────────────────────┐
-│  PROJECTLM SIM CORE (this repo)                                  │
+│  PROJECTLM SIM CORE (C++ — this repo)                            │
 │  — physics, timing, multiclass rules, wear, fuel, pits           │
 │  — car compiler, part catalog logic, AI strategy resolution      │
 │  — headless CLI for dev, testing, batch balance runs             │
@@ -37,16 +36,17 @@ This document is the living design plan. Sections marked **🔶 YOUR INPUT** are
 
 **Division of labour**
 
-| Sim core (this repo) | Unreal game |
-|----------------------|-------------|
-| Tick physics, lap timing, positions | 3D track, car meshes, VFX |
-| Part stats, legality, BoP, compilation | Lego garage builder UI |
-| Pit/stint/strategy resolution | Pit wall & race manager screens |
-| AI opponent logic | Presentation, animation, sound |
-| Deterministic race state | Save/load UI, career/meta screens |
-| Config → compiled car data | DataTables / assets fed from sim schemas |
+| Sim core (C++) | Browser manager (`viewer/`) |
+|----------------|----------------------------|
+| Tick physics, lap timing, positions | Track map, leaderboard, pit wall UI |
+| Part stats, legality, BoP, compilation | Garage builder, car stats panels |
+| Pit/stint/strategy resolution | Race Hub, setup sheets, engineer LLM |
+| AI opponent logic | Season calendar, HQ, negotiations |
+| Deterministic race state | Meta save/load, career progression |
 
-**Principle:** Simulation stays pure, deterministic, and **UI-agnostic** — no `std::cout` in core paths, no rendering assumptions. Manager decisions arrive as **commands**; results leave as **state snapshots + events** that UE consumes each tick.
+**Principle:** Simulation stays pure, deterministic, and **UI-agnostic** — no `std::cout` in core paths, no rendering assumptions. Manager decisions arrive as **commands**; results leave as **state snapshots + events** consumed by the server/viewer each tick.
+
+*Optional future: a separate Unreal Engine client could link the same C++ core — see [Future / optional — Unreal Engine](#future--optional--unreal-engine-game-ex-phase-9).*
 
 ---
 
@@ -75,11 +75,11 @@ This document is the living design plan. Sections marked **🔶 YOUR INPUT** are
 └──────────────────────────┬──────────────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
-│  Data Layer (text configs → JSON schemas → UE DataTables)   │
+│  Data Layer (text configs → JSON schemas)                    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-CLI (`main.cpp`) becomes a **thin dev harness** over the same API Unreal will call.
+CLI (`main.cpp`) is a **thin dev harness** over the same `SimBridge` API the Node binding uses.
 
 ---
 
@@ -117,7 +117,7 @@ How much data do you want per lap?
 
 ## Phase 2 — Tests & Project Structure *(complete)*
 
-**Goal:** Organize the growing codebase and lock in regression safety before any web/Node work. API consumers (Phase 3 viewer, Phase 9 UE) should build on a tested, navigable layout.
+**Goal:** Organize the growing codebase and lock in regression safety before any web/Node work. API consumers (Phase 3 viewer; optional UE client later) should build on a tested, navigable layout.
 
 ### Phase 2 overview
 
@@ -190,7 +190,7 @@ projectlm/
 
 ## Phase 3 — API & Web Visualization *(complete)*
 
-**Goal:** Expose the sim through a stable `SimBridge` API and prove it with a browser viewer. Delivers the **same read-only C++ surface** UE will link. Parts expansion → Phase 4. Manager commands → Phase 6.
+**Goal:** Expose the sim through a stable `SimBridge` API and prove it with a browser viewer. Parts expansion → Phase 4. Manager commands → Phase 6.
 
 ### Phase 3 overview
 
@@ -222,8 +222,8 @@ projectlm/
 | `submitCommand()` — pit, setup, driver mode | **6** | ✅ Partial — pit, driver mode, setup deltas in dev viewer |
 | Pit enter/exit affecting track progress | **6** | ✅ Pit lane + stop time model |
 | Save/load `RaceSession` | **8** | Quality / persistence |
-| `libprojectlm` static lib packaging | **8 / 9** | UE ThirdParty build |
-| JSON schemas for cars / save games | **7 / 9** | Meta + UE DataTables |
+| `libprojectlm` static lib packaging | **8** (optional **9**) | Static lib for tooling; UE plugin only if ex-Phase 9 happens |
+| JSON schemas for cars / save games | **7 / 8** | Meta save games + tooling |
 | Remove all `iostream` from CLI | **8** | Cleanup pass |
 
 ---
@@ -315,7 +315,7 @@ Web stack defaults to `configs/race_config_web.txt` (3-class grid via `entries.t
 
 ## Phase 4 — Parts & Garage (Lego builder) *(complete)*
 
-**Goal:** Expand the modular part catalog so build choices meaningfully affect endurance outcomes. Sim-side catalog + compilation only in this phase — garage *UI* ships in Phase 9 (UE); unlock/R&D rules tie into Phase 7 meta.
+**Goal:** Expand the modular part catalog so build choices meaningfully affect endurance outcomes. Sim-side catalog + compilation in this phase; garage UI in `viewer/`; unlock/R&D rules tie into Phase 7 meta.
 
 ### Phase 4 overview
 
@@ -345,7 +345,7 @@ Each part: catalog entry in `configs/part_catalog.txt`, enum + struct in `car_pa
 - **Compatibility matrix** (next): e.g. ground-effect floor requires wingless rear — extend `permitsWinglessPitch` pattern to a general `part_compatibility.txt` or catalog flags
 - **Attachment point IDs**: stable string per slot (`chassis.mount.front_aero`) for Phase 9 UE mesh snapping
 
-*Garage builder UI, part meshes, live stats panel → Phase 9 UE. Part designer tool → far future.*
+*Garage builder UI + live stats panel → `viewer/` (done). 3D part meshes → optional ex-Phase 9. Part designer tool → far future.*
 
 ### 🔶 YOUR INPUT: Part unlock model
 How do players get parts in the *game* (not sim dev)?
@@ -472,6 +472,97 @@ Parallel track to Phase 5/6 — see [Multiplayer Options Plan](.cursor/plans/mul
 | **6-8** | Pre-race stint plan UI + strategist integration | ⬜ |
 | **6-9** | Mechanic skill → pit duration variance | ⬜ |
 | **6-10** | Dynamic weather ↔ setup/strategy coupling in engineer prompts | ⬜ |
+| **6-11** | **Setup workbench rework** — UX, diff, hints, driver compromise (see below) | ⬜ |
+
+### Setup workbench rework (6-11)
+
+**Problem today:** Setup is spread across **garage chassis panels** (`CarGarage.ts` — dense sliders), **Pre-Session Briefing** (`PreSessionBriefing.ts` — long slider grid per car), and **pit stop deltas** (`PitStopModal.ts`). No unified visual language. Hard to see **what changed** vs last time. Stat bars exist but don't guide the player toward a good balance. **Drivers don't shape setup** — three-driver endurance rosters are a sim reality with no UI tension. Not yet wired to **part understanding** windows (HQ-5 PD-7/8) or engineer skill.
+
+**Goal:** One **Setup Workbench** experience — visually clear, diff-friendly, hint-driven — used for garage baseline, per-track weekend sheet, and (read-only compare) mid-race pit tweaks.
+
+#### Locked design
+
+| Topic | Choice |
+|-------|--------|
+| Primary surfaces | **Garage** (platform baseline) + **Race Hub → Pre-Session** (per-track sheet) — same component, different save targets |
+| Visual direction | Card-based groups (aero / balance / chassis / alignment), balance **spider or rail diagram**, delta chips on changed fields |
+| Previous setup | Always show **diff vs reference** — toggle: garage baseline \| last session \| last saved preset |
+| Hints | **Compiled performance rails** (grip, downforce, drag, balance, tyre life) + engineer **understanding window** overlay + short natural-language tip |
+| Drivers | Each driver has **preference offsets** per setup axis; multi-driver roster shows **compromise quality** |
+| Perfect setup | No single “correct” answer — optimal is **track + weather + stint plan + driver roster** dependent; hints narrow search space |
+
+#### UX requirements
+
+| Area | Requirement |
+|------|-------------|
+| **Layout** | Left: grouped controls. Centre: live **balance / aero / tyre** summary. Right: **diff panel** + driver roster strip |
+| **Diff** | Changed fields highlighted; `−0.02 wing`, `+2 mm front RH` vs selected reference; “revert field” / “revert all” |
+| **Hints** | Per-axis: green = inside understanding window, amber = edge, red = outside known-good band; hover shows engineer note |
+| **Performance numbers** | Reuse `compileCarStats` bars with **delta vs reference** (+/− on grip, DF, drag, cornering, tyre stress) |
+| **High-level tips** | Rule + LLM-light templates: “More front wing — high-speed corners improve, straight loss ~X”; gated by engineer `setupFeedback` skill |
+| **Track context** | Track map chip, weather forecast strip, session type (practice / quali / race) affects default bias |
+| **Mobile / density** | Collapsible sections; primary axes visible without scroll (wing, bias, rake, one spring pair) |
+
+#### Driver setup preferences (endurance)
+
+Drivers are not identical — each has a **comfort vector** on setup axes (ideal offset per field). **No `adaptability` stat today** — add as part of SU-6 (see below).
+
+```
+driverPreference[driverId][axis] = ideal offset + base tolerance band
+effectiveTolerance = baseTolerance * adaptabilityFactor(driver.adaptability)
+adaptabilityFactor = lerp(0.75, 1.35, adaptability / 100)   # narrow ↔ wide comfort window
+```
+
+| Stat | Role (distinct) |
+|------|-----------------|
+| **`adaptability`** *(new)* | How wide a setup band the driver accepts before pace/comfort suffers — **flexible triers** vs **narrow specialists** |
+| **`setupFeedback`** *(exists)* | How **clear/useful** their radio notes are when you change setup — not how wide they tolerate it |
+| **`composure`** *(exists)* | Mistakes under pressure — orthogonal to setup tolerance |
+
+High **adaptability** → easier three-driver compromise (less pace penalty off their ideal). Low adaptability + sharp preferences → fast when happy, visibly uncomfortable otherwise.
+
+| UI element | Behaviour |
+|------------|-----------|
+| **Driver strip** | 1–3 assigned drivers with headshot / name; stint order optional |
+| **Per-driver satisfaction** | Icon or bar: happy ↔ uncomfortable on **current** sheet |
+| **Compromise meter** | Aggregate when drivers disagree — “Balanced” / “Favours Marco” / “No one happy” |
+| **Optimize for** | Dropdown: *All drivers (balanced)* \| *Stint 1 driver* \| *Quali driver* — adjusts weighting |
+| **Feedback lines** | In-race + workbench: driver quotes from `setupFeedbackForChange` (sim already has hooks) |
+
+**Three-driver tension (design intent):** Player cannot max every driver. Quali driver may want sharp front; endurance stints want stable tyre life. Choosing a **compromise baseline** is the puzzle — strategist / engineer skill widens acceptable band or suggests which driver to favour for this session.
+
+**Sim hook (proposed):** `paceFactor` and `setupFeedback` quality scale with distance from that driver's preference band; compromise setup uses weighted centre.
+
+#### Integration with part understanding (HQ-5)
+
+- Understanding **centre** → default slider position / suggestion chip
+- Understanding **width** → green hint band on each affected axis
+- New part fitted → axes tagged in `setup_axes` metadata show widened uncertainty until `partUnderstanding` grows
+- `setup_hunt` briefing accelerates **contextFamiliarity** — workbench shows “Spa learning +12%” after practice
+
+#### Deliverables
+
+| ID | Item | Status |
+|----|------|--------|
+| **SU-1** | `SetupWorkbench` component — shared shell, sections, reference/diff model | ⬜ |
+| **SU-2** | Visual redesign (balance diagram, delta chips, collapsible groups) | ⬜ |
+| **SU-3** | Reference selector + field-level diff vs garage / last session / saved preset | ⬜ |
+| **SU-4** | Performance rails with **delta vs reference** + axis hint bands (understanding); all fields use HX HelpTip | ⬜ |
+| **SU-5** | Engineer tips strip (skill-gated; template + optional LLM) | ⬜ |
+| **SU-6** | Driver preference model + **`adaptability`** stat + roster strip + compromise meter | ⬜ |
+| **SU-7** | Wire into **Garage** (platform) and **Pre-Session Briefing** (per-track) | ⬜ |
+| **SU-8** | Pit stop modal: read-only compare + limited deltas consistent with workbench | ⬜ |
+| **SU-9** | Sim: driver preference distance → pace / feedback quality | ⬜ |
+
+**Suggested order**
+
+```
+SU-1 shell + SU-3 diff  →  SU-4 hints/rails  →  SU-2 visual polish
+    →  SU-6 driver compromise  →  SU-7 garage + briefing migration
+    →  SU-4 understanding bands (after PD-7)  →  SU-8 pit  →  SU-9 sim
+```
+
+*Replaces:* scattered `chassis-setup-panel` / `pre-session-slider-grid` patterns in `CarGarage.ts` and `PreSessionBriefing.ts`.
 
 ### Manager actions (proposed MVP set)
 
@@ -514,7 +605,7 @@ option B with a mix of D, staff should give suggetsions, how good these should d
 **✅ Merged to `main` (Jun 2026):**
 
 - **Garage:** per-axle ride height, springs, ARB, dampers; alignment (camber/toe) and final drive
-- **Race weekend:** per-track setup sheet in Race Hub (merged onto garage build at session start, not saved to garage)
+- **Race weekend:** per-track setup sheet in Pre-Session Briefing (functional but clunky — **6-11 rework** targets this)
 - **Mid-race:** pit modal + quick setup buttons (wing, brake bias, suspension deltas); engineer skill gates command magnitude
 - **Live telemetry:** wing, bias, ride heights, springs, ARB, camber on pit wall readout
 - **AI grid:** track presets applied to AI car configs at race build
@@ -548,26 +639,288 @@ mix of B, C and D, dbut dont fix on how many drivers are assigned for a car, cre
 |-------|--------|
 | Staff scope | **Per car** — engineer, mechanic, strategist assigned per fleet car |
 | Progression | Staff gain **experience** (and slow skill growth) over the season |
-| Facilities | **Slice 5 only** — no facility upgrades until core staff loop is solid |
+| Facilities | **Gated part development** — see [Personnel progression](#personnel-progression-hq-3) and [Part development](#part-development--rd-hq-5) |
 | Unavailability | **Yes** — ill / injured / poached events with interim cover |
-| R&D | Engineer skill **multiplies** `rdPoints` earned (Slice 3) |
+| R&D | **Part projects** on any owned part — player picks focus: **performance**, **reliability**, or **understanding** (not just flat unlocks) |
 
 ### HQ & staff slices
 
 | Slice | Status | Notes |
 |-------|--------|-------|
 | **HQ-1** Per-car roster + UI | ✅ | `staff.ts` migration, Team HQ matrix, Race Hub staff row, entry-scoped `staff.txt` |
-| **HQ-2** Economy + market | ⬜ | Salaries, hire/fire, staff market, unavailability rolls |
-| **HQ-3** Progression + race hooks | ⬜ | Experience/skill/morale; engineer setup suggestions; R&D multiplier |
-| **HQ-4** Sim pit/strategy | ⬜ | Mechanic pit variance; strategist stint plan + alerts (needs Phase 6 pit depth) |
-| **HQ-5** Facilities | ⬜ | Workshop, engineering office, strategy room, simulator, scouting |
+| **HQ-2** Economy + market | 🟡 | Salaries, hire/fire, staff market on `main`; unavailability rolls ⬜ |
+| **HQ-3** Personnel progression | 🟡 | XP/level loop exists for private tests only — see below |
+| **HQ-4** Sim pit/strategy | 🟡 | Mechanic pit variance in sim; strategist stint alerts ⬜ |
+| **HQ-5** Part development + facilities | ⬜ | Facility gates, in-house parts, reliability, setup knowledge — see below |
+| **HX** In-game help & glossaries | ⬜ | HelpTip + glossary for abbreviations/stats — see below |
 
 *Branch `feature/hq-staff-slice1` merged to `main` (Jun 2026); worktree closed.*
+
+---
+
+### Personnel progression (HQ-3)
+
+**Problem today:** `progression.ts` awards XP → level → stat bumps, but **only on private/joint test completion**. Championship weekends award nothing. Staff bumps are generic `+1 skill`; drivers only alternate `setupFeedback` / `dryPace`. Team HQ “Development Programme” tab is **R&D parts**, not people — confusing label.
+
+**Locked design**
+
+| Topic | Choice |
+|-------|--------|
+| Primary XP source | **Championship weekends** (practice / quali / race); private tests = bonus multiplier |
+| Staff XP | Only crew **assigned to cars that participated** in the session |
+| Staff level-ups | **Role-specific** — engineer / mechanic / strategist grow different stats |
+| Driver level-ups | Rotate **endurance-relevant** stats (stamina, tire mgmt, wet, consistency, …) — not just dry pace |
+| Off-week training | **1–2 slots per off-week** — budget + time actions (no new buildings required for v1) |
+| Facilities hook | Simulator / pit lane / data room **multiply** training yields (HQ-5, later) |
+
+**XP awards (proposed)**
+
+| Session | Drivers | Staff (per assigned car) |
+|---------|---------|--------------------------|
+| Practice | Small | Small |
+| Qualifying | Medium (runners) | Small |
+| Race | Large (laps + finish + class) | Medium–large |
+| DNF / NC | Reduced, not zero | Partial if car ran |
+
+**Staff level-up tracks (auto or pick-one)**
+
+| Role | Gains on level |
+|------|----------------|
+| Engineer | Setup range, feedback quality, R&D point multiplier |
+| Mechanic | Pit speed, repair efficiency, reliability diagnosis |
+| Strategist | Briefing/stint quality, fuel model, weather reads |
+
+**Off-week training actions (v1)**
+
+| Action | Effect |
+|--------|--------|
+| Driver simulator | Driver XP burst or targeted stat |
+| Crew pit drills | Mechanic XP / pit variance |
+| Data review | Engineer XP / setup feedback |
+| Strategy tabletop | Strategist XP / briefing defaults |
+
+**Deliverables**
+
+| ID | Item | Status |
+|----|------|--------|
+| **HQ-3a** | `applyWeekendProgression()` on practice / quali / race | ⬜ |
+| **HQ-3b** | Role-specific staff level rewards | ⬜ |
+| **HQ-3c** | Expanded driver stat rotation | ⬜ |
+| **HQ-3d** | Off-week training UI + costs in Team HQ | ⬜ |
+| **HQ-3e** | Post-race progression overlay for all session kinds | ⬜ |
+| **HQ-3f** | Rename/split R&D tab vs “Crew Development” panel | ⬜ |
+
+*Existing:* `progression.ts`, XP bars in Team HQ / Driver Center, `staff.txt` + `drivers.txt` export skill bumps to sim.
+
+---
+
+### Part development & R&D (HQ-5)
+
+**Problem today:** R&D is a flat point shop (`RD_UNLOCKS` — two catalog parts). No facilities, no per-part instance state, no **reliability** stat, no **understanding** (setup windows). Work is not modeled on **parts you already own** — only “unlock new thing”.
+
+**Vision:** Teams don't only **create** parts — they **work on parts already in the garage** (in-house built *or* bought off the shelf). Between weekends the player assigns R&D / homework to a specific **owned part instance** and picks **one focus**:
+
+| Focus | What improves | Player-facing effect |
+|-------|----------------|----------------------|
+| **Performance** | Part stats toward `part_catalog.txt` ceiling | More downforce, less mass, better cooling, etc. |
+| **Reliability** | Failure / wear / damage resistance | Fewer DNFs, slower degradation, safer to push stints |
+| **Understanding** | How well the team knows **how the part works** | Better setup **priors** everywhere + tighter windows where the car has run — transfers across tracks and sibling part changes (e.g. new engine, same wing) |
+
+All three apply to the **same owned part** over time. A bought monocoque at 98% catalog performance might still have low **understanding** (wide setup windows) and unknown **reliability** (supplier didn't share failure data) — the player chooses what to work on next.
+
+#### Acquiring parts (how a part enters the garage)
+
+| Path | Starting state | Typical follow-up work |
+|------|----------------|------------------------|
+| **Develop new in-house** | Below catalog ceiling on performance; reliability/understanding low | Any focus — often performance first, then understanding |
+| **Buy shelved / supplier** | Near catalog ceiling on performance; reliability/understanding often partial or unknown | Reliability validation or understanding, not raw pace |
+| **License / unlock (current shop)** | Migrate to supplier package or starter kit | Same as bought |
+
+**Facility gates** (required to *start* certain categories — not per focus):
+
+| Facility | Unlocks development on |
+|----------|------------------------|
+| Wind tunnel | Aero parts (front/rear wing, floor, …) |
+| Carbon fabrication + design studio | Monocoque / chassis structures |
+| Dyno / test cell | Powertrain, exhaust, hybrid |
+| Composite shop | Bodywork, cooling ducts |
+
+#### Part instance state (per owned part)
+
+Each part in the fleet inventory is an **instance**, not just a catalog ID:
+
+```
+PartInstance {
+  catalogId, source: inhouse | shelved | licensed
+  performanceMaturity   # 0..1 toward catalog stat ceiling
+  reliabilityMaturity # 0..1 toward safe / durable operation
+  partUnderstanding     # 0..1 — intrinsic: how the part behaves (transfers)
+  contextFamiliarity    # per (fleetCarId, trackId) — local trim knowledge
+}
+```
+
+**Understanding is two layers** (not only per-car/per-track):
+
+| Layer | Meaning | Transfers when… |
+|-------|---------|-----------------|
+| **`partUnderstanding`** | Team knows *how this part works* — sensitivity, operating window, what trim directions usually help | New track (better initial guess), new engine on same car (wing knowledge still helps), second car fitted with same part instance |
+| **`contextFamiliarity`** | Team knows *this exact combo* on *this circuit* — tight optimal band | Does **not** fully transfer; grows with `setup_hunt`, races, track-specific R&D |
+
+Example: High **partUnderstanding** on a front wing → at a never-visited track, engineer suggestions start as a **reasonable centred range** (“this wing usually wants lower rake / more front flap”), not random. After **contextFamiliarity** at Spa, that same wing’s Spa window **tightens** further. Swap the engine — **partUnderstanding** on the wing is unchanged; only **cross-coupled** axes (balance, cooling, rake) get a partial familiarity penalty, not a full reset.
+
+**Performance focus**
+
+```
+effective_stat = lerp(inhouse_base, catalog_max, performanceMaturity)
+performanceMaturity += f(rd_budget, engineer_skill, facility_tier, off_week_slots)
+```
+
+**Reliability focus**
+
+```
+reliability_score += f(rd_budget, fabrication_skill, facility_tier)
+# Pushing performance hard without reliability work = hidden risk (wear, failure rate)
+# Active reliability R&D trades time/budget away from pace but hardens the part
+```
+
+**Understanding focus**
+
+```
+# Per setup axis affected by this part (catalog metadata: aero_part → wing, rake, …)
+partUnderstanding     += f(rd_budget, engineer_skill, wind_tunnel, off_week_slots)
+contextFamiliarity[car, track] += f(setup_hunt, race_laps, track_specific_rd, partUnderstanding)
+
+# Suggestion window for axis A on track T, car C, build B:
+centre_prior  = lerp(generic_default, part_aware_prior, partUnderstanding)
+local_trim    = contextFamiliarity[C, T]   # tightens band around centre_prior
+window_width  = base_uncertainty * (1 - blend(partUnderstanding, local_trim))
+
+# Dedicated understanding R&D raises partUnderstanding (off-track).
+# On-track work mostly raises contextFamiliarity; high partUnderstanding → faster local learning.
+```
+
+**Transfer rules (proposed)**
+
+- **New track:** `partUnderstanding` sets centre + moderate width; `contextFamiliarity` starts low for that track.
+- **Same part, other car:** copy or scale `partUnderstanding`; `contextFamiliarity` per car.
+- **Other part replaced** (e.g. engine): retain `partUnderstanding` on unchanged parts; apply **partial reset** only on setup axes tagged as coupled to the swapped slot in `part_catalog` / compatibility metadata.
+- **Engineer skill:** better engineers extract more `partUnderstanding` per R&D week and infer centres on new tracks sooner.
+
+**Player choice example:** Team buys a shelved front wing (fast, 95% performance). Two off-weeks on **Understanding** → `partUnderstanding` rises; at Fuji (never visited) wing suggestions are already usable priors. A **setup_hunt** at Spa tightens Spa-specific windows. Player swaps power unit — wing **partUnderstanding** intact; brake-bias / rake suggestions get a small uncertainty bump only. Next off-week switches to **Reliability** after a puncture scare.
+
+#### UI (R&D garage)
+
+- Pick **owned part** from inventory (grouped by slot: aero, chassis, …)
+- Pick **focus**: Performance | Reliability | Understanding
+- **Understanding** R&D raises **partUnderstanding** (intrinsic bar); track list shows **contextFamiliarity** per circuit when this part is on a car
+- Spend **R&D points + budget + off-week slot**; show both bars (intrinsic + per-track local)
+- Setup chips / engineer suggestions use **centre from partUnderstanding**, **width from contextFamiliarity** on that track
+
+**Deliverables**
+
+| ID | Item | Status |
+|----|------|--------|
+| **PD-1** | Facility model + category gates | ⬜ |
+| **PD-2** | `PartInstance` in meta (owned parts, three maturity axes) | ⬜ |
+| **PD-3** | Part `reliability` in catalog + compile + sim failure hooks | ⬜ |
+| **PD-4** | Shelved-parts market (buy instances near performance ceiling) | ⬜ |
+| **PD-5** | In-house **new** part creation (starts low performance) | ⬜ |
+| **PD-6** | **Part project** UI — pick part + focus (perf / reliability / understanding) | ⬜ |
+| **PD-7** | Two-layer understanding model + setup-axis coupling metadata | ⬜ |
+| **PD-8** | Suggestion/preset windows (part prior + per-track familiarity + transfer rules) | ⬜ |
+| **PD-9** | Passive `contextFamiliarity` from `setup_hunt` + race weekends | ⬜ |
+
+**Suggested implementation order (within Phase 7)**
+
+```
+HQ-3 personnel progression (weekend XP first)
+    → PD-1 facilities skeleton
+    → PD-2 part instances (three axes on owned parts)
+    → PD-3 reliability stat + sim hook
+    → PD-6 part project UI (pick part + focus)
+    → PD-7 two-layer understanding + axis coupling
+    → PD-8 suggestion windows (priors + local familiarity)
+    → PD-4 shelved market + PD-5 in-house creation
+    → PD-9 passive context familiarity from on-track sessions
+```
+
+---
+
+### In-game help & glossaries (HX)
+
+**Problem today:** The UI is dense with **abbreviations and numbers** (DRY, CON, Cl/Cd, ARB, ERS, `×1.04`, etc.) but helper text is **sparse and inconsistent**. `wizard-hint` paragraphs exist in some screens (Team HQ, Driver Center) but many controls have none. Driver stats use native `title=` tooltips only (`DriverCenter.ts` ← `driverStatDefs.description`). `SIM_STAT_BARS`, setup sliders, staff traits, part cards, pit telemetry, timetable columns, and negotiation fields are largely **unexplained**. This blocks new players and makes the garage/setup/R&D layers harder to use — especially as 6-11 and HQ-5 add more concepts.
+
+**Goal:** Every non-obvious label, abbreviation, and metric has a **discoverable explanation** — without cluttering the default view.
+
+#### Locked design
+
+| Topic | Choice |
+|-------|--------|
+| Default UX | Clean screen; help on **demand** (icon / hover / focus), not walls of text |
+| Primary pattern | **`?` HelpTip** next to labels + optional **inline hint** under sections |
+| Content source | **Server glossary** in `GameCatalogPayload` (extend `driverStatDefs` pattern) + local field defs where viewer-only |
+| Depth | **Short** (one line) in tooltip; **long** (paragraph + example) in click/hover panel |
+| Accessibility | Keyboard-focusable help triggers; `aria-describedby`; not hover-only on touch |
+| Language | English first; glossary keys stable for future i18n |
+
+#### Help content types
+
+| Type | Use |
+|------|-----|
+| **Tooltip** | Abbreviation expansion: “ARB — anti-roll bar stiffness” |
+| **Metric help** | What a number means + good/bad direction: “Cd — drag coefficient; **lower** is faster on straights” |
+| **Concept** | Systems: part understanding, compromise meter, R&D focus, hybrid deploy |
+| **Section intro** | 1–2 sentences at top of panel (upgrade `wizard-hint` styling) |
+| **Column glossary** | Timetable / leaderboard headers — short `title` + HelpTip on abbreviated headers |
+
+#### Glossary coverage (priority)
+
+| Domain | Examples needing copy |
+|--------|------------------------|
+| **Driver stats** | All 15+ stats + **`adaptability`**; point pool; tier |
+| **Staff** | Role duties, skill, morale, XP, traits, salary |
+| **Car perf bars** | Power, grip, cornering, Cl, Cd, mass, tyre life, cooling |
+| **Setup workbench** | Every slider (6-11); diff reference modes; driver satisfaction |
+| **Garage / parts** | Slot names, catalog stats, compatibility errors, serviceability |
+| **Powertrain** | Engine designer fields, hybrid, fuel cell, transmission hints |
+| **Race / pit wall** | Driver mode, hybrid strategy, tyre codes, fuel%, stint timer |
+| **Meta** | R&D points, facilities, sponsors, regulations, calendar |
+| **Multiplayer** | Roles, permissions, co-op pit wall |
+
+#### Implementation pattern
+
+```
+viewer/src/components/HelpTip.ts     — reusable ? icon + popover
+viewer/src/utils/glossary.ts       — resolve help text by key
+server gameCatalog.glossary        — { key, label, short, long, seeAlso? }[]
+```
+
+Wire `HelpTip` beside: stat labels, slider names, table headers, badge chips, perf rows. Setup workbench (SU) and R&D (PD) **must** use this — no one-off hint strings.
+
+**Deliverables**
+
+| ID | Item | Status |
+|----|------|--------|
+| **HX-1** | `HelpTip` component (hover + click, mobile-friendly, a11y) | ⬜ |
+| **HX-2** | Glossary schema on `GameCatalogPayload` + server loader | ⬜ |
+| **HX-3** | `glossary.ts` resolver + `helpLabel()` helper for tables | ⬜ |
+| **HX-4** | **Driver / staff / perf bars** — full glossary copy + wire UI | ⬜ |
+| **HX-5** | **Garage + engine/cooling designer** — part stats & slots | ⬜ |
+| **HX-6** | **Setup workbench + briefing** — every setup field (pairs with SU) | ⬜ |
+| **HX-7** | **Pit wall + telemetry + timetable** — abbreviations & columns | ⬜ |
+| **HX-8** | **Team HQ meta** — R&D, facilities, sponsors, negotiations | ⬜ |
+| **HX-9** | UI audit checklist — no new screen ships without glossary pass | ⬜ |
+
+**Suggested order:** HX-1 → HX-2/3 → HX-4 (drivers/staff — highest pain) → HX-6 with SU-1 → HX-5/HX-7/HX-8 → HX-9 as ongoing gate.
+
+*Can run in parallel with HQ-3 / PD / SU — copywriting does not block sim work.*
 
 ### Proposed systems
 - **Team HQ:** budget, staff (engineers, mechanics, strategists)
 - **Calendar:** multiclass events, championship points per class
-- **R&D:** unlock parts, improve reliability
+- **R&D / part development:** owned part instances; player focus = performance | reliability | understanding
+- **Setup knowledge:** `partUnderstanding` (transfers) + `contextFamiliarity` (per car+track); coupled-axis partial reset on part swaps
+- **In-game help:** centralized glossary + `HelpTip` on all dense UI (HX)
 - **Regulations:** rule changes per season (BoP shifts)
 
 ### 🔶 YOUR INPUT: Scope of v1.0
@@ -582,19 +935,18 @@ A i think but i wont relesae this game probably for  long time
 
 ---
 
-## Phase 8 — Quality, Persistence & UE Packaging
+## Phase 8 — Quality & Persistence
 
 | Item | Purpose |
 |------|---------|
 | Deterministic replay | Same configs → same lap times (regression tests) |
 | Golden test configs | `tests/golden/` with expected lap time tolerance |
-| Save/load race state | Mid-race save — schema shared with UE |
+| Save/load race state | Mid-race save — schema shared with meta/viewer |
 | Fixed sub-stepping | Accurate braking zones at 0.1s timestep |
 | Headless batch mode | Monte Carlo strategy evaluation |
 | Remove `iostream` from core | Events/callbacks only |
-| **`libprojectlm` static lib** | UE ThirdParty plugin links same code as Node addon |
-| JSON schemas | `CompiledCar`, `RaceState` for UE DataTables |
-| Variable timestep contract | Document `tick(dt)` behaviour for UE + viewer |
+| JSON schemas | `CompiledCar`, `RaceState` for save games and tooling |
+| Variable timestep contract | Document `tick(dt)` behaviour for server + viewer |
 
 *Unit/integration harness → Phase 2. SimBridge read API → Phase 3. Command queue + pit events → Phase 6. Extended golden matrix → Phase 8.*
 
@@ -626,7 +978,7 @@ A i think but i wont relesae this game probably for  long time
 
 **Sim query API** (`track.hpp`): `poseAtDistance(d)` → position, tangent, up, normalizedT.
 
-**UE workflow (Phase 9):** import `track.json` → spawn spline actor → place sector billboard actors at `start_t` → car actors lerp along spline using snapshot `distance` each tick.
+**3D client workflow (optional):** import `track.json` → spline actor → car actors lerp along spline using snapshot `distance` each tick.
 
 ### Default test circuit — Circuit de la Sarthe
 
@@ -643,27 +995,31 @@ Sketch is top-down XZ with light elevation at Dunlop (`y≈6m`). Control points 
 
 ---
 
-## Phase 9 — Unreal Engine Game
+## Future / optional — Unreal Engine game *(ex-Phase 9)*
 
-**Starts after Phase 3 (API proven in viewer) + Phase 6 (pit commands) + Phase 8 (static lib).**
+> **Not on the active roadmap.** The browser manager (`viewer/` + `server/`) is the intended ship surface for this project. A separate Unreal Engine game — 3D race view, UMG pit wall, Lego garage meshes — is *maybe later* if you want a premium visual client. Nothing here blocks Phases 5–8.
 
-### UE project milestones
+**Would start after:** Phase 3 (API proven) + Phase 6 (pit commands) + Phase 8 (save/load, static lib if needed).
+
+### UE project milestones *(reference only)*
 
 | Milestone | Depends on sim | UE work |
 |-----------|----------------|---------|
-| **UE-0: Plugin shell** | Static lib builds | ThirdParty plugin, `USimSession` UObject, tick in `AActor` |
+| **UE-0: Plugin shell** | `libprojectlm` static lib | ThirdParty plugin, `USimSession` UObject, tick in `AActor` |
 | **UE-1: Race playback** | Snapshot + spline export | Cars follow spline, basic UI overlay (lap, pos, fuel) |
 | **UE-2: Pit wall** | `submitCommand` + pit logic (Phase 6) | UMG race director, pit checklist UI |
 | **UE-3: Garage** | JSON car/catalog schemas | Part picker UI, compiled stats panel |
 | **UE-4: Lego assembly** | Part attachment metadata | Skeletal/socket mesh stacking |
 | **UE-5: Meta / career** | Save/load race + team state | Menus, season flow |
 
-### Lego builder in UE (aligns with your vision)
+### Lego builder in UE *(optional vision)*
 
 1. **Sim** defines part slots, stats, compatibility rules, attachment point IDs.
 2. **UE** holds meshes per `part_id`, snapped to sockets on chassis base mesh.
 3. Player picks parts in UMG → UE builds `CarConfig` JSON → sends to sim `CompileCarArchitecture` → stats panel updates live.
 4. Part designer (far future): custom meshes in UE, stats still validated by sim.
+
+*Locked preference (if UE ever ships): **B** — 3D race view + manager UI; garage Lego builder in UE-3/UE-4.*
 
 ---
 
@@ -687,24 +1043,24 @@ Phase 4 ✅  Parts & garage (brakes, transmission, hybrid, compatibility matrix)
 Phase 5 ◄── YOU ARE HERE — Multiclass endurance (duration races, AI entries, BoP tooling)
     │
     ▼
-Phase 6 🟡  Race management — pits ✅, setup ✅, engineer LLM ✅; stint plans + mechanic variance ⬜
+Phase 6 🟡  Race management — pits ✅, engineer LLM ✅; setup workbench rework (6-11) + stint plans ⬜
     │
     ▼
-Phase 7 🟡  Meta / season — career ✅, calendar ✅, HQ staff slice 1 ✅; market/salaries/facilities ⬜
+Phase 7 🟡  Meta / season — career ✅; HQ-3 + HQ-5 + in-game help (HX) ⬜
     │
     ▼
-Phase 8  Quality + UE packaging (extended golden tests, save/load, static lib)
-    │
-    ▼
-Phase 9  Unreal game (3D race + UMG manager + garage)
+Phase 8  Quality + persistence (extended golden tests, save/load, schemas)
+
+Optional (ex-Phase 9): Unreal Engine 3D client — only if/when you want it
 ```
 
 **Consumer map**
 
 ```
 SimBridge (C++)
-    ├── bindings/node → server → viewer     Phase 3 (read-only)
-    └── UE ThirdParty plugin                Phase 9 (read + commands from Phase 6)
+    └── bindings/node → server → viewer     Phase 3+ (read + commands from Phase 6)
+
+Optional: UE ThirdParty plugin → same SimBridge API (ex-Phase 9)
 ```
 
 ---
@@ -722,6 +1078,16 @@ SimBridge (C++)
 | `configs/class_rules.txt` | *(Phase 5)* Per-class BoP and legality |
 | `configs/part_compatibility.txt` | *(Phase 4)* Assembly rules between parts |
 | `configs/team_config.txt` | *(Phase 7)* Staff, budget, R&D |
+| `configs/facilities.txt` | *(Phase 7 PD-1)* Facility tiers and part-category gates |
+| `configs/part_development.txt` | *(Phase 7 PD-3)* In-house base stats, maturity curves, shelved catalog |
+| meta: `partInstances` | *(Phase 7 PD-2)* Owned parts — performance / reliability / understanding per instance |
+| meta: `partUnderstanding` | *(Phase 7 PD-7)* Intrinsic knowledge per owned part instance (transfers) |
+| meta: `contextFamiliarity` | *(Phase 7 PD-8)* Per part+car+track local trim knowledge |
+| part `setup_axes` metadata | *(Phase 7 PD-7)* Which setup fields a part affects; coupling on swap |
+| meta: `driverSetupPreferences` | *(Phase 6 SU-6)* Per-driver ideal offsets on setup axes |
+| driver `adaptability` | *(Phase 6 SU-6)* Catalog + sim — widens/narrows setup comfort band |
+| meta: `setupSheetHistory` | *(Phase 6 SU-3)* Last session / saved presets for diff in workbench |
+| `gameCatalog.glossary` | *(Phase 7 HX-2)* Central help text for stats, abbreviations, systems |
 
 ---
 
@@ -768,4 +1134,4 @@ Track authorship: A / B / C
 
 ---
 
-*Last updated: Jun 2026 — multiplayer foundation + weather on `main`; HQ staff slice 1 (per-car roster) merged; worktree closed.*
+*Last updated: Jun 2026 — HX in-game help/glossaries; Phase 6 setup workbench (6-11); HQ-5 part projects; HQ-3 personnel XP; UE optional.*

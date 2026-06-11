@@ -87,7 +87,12 @@ bool ParseDriverLine(const std::string &value, DriverProfile &profile) {
     return false;
   profile.stamina = v;
 
-  if (parts.size() >= 19) {
+  if (parts.size() >= 20) {
+    if (ParseDouble(parts[18], v))
+      profile.adaptability = v;
+    if (parts.size() >= 21 && ParseDouble(parts[19], v))
+      profile.maxStintSeconds = v * 3600.0;
+  } else if (parts.size() >= 19) {
     if (ParseDouble(parts[18], v))
       profile.maxStintSeconds = v * 3600.0;
   }
