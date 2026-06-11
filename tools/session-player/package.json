@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "player": "tsx src/cli.ts"
+    "player": "tsx src/cli.ts",
+    "test:ci": "tsx src/run_ci_suite.ts"
   },
   "dependencies": {
     "ws": "^8.18.0"

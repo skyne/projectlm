@@ -67,9 +67,11 @@ TEST_SRCS = \
   tests/unit/test_overtake_battle.cpp \
   tests/unit/test_simulation_frenet.cpp \
   tests/unit/test_race_control_escalation.cpp \
+  tests/unit/test_determinism.cpp \
   tests/integration/test_lap_golden.cpp \
   tests/integration/test_multicar.cpp \
-  tests/integration/test_entry_id_column.cpp
+  tests/integration/test_entry_id_column.cpp \
+  tests/integration/test_multi_track_golden.cpp
 
 BUILD_DIR = build
 BIN_DIR = $(BUILD_DIR)/bin

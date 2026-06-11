@@ -17,7 +17,7 @@ When you finish implementing, fixing, or refactoring sim/game/weather/server/vie
 
 3. **After C++ weather/sim changes**, also run when possible:
    ```bash
-   build/bin/projectlm_weather_tests '[unit][weather]'
+   build/bin/projectlm_tests '[unit][weather]'
    ```
    Rebuild native if sim bridge or race config changed:
    ```bash

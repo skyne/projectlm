@@ -1,0 +1,73 @@
+name: Nightly QA
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Functional E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            bindings/node/package-lock.json
+            server/package-lock.json
+            tools/session-player/package-lock.json
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y clang make build-essential curl
+
+      - name: Install dependencies
+        run: |
+          cd bindings/node && npm ci
+          cd ../../server && npm ci
+          cd ../tools/session-player && npm ci
+
+      - name: Run E2E suite
+        run: bash scripts/ci-e2e.sh
+
+  viewer-smoke:
+    name: Viewer Playwright smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+
+      - name: Install Playwright browser
+        working-directory: viewer
+        run: npx playwright install chromium --with-deps
+
+      - name: Build and smoke test viewer
+        working-directory: viewer
+        run: npm ci && npm run build && npm run test:smoke
+
+  golden-matrix:
+    name: C++ golden matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y clang make
+
+      - name: Run golden + determinism tests
+        run: |
+          make test
+          build/bin/projectlm_tests 'La Sarthe lap time is deterministic'
+          build/bin/projectlm_tests 'Single-car lap completes on multiple tracks'
